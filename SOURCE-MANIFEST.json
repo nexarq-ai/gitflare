@@ -385,13 +385,13 @@
     },
     {
       "path": "src/ui/documentation.css",
-      "size": 11395,
-      "sha256": "be952488727b79287e8f77665dfaf2b06135d94893a38113ddf6bb2c4b56a146"
+      "size": 26964,
+      "sha256": "89d819c21b1e1fbc82be4a119d3d185d0800646db71a8500ce550e2f5f664c35"
     },
     {
       "path": "src/ui/Documentation.tsx",
-      "size": 13825,
-      "sha256": "dfc240fc187677c3df252df2fb8290867eed31563b4e897c33b4d50fc6fcb33d"
+      "size": 20149,
+      "sha256": "fd40c0c685e5ba41918501c7ce4b2823d28c6a5e949d43fad9cedf3b4d767252"
     },
     {
       "path": "src/ui/GitAccess.tsx",
