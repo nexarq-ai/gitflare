@@ -24,7 +24,5 @@
 
 .auth-cloudflare img {
   margin-right: 8px;
-  background: var(--gf-color-surface-raised);
-  border-radius: 3px;
-  padding: 1px;
+  flex-shrink: 0;
 }
