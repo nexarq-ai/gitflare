@@ -1,6 +1,6 @@
 export const CLOUDFLARE_PERMISSIONS_DOCS_PATH = '/docs/cloudflare-permissions';
 
-export type CloudflarePermissionGroup = 'Sign-in' | 'Connection' | 'Account and resources' | 'Data' | 'Deploys and previews' | 'Preview access' | 'Other';
+export type CloudflarePermissionGroup = 'Sign-in' | 'Connection' | 'Account and resources' | 'Data' | 'Deploys and previews' | 'Preview access' | 'Secrets' | 'Other';
 export interface CloudflarePermission { scope: string; name: string; group: CloudflarePermissionGroup; reason: string }
 export interface CloudflarePermissionPlan { scopes: string[]; permissions: CloudflarePermission[]; docsUrl: string }
 
@@ -23,6 +23,8 @@ export const CLOUDFLARE_PERMISSIONS: Readonly<Record<string, Entry>> = {
   'workers-routes.write': { name: 'Workers Routes Write', group: 'Deploys and previews', reason: 'Attach the custom domains a deployed Worker declares.' },
   'zone.read': { name: 'Zone Read', group: 'Deploys and previews', reason: 'Look up the zone for a custom domain so you do not have to add zone_id to the route yourself.' },
   'ai.write': { name: 'Workers AI Write', group: 'Deploys and previews', reason: 'Bind Workers AI to a deployed Worker that declares it.' },
+  'secrets-store.read': { name: 'Secrets Store Read', group: 'Secrets', reason: 'List the Secrets Store secrets you can link to a repository, by name only.' },
+  'secrets-store.write': { name: 'Secrets Store Write', group: 'Secrets', reason: 'Create or rotate a secret you enter and bind linked secrets to your deployed Workers.' },
 };
 
 const ACCESS_ENTRY: Entry = { name: 'Access: Apps and Policies Edit', group: 'Preview access', reason: 'Put Cloudflare Access in front of Worker previews when a repository chooses it.' };

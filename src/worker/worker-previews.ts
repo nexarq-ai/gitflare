@@ -1,5 +1,5 @@
 import { ApiError } from './domain';
-import { hostedPreviewBindings, previewExports, previewMigrations, type PreviewBaseBindings, type PreviewD1Database, type WorkerBundle } from './worker-bundle';
+import { hostedPreviewBindings, previewExports, previewMigrations, type PreviewBaseBindings, type PreviewBinding, type PreviewD1Database, type WorkerBundle } from './worker-bundle';
 
 // Worker Previews REST endpoints are not in the public API reference yet; paths and payloads mirror Wrangler 4.149 (deploy-helpers/src/preview/api.ts)
 const API_ORIGIN = 'https://api.cloudflare.com/client/v4';
@@ -7,7 +7,7 @@ const PREVIEW_NOT_FOUND = [10025, 10222];
 const WORKER_NOT_FOUND = [10007, 10090];
 
 export interface WorkerPreviewsEnv { PREVIEWS_API_TOKEN?: string; PREVIEWS_ACCOUNT_ID?: string; PREVIEWS_WORKER_NAME?: string }
-export interface WorkerPreviewsConfig { accountId: string; workerName: string; token: string; connection?: 'repository' | 'workspace' }
+export interface WorkerPreviewsConfig { accountId: string; workerName: string; token: string; connection?: 'repository' | 'workspace' | 'installation' }
 export interface WorkerPreviewResult { previewName: string; previewId: string; previewUrl: string | null; deploymentId: string; deploymentUrl: string | null; notes: string[]; d1Databases?: PreviewD1Database[]; baseBindings?: { name: string; type: string }[] }
 export type Fetcher = (input: Request) => Promise<Response>;
 interface Envelope<T> { success?: boolean; errors?: { code?: number; message?: string }[]; result?: T }
@@ -53,8 +53,8 @@ async function call<T>(config: WorkerPreviewsConfig, fetcher: Fetcher, path: str
   if (!response.ok || envelope.success === false) {
     const codes = (envelope.errors ?? []).map((error) => Number(error.code)).filter(Number.isFinite);
     const detail = (envelope.errors ?? []).map((error) => error.message).filter(Boolean).join('; ').slice(0, 300);
-    if (WORKER_NOT_FOUND.some((code) => codes.includes(code))) throw new WorkerPreviewError('PREVIEWS_WORKER_MISSING', config.connection ? `Worker ${config.workerName} does not exist on account ${config.accountId}. Deploy it once; Gitflare never creates a Worker for previews.` : `The previews Worker ${config.workerName} does not exist. An Owner can set up the installation credential again in Settings → Cloudflare, which creates it.`, response.status, codes);
-    if (response.status === 401 || response.status === 403) throw new WorkerPreviewError('PREVIEWS_FORBIDDEN', config.connection ? `The ${config.connection} Cloudflare connection was refused for Worker ${config.workerName}. It needs workers-scripts.edit; an Owner can reconnect Cloudflare.` : 'The previews API token was rejected. It needs Workers Scripts Edit on the previews account. An Owner can replace it in Settings → Cloudflare → Previews and deploys on this installation.', response.status, codes);
+    if (WORKER_NOT_FOUND.some((code) => codes.includes(code))) throw new WorkerPreviewError('PREVIEWS_WORKER_MISSING', config.connection === 'installation' ? `The previews Worker ${config.workerName} does not exist on account ${config.accountId}. An Owner can choose the installation workspace’s Cloudflare connection again in Settings → Cloudflare, which creates it.` : config.connection ? `Worker ${config.workerName} does not exist on account ${config.accountId}. Deploy it once; Gitflare never creates a Worker for previews.` : `The previews Worker ${config.workerName} does not exist. An Owner can set up the installation credential again in Settings → Cloudflare, which creates it.`, response.status, codes);
+    if (response.status === 401 || response.status === 403) throw new WorkerPreviewError('PREVIEWS_FORBIDDEN', config.connection === 'installation' ? `Cloudflare refused the installation workspace’s connection for previews Worker ${config.workerName}. It needs workers-scripts.edit; an Owner can reconnect Cloudflare in Settings → Cloudflare.` : config.connection ? `The ${config.connection} Cloudflare connection was refused for Worker ${config.workerName}. It needs workers-scripts.edit; an Owner can reconnect Cloudflare.` : 'The previews API token was rejected. It needs Workers Scripts Edit on the previews account. An Owner can replace it in Settings → Cloudflare → Previews and deploys on this installation.', response.status, codes);
     throw new WorkerPreviewError(response.status === 404 || PREVIEW_NOT_FOUND.some((code) => codes.includes(code)) ? 'PREVIEW_NOT_FOUND' : 'PREVIEWS_REJECTED', `Cloudflare rejected the preview request${detail ? `: ${detail}` : '.'}`, response.status, codes);
   }
   return envelope.result as T;
@@ -97,7 +97,7 @@ export function previewDeploymentForm(bundle: WorkerBundle, metadata: Record<str
   return form;
 }
 
-export interface UpsertPreviewInput { alias: string; bundle: WorkerBundle; annotations?: Record<string, string>; uploadAssets?: () => Promise<PreviewAssets>; d1?: PreviewD1Database[]; inheritBaseConfig?: boolean; emailRecipients?: string[] }
+export interface UpsertPreviewInput { secrets?: { env: Record<string, PreviewBinding>; notes: string[] }; alias: string; bundle: WorkerBundle; annotations?: Record<string, string>; uploadAssets?: () => Promise<PreviewAssets>; d1?: PreviewD1Database[]; inheritBaseConfig?: boolean; emailRecipients?: string[] }
 
 export async function getPreviewBaseConfig(config: WorkerPreviewsConfig, fetcher: Fetcher = (request) => fetch(request)): Promise<PreviewBaseBindings> {
   const worker = await call<{ previews_base_config?: { env?: unknown } }>(config, fetcher, '');
@@ -120,7 +120,8 @@ export async function upsertWorkerPreview(config: WorkerPreviewsConfig, input: U
     try { latest = await call<PreviewDeployment>(config, fetcher, `/previews/${encodeURIComponent(preview.id)}/deployments/latest`); }
     catch (error) { if (!notFound(error)) throw error; }
   }
-  const plan = hostedPreviewBindings(input.bundle.config, input.d1, base, input.emailRecipients);
+  const hosted = hostedPreviewBindings(input.bundle.config, input.d1, base, input.emailRecipients);
+  const plan = input.secrets ? { env: { ...hosted.env, ...input.secrets.env }, notes: [...hosted.notes, ...input.secrets.notes] } : hosted;
   const migrations = previewMigrations(input.bundle.config, latest?.migration_tag);
   const exported = previewExports(input.bundle.config);
   const assets = input.uploadAssets ? previewAssetsMetadata(await input.uploadAssets()) : null;
