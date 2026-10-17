@@ -52,8 +52,19 @@ export function canonicalizeLegacyHash(): void {
   window.history.replaceState(null, "", routeUrl(hash.slice(1)));
 }
 
+export function publicSourceLocation(route: string): { path: string; kind: "file" | "directory" } | null {
+  if (route === "source/gitflare") return { path: "", kind: "directory" };
+  const match = /^source\/gitflare\/(tree|blob)\/(.+)$/.exec(route);
+  if (!match || match[2].split("/").some(segment => !segment || segment === "." || segment === ".." || /[\\\u0000-\u001f]/.test(segment))) return null;
+  return { path: match[2], kind: match[1] === "blob" ? "file" : "directory" };
+}
+
+export function publicSourceUrl(path = "", kind: "file" | "directory" = "file"): string {
+  return path ? `/source/gitflare/${kind === "file" ? "blob" : "tree"}/${path.split("/").map(encodeURIComponent).join("/")}` : "/source/gitflare";
+}
+
 export function isAppPath(pathname: string): boolean {
-  return !SERVER_PATH.test(pathname);
+  return !!publicSourceLocation(routeFromLocation(pathname, "")) || !SERVER_PATH.test(pathname);
 }
 
 export function onRouteChange(listener: () => void): () => void {
@@ -96,7 +107,7 @@ export function isPublicDocumentationRoute(route: string): boolean {
 }
 
 export function isKnownAppRoute(route: string): boolean {
-  return ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "access", "proposals/new", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route)
+  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "access", "account/profile", "account/security", "proposals/new", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route)
     || /^settings(?:\/(?:models|cloudflare))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)

@@ -100,3 +100,18 @@
   .repository-browser .source-table td { padding: 11px 12px; }
   .repository-browser .source-table td:last-child:not(:first-child) { width: 80px; }
 }
+
+.repository-browser .file-content { background: #0b0d10; color: #e6edf3; color-scheme: dark; tab-size: 2; }
+.repository-browser .file-content .line-number { color: #737b87; }
+.repository-browser .source-token-comment { color: #8b949e; font-style: italic; }
+.repository-browser .source-token-keyword { color: #ff7b72; }
+.repository-browser .source-token-string { color: #a5d6ff; }
+.repository-browser :is(.source-token-number, .source-token-literal) { color: #79c0ff; }
+.repository-browser .documentation-markdown .source-token-comment { color: var(--gf-color-text-tertiary); }
+.repository-browser .documentation-markdown .source-token-keyword { color: var(--gf-color-accent); }
+.repository-browser .documentation-markdown .source-token-string { color: var(--gf-color-success); }
+.repository-browser .documentation-markdown :is(.source-token-number, .source-token-literal) { color: var(--gf-color-info); }
+.repository-browser .file-content:focus-visible { outline: 2px solid var(--gf-color-focus); outline-offset: -2px; }
+.source-code-progress { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--gf-color-border); background: var(--gf-color-surface); font-size: 11px; color: var(--gf-color-text-secondary); }
+.source-code-progress button { min-height: 32px; padding: 6px 11px; border: 1px solid var(--gf-color-border); border-radius: 8px; color: var(--gf-color-text); background: var(--gf-color-surface-raised); font-size: 11px; }
+.source-code-progress button:hover { border-color: var(--gf-color-border-strong); }

@@ -37,7 +37,6 @@ import {
   PlusIcon,
   RobotIcon,
   ShieldCheckIcon,
-  SignOutIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import type { AccessSnapshot, Repository, Workspace } from "../shared/types";
@@ -58,13 +57,15 @@ import { showOwnerTokenNotice } from "./owner-token-notice";
 import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
 import AiSettingsPanel from "./AiSettingsPanel";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
-import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, POLICY_ROUTES, PUBLIC_DOC_IDS, PUBLIC_PRODUCT_ROUTES } from "./router";
-import ThemeToggle from "./ThemeToggle";
+import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, PUBLIC_PRODUCT_ROUTES } from "./router";
+import AccountMenu from "./AccountMenu";
+
 import ConnectionError from "./ConnectionError";
 import "./policy-pages.css";
 import { InstallationCredentialPrompt } from "./InstallationCredential";
 import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
 
+const AccountSettings = lazy(() => import("./AccountSettings"));
 const loadMissionDetail = () => import("./MissionDetail");
 const MissionDetail = lazy(loadMissionDetail);
 const loadRepositoryBrowser = () => import("./RepositoryBrowser");
@@ -119,7 +120,7 @@ const runningStates = ["queued", "running", "checking", "integrating"];
 const RETURN_ROUTE_KEY = "gitflare:return-route";
 
 export function isPublicRoute(route: string): boolean {
-  return ["home", "signin", "signup", "source/gitflare", "deploy", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route) || isPublicDocumentationRoute(route) || !isKnownAppRoute(route) || route.startsWith("invite?") || isAccountRoute(route);
+  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route) || isPublicDocumentationRoute(route) || !isKnownAppRoute(route) || route.startsWith("invite?") || isAccountRoute(route);
 }
 
 function takeReturnRoute(): string {
@@ -146,6 +147,7 @@ function Workspace() {
   const authFlowActive = useRef(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [account, setAccount] = useState<AccessSnapshot | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [authState, setAuthState] = useState<
@@ -175,6 +177,7 @@ function Workspace() {
     selectWorkspace("");
     setPermissions([]);
     setCurrentUserId("");
+    setAccount(null);
     setWorkspace(blankWorkspace);
     setLoaded(false);
     setAuthState("required");
@@ -197,6 +200,7 @@ function Workspace() {
       setWorkspace(data);
       setPermissions(access.permissions);
       setCurrentUserId(access.user.id);
+      setAccount(access);
       setLoaded(true);
       setError("");
       setAuthState("authenticated");
@@ -363,7 +367,7 @@ function Workspace() {
   }
 
   if (!isKnownAppRoute(route)) return <main className="route-loading"><h1>Page not found</h1><a href="/overview">Open workspace</a></main>;
-  if (isPublicDocumentationRoute(route) && authState !== "authenticated") return <main className="public-documentation"><Documentation publicMode id={route === "docs" ? "overview" : route.slice(5)} /></main>;
+  if (isPublicDocumentationRoute(route)) return <main className="public-documentation"><Documentation publicMode id={route === "docs" ? "overview" : route.slice(5)} /></main>;
   if (route === "home" && (!authConfig || (authConfig.edition === "hosted" && !authConfig.setupRequired))) return <Homepage authenticated={authState === "authenticated"} />;
   if (!authConfig && !authConfigError) return <WorkspaceLoader />;
   if (!authConfig) return <ConnectionError error={authConfigError} onRetry={() => window.location.reload()} />;
@@ -385,6 +389,8 @@ function Workspace() {
     );
   }
 
+  if (route.startsWith("docs/")) return <main className="public-documentation"><Documentation id={route.slice(5)} /></main>;
+
   const creatingProposal = route === "proposals/new" || /^repository\/[^/]+\/proposals\/new$/.test(route);
   const importingRepository = /^repository\/[^/]+\/import$/.test(route);
   const importRepository = importingRepository ? workspace.repositories.find(repo => repo.id === route.split("/")[1]) : undefined;
@@ -400,7 +406,7 @@ function Workspace() {
       repository: "Repository",
       activity: "Activity",
       settings: "Settings",
-      docs: "Documentation",
+      account: route === "account/security" ? "Security" : "Profile",
       connect: "Connect AI clients",
     }[page] ?? "Overview";
   const missionList = workspace.missions.filter(
@@ -433,12 +439,6 @@ function Workspace() {
     },
     { id: "activity", label: "Activity", icon: ActivityIcon },
   ];
-  const initial = workspace.name
-    .split(/\s+/)
-    .map((word) => word[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 
   return (
     <div className="app-shell">
@@ -549,35 +549,7 @@ function Workspace() {
             <span>{pageName}</span>
           </div>
           <div className="utility-actions">
-            <ThemeToggle compact />
-            <a
-              href="/docs/overview"
-            >
-              Documentation
-              <ArrowUpRightIcon size={12} />
-            </a>
-            <span className="status-strip">
-              <span className={`status-dot ${loaded ? "good" : "warn"}`} />
-              {loaded
-                ? workspace.mode === "local"
-                  ? "Local workspace"
-                  : "Connected workspace"
-                : "Connecting"}
-            </span>
-            {workspace.mode === "connected" && (
-              <Button
-                variant="ghost"
-                size="base"
-                icon={SignOutIcon}
-                loading={signingOut}
-                onClick={() => void signOut()}
-              >
-                Sign out
-              </Button>
-            )}
-            <div className="user-avatar" aria-label="Workspace account">
-              {initial || "GF"}
-            </div>
+            <AccountMenu account={account} workspace={workspace} loaded={loaded} signingOut={signingOut} onSignOut={() => void signOut()} />
           </div>
         </header>
         {routePending && <RouteProgress />}
@@ -586,9 +558,7 @@ function Workspace() {
             <ErrorNotice message={error} onRetry={() => void refresh()} />
           )}
           <Suspense fallback={<RouteProgress />}>
-            {importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify("Mission draft created."); }} /> : route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} /> : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} /> : page === "connect" ? <McpConnections /> : page === "docs" ? (
-              <Documentation publicMode={PUBLIC_DOC_IDS.includes(route.slice(5))} id={route.slice("docs/".length) || "how-it-works"} />
-            ) : page === "mission" ? (
+            {importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify("Mission draft created."); }} /> : route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} /> : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} /> : page === "connect" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
               <MissionDetail
                 key={route.split("/")[1]}
                 id={route.split("/")[1]}
@@ -1069,10 +1039,11 @@ function Workspace() {
                   />
                 )}
                 {page === "settings" && (
-                  <>
+                  <div className="workspace-settings">
+                    <div className="page-heading"><div><h1>Workspace settings</h1><p>Manage the services, people, and permissions behind your work.</p></div></div>
                     {authConfig.edition === "self-hosted" && permissions.includes("manage") && <InstallationCredentialPrompt onOpen={() => navigate("settings/cloudflare")} />}
-                    <section className="panel settings-cloudflare"><div className="settings-cloudflare-heading"><img src={cloudflareIcon} alt="" /><div><h2>Cloudflare account and resources</h2><p>Connect your account and manage the services used by your repositories.</p></div></div><Button variant="secondary" size="base" onClick={() => navigate("settings/cloudflare")}>Manage Cloudflare</Button></section>
-                    <section className="panel settings-cloudflare ai-only"><div className="settings-cloudflare-heading"><RobotIcon size={27} /><div><h2>AI models</h2><p>Choose available Workers AI models and manage provider connections.</p></div></div><Button variant="secondary" size="base" onClick={() => navigate("settings/models")}>Manage AI models</Button></section>
+                    <div className="settings-overview-grid"><section className="panel settings-cloudflare"><div className="settings-cloudflare-heading"><img src={cloudflareIcon} alt="" /><div><h2>Cloudflare account and resources</h2><p>Connect your account and manage the services used by your repositories.</p></div></div><Button variant="secondary" size="base" onClick={() => navigate("settings/cloudflare")}>Manage Cloudflare</Button></section>
+                    <section className="panel settings-cloudflare ai-only"><div className="settings-cloudflare-heading"><RobotIcon size={27} /><div><h2>AI models</h2><p>Choose available Workers AI models and manage provider connections.</p></div></div><Button variant="secondary" size="base" onClick={() => navigate("settings/models")}>Manage AI models</Button></section></div>
                     <AiSettingsPanel settings={workspace.ai} canManage={permissions.includes("manage")} onChanged={load} />
                     <AccessSettings selfHosted={authConfig.edition === "self-hosted"} repositories={workspace.repositories} onWorkspaceChanged={load} />
 
@@ -1128,7 +1099,7 @@ function Workspace() {
                         <ArrowUpRightIcon size={12} />
                       </a>
                     </div>
-                  </>
+                  </div>
                 )}
               </>
             )}

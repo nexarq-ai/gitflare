@@ -1,5 +1,5 @@
 import { repositoryLabel } from "../shared/repository-names";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -16,11 +16,24 @@ import type {
   RepositoryTree,
 } from "../shared/types";
 import { request } from "./api";
+import { grammarFor, tokenize } from "./diff-highlight";
 import { EmptyState, ErrorNotice } from "./components";
 import "./repository-browser.css";
 import { RouteProgress } from "./WorkspaceLoader";
 
 type Selection = { path: string; kind: "directory" | "file" };
+
+function SourceTokens({ content, path }: { content: string; path: string }) {
+  const grammar = grammarFor(path);
+  return <>{content.split("\n").map((line, index, lines) => <Fragment key={index}>{tokenize(line, grammar).map((token, tokenIndex) => <span key={tokenIndex} className={token.kind ? `source-token-${token.kind}` : undefined}>{token.text}</span>)}{index < lines.length - 1 ? "\n" : ""}</Fragment>)}</>;
+}
+
+function SourceFileCode({ file }: { file: RepositoryFile }) {
+  const [visible, setVisible] = useState(400);
+  const lines = file.content.split("\n");
+  const limit = Math.min(lines.length, 10000);
+  return <><pre className="file-content" tabIndex={0} role="region" aria-label={`${file.path} source code`}><code>{lines.slice(0, visible).map((line, index) => <span className="source-line" key={index}><span className="line-number" aria-hidden="true">{index + 1}</span><span><SourceTokens content={line || " "} path={file.path}/></span></span>)}</code></pre><div className="source-code-progress">{visible < limit && <button type="button" onClick={() => setVisible(value => Math.min(value + 400, limit))}>Show next {Math.min(400, limit - visible)} lines</button>}<span>{Math.min(visible, limit).toLocaleString()} of {lines.length.toLocaleString()} lines</span></div></>;
+}
 
 export default function RepositoryBrowser({
   repository,
@@ -205,25 +218,11 @@ export default function RepositoryBrowser({
             </div>
             {file.content.split("\n").length > 10000 && (
               <p className="notice-inline">
-                Showing the first 10,000 lines. Clone the repository to inspect
+                The preview is limited to 10,000 lines. Clone the repository to inspect
                 the full file.
               </p>
             )}
-            <pre className="file-content">
-              <code>
-                {file.content
-                  .split("\n")
-                  .slice(0, 10000)
-                  .map((line, index) => (
-                    <span className="source-line" key={index}>
-                      <span className="line-number" aria-hidden="true">
-                        {index + 1}
-                      </span>
-                      <span>{line || " "}</span>
-                    </span>
-                  ))}
-              </code>
-            </pre>
+            <SourceFileCode key={`${file.path}:${file.commitSha}`} file={file}/>
           </>
         ) : tree ? (
           <div className="table-scroll">
@@ -306,7 +305,11 @@ export default function RepositoryBrowser({
           )
         )}
       </section>
-      {readme && <section className="panel"><div className="panel-header"><h2>README</h2><code>{readme.commitSha.slice(0, 10)}</code></div><div className="panel-body documentation-markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml components={{ img: ({ alt }) => <span>{alt || "Image"}</span>, a: ({ href, children }) => href && /^https?:\/\//i.test(href) ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span> }}>{readme.content}</Markdown></div></section>}
+      {readme && <section className="panel"><div className="panel-header"><h2>README</h2><code>{readme.commitSha.slice(0, 10)}</code></div><div className="panel-body documentation-markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml components={{ code: ({ children, className }) => {
+        const language = /language-([\w+-]+)/.exec(className ?? "")?.[1];
+        const extension = language ? ({ javascript: "js", typescript: "ts", shell: "sh", python: "py" } as Record<string, string>)[language] ?? language : "";
+        return <code>{language ? <SourceTokens content={String(children)} path={`code.${extension}`}/> : children}</code>;
+      }, img: ({ alt }) => <span>{alt || "Image"}</span>, a: ({ href, children }) => href && /^https?:\/\//i.test(href) ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span> }}>{readme.content}</Markdown></div></section>}
     </div>
   );
 }
