@@ -305,8 +305,8 @@
     },
     {
       "path": "src/ui/CloudflareConnection.tsx",
-      "size": 43006,
-      "sha256": "096675612a7e2eab9e29dc51aea3b1af6a0c5ae3acc5e79474b0a317cd4297f3"
+      "size": 43025,
+      "sha256": "786ff9e1eeee531cdc4388b6c92a70a99b51f02423b202bf389ef2ceda2e49d9"
     },
     {
       "path": "src/ui/components.tsx",
@@ -375,8 +375,8 @@
     },
     {
       "path": "src/ui/InstallationCredential.tsx",
-      "size": 10031,
-      "sha256": "7a8fc09264a76342bc90f59f8b6177c94e6d51196b630c0995e5d959abdf3ee0"
+      "size": 15527,
+      "sha256": "5d486138574a41d43c4434fba4f81152fd66632c2bba2884483c694009c7e0a3"
     },
     {
       "path": "src/ui/InvitationScreen.tsx",
@@ -580,8 +580,8 @@
     },
     {
       "path": "src/worker/background-work.ts",
-      "size": 26617,
-      "sha256": "bf939dc13d9902e0d6fb27d6ab307eba06cb583991cec51c945fbb148c9fe77a"
+      "size": 27097,
+      "sha256": "c774bff15e7252791ee492d44efda9e4495acaa4b8911278df6e6d7e8e9a9378"
     },
     {
       "path": "src/worker/branch-protection.ts",
@@ -730,8 +730,8 @@
     },
     {
       "path": "src/worker/installation-credential.ts",
-      "size": 12894,
-      "sha256": "01e0bce11205932168082f0dd4473bcedefd47a12f8a775983b99d44af2a5c5b"
+      "size": 24136,
+      "sha256": "166068a21348c0c041cc8174b5337409de4202f1a3504f53b570ef7bc1123458"
     },
     {
       "path": "src/worker/issues.ts",
@@ -740,8 +740,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 93523,
-      "sha256": "98021eb0b023ae340f3ce391f6d60191eaf705c76d5a16464f9687b41b000ee0"
+      "size": 94238,
+      "sha256": "858ee0c4dfe6563dad43c781e79bdf8725735b0a778dca8203ed69b12eb96380"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -875,8 +875,8 @@
     },
     {
       "path": "src/worker/security.ts",
-      "size": 138190,
-      "sha256": "6e23c43ac7f66fa6f51a4b4a6ca1f5d9399cbe7356a1f0c03a68586b8241a995"
+      "size": 140211,
+      "sha256": "a1febd9fd9bba48d43107e195b8d6e95c7195c46b702b0421ffec4e0db29c875"
     },
     {
       "path": "src/worker/skill-edit.ts",
@@ -910,8 +910,8 @@
     },
     {
       "path": "src/worker/worker-previews.ts",
-      "size": 12121,
-      "sha256": "03fd134d56573010e147469d66cbeeaf800969efc7deafae22e80c2d820137b8"
+      "size": 12633,
+      "sha256": "aabc262b14814aed67314380c1a32d4bf8a964aaf835f011dd8600bb57bec357"
     },
     {
       "path": "src/worker/worker-provisioning.ts",

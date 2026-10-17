@@ -171,7 +171,12 @@ async function retireConfig(env: AppEnv, params: PreviewRetireParams): Promise<W
       return null;
     }
   }
-  const config = await resolveWorkerPreviewsConfig(env);
+  let config: WorkerPreviewsConfig | null;
+  try { config = await resolveWorkerPreviewsConfig(env); }
+  catch (error) {
+    console.error('preview.retire.installation.unavailable', params.missionId, error instanceof ApiError ? error.code : 'unknown');
+    return null;
+  }
   if (!config || (host && (host.accountId !== config.accountId || host.workerName !== config.workerName))) return null;
   return config;
 }
@@ -296,19 +301,24 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       const lifetime = { lifetimeMs, extendMs: lifetimeMs };
       const { settings: deploy } = await coordinator.deployState();
       const target = previewTarget(settings, deploy, await projectWorkers(env, principal, repositoryId));
+      let installationProblem: string | undefined;
       const plan = await resolvePreviewHost(env, settings, target, {
         connection: (wanted: PreviewTarget) => connectionAccess(env, principal, repositoryId, wanted.accountId),
-        installation: () => resolveWorkerPreviewsConfig(env),
+        installation: () => resolveWorkerPreviewsConfig(env).catch((error: unknown) => {
+          if (!(error instanceof ApiError)) throw error;
+          installationProblem = error.detail;
+          return null;
+        }),
       });
       const previews = plan.config;
       const host = plan.host;
       const alias = previews ? previewAlias(missionId, previews.workerName) : '';
       const previewCall = previews ? previewsCall(previews) : null;
       const prepared = await prepareCandidatePreview(env, {
-        repository, mission, previewAttemptId: claimId, workerPreviews: !!previews, ...(plan.configPath ? { configPath: plan.configPath } : {}),
+        repository, mission, previewAttemptId: claimId, workerPreviews: !!previews || !!installationProblem, ...(plan.configPath ? { configPath: plan.configPath } : {}),
         assertAuthority: () => access.check(principal, 'read', 'repository', repositoryId, missionId),
         publishWorker: async (built) => {
-          if (!previews || !previewCall || !host) throw new PreviewFailure('Worker previews are not configured for this installation.');
+          if (!previews || !previewCall || !host) throw new PreviewFailure(installationProblem ?? 'Worker previews are not configured for this installation.');
           if (host.access === 'cloudflare-access') await ensurePreviewAccess(previewCall, previews.accountId, previews.workerName, await previewAccessIncludes(env, principal, repositoryId, settings));
           const { uploadAssets } = built;
           const d1 = built.d1?.length ? await bindPreviewD1(previewCall, previews.accountId, built.d1) : undefined;
