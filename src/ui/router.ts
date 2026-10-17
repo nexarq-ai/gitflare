@@ -87,7 +87,7 @@ export function onRouteChange(listener: () => void): () => void {
   };
 }
 
-export const PUBLIC_DOC_IDS = ["overview", "install", "admin", "repositories", "mcp", "agents"];
+export const PUBLIC_DOC_IDS = ["overview", "install", "admin", "repositories", "github-mirror", "mcp", "agents"];
 export const POLICY_ROUTES = ["terms", "privacy", "acceptable-use", "cookies", "security", "support"];
 export const PUBLIC_PRODUCT_ROUTES = ["product", "ai-clients", "open-source", "repositories", "connectors", "connect"];
 

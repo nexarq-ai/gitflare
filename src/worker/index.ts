@@ -42,6 +42,7 @@ import { collectMissionSummaries } from './workspace-summaries';
 import { branchApi } from './branches';
 import { branchName, effectiveRules, landingRule, protectionSnapshot } from './branch-protection';
 import { handleUrlImport } from './url-import';
+import { githubMirrorApi, triggerMirrorSync } from './github-mirror-runtime';
 import { capabilityHash, mintPreviewToken, PREVIEW_CAPABILITY_MS, previewCapabilityStore, previewTarget, relayPreview } from './preview-capability';
 
 export { GitflareSecurity } from './security';
@@ -110,6 +111,7 @@ function gitDependencies(env: AppEnv): GitHttpDependencies {
     repository: async (principal, name) => findRepositoryByName(await env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)).listRepositories(), principal.workspaceId, name),
     rules: async (repository) => effectiveRules(await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).getBranchProtection(), repository.defaultBranch),
     artifacts: env.ARTIFACTS,
+    pushed: (repository, refs) => triggerMirrorSync(env, repository.id, repository.workspaceId ?? 'legacy', 'push', refs),
   };
 }
 
@@ -444,11 +446,20 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
   if (issues) return issues;
   const urlImport = await handleUrlImport(request, url, { env, principal, access, catalog, repositoryRecords: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
   if (urlImport) return urlImport;
+  const mirrorRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/github-mirror(?:\/([a-z-]+))?$/.exec(url.pathname);
+  if (mirrorRoute) {
+    const repository = await catalog.getRepository(mirrorRoute[1]);
+    if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+    const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
+    return githubMirrorApi(request, env, { repository: { ...repository, workspaceId: repository.workspaceId ?? principal.workspaceId }, principal, ctx, bootstrapSha: () => coordinatorRead('repositoryBootstrapSha', () => coordinator.repositoryBootstrapSha()) }, mirrorRoute[2]);
+  }
   const releaseRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/releases(?:\/([a-zA-Z0-9-]+)(?:\/(publish|update|delete))?)?$/.exec(url.pathname);
   if (releaseRoute) {
     const repository = await catalog.getRepository(releaseRoute[1]);
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
-    return releaseApi(request, { artifacts: env.ARTIFACTS, repository, coordinator: env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`), principal, access }, releaseRoute[2], releaseRoute[3]);
+    const released = await releaseApi(request, { artifacts: env.ARTIFACTS, repository, coordinator: env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`), principal, access }, releaseRoute[2], releaseRoute[3]);
+    if (request.method === 'POST' && released.ok) ctx?.waitUntil(triggerMirrorSync(env, repository.id, principal.workspaceId, 'release', undefined, ctx));
+    return released;
   }
   const repositoryMatch = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/(tree|file|skills|proposal-base|import)$/.exec(url.pathname);
   if (request.method === 'GET' && repositoryMatch) {
@@ -475,7 +486,9 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
   if (branchWrite) {
     const repository = await catalog.getRepository(branchWrite[1]);
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
-    return branchApi(request, { artifacts: env.ARTIFACTS, repository, coordinator: env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`), principal, access }, branchWrite[2] ? 'delete' : 'create');
+    const changed = await branchApi(request, { artifacts: env.ARTIFACTS, repository, coordinator: env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`), principal, access }, branchWrite[2] ? 'delete' : 'create');
+    if (changed.ok) ctx?.waitUntil(triggerMirrorSync(env, repository.id, principal.workspaceId, 'branch', undefined, ctx));
+    return changed;
   }
   const checkSettingsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/check-settings$/.exec(url.pathname);
   if (checkSettingsRoute) {
@@ -582,6 +595,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
         throw error;
       }
     }
+    ctx?.waitUntil(triggerMirrorSync(env, repository.id, principal.workspaceId, 'import', [`refs/heads/${repository.defaultBranch}`], ctx));
     return Response.json(await reconcile({ ...claim.receipt, candidateSha: built.commitSha }));
   }
   if (repositoryMatch?.[2] === 'skills') {

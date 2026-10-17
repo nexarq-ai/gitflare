@@ -35,6 +35,7 @@ export const mcpToolNames = [
   'gitflare_list_issues', 'gitflare_read_issue', 'gitflare_create_issue', 'gitflare_comment_issue', 'gitflare_update_issue',
   'gitflare_list_branches', 'gitflare_create_branch', 'gitflare_delete_branch', 'gitflare_create_pull_request', 'gitflare_update_pull_request', 'gitflare_branch_protection',
   'gitflare_check_settings', 'gitflare_retry_checks', 'gitflare_preview_settings',
+  'gitflare_github_mirror', 'gitflare_manage_github_mirror',
 ] as const;
 
 const identifier = z.string().min(1).max(100).regex(/^[a-zA-Z0-9-]+$/);
@@ -53,7 +54,7 @@ const external = { ...mutation, openWorldHint: true };
 const commit = z.string().regex(/^[a-f0-9]{40}$/).describe('Exact 40-character commit SHA observed in current evidence.');
 const evidenceInput = { view: z.enum(['summary', 'context', 'runs', 'changes', 'checks', 'events', 'reviews']).default('summary').describe('Evidence to return.'), offset, limit: z.number().int().min(1).max(20).default(5).describe('Items per page.'), detail_offset: offset.describe('Start character within each long text field.'), detail_limit: z.number().int().min(1).max(8000).default(3000).describe('Characters per long text field.') };
 const LAND_TOOLS = new Set(['gitflare_check_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
-const ADMIN_TOOLS = new Set(['gitflare_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_ai_settings', 'gitflare_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway']);
+const ADMIN_TOOLS = new Set(['gitflare_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_ai_settings', 'gitflare_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror']);
 
 export function requiredAccess(name: string, annotations: { readOnlyHint?: boolean } | undefined, input: Record<string, unknown>): AccessLevel {
   if (annotations?.readOnlyHint) return 'read';
@@ -565,6 +566,37 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     const path = `/api/repositories/${repository_id}/issues/${number}/${action === 'edit' ? 'update' : action}`;
     const body = action === 'edit' ? { title: fields.title, body: fields.body, labels: fields.labels, assignees: fields.assignees, missionIds: fields.mission_ids } : action === 'close' ? { reason: fields.reason ?? 'completed' } : {};
     return issueView(await call<IssueDetail>(path, body, idempotency_key));
+  }));
+  server.registerTool('gitflare_github_mirror', {
+    title: 'Read a repository’s GitHub mirror', description: 'Read a repository’s GitHub mirror: target, ref patterns, credential kind (never its value), sync state and per-ref Gitflare/GitHub/last synced SHAs, times, errors and divergence. Gitflare is the source of truth. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/github-mirror`)));
+  server.registerTool('gitflare_manage_github_mirror', {
+    title: 'Manage a repository’s GitHub mirror', description: 'Owner-only: link (owner, name, ref_patterns), unlink, sync, app-installation, remove-credential. credential-setup returns a browser URL; tokens never pass through MCP. A diverged ref has GitHub commits Gitflare lacks: import copies it to a github-import/ stream; overwrite replaces it if expected_github_sha still matches (audited). adopt imports GitHub once into an empty repository. Needs admin access.',
+    inputSchema: z.object({
+      repository_id: repositoryId,
+      action: z.enum(['link', 'unlink', 'credential-setup', 'app-installation', 'remove-credential', 'sync', 'import', 'overwrite', 'adopt']),
+      owner: z.string().min(1).max(39).optional().describe('GitHub user or organization, for link.'),
+      name: z.string().min(1).max(100).optional().describe('GitHub repository name, for link.'),
+      ref_patterns: z.array(z.string().min(1).max(220)).min(1).max(20).optional().describe('For link: refs to mirror, such as refs/heads/main and refs/tags/*.'),
+      installation_id: z.number().int().positive().optional().describe('GitHub App installation ID, for app-installation.'),
+      ref: z.string().max(220).optional().describe('Full ref for import and overwrite, such as refs/heads/main.'),
+      expected_github_sha: z.string().regex(/^[a-f0-9]{40}$/).nullable().optional().describe('For overwrite: the GitHub SHA shown in gitflare_github_mirror for this ref, or null if GitHub has no such ref.'),
+      idempotency_key: requestKey,
+    }).strict(), annotations: { ...external, destructiveHint: true, idempotentHint: false },
+  }, (input) => guarded(async () => {
+    const path = `/api/repositories/${input.repository_id}/github-mirror`;
+    if (input.action === 'credential-setup') {
+      const status = await call<{ canManage?: boolean; mirror?: unknown }>(path);
+      return { browserStartUrl: `${origin}/repository/${encodeURIComponent(input.repository_id)}/settings/branches#github-mirror`, browserEntryRequired: true, canManage: status.canManage, linked: !!status.mirror };
+    }
+    const body = input.action === 'link' ? { owner: input.owner, name: input.name, ...(input.ref_patterns ? { refPatterns: input.ref_patterns } : {}) }
+      : input.action === 'app-installation' ? { kind: 'app', installationId: input.installation_id }
+      : input.action === 'import' ? { ref: input.ref }
+      : input.action === 'overwrite' ? { ref: input.ref, expectedGithubSha: input.expected_github_sha === undefined ? undefined : input.expected_github_sha }
+      : {};
+    const action = input.action === 'app-installation' ? 'credential' : input.action;
+    return call<Record<string, unknown>>(`${path}/${action}`, body, input.idempotency_key);
   }));
   return server;
 }

@@ -23,6 +23,7 @@ import { POLICY_FILE } from './repository-policy';
 import type { ProjectSnapshot } from './cloudflare-projects';
 import { declaresRoutes, detectDeploySetup, environmentBlock, parseWranglerConfig, scanRepository, withAccountFacts, type DetectedSetup } from './deploy-detect';
 import type { Repository } from '../shared/types';
+import { triggerMirrorSync } from './github-mirror-runtime';
 
 export interface LandingParams { kind: 'land'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimId: string; principal: Principal }
 export interface PreviewParams { kind: 'preview'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; claimId: string; principal: Principal }
@@ -110,6 +111,10 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
   await step.do('retire candidate preview and schedule deployment', { retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' }, async () => {
     await retireWorkerPreview(env, repositoryId, missionId, principal.workspaceId);
     await scheduleLandedDeployment(env, repositoryId, missionId, epoch, candidateSha, baseSha);
+    return true;
+  });
+  await step.do('schedule GitHub mirror sync', { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '1 minute' }, async () => {
+    await triggerMirrorSync(env, repositoryId, principal.workspaceId, 'land');
     return true;
   });
 }
