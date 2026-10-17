@@ -33,7 +33,7 @@ For installations configured without OAuth storage, the server can also accept a
 
 Gitflare is preparing listings in Anthropic's Claude connectors directory and OpenAI's plugin directory for ChatGPT and Codex. Neither listing is published yet. Until then, add the server by URL as a custom connector. A listed connector uses the same endpoint, sign-in and access levels.
 
-- **Server URL**: the hosted listing will use `https://app.gitflare.io/mcp`. A self-hosted installation uses its own `/mcp` URL.
+- **Server URL**: the hosted listing will use `https://app.gitflare.io/mcp`. `https://gitflare.io` is the marketing site; its `/mcp`, `/oauth/*` and OAuth metadata URLs answer with a 308 redirect to `app.gitflare.io`, so configure clients with the app host. A self-hosted installation uses its own `/mcp` URL.
 - **Sign-in**: OAuth 2.1 with PKCE (S256). Clients identify themselves with a Client ID Metadata Document or dynamic client registration. Authorization responses carry `iss` (RFC 9207).
 - **Callbacks**: Gitflare accepts `https://claude.ai/api/mcp/auth_callback` (claude.ai, Claude Desktop, mobile and Cowork), Claude Code's loopback callback on any port, and ChatGPT's `https://chatgpt.com/connector_platform_oauth_redirect` or `https://chatgpt.com/connector/oauth/<callback-id>`.
 - **Tool metadata**: every tool has a title and explicit `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` annotations. Claude can run read-only tools without asking each time. It asks before any tool marked destructive: deleting, overwriting, cancelling, withdrawing an approval or changing a setting. Codex prompts only for tools that are not read-only when `default_tools_approval_mode = "writes"`.

@@ -27,6 +27,7 @@ import { handleOnboarding } from './onboarding';
 import { listPublicDocs, readPublicDoc, publicSourceResponse } from './distribution';
 import { oauthConsent, oauthProvider, revokeClientGrants } from './oauth';
 import { publicPageResponse } from './public-pages';
+import { hostRedirect, withHostOrigins } from './host-split';
 import { publicGitResponse } from './hosted-source';
 import { deliverInvitation } from './email';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare, handleRepositoryCloudflare, cloudflareAccount, cloudflareApiRequest, cloudflareAnalyticsRequest, cloudflareDeployAccess } from './cloudflare';
@@ -873,10 +874,14 @@ async function requireAi(env: AppEnv, catalog: { getAiEnabled(): Promise<boolean
 
 const ENTRY_PATHS = new Set(['/', '/signin', '/signup']);
 
+async function hasSession(request: Request, env: AppEnv): Promise<boolean> {
+  const session = cookieValue(request);
+  return session ? security(env).authenticate(session).then(() => true, () => false) : false;
+}
+
 async function entryRedirect(request: Request, env: AppEnv, path: string): Promise<Response | null> {
   if (request.method !== 'GET' || !ENTRY_PATHS.has(path)) return null;
-  const session = cookieValue(request);
-  const signedIn = session ? await security(env).authenticate(session).then(() => true, () => false) : false;
+  const signedIn = await hasSession(request, env);
   const location = signedIn ? (path === '/' && env.EDITION !== 'self-hosted' ? null : '/overview') : env.EDITION === 'self-hosted' && path === '/' ? '/signin' : null;
   return location ? new Response(null, { status: 302, headers: { Location: location, 'Cache-Control': 'no-store' } }) : null;
 }
@@ -896,7 +901,7 @@ const application = {
     if (publicPage) return publicPage;
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
-    if (!path.startsWith('/api/') && path !== '/mcp') return env.ASSETS.fetch(request);
+    if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env);
     let response: Response;
     try {
       if (path === '/mcp') {
@@ -931,6 +936,8 @@ export default {
   async fetch(request: Request, workerEnv: AppEnv, ctx?: ExecutionContext): Promise<Response> {
     try {
       const env = await withStoreSecrets(workerEnv);
+      const hostMove = await hostRedirect(request, env, request => hasSession(request, env));
+      if (hostMove) return hostMove;
       const path = new URL(request.url).pathname;
       if (env.OAUTH_KV && (path === '/mcp' || path.startsWith('/oauth/') || path.startsWith('/.well-known/'))) {
         if (path.startsWith('/oauth/') && request.method === 'POST') await security(env).rateLimit(`oauth:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 60, 60000);
