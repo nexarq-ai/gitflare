@@ -570,8 +570,8 @@
     },
     {
       "path": "src/worker/background-work.ts",
-      "size": 26131,
-      "sha256": "d29d6090e7d6f36f1282adf28028479b5609dc919e4471e9323b14eb94fdf281"
+      "size": 26178,
+      "sha256": "1ab44ef64a52743c65d25f02f212fdca5cc0e0a423ac28e2ce727db7a739a1e1"
     },
     {
       "path": "src/worker/branch-protection.ts",
@@ -645,8 +645,8 @@
     },
     {
       "path": "src/worker/deploy-detect.ts",
-      "size": 29749,
-      "sha256": "96d64b019c401c3ef90b47c54327df69b90af5b186100f04902899d9897c4f28"
+      "size": 30073,
+      "sha256": "d7283ad9a88ff828e92d0d5ce71224494bf3459f9f30b8577c85c352532b951e"
     },
     {
       "path": "src/worker/deploy-environments.ts",
@@ -655,8 +655,8 @@
     },
     {
       "path": "src/worker/deployments.ts",
-      "size": 75363,
-      "sha256": "db96ef4913d6d0d40ad63077c9c969a962004ac2b8331e5a6c2460543e748f04"
+      "size": 76645,
+      "sha256": "6ae1534c3c56e9ab0849861964b426cd15fd732e5429e587c3a8a6a05139d9f3"
     },
     {
       "path": "src/worker/distribution.ts",
@@ -685,8 +685,8 @@
     },
     {
       "path": "src/worker/env.ts",
-      "size": 2356,
-      "sha256": "4107d67ed7ac827904dc7eac7e4d9a307ab1be4dc73283cd3db08dc80811c1c4"
+      "size": 2392,
+      "sha256": "8faa53f956602ef5682d899ad2598c178d6abb607a1543419d468c1b52dcc61c"
     },
     {
       "path": "src/worker/execution.ts",
@@ -715,8 +715,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 83456,
-      "sha256": "831f041c4d9c87fa705ea6c0a056bf9bd67af6d138c5f8eff877e47fb0dd9ed2"
+      "size": 83567,
+      "sha256": "24b07253afc0d5bbb5f5e04a76afc6c85cac3a7925926608a2372998f326feb3"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -874,6 +874,11 @@
       "sha256": "5f2b773085cef9c9afb4561d0c78fba66f1943fa83ce6d6f335dcbc18c9e4f51"
     },
     {
+      "path": "src/worker/store-secrets.ts",
+      "size": 1647,
+      "sha256": "0d152d09c3ef620f952005653823b8f772f4da5858cf5ffa5e69427dcb105f2b"
+    },
+    {
       "path": "src/worker/store.ts",
       "size": 1490,
       "sha256": "1859f4385837b8f43ebd4682b779a91c42f1d6bd665386454e0e7e2a495701e2"
@@ -905,8 +910,8 @@
     },
     {
       "path": "src/worker/workflow.ts",
-      "size": 6292,
-      "sha256": "f478d80a04f330c9bc53a28d5e395f92c125532f6325bcc9a23dddf2d5fc190f"
+      "size": 6393,
+      "sha256": "b7c0eda88aa78533ec743df09a96ec8f5f8e9eade2d2ee217ebc73cc31f3869c"
     },
     {
       "path": "src/worker/workspace-summaries.ts",

@@ -11,7 +11,7 @@ import { deleteWorkerPreview, previewAlias, upsertWorkerPreview, WorkerPreviewEr
 import { resolveWorkerPreviewsConfig } from './installation-credential';
 import { WorkerBuildFailure } from './worker-bundle';
 import { changedPaths } from './deploy-changes';
-import { automaticPromotion, deployWorkflowId, landedDeployments, landingDeploySummary, policyDeployTargets, runDeployment, wranglerEnvironment, type DeploymentRecord, type DeployParams } from './deployments';
+import { automaticPromotion, deployWorkflowId, landedDeployments, landingDeploySummary, policyDeployTargets, runDeployment, selfWorker, wranglerEnvironment, type DeploymentRecord, type DeployParams } from './deployments';
 import { cloudflareDeployClient, type CloudflareDeployAccess } from './cloudflare-deploy';
 import { bindPreviewD1, deletePreviewD1 } from './preview-d1';
 import { cloudflareDeployAccess, cloudflareWorkerDeployer } from './cloudflare';
@@ -222,9 +222,10 @@ export async function deployLandedWorker(env: AppEnv, params: DeployParams, step
   const access = securityClient(env);
   await runDeployment(params, step, {
     coordinator,
+    self: selfWorker(env),
     authorize: (principal, workerName) => access.check(principal, 'deploy', 'environment', workerName),
     deployer: (principal, record, workerName) => cloudflareWorkerDeployer(env, principal, workerName, record.accountId, undefined, record.repositoryId),
-    build: (repository, record, target, index, assertAuthority, publish) => buildLandedWorker(env, { repository, commitSha: record.commitSha!, attemptId: record.attemptId, assertAuthority, ...(target.inheritBindings ? {} : { target }), index, environment: wranglerEnvironment(record.environment) }, publish),
+    build: (repository, record, target, index, assertAuthority, publish) => buildLandedWorker(env, { repository, commitSha: record.commitSha!, attemptId: record.attemptId, assertAuthority, ...(target.inheritBindings ? {} : { target }), index, environment: wranglerEnvironment(record.environment, target) }, publish),
     policyTargets: async (repository, record) => {
       if (!env.ARTIFACTS) return null;
       const base = await policyBase(env, repository.name, record);
