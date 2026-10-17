@@ -63,6 +63,7 @@ import AccountMenu from "./AccountMenu";
 import ConnectionError from "./ConnectionError";
 import "./policy-pages.css";
 import { InstallationCredentialPrompt } from "./InstallationCredential";
+import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
 
 const AccountSettings = lazy(() => import("./AccountSettings"));
 const loadMissionDetail = () => import("./MissionDetail");
@@ -827,6 +828,7 @@ function Workspace() {
                           onMission={() => createMission()}
                           onSettings={() => navigate("settings")}
                         />
+                        {permissions.includes("manage") && <CloudflareConnectPrompt onOpen={() => navigate("settings/cloudflare")} />}
                         <div className="info-card">
                           <h3>
                             <ShieldCheckIcon size={17} />

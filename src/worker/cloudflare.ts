@@ -5,6 +5,8 @@ import { decryptAuth, encryptAuth, randomCapability } from './mfa';
 import type { WorkerDeployer } from './deployments';
 import { cloudflareDeployClient, workerDeployer, type CloudflareDeployAccess } from './cloudflare-deploy';
 import { handleInstallationCredential } from './installation-credential';
+import { accessScopes } from './preview-access';
+import { CLOUDFLARE_PERMISSIONS_DOCS_PATH, describeCloudflareScopes, type CloudflarePermissionPlan } from '../shared/cloudflare-permissions';
 
 export interface CloudflareConnection { version: string; encrypted: string; issuer: Principal }
 export interface CloudflareOAuthState { id: string; browserHash: string; principal: Principal; expiresAt: number; encrypted: string; repositoryId?: string }
@@ -37,8 +39,13 @@ export const WORKER_USAGE_QUERY = 'query GitflareWorkerUsage($accountTag: string
 export const D1_USAGE_QUERY = 'query GitflareD1Usage($accountTag: string!, $databaseId: string!, $start: Date!, $end: Date!) { viewer { accounts(filter: {accountTag: $accountTag}) { d1AnalyticsAdaptiveGroups(limit: 100, filter: {databaseId: $databaseId, date_geq: $start, date_leq: $end}, orderBy: [date_DESC]) { dimensions {date databaseId} sum {readQueries writeQueries rowsRead rowsWritten} } } } }';
 function service(env: AppEnv): Store { return securityClient(env) as unknown as Store; }
 function configured(env: AppEnv): boolean { return Boolean(env.CLOUDFLARE_CLIENT_ID && env.CLOUDFLARE_CLIENT_SECRET && env.AUTH_ENCRYPTION_KEY); }
+function scopeList(value: string): string[] { return [...new Set(value.split(/\s+/).filter(scope=>scope&&scope!=='openid'))]; }
 // The OAuth client rejects any unregistered scope (openid included), so deploy and Access scopes stay opt-in; its id_token carries only `sub`
-export function requestedScopes(env: AppEnv, identity = false): string[] { return [...new Set(['offline_access',...`${env.CLOUDFLARE_OAUTH_SCOPES??defaultScopes} ${env.CLOUDFLARE_DEPLOY_SCOPES??''} ${env.CLOUDFLARE_ACCESS_SCOPES??''} ${identity?env.CLOUDFLARE_IDENTITY_SCOPES??defaultIdentityScopes:''}`.split(/\s+/).filter(scope=>scope&&scope!=='openid')])]; }
+export function requestedScopes(env: AppEnv): string[] { return scopeList(`offline_access ${env.CLOUDFLARE_OAUTH_SCOPES??defaultScopes} ${env.CLOUDFLARE_DEPLOY_SCOPES??''} ${env.CLOUDFLARE_ACCESS_SCOPES??''}`); }
+export function signinScopes(env: AppEnv): string[] { return scopeList(env.CLOUDFLARE_IDENTITY_SCOPES??defaultIdentityScopes); }
+export type CloudflareGrantPurpose = 'connect' | 'signin';
+function purposeScopes(env: AppEnv, purpose: CloudflareGrantPurpose): string[] { return purpose==='signin'?signinScopes(env):requestedScopes(env); }
+export function connectPermissionPlan(env: AppEnv): CloudflarePermissionPlan { const scopes=requestedScopes(env); return {scopes,permissions:describeCloudflareScopes(scopes,accessScopes(env)),docsUrl:CLOUDFLARE_PERMISSIONS_DOCS_PATH}; }
 export const CLOUDFLARE_DEPLOY_SCOPE = 'workers-scripts.edit';
 export function cloudflareSigninConfigured(env: AppEnv): boolean { return configured(env); }
 export function requestCookie(request: Request, name: string): string | undefined { return request.headers.get('Cookie')?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${name}=`))?.slice(name.length+1); }
@@ -144,7 +151,7 @@ async function listResources(env: AppEnv, vault: Vault, path: string): Promise<u
   }
   throw new ApiError(502, 'CLOUDFLARE_CATALOG_LIMIT', 'Cloudflare returned an incomplete resource catalog. Narrow the account scope before retrying.');
 }
-function status(env: AppEnv, vault?: Vault) { return {configured:configured(env),connected:!!vault,...(vault?{expiresAt:vault.expiresAt,scopes:vault.scopes,account:vault.account}: {})}; }
+function status(env: AppEnv, vault?: Vault) { return {configured:configured(env),connected:!!vault,permissions:connectPermissionPlan(env),...(vault?{expiresAt:vault.expiresAt,scopes:vault.scopes,account:vault.account}: {})}; }
 function accountsValue(result: unknown): Account[] {
   if (!Array.isArray(result)) throw new ApiError(502,'CLOUDFLARE_INVALID_RESPONSE','Cloudflare did not return an account list.');
   return result.filter(a=>a && typeof a.id==='string' && /^[a-f0-9]{32}$/i.test(a.id) && typeof a.name==='string').map(a=>({id:a.id,name:a.name.slice(0,200)}));
@@ -179,14 +186,14 @@ export async function cloudflareWorkerDeployer(env:AppEnv,p:Principal,workerName
   assertDeployScope(access.scopes);
   return workerDeployer(cloudflareDeployClient(access,fetcher),workerName);
 }
-export async function cloudflareAuthorizationUrl(env:AppEnv,redirectUri:string,state:string,verifier:string,identity=false):Promise<string> {
+export async function cloudflareAuthorizationUrl(env:AppEnv,redirectUri:string,state:string,verifier:string,purpose:CloudflareGrantPurpose='connect'):Promise<string> {
   const challenge=btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier))))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  const url=new URL(authorizeEndpoint);url.search=new URLSearchParams({response_type:'code',client_id:env.CLOUDFLARE_CLIENT_ID!,redirect_uri:redirectUri,state,code_challenge:challenge,code_challenge_method:'S256',scope:requestedScopes(env,identity).join(' ')}).toString();
+  const url=new URL(authorizeEndpoint);url.search=new URLSearchParams({response_type:'code',client_id:env.CLOUDFLARE_CLIENT_ID!,redirect_uri:redirectUri,state,code_challenge:challenge,code_challenge_method:'S256',scope:purposeScopes(env,purpose).join(' ')}).toString();
   return url.toString();
 }
-export async function exchangeCloudflareCode(env:AppEnv,code:string,redirectUri:string,verifier:string,identity=false):Promise<Vault> {
+export async function exchangeCloudflareCode(env:AppEnv,code:string,redirectUri:string,verifier:string,purpose:CloudflareGrantPurpose='connect'):Promise<Vault> {
   const response=await tokenRequest(env,new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:redirectUri,code_verifier:verifier}));const values=tokenValues(response);
-  return {...values,scopes:typeof response.scope==='string'?response.scope.split(' '):requestedScopes(env,identity),clientId:env.CLOUDFLARE_CLIENT_ID!};
+  return {...values,scopes:typeof response.scope==='string'?response.scope.split(' '):purposeScopes(env,purpose),clientId:env.CLOUDFLARE_CLIENT_ID!};
 }
 export async function cloudflareIdentity(env:AppEnv,vault:Vault):Promise<CloudflareIdentity> {
   let user:unknown;
@@ -216,7 +223,7 @@ async function start(env:AppEnv,p:Principal,origin:string,repositoryId?:string) 
   const pending:Pending={verifier,redirectUri:`${uri.origin}/api/cloudflare/callback`,expectedVersion:previous?.version??null,...repositoryScope(repositoryId)};
   const record:CloudflareOAuthState={id,browserHash:await sha(binder),principal:p,expiresAt,encrypted:await encryptAuth(JSON.stringify(pending),env.AUTH_ENCRYPTION_KEY,`cloudflare-state:${id}`),...repositoryScope(repositoryId)};
   await service(env).connectionStore(p,'state-put',{value:record,...repositoryScope(repositoryId)});
-  return {authorizationUrl:await cloudflareAuthorizationUrl(env,pending.redirectUri,state,verifier),expiresAt,cookie:`${cookieName}=${binder}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`};
+  return {authorizationUrl:await cloudflareAuthorizationUrl(env,pending.redirectUri,state,verifier),expiresAt,permissions:connectPermissionPlan(env),cookie:`${cookieName}=${binder}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`};
 }
 async function callback(request:Request,env:AppEnv):Promise<Response> {
   requireConfiguration(env);const url=new URL(request.url);const state=requireString(url.searchParams.get('state'),'OAuth state',128,64);
@@ -276,7 +283,7 @@ async function repositoryStatus(env:AppEnv,p:Principal,repositoryId:string) {
 }
 async function dispatchRepository(env:AppEnv,p:Principal,action:string,body:Record<string,unknown>,origin:string,repositoryId:string):Promise<unknown> {
   if(action==='status') return repositoryStatus(env,p,repositoryId);
-  if(action==='connect') return {browserStartUrl:`${new URL(origin).origin}/repository/${encodeURIComponent(repositoryId)}/cloudflare`,browserAuthorizationRequired:true};
+  if(action==='connect') return {browserStartUrl:`${new URL(origin).origin}/repository/${encodeURIComponent(repositoryId)}/cloudflare`,browserAuthorizationRequired:true,permissions:connectPermissionPlan(env)};
   if(action==='disconnect') return disconnect(env,p,repositoryId);
   if(action==='accounts') {const {vault}=await load(env,p,undefined,repositoryId);return {accounts:accountsValue(await api(env,vault,'/accounts'))};}
   if(action==='select-account') return {source:'repository',...await selectAccount(env,p,body,repositoryId)};
@@ -287,7 +294,7 @@ export async function dispatchCloudflare(env:AppEnv,p:Principal,action:string,bo
   await owner(env,p);
   if(repositoryId!==undefined) return dispatchRepository(env,p,action,body,origin,requireRepositoryId(repositoryId));
   if(action==='status') {const record=await stored(env,p);return status(env,record?await unseal(env,p,record):undefined);}
-  if(action==='connect') return {browserStartUrl:`${new URL(origin).origin}/settings/cloudflare`,browserAuthorizationRequired:true};
+  if(action==='connect') return {browserStartUrl:`${new URL(origin).origin}/settings/cloudflare`,browserAuthorizationRequired:true,permissions:connectPermissionPlan(env)};
   if(action==='disconnect') return disconnect(env,p);
   if(action==='select-account') return selectAccount(env,p,body);
   const {vault}=await load(env,p);
