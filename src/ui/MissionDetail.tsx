@@ -37,6 +37,7 @@ import { PullRequestPanel } from "./PullRequests";
 import { DependencyApprovalControl, DependencyChangesPanel } from "./DependencyChanges";
 import { navigate as goTo } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
+import { ContextFiles, MarkdownContent } from "./MissionDocuments";
 
 type PreviewHost =
   | { kind: "connection"; source: "repository" | "workspace"; accountId: string; workerName: string; access: "link" | "cloudflare-access" }
@@ -950,9 +951,7 @@ export default function MissionDetail({
           {tab === "overview" && (
           <>
             <DependencyChangesPanel mission={mission} />
-            {((mission as { attachments?: { name: string; content: string }[] }).attachments ?? []).length > 0 && (
-              <section className="panel mission-attachments"><div className="panel-header"><h2>Context files</h2></div><div className="panel-body">{((mission as { attachments?: { name: string; content: string }[] }).attachments ?? []).map(item => <details key={item.name}><summary><code>{item.name}</code></summary><pre>{item.content.slice(0, 2000)}{item.content.length > 2000 ? "\n…" : ""}</pre></details>)}</div></section>
-            )}
+            <ContextFiles files={mission.attachments ?? []} />
             <div className="detail-summary">
               <section className="panel">
                 <div className="panel-header">
@@ -960,7 +959,7 @@ export default function MissionDetail({
                   <CodeIcon size={16} color="#8b99ab" />
                 </div>
                 <div className="panel-body">
-                  <p className="mission-prompt">{mission.prompt}</p>
+                  <MarkdownContent content={mission.prompt} />
                   {!!mission.acceptanceCriteria?.length && (
                     <div style={{ marginTop: 19 }}>
                       <h3 style={{ fontSize: 13 }}>Acceptance criteria</h3>
