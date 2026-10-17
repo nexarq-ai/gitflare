@@ -184,6 +184,21 @@
       "sha256": "2086164acfe43fa1fc0185912e84d27a25711e9e24bfa3f7ae0d7a710f21bc82"
     },
     {
+      "path": "src/ui/account-settings.css",
+      "size": 5935,
+      "sha256": "69ad0cea69afaee88f6d3e0ec58ae559d24cc16b351c97b3688ebbbab0b6ab43"
+    },
+    {
+      "path": "src/ui/AccountMenu.tsx",
+      "size": 4454,
+      "sha256": "598a3f84ace1d70f7af3111ee1a0c52b82f2f5d5b9ef1b1972b9fafbbe14b7b5"
+    },
+    {
+      "path": "src/ui/AccountSettings.tsx",
+      "size": 7736,
+      "sha256": "453c8433460e47c546e5125623d180ef58e536508eb43c399c4188e75a6e6320"
+    },
+    {
       "path": "src/ui/AgentAssignment.tsx",
       "size": 1213,
       "sha256": "914686c3ad28ade7269d051e12d5f670fe6b75a577560da85e7906f5b315a40a"
@@ -205,8 +220,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 77685,
-      "sha256": "66e2fece73810acb9a83dff1b796bd719e7c2e449c37dfcb0dfb57b56ea95a5b"
+      "size": 77204,
+      "sha256": "9553c2f7f808e1d5bbf93363b1fdbc6a7043bf4d51e18e9d77a994e521ce77d8"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -360,8 +375,8 @@
     },
     {
       "path": "src/ui/documentation.css",
-      "size": 10532,
-      "sha256": "6492527ccf46c9ad9b44839d366bfe5f4a7a89327feec82eb5b229a32b41d07e"
+      "size": 10679,
+      "sha256": "883bde6114c88f687186f8c8e92f73ba2afe0593b41a243d875352463e84ad72"
     },
     {
       "path": "src/ui/Documentation.tsx",
@@ -535,8 +550,8 @@
     },
     {
       "path": "src/ui/router.ts",
-      "size": 5327,
-      "sha256": "af5eab890d7d58812ca3ef6c54f5d7df3d4618fb56c8eed82009223f1d9814fc"
+      "size": 5366,
+      "sha256": "ee81666bdbef27305e4224fcfdfe2628104de5d16115f183b544bf0fd8655f50"
     },
     {
       "path": "src/ui/SelfHostedHome.tsx",

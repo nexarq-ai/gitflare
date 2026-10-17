@@ -96,7 +96,7 @@ export function isPublicDocumentationRoute(route: string): boolean {
 }
 
 export function isKnownAppRoute(route: string): boolean {
-  return ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "access", "proposals/new", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route)
+  return ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "access", "account/profile", "account/security", "proposals/new", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route)
     || /^settings(?:\/(?:models|cloudflare))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)

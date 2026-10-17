@@ -96,3 +96,6 @@
   .wiki-page .documentation-copy-status { flex-basis: 100%; }
 }
 @media(max-width:440px) { .public-docs-nav > div { width: 100%; justify-content: flex-end; } .public-docs-nav > div a:last-child { padding: 5px 9px; } }
+
+.gfp-main > .public-documentation { padding-top: 130px; }
+@media (max-width: 760px) { .gfp-main > .public-documentation { padding-top: 110px; } }
