@@ -435,8 +435,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 61860,
-      "sha256": "7d4a57a9f7c2fda5a449c7219f1a3cfa08360e51a8310bdb45a1bb907e2a8314"
+      "size": 62231,
+      "sha256": "f97b11352cfc6b6bfb3f86dfc668128fc2299053caabd1f55280cc213f4cd033"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",

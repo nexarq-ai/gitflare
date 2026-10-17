@@ -1,6 +1,6 @@
 import { repositoryLabel } from "../shared/repository-names";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@cloudflare/kumo/components/button";
+import { Button, LinkButton } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { Tabs } from "@cloudflare/kumo/components/tabs";
 import {
@@ -597,6 +597,15 @@ export default function MissionDetail({
           </div>
         </div>
         <div className="heading-actions detail-actions">
+          <LinkButton
+            variant="secondary"
+            size="base"
+            icon={CodeIcon}
+            href={`/repository/${encodeURIComponent(mission.repositoryId)}/code`}
+            aria-label={repository ? `Open repository ${repositoryLabel(repository)}` : "Open repository"}
+          >
+            Open repository
+          </LinkButton>
           {canPreview && (
             <Button
               variant="secondary"
