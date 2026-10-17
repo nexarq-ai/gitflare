@@ -64,6 +64,7 @@ import ConnectionError from "./ConnectionError";
 import "./policy-pages.css";
 import { InstallationCredentialPrompt } from "./InstallationCredential";
 import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
+import { BrandMark } from "./BrandMark";
 
 const AccountSettings = lazy(() => import("./AccountSettings"));
 const loadMissionDetail = () => import("./MissionDetail");
@@ -469,10 +470,8 @@ function Workspace() {
           href="/overview"
           style={{ textDecoration: "none" }}
         >
-          <span className="brand-icon">
-            <GitBranchIcon size={23} weight="bold" />
-          </span>
-          gitflare<span className="beta-tag">alpha</span>
+          <BrandMark size={32} />
+          <span className="beta-tag">alpha</span>
         </a>
         <button
           className="quick-search-trigger"
