@@ -178,7 +178,7 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     return response.json() as Promise<T>;
   }
   server.registerTool('gitflare_cloudflare_connection', {
-    title: 'Connect and manage Cloudflare', description: 'Workspace (or with repository_id, repository) Cloudflare connection: status, accounts, resources, select-account, disconnect; connect returns a browser URL. installation-credential* read or remove the installation’s previews token status; setup returns a browser URL, since tokens never pass through MCP. Credentials are never returned. Reads need read access; changes need Owner and admin access.',
+    title: 'Connect and manage Cloudflare', description: 'Workspace (or repository_id) Cloudflare connection: status, accounts, resources, select-account, disconnect; connect returns a browser URL; connect and status list requested permissions with reasons. installation-credential* read or remove the previews token status; setup returns a browser URL (tokens never pass through MCP). Credentials are never returned. Reads need read access; changes need Owner and admin.',
     inputSchema: z.object({ action: z.enum(['status', 'connect', 'accounts', 'resources', 'select-account', 'disconnect', 'installation-credential', 'installation-credential-setup', 'installation-credential-remove']), accountId: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('Cloudflare account ID for select-account.'), repository_id: repositoryId.optional().describe('Act on this repository’s own Cloudflare connection instead of the workspace connection.') }).strict(), annotations: { ...external, destructiveHint: true },
   }, (input) => guarded(async () => {
     if (input.action.startsWith('installation-credential')) {
@@ -189,8 +189,9 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     }
     const base = input.repository_id ? `/api/repositories/${encodeURIComponent(input.repository_id)}/cloudflare/connection` : '/api/cloudflare';
     if (input.action === 'connect') {
-      await call<Record<string, unknown>>(base);
-      return { browserStartUrl: input.repository_id ? `${origin}/repository/${encodeURIComponent(input.repository_id)}/cloudflare` : `${origin}/settings/cloudflare`, browserAuthorizationRequired: true };
+      const status = await call<{ permissions?: { docsUrl?: string } }>(base);
+      const permissions = status.permissions ? { ...status.permissions, ...(status.permissions.docsUrl ? { docsUrl: `${origin}${status.permissions.docsUrl}` } : {}) } : undefined;
+      return { browserStartUrl: input.repository_id ? `${origin}/repository/${encodeURIComponent(input.repository_id)}/cloudflare` : `${origin}/settings/cloudflare`, browserAuthorizationRequired: true, ...(permissions ? { permissions } : {}) };
     }
     const path = input.action === 'status' && input.repository_id ? base : `${base}/${input.action}`;
     return call<Record<string, unknown>>(path, ['select-account','disconnect'].includes(input.action) ? { accountId: input.accountId } : undefined);
