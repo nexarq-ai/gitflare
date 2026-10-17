@@ -230,8 +230,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 77791,
-      "sha256": "077b7736b3264905c105ac0374f6cb4554efe294f86a40cdf4bdacf3e8c6945d"
+      "size": 77746,
+      "sha256": "b7943dec0b32c85488d3b9790c7706d1651a11a29d50925651a5a142b343f783"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -300,8 +300,8 @@
     },
     {
       "path": "src/ui/AuthScreen.tsx",
-      "size": 15069,
-      "sha256": "34b81f8a382313d88b944b5a1766580dd7e5211a927e3050c6cc1256ad4d2818"
+      "size": 14994,
+      "sha256": "0dfc4e694a5802b03d40743c70dc976d113314f55a6c9581b62bc8472596b3bd"
     },
     {
       "path": "src/ui/branches.css",
@@ -350,8 +350,8 @@
     },
     {
       "path": "src/ui/ConnectionError.tsx",
-      "size": 2854,
-      "sha256": "068cb3a65feae354a9100d94e98af630a3b6c9c97f4db3adb71051c5ca446fc8"
+      "size": 2841,
+      "sha256": "912c17cd59150322ea08ff06fb36a58638845d0bc15a771acca03304aa9a0645"
     },
     {
       "path": "src/ui/DependencyChanges.tsx",
@@ -365,8 +365,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 121090,
-      "sha256": "9254a556a4a4036abc36b88ff894bf800873b74dd411c7381fbaab1b435e645d"
+      "size": 121571,
+      "sha256": "9b9dbdec503fca2c683393a2524a74a2d9ea987bbc67ad77d1b1634b599c2054"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -420,8 +420,8 @@
     },
     {
       "path": "src/ui/InvitationScreen.tsx",
-      "size": 2551,
-      "sha256": "e4252e6dfc956fe3e3768596185ba92956005d8fe348f9c613327cd18f294596"
+      "size": 2567,
+      "sha256": "a21b83386d2e2ed6e7826c9bfdb46caff7d2a3d4907cbd8ad157caeb06f796b6"
     },
     {
       "path": "src/ui/issues.css",

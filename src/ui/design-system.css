@@ -441,3 +441,7 @@ button[style*='--color-kumo-danger'], a[style*='--color-kumo-danger'] {
   --kumo-button-emphasis-gradient-start: var(--gf-color-danger-action) !important;
   --kumo-button-emphasis-gradient-end: var(--gf-color-danger-action) !important;
 }
+.gf-brand-tile { flex-shrink: 0; border-radius: 24%; }
+.gf-brand-name { font-family: var(--gf-font-sans); font-weight: 600; font-style: normal; letter-spacing: -.02em; color: var(--gf-color-text); }
+.gf-brand-name em { font-family: var(--gf-font-serif); font-style: italic; font-weight: 400; letter-spacing: 0; color: var(--gf-color-accent); }
+a:has(> .gf-brand-name), a:has(> .gf-brand-name):hover, a:has(> .gf-brand-name):focus-visible { text-decoration: none; color: inherit; }
