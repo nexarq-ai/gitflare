@@ -600,8 +600,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 75786,
-      "sha256": "1df1bcbd78c30316a88d4a847784852af9abbce9c53c7c0e3c1c89f2033ed021"
+      "size": 75820,
+      "sha256": "6961dcb192d088e87d182ae291dede1c83b83fdfa6468390f00754aec8404c35"
     },
     {
       "path": "src/ui/ThemeToggle.tsx",
