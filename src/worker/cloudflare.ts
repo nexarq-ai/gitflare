@@ -5,6 +5,7 @@ import { decryptAuth, encryptAuth, randomCapability } from './mfa';
 import type { WorkerDeployer } from './deployments';
 import { cloudflareDeployClient, workerDeployer, type CloudflareDeployAccess } from './cloudflare-deploy';
 import { handleInstallationCredential } from './installation-credential';
+import { secretsStoreScopes } from './secrets-scopes';
 
 export interface CloudflareConnection { version: string; encrypted: string; issuer: Principal }
 export interface CloudflareOAuthState { id: string; browserHash: string; principal: Principal; expiresAt: number; encrypted: string; repositoryId?: string }
@@ -21,7 +22,7 @@ export interface CloudflareIdentity {
 }
 interface Vault { accessToken: string; refreshToken?: string; expiresAt: number; account?: Account; scopes: string[]; clientId: string }
 interface TokenResponse { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown; scope?: unknown; token_type?: unknown }
-interface Pending { verifier: string; redirectUri: string; expectedVersion: string | null; repositoryId?: string }
+interface Pending { verifier: string; redirectUri: string; expectedVersion: string | null; repositoryId?: string; extraScopes?: string[] }
 export type CloudflareConnectionSource = 'repository' | 'workspace';
 const authorizeEndpoint = 'https://dash.cloudflare.com/oauth2/auth';
 const tokenEndpoint = 'https://dash.cloudflare.com/oauth2/token';
@@ -179,14 +180,14 @@ export async function cloudflareWorkerDeployer(env:AppEnv,p:Principal,workerName
   assertDeployScope(access.scopes);
   return workerDeployer(cloudflareDeployClient(access,fetcher),workerName);
 }
-export async function cloudflareAuthorizationUrl(env:AppEnv,redirectUri:string,state:string,verifier:string,identity=false):Promise<string> {
+export async function cloudflareAuthorizationUrl(env:AppEnv,redirectUri:string,state:string,verifier:string,identity=false,extraScopes:string[]=[]):Promise<string> {
   const challenge=btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier))))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  const url=new URL(authorizeEndpoint);url.search=new URLSearchParams({response_type:'code',client_id:env.CLOUDFLARE_CLIENT_ID!,redirect_uri:redirectUri,state,code_challenge:challenge,code_challenge_method:'S256',scope:requestedScopes(env,identity).join(' ')}).toString();
+  const url=new URL(authorizeEndpoint);url.search=new URLSearchParams({response_type:'code',client_id:env.CLOUDFLARE_CLIENT_ID!,redirect_uri:redirectUri,state,code_challenge:challenge,code_challenge_method:'S256',scope:[...new Set([...requestedScopes(env,identity),...extraScopes])].join(' ')}).toString();
   return url.toString();
 }
-export async function exchangeCloudflareCode(env:AppEnv,code:string,redirectUri:string,verifier:string,identity=false):Promise<Vault> {
+export async function exchangeCloudflareCode(env:AppEnv,code:string,redirectUri:string,verifier:string,identity=false,extraScopes:string[]=[]):Promise<Vault> {
   const response=await tokenRequest(env,new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:redirectUri,code_verifier:verifier}));const values=tokenValues(response);
-  return {...values,scopes:typeof response.scope==='string'?response.scope.split(' '):requestedScopes(env,identity),clientId:env.CLOUDFLARE_CLIENT_ID!};
+  return {...values,scopes:typeof response.scope==='string'?response.scope.split(' '):[...new Set([...requestedScopes(env,identity),...extraScopes])],clientId:env.CLOUDFLARE_CLIENT_ID!};
 }
 export async function cloudflareIdentity(env:AppEnv,vault:Vault):Promise<CloudflareIdentity> {
   let user:unknown;
@@ -208,15 +209,18 @@ export async function revokeCloudflareTokens(env:AppEnv,vault:Pick<Vault,'access
   }
   return revoked;
 }
-async function start(env:AppEnv,p:Principal,origin:string,repositoryId?:string) {
+async function start(env:AppEnv,p:Principal,origin:string,repositoryId?:string,secrets=false) {
   await owner(env,p); requireConfiguration(env); if(!p.sessionId) throw new ApiError(403,'ACCOUNT_SESSION_REQUIRED','Sign in through the browser before connecting Cloudflare.');
   const uri=new URL(origin); if(uri.protocol!=='https:') throw new ApiError(400,'HTTPS_REQUIRED','Cloudflare account connection requires HTTPS.');
   const state=randomCapability(); const binder=randomCapability(); const verifier=randomCapability(); const id=await sha(state); const expiresAt=Date.now()+600000;
   const previous=await stored(env,p,undefined,repositoryId);
-  const pending:Pending={verifier,redirectUri:`${uri.origin}/api/cloudflare/callback`,expectedVersion:previous?.version??null,...repositoryScope(repositoryId)};
+  const optional=secretsStoreScopes(env);
+  const kept=previous?await unseal(env,p,previous,repositoryId).then(vault=>vault.scopes,()=>[] as string[]):[];
+  const extraScopes=secrets||optional.some(scope=>kept.includes(scope))?optional:[];
+  const pending:Pending={verifier,redirectUri:`${uri.origin}/api/cloudflare/callback`,expectedVersion:previous?.version??null,...repositoryScope(repositoryId),...(extraScopes.length?{extraScopes}:{})};
   const record:CloudflareOAuthState={id,browserHash:await sha(binder),principal:p,expiresAt,encrypted:await encryptAuth(JSON.stringify(pending),env.AUTH_ENCRYPTION_KEY,`cloudflare-state:${id}`),...repositoryScope(repositoryId)};
   await service(env).connectionStore(p,'state-put',{value:record,...repositoryScope(repositoryId)});
-  return {authorizationUrl:await cloudflareAuthorizationUrl(env,pending.redirectUri,state,verifier),expiresAt,cookie:`${cookieName}=${binder}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`};
+  return {authorizationUrl:await cloudflareAuthorizationUrl(env,pending.redirectUri,state,verifier,false,extraScopes),expiresAt,cookie:`${cookieName}=${binder}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`};
 }
 async function callback(request:Request,env:AppEnv):Promise<Response> {
   requireConfiguration(env);const url=new URL(request.url);const state=requireString(url.searchParams.get('state'),'OAuth state',128,64);
@@ -228,7 +232,7 @@ async function callback(request:Request,env:AppEnv):Promise<Response> {
   if(pending.repositoryId!==record.repositoryId) throw new ApiError(403,'CLOUDFLARE_STATE_INVALID','The connection request has expired. Start again.');
   if(url.searchParams.has('error')) throw new ApiError(400,'CLOUDFLARE_AUTHORIZATION_DENIED','Cloudflare authorization was cancelled or denied.');
   const code=requireString(url.searchParams.get('code'),'Authorization code',4096);
-  const vault=await exchangeCloudflareCode(env,code,pending.redirectUri,pending.verifier);
+  const vault=await exchangeCloudflareCode(env,code,pending.redirectUri,pending.verifier,false,pending.extraScopes);
   await save(env,record.principal,vault,pending.expectedVersion,undefined,record.repositoryId);
   const destination=record.repositoryId?`/repository/${encodeURIComponent(record.repositoryId)}/cloudflare`:'/settings/cloudflare';
   return new Response(null,{status:303,headers:{Location:`${url.origin}${destination}`,'Set-Cookie':`${cookieName}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
@@ -299,7 +303,7 @@ async function connectionResponse(request:Request,env:AppEnv,p:Principal,action:
   const origin=new URL(request.url).origin;
   if(request.method==='POST') {
     assertMutationOrigin(request);const body=await readJson(request);
-    if(action==='connect'){const {cookie,...result}=await start(env,p,origin,repositoryId);return Response.json(result,{headers:{'Set-Cookie':cookie,'Cache-Control':'no-store'}});}
+    if(action==='connect'){const {cookie,...result}=await start(env,p,origin,repositoryId,body.secrets===true);return Response.json(result,{headers:{'Set-Cookie':cookie,'Cache-Control':'no-store'}});}
     if(!['disconnect','select-account'].includes(action))throw new ApiError(405,'METHOD_NOT_ALLOWED','Use a supported Cloudflare connection action.');
     return Response.json(await dispatchCloudflare(env,p,action,body,origin,repositoryId),{headers:{'Cache-Control':'no-store'}});
   }

@@ -9,6 +9,8 @@ import { validWatchPath, WATCH_PATHS_MAX, watchPathsMatch } from './deploy-chang
 import { previewMigrations, validBuildCommand, WORKER_CONFIG_FILES, WorkerBuildFailure, type WorkerBundle } from './worker-bundle';
 import { DEPLOY_ENVIRONMENTS_MAX, ENVIRONMENT_NAME, orderedEnvironments, PRODUCTION, validEnvironmentName, type DeployEnvironment } from './deploy-environments';
 import { detectedTargets, liveUrls, productionOnlyConfig, setupChanges, type DetectedSetup, type SavedDetection } from './deploy-detect';
+import { assertSecretsAccount, deploySecretRequirements, missingSecretsReason, secretBindingEntries, secretMetadataBindings, unmetRequirements, withSecretBindings, type SecretLink } from './repository-secrets';
+import { SECRETS_STORE_WRITE_SCOPE } from './secrets-scopes';
 
 export { ENVIRONMENT_NAME, orderedEnvironments, PRODUCTION, validEnvironmentName, type DeployEnvironment };
 export const DEPLOY_STEP_MS = 1_800_000;
@@ -282,12 +284,12 @@ export interface WorkerDeployer {
 
 export const DEPLOY_KEEP_BINDINGS = ['plain_text', 'json', 'secret_text', 'secret_key', 'kv_namespace', 'd1', 'r2_bucket', 'durable_object_namespace', 'service', 'queue', 'workflow', 'ai', 'browser', 'vectorize', 'hyperdrive', 'analytics_engine', 'dispatch_namespace', 'mtls_certificate', 'send_email', 'secrets_store_secret', 'version_metadata', 'images', 'pipelines', 'ratelimit', 'assets', 'artifacts'];
 
-export function inheritedMetadata(bundle: WorkerBundle, annotations: Record<string, string>, assets?: { jwt: string; config: Record<string, unknown> }): Record<string, unknown> {
+export function inheritedMetadata(bundle: WorkerBundle, annotations: Record<string, string>, assets?: { jwt: string; config: Record<string, unknown> }, bindings: Record<string, unknown>[] = []): Record<string, unknown> {
   return {
     main_module: bundle.mainModule,
     compatibility_date: bundle.config.compatibilityDate,
     ...(bundle.config.compatibilityFlags.length ? { compatibility_flags: bundle.config.compatibilityFlags } : {}),
-    bindings: [],
+    bindings,
     keep_bindings: DEPLOY_KEEP_BINDINGS,
     annotations,
     ...(assets ? { assets } : {}),
@@ -339,6 +341,7 @@ export interface DeployDependencies {
   changedPaths?(repository: Repository, record: DeploymentRecord): Promise<string[] | null>;
   mappedWorkers?(principal: Principal, repositoryId: string): Promise<{ accountId: string; workers: string[] } | null>;
   declaresRoutes?(repository: Repository, record: DeploymentRecord, target: DeployTarget): Promise<boolean>;
+  secretLinks?(record: DeploymentRecord): Promise<SecretLink[]>;
   platform?: DeployPlatform;
 }
 export interface DeployStepRunner {
@@ -465,18 +468,30 @@ export async function runDeployment(params: DeployParams, step: DeployStepRunner
         const commitSha = record.commitSha;
         const uploadOnly = record.mode === 'upload-only';
         const annotations = { 'workers/commit_sha': commitSha, 'workers/message': `Gitflare ${record.trigger} ${commitSha.slice(0, 12)}`.slice(0, 100), 'workers/tag': commitSha.slice(0, 12) };
+        const links = (await dependencies.secretLinks?.(record) ?? []).filter((link) => link.environment === record.environment);
         return await dependencies.build(repository, record, target, index, () => dependencies.authorize(principal, target.workerName), async (built): Promise<UploadOutcome> => {
           const notes: string[] = [];
+          const secretEntries = secretBindingEntries(links, record.environment, target.workerName);
+          const bound = links.filter((link) => secretEntries.some((entry) => entry.binding === link.binding));
+          if (bound.length) {
+            assertSecretsAccount(bound, deployer.accountId);
+            notes.push(`Secrets Store bindings ${secretEntries.map((entry) => entry.binding).join(', ')} come from the ${record.environment} secret links.`);
+          }
           if (target.inheritBindings) {
+            if (secretEntries.length && deployer.scopes && !deployer.scopes.includes(SECRETS_STORE_WRITE_SCOPE)) throw new ApiError(403, 'CLOUDFLARE_SCOPE_MISSING', `The Cloudflare connection was not granted ${SECRETS_STORE_WRITE_SCOPE}, which binding the linked secrets of ${target.workerName} needs. An Owner must reconnect Cloudflare with Secrets Store access.`);
             const assets = built.uploadAssets ? await built.uploadAssets(requireCall(deployer), deployer.accountId, target.workerName) : undefined;
-            const version = await deployer.uploadVersion(built.bundle, annotations, assets ? inheritedMetadata(built.bundle, annotations, { jwt: assets.jwt, config: assets.config }) : undefined);
+            const secretMetadata = secretMetadataBindings(secretEntries);
+            const version = await deployer.uploadVersion(built.bundle, annotations, assets || secretMetadata.length ? inheritedMetadata(built.bundle, annotations, assets ? { jwt: assets.jwt, config: assets.config } : undefined, secretMetadata) : undefined);
             await patchTarget(index, ['building'], { status: uploadOnly ? 'uploaded' : 'deploying', versionId: version.id, ...(assets ? { assets: { uploaded: assets.uploaded, total: assets.total } } : {}) }, { status: 'deploying' });
             return { kind: 'uploaded', versionId: version.id, deployed: false };
           }
           const resolved = built.bundle.config.deploy ?? {};
           const ownRoutes = record.environment !== PRODUCTION && !!await dependencies.declaresRoutes?.(repository, record, target);
-          const deploy = productionOnlyConfig(resolved, record.environment, ownRoutes);
-          if (deploy !== resolved && (Array.isArray(resolved.routes) ? resolved.routes.length > 0 : resolved.routes !== undefined || resolved.route !== undefined)) notes.push(`Routes and custom domains are production-only unless env.${record.environment} declares its own; ${record.environment} did not attach the inherited ones.`);
+          const configured = productionOnlyConfig(resolved, record.environment, ownRoutes);
+          const unmet = unmetRequirements(deploySecretRequirements(configured, record.environment, target.configPath, target.workerName), links);
+          if (unmet.length) throw new WorkerBuildFailure('SECRETS_MISSING', missingSecretsReason(record.environment, unmet)!);
+          const deploy = withSecretBindings(configured, secretEntries);
+          if (configured !== resolved && (Array.isArray(resolved.routes) ? resolved.routes.length > 0 : resolved.routes !== undefined || resolved.route !== undefined)) notes.push(`Routes and custom domains are production-only unless env.${record.environment} declares its own; ${record.environment} did not attach the inherited ones.`);
           if (typeof deploy.name === 'string' && deploy.name !== target.workerName) throw new WorkerBuildFailure('DEPLOY_TARGET_NAME_MISMATCH', `${target.configPath}${wranglerEnvironment(record.environment) ? ` with env.${wranglerEnvironment(record.environment)}` : ''} names Worker ${deploy.name}, but this ${record.environment} target deploys ${target.workerName}.`);
           const later = (record.targets ?? []).slice(index + 1).map((item) => item.workerName);
           const dependsOnLater = serviceDependencies(deploy).filter((name) => later.includes(name));
@@ -631,6 +646,7 @@ export interface DeployApiContext {
   dispatch(record: DeploymentRecord): Promise<'running' | 'finished' | 'missing'>;
   failDispatch(record: DeploymentRecord): Promise<void>;
   audit?(action: string): Promise<void>;
+  secretsBlocker?(environment: DeployEnvironment): Promise<string | null>;
 }
 
 export interface EnvironmentStatus {
@@ -828,9 +844,10 @@ export async function deploymentsApi(request: Request, context: DeployApiContext
     const environments = Object.fromEntries(await Promise.all(names.map(async (environment) => {
       const value = state.settings?.environments[environment];
       const permitted = value ? (await Promise.all(settingsTargets(value).map((target) => context.canDeploy(target.workerName)))).every(Boolean) : false;
-      const blocker = value && connection !== undefined ? deployBlocker(environment, value, connection) : null;
+      const secrets = value && context.secretsBlocker ? await context.secretsBlocker(environment).catch(() => null) : null;
+      const blocker = (value && connection !== undefined ? deployBlocker(environment, value, connection) : null) ?? (secrets ? { reason: secrets } : null);
       const canDeploy = permitted && !blocker;
-      return [environment, { settings: publicValue?.environments[environment] ?? null, ...environmentStatus(state.deployments, environment), canDeploy, ...(value ? { requiredScopes: environmentScopes(value) } : {}), ...(blocker ? { deployBlockedReason: blocker.reason, ...(blocker.missingScopes ? { missingScopes: blocker.missingScopes } : {}) } : {}), ...(environment === 'production' ? { canConfirm: canDeploy && principal.role === 'Owner' && !principal.credentialId } : {}) }];
+      return [environment, { settings: publicValue?.environments[environment] ?? null, ...environmentStatus(state.deployments, environment), canDeploy, ...(value ? { requiredScopes: environmentScopes(value) } : {}), ...(blocker ? { deployBlockedReason: blocker.reason, ...(blocker.missingScopes ? { missingScopes: blocker.missingScopes } : {}) } : {}), ...(secrets ? { secretsBlockedReason: secrets } : {}), ...(environment === 'production' ? { canConfirm: canDeploy && principal.role === 'Owner' && !principal.credentialId } : {}) }];
     })));
     const canDeploy = names.some((environment) => environments[environment].canDeploy);
     const connectionView = connection === undefined ? {} : { connection: connection?.connected ? { connected: true, accountId: connection.accountId, accountName: connection.accountName ?? null, scopes: connection.scopes, source: connection.source } : { connected: false, reason: connection?.reason ?? 'The Cloudflare connection could not be read.' } };
@@ -846,6 +863,10 @@ export async function deploymentsApi(request: Request, context: DeployApiContext
   if (action !== 'deploy' && action !== 'rollback' && action !== 'promote') throw new ApiError(400, 'INVALID_DEPLOY_ACTION', 'Choose settings, apply_detected, deploy, promote or rollback.');
   if (principal.credentialId) throw new ApiError(403, 'DEPLOYER_REQUIRED', 'Task credentials cannot deploy.');
   const state = await context.ledger.state();
+  const requireSecrets = async (environment: DeployEnvironment) => {
+    const reason = await context.secretsBlocker?.(environment);
+    if (reason) throw new ApiError(409, 'SECRETS_MISSING', reason);
+  };
   let record: DeploymentRecord;
   if (action === 'deploy' && body.deploymentId !== undefined) {
     const id = requireString(body.deploymentId, 'Deployment', 80);
@@ -855,6 +876,7 @@ export async function deploymentsApi(request: Request, context: DeployApiContext
     if (pending.environment === 'production' && pending.status === 'awaiting_confirmation' && principal.role !== 'Owner') throw new ApiError(403, 'OWNER_REQUIRED', 'Only an Owner can confirm a production deployment.');
     const workers = pending.targets?.length ? pending.targets.map((target) => target.workerName) : [pending.workerName];
     for (const name of workers) await context.authorizeDeploy(name);
+    await requireSecrets(pending.environment);
     record = await context.ledger.confirm(id, principal.userId);
   } else if (action === 'deploy') {
     const environment = chooseEnvironment(body.environment, state.settings);
@@ -863,6 +885,7 @@ export async function deploymentsApi(request: Request, context: DeployApiContext
     const commitSha = requireString(body.commitSha, 'Commit', 40, 40);
     if (!sha.test(commitSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Commit identifiers must be 40 lowercase hexadecimal characters.');
     if (await context.headSha() !== commitSha) throw new ApiError(409, 'DEPLOY_COMMIT_NOT_HEAD', `Only the current ${context.repository.defaultBranch} head can be deployed. Refresh and try again.`);
+    await requireSecrets(environment);
     const selection = selectedWorkers(body.targets, value);
     const status = environment === 'production' ? productionStatus(value, principal, body.confirm) : 'queued';
     record = await context.ledger.create(key, JSON.stringify(['deploy', environment, commitSha, value.workerName, selection ?? 'all']), environmentRecord(context.repository.id, environment, value, principal.userId, { commitSha, trigger: 'manual', status, ...(selection ? { selectedWorkers: selection } : {}) }));
@@ -876,6 +899,7 @@ export async function deploymentsApi(request: Request, context: DeployApiContext
     if (!isPromotable(source) || source.environment === destination) throw new ApiError(409, 'DEPLOYMENT_NOT_PROMOTABLE', `Only a successful deployment of a landed commit in another non-production environment can be promoted to ${destination}.`);
     if (from && source.environment !== from) throw new ApiError(409, 'ENVIRONMENT_MISMATCH', `This deployment ran in ${source.environment}, not ${from}.`);
     for (const item of settingsTargets(target)) await context.authorizeDeploy(item.workerName);
+    await requireSecrets(destination);
     record = await context.ledger.create(key, JSON.stringify(['promote', source.id, destination]), environmentRecord(context.repository.id, destination, target, principal.userId, {
       commitSha: source.commitSha, trigger: 'promote', status: destination === PRODUCTION ? productionStatus(target, principal, body.confirm) : 'queued', promotedFrom: source.id,
       ...(promotedConfigs(source) ? { selectedConfigs: promotedConfigs(source) } : {}),
