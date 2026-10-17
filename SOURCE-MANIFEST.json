@@ -595,8 +595,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 75773,
-      "sha256": "ce7c05eca7b24043a310ac15a20c443ecc313064a3789367268060570dc576ad"
+      "size": 75786,
+      "sha256": "1df1bcbd78c30316a88d4a847784852af9abbce9c53c7c0e3c1c89f2033ed021"
     },
     {
       "path": "src/ui/ThemeToggle.tsx",
