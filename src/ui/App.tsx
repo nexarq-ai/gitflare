@@ -58,11 +58,12 @@ import { showOwnerTokenNotice } from "./owner-token-notice";
 import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
 import AiSettingsPanel from "./AiSettingsPanel";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
-import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, POLICY_ROUTES, PUBLIC_PRODUCT_ROUTES } from "./router";
+import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, POLICY_ROUTES, PUBLIC_DOC_IDS, PUBLIC_PRODUCT_ROUTES } from "./router";
 import ThemeToggle from "./ThemeToggle";
 import ConnectionError from "./ConnectionError";
 import "./policy-pages.css";
 import { InstallationCredentialPrompt } from "./InstallationCredential";
+import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
 
 const loadMissionDetail = () => import("./MissionDetail");
 const MissionDetail = lazy(loadMissionDetail);
@@ -586,7 +587,7 @@ function Workspace() {
           )}
           <Suspense fallback={<RouteProgress />}>
             {importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify("Mission draft created."); }} /> : route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} /> : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} /> : page === "connect" ? <McpConnections /> : page === "docs" ? (
-              <Documentation publicMode={["overview", "install", "admin", "repositories", "mcp", "agents"].includes(route.slice(5))} id={route.slice("docs/".length) || "how-it-works"} />
+              <Documentation publicMode={PUBLIC_DOC_IDS.includes(route.slice(5))} id={route.slice("docs/".length) || "how-it-works"} />
             ) : page === "mission" ? (
               <MissionDetail
                 key={route.split("/")[1]}
@@ -859,6 +860,7 @@ function Workspace() {
                           onMission={() => createMission()}
                           onSettings={() => navigate("settings")}
                         />
+                        {permissions.includes("manage") && <CloudflareConnectPrompt onOpen={() => navigate("settings/cloudflare")} />}
                         <div className="info-card">
                           <h3>
                             <ShieldCheckIcon size={17} />

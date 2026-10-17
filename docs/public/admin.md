@@ -22,7 +22,7 @@ An authenticated MCP client acts with the signed-in user's current authority; it
 
 ## Cloudflare account and repository resources
 
-After signing in to Gitflare as an Owner, **Settings → Cloudflare** can start a separate Cloudflare account authorization. This connection is not Cloudflare product SSO and does not sign a user in to Gitflare. The OAuth account connection and resource listing have been verified live; each project mapping and operation has separate verification status.
+After signing in to Gitflare as an Owner, **Settings → Cloudflare** can start a separate Cloudflare account authorization. This connection is not Cloudflare product SSO and does not sign a user in to Gitflare; in the hosted edition, Sign in with Cloudflare likewise never creates it. Before Cloudflare opens, Gitflare lists each permission it will request and why. [Cloudflare permissions](cloudflare-permissions.md) explains each one, what Gitflare never does, and how to revoke access. The OAuth account connection and resource listing have been verified live; each project mapping and operation has separate verification status.
 
 With an account connected, an Owner can associate one repository with multiple Workers, D1 databases, Durable Object namespaces, Container applications, and Workflows. The account catalog supports search and type filtering, and each selected resource receives an environment label. Source validates the resources against the connected account before saving. Usage results are scoped to the account and each mapped resource; Worker and D1 counters are supported, while other resource types report unavailable rather than estimated metrics.
 

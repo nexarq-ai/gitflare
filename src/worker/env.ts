@@ -23,6 +23,7 @@ export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRE
   PREVIEWS_API_TOKEN?: string;
   PREVIEWS_ACCOUNT_ID?: string;
   PREVIEWS_WORKER_NAME?: string;
+  GITFLARE_PRIMARY_WORKER?: string;
   INSTALLATION_OWNER_WORKSPACES?: string;
   SUPER_ADMIN_EMAILS?: string;
   CLOUDFLARE_CLIENT_AUTH_METHOD?: 'client_secret_post' | 'client_secret_basic';
@@ -50,4 +51,5 @@ export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRE
   PREVIEW_ORIGIN?: string;
   SUPPORT_EMAIL?: string;
   OPERATOR_NAME?: string;
+  OPENAI_APPS_CHALLENGE?: string;
 };

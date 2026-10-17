@@ -25,7 +25,7 @@ export type DeployMode = 'deploy' | 'upload-only';
 export type DeploymentStatus = 'awaiting_confirmation' | 'queued' | 'building' | 'deploying' | 'rolling_out' | 'succeeded' | 'uploaded' | 'failed' | 'superseded' | 'skipped';
 export type DeploymentTrigger = 'land' | 'manual' | 'rollback' | 'promote';
 export type DeployTargetStatus = 'pending' | 'building' | 'uploaded' | 'deploying' | 'rolling_out' | 'succeeded' | 'failed' | 'skipped';
-export interface DeployTarget { workerName: string; configPath: string; buildCommand?: string; d1Migrations: boolean; watchPaths?: string[] }
+export interface DeployTarget { workerName: string; configPath: string; buildCommand?: string; d1Migrations: boolean; watchPaths?: string[]; wranglerEnv?: typeof PRODUCTION }
 export interface SkippedTarget { workerName: string; configPath: string; reason: string }
 export interface DeployTargetRun extends DeployTarget {
   status: DeployTargetStatus;
@@ -125,8 +125,8 @@ export function deployBlocker(environment: DeployEnvironment, value: DeployEnvir
   return null;
 }
 
-export function wranglerEnvironment(environment: DeployEnvironment): string | undefined {
-  return environment === PRODUCTION ? undefined : environment;
+export function wranglerEnvironment(environment: DeployEnvironment, target?: Pick<DeployTarget, 'wranglerEnv'>): string | undefined {
+  return environment === PRODUCTION ? target?.wranglerEnv : environment;
 }
 
 function configuredEnvironments(settings: DeploySettings | null): DeployEnvironment[] {
@@ -174,8 +174,9 @@ export function parseDeployTargets(value: unknown, source = 'targets'): DeployTa
     if (entry.buildCommand !== undefined && entry.buildCommand !== '' && !validBuildCommand(entry.buildCommand)) throw new ApiError(400, 'INVALID_DEPLOY_TARGETS', `${source}[${index}].buildCommand must be a single line of at most 500 characters.`);
     if (entry.d1Migrations !== undefined && typeof entry.d1Migrations !== 'boolean') throw new ApiError(400, 'INVALID_DEPLOY_TARGETS', `${source}[${index}].d1Migrations must be true or false.`);
     if (entry.watchPaths !== undefined && (!Array.isArray(entry.watchPaths) || entry.watchPaths.length > WATCH_PATHS_MAX || !entry.watchPaths.every(validWatchPath))) throw new ApiError(400, 'INVALID_DEPLOY_TARGETS', `${source}[${index}].watchPaths must list up to ${WATCH_PATHS_MAX} repository-relative globs (prefix ! to exclude).`);
+    if (entry.wranglerEnv !== undefined && entry.wranglerEnv !== PRODUCTION) throw new ApiError(400, 'INVALID_DEPLOY_TARGETS', `${source}[${index}].wranglerEnv can only be "production".`);
     const watchPaths = Array.isArray(entry.watchPaths) && entry.watchPaths.length ? { watchPaths: [...new Set(entry.watchPaths as string[])] } : {};
-    return { workerName: entry.workerName, configPath: entry.configPath, ...(typeof entry.buildCommand === 'string' && entry.buildCommand.trim() ? { buildCommand: entry.buildCommand.trim() } : {}), d1Migrations: entry.d1Migrations === true, ...watchPaths };
+    return { workerName: entry.workerName, configPath: entry.configPath, ...(typeof entry.buildCommand === 'string' && entry.buildCommand.trim() ? { buildCommand: entry.buildCommand.trim() } : {}), d1Migrations: entry.d1Migrations === true, ...watchPaths, ...(entry.wranglerEnv === PRODUCTION ? { wranglerEnv: PRODUCTION } : {}) };
   });
   if (new Set(targets.map((target) => target.workerName)).size !== targets.length) throw new ApiError(400, 'INVALID_DEPLOY_TARGETS', 'Each Worker can appear in only one deploy target.');
   return targets;
@@ -343,6 +344,16 @@ export interface DeployDependencies {
   declaresRoutes?(repository: Repository, record: DeploymentRecord, target: DeployTarget): Promise<boolean>;
   secretLinks?(record: DeploymentRecord): Promise<SecretLink[]>;
   platform?: DeployPlatform;
+  self?: SelfWorker | null;
+}
+export interface SelfWorker { accountId: string; workerName: string }
+
+export function selfWorker(env: { GITFLARE_PRIMARY_WORKER?: string; PREVIEWS_ACCOUNT_ID?: string }): SelfWorker | null {
+  return env.GITFLARE_PRIMARY_WORKER && env.PREVIEWS_ACCOUNT_ID ? { accountId: env.PREVIEWS_ACCOUNT_ID, workerName: env.GITFLARE_PRIMARY_WORKER } : null;
+}
+
+export function assertNotSelf(self: SelfWorker | null | undefined, accountId: string, workerName: string): void {
+  if (self && self.accountId === accountId && self.workerName === workerName) throw new ApiError(409, 'DEPLOY_SELF_TARGET', `${workerName} is the Gitflare instance running this deployment, so it cannot deploy or roll back itself. Deploy it from another Gitflare instance (for example staging or dev), or use the break-glass Wrangler path.`);
 }
 export interface DeployStepRunner {
   do<T>(name: string, config: { retries?: { limit: number; delay: string | number; backoff?: 'constant' | 'linear' | 'exponential' }; timeout?: string | number }, callback: () => Promise<T>): Promise<T>;
@@ -457,6 +468,7 @@ export async function runDeployment(params: DeployParams, step: DeployStepRunner
       try {
         await dependencies.authorize(principal, target.workerName);
         const deployer = await dependencies.deployer(principal, record, target.workerName);
+        assertNotSelf(dependencies.self, deployer.accountId, target.workerName);
         if (record.trigger === 'rollback') {
           if (!target.versionId) throw new ApiError(409, 'ROLLBACK_TARGET_MISSING', 'No earlier version is recorded for rollback.');
           await patchTarget(index, ['queued', 'building'], { status: 'deploying' }, { status: 'deploying' });
@@ -492,7 +504,7 @@ export async function runDeployment(params: DeployParams, step: DeployStepRunner
           if (unmet.length) throw new WorkerBuildFailure('SECRETS_MISSING', missingSecretsReason(record.environment, unmet)!);
           const deploy = withSecretBindings(configured, secretEntries);
           if (configured !== resolved && (Array.isArray(resolved.routes) ? resolved.routes.length > 0 : resolved.routes !== undefined || resolved.route !== undefined)) notes.push(`Routes and custom domains are production-only unless env.${record.environment} declares its own; ${record.environment} did not attach the inherited ones.`);
-          if (typeof deploy.name === 'string' && deploy.name !== target.workerName) throw new WorkerBuildFailure('DEPLOY_TARGET_NAME_MISMATCH', `${target.configPath}${wranglerEnvironment(record.environment) ? ` with env.${wranglerEnvironment(record.environment)}` : ''} names Worker ${deploy.name}, but this ${record.environment} target deploys ${target.workerName}.`);
+          if (typeof deploy.name === 'string' && deploy.name !== target.workerName) throw new WorkerBuildFailure('DEPLOY_TARGET_NAME_MISMATCH', `${target.configPath}${wranglerEnvironment(record.environment, target) ? ` with env.${wranglerEnvironment(record.environment, target)}` : ''} names Worker ${deploy.name}, but this ${record.environment} target deploys ${target.workerName}.`);
           const later = (record.targets ?? []).slice(index + 1).map((item) => item.workerName);
           const dependsOnLater = serviceDependencies(deploy).filter((name) => later.includes(name));
           if (dependsOnLater.length) throw new WorkerBuildFailure('DEPLOY_ORDER_INVALID', `${target.workerName} has a service binding to ${dependsOnLater.join(', ')}, which deploys later. Move ${dependsOnLater.join(', ')} earlier in the target list.`);

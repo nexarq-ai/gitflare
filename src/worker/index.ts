@@ -45,6 +45,7 @@ import { branchApi } from './branches';
 import { branchName, effectiveRules, landingRule, protectionSnapshot } from './branch-protection';
 import { handleUrlImport } from './url-import';
 import { capabilityHash, mintPreviewToken, PREVIEW_CAPABILITY_MS, previewCapabilityStore, previewTarget, relayPreview } from './preview-capability';
+import { withStoreSecrets } from './store-secrets';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -913,8 +914,9 @@ const application = {
 } satisfies ExportedHandler<AppEnv>;
 
 export default {
-  async fetch(request: Request, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, workerEnv: AppEnv, ctx?: ExecutionContext): Promise<Response> {
     try {
+      const env = await withStoreSecrets(workerEnv);
       const path = new URL(request.url).pathname;
       if (env.OAUTH_KV && (path === '/mcp' || path.startsWith('/oauth/') || path.startsWith('/.well-known/'))) {
         if (path.startsWith('/oauth/') && request.method === 'POST') await security(env).rateLimit(`oauth:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 60, 60000);
