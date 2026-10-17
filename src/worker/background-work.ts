@@ -11,7 +11,7 @@ import { deleteWorkerPreview, previewAlias, upsertWorkerPreview, WorkerPreviewEr
 import { resolveWorkerPreviewsConfig } from './installation-credential';
 import { WorkerBuildFailure } from './worker-bundle';
 import { changedPaths } from './deploy-changes';
-import { automaticPromotion, deployWorkflowId, landedDeployments, landingDeploySummary, policyDeployTargets, runDeployment, wranglerEnvironment, type DeploymentRecord, type DeployParams } from './deployments';
+import { automaticPromotion, deployWorkflowId, landedDeployments, landingDeploySummary, policyDeployTargets, runDeployment, selfWorker, wranglerEnvironment, type DeploymentRecord, type DeployParams } from './deployments';
 import { cloudflareDeployClient, type CloudflareDeployAccess } from './cloudflare-deploy';
 import { bindPreviewD1, deletePreviewD1 } from './preview-d1';
 import { cloudflareDeployAccess, cloudflareWorkerDeployer } from './cloudflare';
@@ -24,6 +24,7 @@ import type { ProjectSnapshot } from './cloudflare-projects';
 import { declaresRoutes, detectDeploySetup, environmentBlock, parseWranglerConfig, scanRepository, withAccountFacts, type DetectedSetup } from './deploy-detect';
 import type { Repository } from '../shared/types';
 import { triggerMirrorSync } from './github-mirror-runtime';
+import { previewSecretBindings } from './repository-secrets';
 
 export interface LandingParams { kind: 'land'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimId: string; principal: Principal }
 export interface PreviewParams { kind: 'preview'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; claimId: string; principal: Principal }
@@ -175,7 +176,12 @@ async function retireConfig(env: AppEnv, params: PreviewRetireParams): Promise<W
       return null;
     }
   }
-  const config = await resolveWorkerPreviewsConfig(env);
+  let config: WorkerPreviewsConfig | null;
+  try { config = await resolveWorkerPreviewsConfig(env); }
+  catch (error) {
+    console.error('preview.retire.installation.unavailable', params.missionId, error instanceof ApiError ? error.code : 'unknown');
+    return null;
+  }
   if (!config || (host && (host.accountId !== config.accountId || host.workerName !== config.workerName))) return null;
   return config;
 }
@@ -227,9 +233,10 @@ export async function deployLandedWorker(env: AppEnv, params: DeployParams, step
   const access = securityClient(env);
   await runDeployment(params, step, {
     coordinator,
+    self: selfWorker(env),
     authorize: (principal, workerName) => access.check(principal, 'deploy', 'environment', workerName),
     deployer: (principal, record, workerName) => cloudflareWorkerDeployer(env, principal, workerName, record.accountId, undefined, record.repositoryId),
-    build: (repository, record, target, index, assertAuthority, publish) => buildLandedWorker(env, { repository, commitSha: record.commitSha!, attemptId: record.attemptId, assertAuthority, ...(target.inheritBindings ? {} : { target }), index, environment: wranglerEnvironment(record.environment) }, publish),
+    build: (repository, record, target, index, assertAuthority, publish) => buildLandedWorker(env, { repository, commitSha: record.commitSha!, attemptId: record.attemptId, assertAuthority, ...(target.inheritBindings ? {} : { target }), index, environment: wranglerEnvironment(record.environment, target) }, publish),
     policyTargets: async (repository, record) => {
       if (!env.ARTIFACTS) return null;
       const base = await policyBase(env, repository.name, record);
@@ -247,6 +254,7 @@ export async function deployLandedWorker(env: AppEnv, params: DeployParams, step
       const { mapping } = await access.projectStore(principal, repositoryId, 'get') as ProjectSnapshot;
       return mapping ? { accountId: mapping.accountId, workers: (mapping.resources ?? []).filter((resource) => resource.type === 'worker').map((resource) => resource.id) } : null;
     },
+    secretLinks: () => coordinator.secretLinks(),
     declaresRoutes: async (repository, record, target) => {
       if (!env.ARTIFACTS || !record.commitSha || !target.configPath) return false;
       using source = await env.ARTIFACTS.get(repository.name);
@@ -298,23 +306,32 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       const lifetime = { lifetimeMs, extendMs: lifetimeMs };
       const { settings: deploy } = await coordinator.deployState();
       const target = previewTarget(settings, deploy, await projectWorkers(env, principal, repositoryId));
+      let installationProblem: string | undefined;
       const plan = await resolvePreviewHost(env, settings, target, {
         connection: (wanted: PreviewTarget) => connectionAccess(env, principal, repositoryId, wanted.accountId),
-        installation: () => resolveWorkerPreviewsConfig(env),
+        installation: () => resolveWorkerPreviewsConfig(env).catch((error: unknown) => {
+          if (!(error instanceof ApiError)) throw error;
+          installationProblem = error.detail;
+          return null;
+        }),
       });
       const previews = plan.config;
       const host = plan.host;
       const alias = previews ? previewAlias(missionId, previews.workerName) : '';
       const previewCall = previews ? previewsCall(previews) : null;
       const prepared = await prepareCandidatePreview(env, {
-        repository, mission, previewAttemptId: claimId, workerPreviews: !!previews, ...(plan.configPath ? { configPath: plan.configPath } : {}),
+        repository, mission, previewAttemptId: claimId, workerPreviews: !!previews || !!installationProblem, ...(plan.configPath ? { configPath: plan.configPath } : {}),
         assertAuthority: () => access.check(principal, 'read', 'repository', repositoryId, missionId),
         publishWorker: async (built) => {
-          if (!previews || !previewCall || !host) throw new PreviewFailure('Worker previews are not configured for this installation.');
+          if (!previews || !previewCall || !host) throw new PreviewFailure(installationProblem ?? 'Worker previews are not configured for this installation.');
           if (host.access === 'cloudflare-access') await ensurePreviewAccess(previewCall, previews.accountId, previews.workerName, await previewAccessIncludes(env, principal, repositoryId, settings));
           const { uploadAssets } = built;
           const d1 = built.d1?.length ? await bindPreviewD1(previewCall, previews.accountId, built.d1) : undefined;
+          const links = await coordinator.secretLinks();
+          const scopes = host.kind === 'connection' && links.length ? (await connectionAccess(env, principal, repositoryId, host.accountId).catch(() => null))?.scopes ?? [] : [];
+          const secrets = previewSecretBindings(links, host, scopes);
           return upsertWorkerPreview(previews, {
+            secrets,
             alias,
             bundle: built.bundle,
             annotations: { 'workers/commit_sha': candidateSha, 'workers/message': mission.title.slice(0, 100), 'workers/pull_request_title': mission.title.slice(0, 100) },

@@ -1,3 +1,5 @@
+@import "./workspace-polish.css";
+
 @font-face {
   font-family: 'Instrument Sans';
   font-style: normal;
@@ -43,6 +45,10 @@
   --gf-color-accent-hover: var(--gf-color-orange-light);
   --gf-color-on-accent: #1c0c00;
   --gf-color-on-white: #0b0c0e;
+  --gf-color-primary: #ffffff;
+  --gf-color-primary-hover: #f1f3f6;
+  --gf-color-primary-text: #0b0c0e;
+  --gf-color-primary-border: #d0d6df;
   --gf-color-focus: #ffb16e;
   --gf-color-success: #7cdea8;
   --gf-color-success-bg: #10271d;
@@ -200,7 +206,77 @@ html[data-gf-theme='light'] {
 body { background: var(--gf-color-bg); color: var(--gf-color-text); line-height: 1.5; }
 ::selection { background: var(--gf-color-selection); }
 code, pre, kbd { font-family: var(--gf-font-mono); }
-button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--gf-color-focus); outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--gf-color-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+:root {
+  --gf-chevron-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+:root [data-kumo-component="Select"][data-kumo-part="trigger"] {
+  position: relative;
+  padding-inline-end: 40px;
+  gap: 8px;
+}
+:root [data-kumo-component="Select"][data-kumo-part="trigger"] > :last-child { display: none; }
+:root [data-kumo-component="Select"][data-kumo-part="trigger"]::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 12px;
+  top: calc(50% - 8px);
+  width: 16px;
+  height: 16px;
+  background-color: var(--gf-color-text-secondary);
+  mask: var(--gf-chevron-mask) center / 16px no-repeat;
+  pointer-events: none;
+}
+:root [data-kumo-component="Select"][data-kumo-part="trigger"]:focus-visible {
+  outline: 2px solid var(--gf-color-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+:root select:not([multiple]):is(:not([size]), [size="1"]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23858e9c' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  background-size: 16px;
+  padding-inline-end: 40px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+:root select:disabled { cursor: not-allowed; }
+@media (forced-colors: active) {
+  :root select:not([multiple]):is(:not([size]), [size="1"]) { -webkit-appearance: auto; appearance: auto; background-image: none; padding-inline-end: 12px; }
+}
+:root details > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+:root details > summary::-webkit-details-marker { display: none; }
+:root details > summary::marker { content: ""; }
+:root details > summary::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  background-color: currentColor;
+  mask: var(--gf-chevron-mask) center / 16px no-repeat;
+  transform: rotate(-90deg);
+}
+:root details[open] > summary::before { transform: none; }
+:root details > summary:focus-visible {
+  outline: 2px solid var(--gf-color-focus);
+  outline-offset: 4px;
+  box-shadow: none;
+}
 input[type='checkbox'], input[type='radio'] { accent-color: var(--gf-color-accent); }
 a { color: var(--gf-color-info); }
 .theme-toggle { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-width: 36px; height: 36px; padding: 0 12px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); background: var(--gf-color-surface-raised); color: var(--gf-color-text-secondary); font: 12px var(--gf-font-sans); flex-shrink: 0; }
@@ -269,9 +345,9 @@ a { color: var(--gf-color-info); }
 .form-field textarea, .form-field select, .filter-select { background: var(--gf-color-surface-raised); border-color: var(--gf-color-border-strong); border-radius: 10px; }
 .form-field label { font-weight: 500; color: var(--gf-color-text); }
 .form-field textarea { padding: 12px 14px; line-height: 1.7; }
-:where(button, a)[class*='bg-kumo-brand'] { color: var(--gf-color-on-accent); border-radius: var(--gf-radius-pill); font-weight: 600; }
+:where(button, a)[class*='bg-kumo-brand'] { background: var(--gf-color-primary); color: var(--gf-color-primary-text); border-radius: var(--gf-radius-pill); font-weight: 600; }
 :where(button, a)[class*='bg-kumo-base'] { border-radius: var(--gf-radius-pill); }
-:where(button, a)[class*='bg-kumo-brand']:hover { background: var(--gf-color-orange-light); }
+:where(button, a)[class*='bg-kumo-brand']:not(:disabled):hover { background: var(--gf-color-primary-hover); }
 :where(input)[class*='bg-kumo-base'], :where(input)[class*='bg-kumo-control'] { border-radius: 10px; }
 [role='dialog'] { background: var(--gf-color-surface-raised); color: var(--gf-color-text); border-color: var(--gf-color-border); border-radius: 20px; box-shadow: var(--gf-shadow-lg); }
 .dialog-content { padding: 28px; }
@@ -317,7 +393,7 @@ a { color: var(--gf-color-info); }
 .wiki-page .documentation-diagram, .documentation-diagram-expanded { border-radius: 14px; background: var(--gf-color-surface); }
 .documentation-diagram img, .documentation-diagram-expanded img { border-radius: 8px; background: #fff; }
 .wiki-page .documentation-diagram-tools button { border-radius: var(--gf-radius-pill); background: var(--gf-color-surface-raised); color: var(--gf-color-text-secondary); }
-.wiki-page .documentation-format-actions { border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); padding: 8px 14px; width: fit-content; }
+.wiki-page .documentation-format-actions { border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); padding: 4px; width: fit-content; max-width: 100%; }
 .wiki-page .documentation-format-actions a, .wiki-page .documentation-format-actions button { color: var(--gf-color-text-secondary); }
 @media (min-width: 1500px) { .page-content { padding: 44px 48px 64px; } }
 @media (max-width: 980px) { .page-heading h1 { font-size: 28px; } .metric { padding: 20px 16px; } .metric-value strong { font-size: 29px; } }
@@ -347,8 +423,19 @@ a { color: var(--gf-color-info); }
 }
 
 button[style*='--kumo-button-emphasis'], a[style*='--kumo-button-emphasis'] { border-radius: var(--gf-radius-pill); }
+button[style*='--color-kumo-brand'], a[style*='--color-kumo-brand'] {
+  --kumo-button-emphasis-bg: var(--gf-color-primary) !important;
+  --kumo-button-emphasis-gradient-start: var(--gf-color-primary) !important;
+  --kumo-button-emphasis-gradient-end: var(--gf-color-primary) !important;
+  --kumo-button-emphasis-ring: var(--gf-color-primary-border) !important;
+}
+:is(button, a)[style*='--color-kumo-brand']:not(:disabled):hover {
+  --kumo-button-emphasis-bg: var(--gf-color-primary-hover) !important;
+  --kumo-button-emphasis-gradient-start: var(--gf-color-primary-hover) !important;
+  --kumo-button-emphasis-gradient-end: var(--gf-color-primary-hover) !important;
+}
 @layer utilities {
-  button[style*='--color-kumo-brand'], a[style*='--color-kumo-brand'] { color: var(--gf-color-on-accent) !important; }
+  button[style*='--color-kumo-brand'], a[style*='--color-kumo-brand'] { color: var(--gf-color-primary-text) !important; }
 }
 .cf-connection-page select, .cf-target input:not([type='checkbox']), .cf-target select { background: var(--gf-color-surface-raised); color: var(--gf-color-text); border-radius: 10px; border-color: var(--gf-color-border-strong); }
 .cf-environment-badge { color: var(--gf-color-accent); background: var(--gf-color-accent-bg); border-radius: var(--gf-radius-pill); padding: 4px 9px; }
@@ -369,3 +456,7 @@ button[style*='--color-kumo-danger'], a[style*='--color-kumo-danger'] {
   --kumo-button-emphasis-gradient-start: var(--gf-color-danger-action) !important;
   --kumo-button-emphasis-gradient-end: var(--gf-color-danger-action) !important;
 }
+.gf-brand-tile { flex-shrink: 0; border-radius: 24%; }
+.gf-brand-name { font-family: var(--gf-font-sans); font-weight: 600; font-style: normal; letter-spacing: -.02em; color: var(--gf-color-text); }
+.gf-brand-name em { font-family: var(--gf-font-serif); font-style: italic; font-weight: 400; letter-spacing: 0; color: var(--gf-color-accent); }
+a:has(> .gf-brand-name), a:has(> .gf-brand-name):hover, a:has(> .gf-brand-name):focus-visible { text-decoration: none; color: inherit; }

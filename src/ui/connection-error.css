@@ -17,8 +17,8 @@
 .connection-error-description{max-width:350px;margin:20px auto 0;font-size:15px;line-height:1.8;color:var(--gf-color-text-secondary)}
 .connection-error-actions{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:12px;margin-top:30px}
 .connection-error-retry,.connection-error-home{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:11px 19px;border:1px solid var(--gf-color-border);border-radius:var(--gf-radius-pill);font:500 13px/1.4 var(--gf-font-sans);text-decoration:none;cursor:pointer}
-.connection-error-retry{background:var(--gf-color-orange);border-color:var(--gf-color-orange);color:var(--gf-color-on-accent)}
-.connection-error-retry:hover{background:var(--gf-color-orange-light);border-color:var(--gf-color-orange-light)}
+.connection-error-retry{background:var(--gf-color-primary);border-color:var(--gf-color-primary-border);color:var(--gf-color-primary-text)}
+.connection-error-retry:hover{background:var(--gf-color-primary-hover);border-color:var(--gf-color-primary-border)}
 .connection-error-home{background:var(--gf-color-bg);color:var(--gf-color-text-secondary)}
 .connection-error-home:hover{color:var(--gf-color-text);background:var(--gf-color-surface)}
 .connection-error a:focus-visible,.connection-error button:focus-visible,.connection-error summary:focus-visible{outline:2px solid var(--gf-color-focus);outline-offset:4px}

@@ -4,6 +4,7 @@ import admin from '../../docs/public/admin.md?raw';
 import repositories from '../../docs/public/repositories.md?raw';
 import mcp from '../../docs/public/mcp.md?raw';
 import agents from '../../docs/public/agents.md?raw';
+import cloudflarePermissions from '../../docs/public/cloudflare-permissions.md?raw';
 import githubMirror from '../../docs/public/github-mirror.md?raw';
 import type { DocMetadata, ProductDoc } from './docs';
 
@@ -11,6 +12,7 @@ const publicDocuments: ProductDoc[] = [
   { id: 'overview', title: 'How Gitflare works', description: 'Streams, review and editions.', audience: 'human', filename: 'overview.md', content: overview },
   { id: 'install', title: 'Install on Cloudflare', description: 'Guided deployment in your own account.', audience: 'technical', filename: 'install.md', content: install },
   { id: 'admin', title: 'Workspace administration', description: 'Users, roles, MFA and credentials.', audience: 'human', filename: 'admin.md', content: admin },
+  { id: 'cloudflare-permissions', title: 'Cloudflare permissions', description: 'What sign-in and account connection request, and why.', audience: 'human', filename: 'cloudflare-permissions.md', content: cloudflarePermissions },
   { id: 'repositories', title: 'Repositories and changes', description: 'Browse, check, review and land.', audience: 'human', filename: 'repositories.md', content: repositories },
   { id: 'github-mirror', title: 'Mirror to GitHub', description: 'Keep GitHub as a downstream copy.', audience: 'human', filename: 'github-mirror.md', content: githubMirror },
   { id: 'mcp', title: 'Connect through MCP', description: 'Authenticated tools for AI clients.', audience: 'agent', filename: 'mcp.md', content: mcp },

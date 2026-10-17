@@ -160,3 +160,11 @@
 .cf-detected .cf-target-runs { gap: 10px; margin: 10px 0; padding-left: 18px; list-style: decimal; font-size: 13px; }
 .cf-detected code { overflow-wrap: anywhere; }
 label.cf-warning { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 5px; background: var(--gf-color-accent-bg); color: var(--gf-color-accent); font-size: 12px; }
+.cf-permission-groups { display: grid; gap: 18px; margin-top: 18px; max-height: min(52vh, 460px); overflow-y: auto; }
+.cf-permission-groups h3 { font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--gf-color-text-secondary); margin: 0 0 8px; }
+.cf-permission-groups ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.cf-permission-groups li { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: baseline; font-size: 13px; }
+.cf-permission-groups li code { justify-self: start; font-size: 11px; color: var(--gf-color-text-secondary); }
+.cf-permission-groups li span { grid-column: 1 / -1; color: var(--gf-color-text-secondary); }
+.cf-permission-docs { margin-top: 16px; font-size: 13px; }
+@media (max-width: 520px) { .cf-permission-groups li { grid-template-columns: 1fr; } }

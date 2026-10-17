@@ -1,5 +1,6 @@
 import type { CloudflareCall } from './cloudflare-deploy';
 import { WorkerBuildFailure } from './worker-bundle';
+import { SECRETS_STORE_WRITE_SCOPE } from './secrets-scopes';
 
 export type WorkerDeployConfig = Record<string, unknown>;
 type Json = Record<string, unknown>;
@@ -659,6 +660,7 @@ export function requiredDeployScopes(config: WorkerDeployConfig, options: { d1Mi
   if (options.d1Migrations || d1.some((item) => !isRecord(item) || item.database_id === undefined)) scopes.push(SCOPE_D1_WRITE);
   if (nonEmptyList(config.r2_buckets)) scopes.push(SCOPE_R2_WRITE);
   if (isRecord(config.ai)) scopes.push(SCOPE_AI_WRITE);
+  if (nonEmptyList(config.secrets_store_secrets)) scopes.push(SECRETS_STORE_WRITE_SCOPE);
   const queues = isRecord(config.queues) ? config.queues : {};
   if (nonEmptyList(queues.producers) || nonEmptyList(queues.consumers)) scopes.push(SCOPE_QUEUES_WRITE);
   const routeList = Array.isArray(config.routes) ? config.routes : config.route !== undefined ? [config.route] : [];

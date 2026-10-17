@@ -27,12 +27,13 @@ export interface ReviewRule { requiredApprovals: number; requiredCheckNames: str
 interface Audit { id: string; workspaceId: string; actorId: string; action: string; timestamp: string; resourceId?: string; sequence?: number }
 export interface SecurityOptions { EDITION?: 'hosted' | 'self-hosted'; SETUP_TOKEN?: string; ADMIN_EMAIL?: string; ADMIN_PASSWORD?: string; AUTH_ENCRYPTION_KEY?: string; INSTALLATION_OWNER_WORKSPACES?: string; SUPER_ADMIN_EMAILS?: string }
 export interface InstallationCredentialRecord { version: string; encrypted: string; accountId: string; workerName: string; permissions: string[]; missing: string[]; verifiedAt: string; setBy: string }
+export interface InstallationConnectionRecord { version: string; workspaceId: string; accountId: string; accountName?: string; workerName: string; scopes: string[]; verifiedAt: string; setBy: string }
 interface MfaRecord { id: string; encryptedSecret: string; enabled: boolean; lastStep: number; recoveryHashes: string[] }
 interface AuthChallenge { id: string; userId: string; kind: 'setup' | 'enroll' | 'login'; workspaceId?: string; expiresAt: number; used?: boolean; linkId?: string }
 export interface CloudflareSigninState { id: string; browserHash: string; expiresAt: number; encrypted: string }
 interface CloudflareLink { id: string; cloudflareId: string; email: string; expiresAt: number }
-export interface CloudflareSigninInput { identity: CloudflareIdentity; userId: string; workspaceId: string; workspaceName: string; connection?: CloudflareConnection; sessionHash?: string; linkHash: string; invitation?: string; mintToken?: boolean }
-export type CloudflareSigninResult = { status: 'signed-in'; user: ReturnType<typeof safeUser>; workspaceId: string; created: boolean; connectionStored: boolean; token?: string } | { status: 'link-required'; created: false; connectionStored: false }
+export interface CloudflareSigninInput { identity: CloudflareIdentity; userId: string; workspaceId: string; workspaceName: string; sessionHash?: string; linkHash: string; invitation?: string; mintToken?: boolean }
+export type CloudflareSigninResult = { status: 'signed-in'; user: ReturnType<typeof safeUser>; workspaceId: string; created: boolean; token?: string } | { status: 'link-required'; created: false }
 interface Installation { workspaceName?: string; workspaceId?: string; pendingUser?: User; challengeId?: string; pendingWorkspaceId?: string }
 interface EmailToken { id: string; userId: string; email: string; kind: 'verify' | 'reset'; expiresAt: number }
 interface LoginFailures { count: number; lockedUntil: number; updatedAt: number }
@@ -139,7 +140,7 @@ const key = {
   failures: (id: string) => `id:fail:${enc(id)}`, limit: (id: string) => `id:limit:${enc(id)}`, installation: (id: string) => `id:install:${enc(id)}`, machine: (id: string) => `id:machine:${enc(id)}`, machineClaim: (hash: string) => `id:mclaim:${enc(hash)}`,
   signin: (id: string) => `id:cfsignin:${enc(id)}`, link: (id: string) => `id:cflink:${enc(id)}`, linkEmail: (email: string) => `id:cflinkemail:${enc(email)}`,
   route: (hash: string) => `id:route:${enc(hash)}`, sessionHome: (id: string) => `id:sesshome:${enc(id)}`, invite: (hash: string) => `id:invite:${enc(hash)}`, oauthState: (id: string) => `id:cfstate:${enc(id)}`,
-  outbox: (id: string) => `id:outbox:${enc(id)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf',
+  outbox: (id: string) => `id:outbox:${enc(id)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
 };
 
 class Records {
@@ -281,6 +282,14 @@ export class IdentityStore {
     return this.write(async unit => {
       const existing = await unit.get<InstallationCredentialRecord>(key.installationCredential) ?? null;
       if (operation === 'put') unit.put(key.installationCredential, value); else unit.delete(key.installationCredential);
+      return existing;
+    });
+  }
+  installationConnection(operation: 'get' | 'put' | 'delete', value?: InstallationConnectionRecord) {
+    if (operation === 'get') return this.read(async unit => await unit.get<InstallationConnectionRecord>(key.installationConnection) ?? null);
+    return this.write(async unit => {
+      const existing = await unit.get<InstallationConnectionRecord>(key.installationConnection) ?? null;
+      if (operation === 'put') unit.put(key.installationConnection, value); else unit.delete(key.installationConnection);
       return existing;
     });
   }
@@ -1096,7 +1105,7 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
-const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'mfaEnabled', 'installationCredential', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus']);
+const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus']);
 const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
@@ -1193,6 +1202,13 @@ export class SecurityService {
     if (value && (typeof value.encrypted !== 'string' || !/^[a-f0-9]+$/.test(value.encrypted) || !/^[a-f0-9]{32}$/.test(value.accountId) || !/^[a-z0-9][a-z0-9-]{0,52}$/.test(value.workerName) || value.setBy !== p.userId)) throw new ApiError(400, 'INVALID_CREDENTIAL', 'The installation credential record is invalid.');
     const previous = value ? await this.identity().installationCredential('put', value) : await this.identity().installationCredential('delete');
     if (value || previous) await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: value ? 'installation.cloudflare_credential.set' : 'installation.cloudflare_credential.removed', resourceId: (value ?? previous as InstallationCredentialRecord).accountId }]);
+  }
+  installationConnection(): Promise<InstallationConnectionRecord | null> { return this.identity().installationConnection('get') as Promise<InstallationConnectionRecord | null>; }
+  async changeInstallationConnection(p: Principal, value: InstallationConnectionRecord | null): Promise<void> {
+    if (!await this.installationCredentialAdmin(p)) fail('INSTALLATION_OWNER_REQUIRED', 'Only an owner of the installation workspace can change its Cloudflare credential.');
+    if (value && (value.workspaceId !== p.workspaceId || value.setBy !== p.userId || !/^[a-f0-9]{32}$/.test(value.accountId) || !/^[a-z0-9][a-z0-9-]{0,52}$/.test(value.workerName) || !Array.isArray(value.scopes))) throw new ApiError(400, 'INVALID_CREDENTIAL', 'The installation connection record is invalid.');
+    const previous = value ? await this.identity().installationConnection('put', value) : await this.identity().installationConnection('delete');
+    if (value || previous) await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: value ? 'installation.cloudflare_connection.set' : 'installation.cloudflare_connection.removed', resourceId: (value ?? previous as InstallationConnectionRecord).accountId }]);
   }
   projectStore(p: Principal, repositoryId: string, operation: 'get' | 'set' | 'link' | 'plan' | 'consume' | 'finish', body: Record<string, unknown> = {}): Promise<unknown> { return this.shard(p.workspaceId).projectStore(p, repositoryId, operation, body); }
   async rateLimit(key: string, max = 15, windowMs = 900000): Promise<void> {
