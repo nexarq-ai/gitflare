@@ -395,23 +395,23 @@
     },
     {
       "path": "src/ui/documentation-diagrams.css",
-      "size": 17586,
-      "sha256": "5cd7c95dbbfa6e94f0d6e5593e1ac29d78c745a622df29e238ce2228e36e520e"
+      "size": 23549,
+      "sha256": "2be8dff1983c94706560c1236645c7a6068cafe3f33b39dc7bf3a6830bca112c"
     },
     {
       "path": "src/ui/documentation.css",
-      "size": 27555,
-      "sha256": "080350a94e22f86cabee7d79446fac4b9432f37e0c7679a13da78c1e3fd87b21"
+      "size": 29977,
+      "sha256": "915f18de7a3199768856a8db82d028696b998fabddc5c1308a3005d235f20763"
     },
     {
       "path": "src/ui/Documentation.tsx",
-      "size": 20424,
-      "sha256": "ed76e515b5d5cc538708c0351ecaa599befd9abff2ecdf8f4f0ce61346751b61"
+      "size": 20035,
+      "sha256": "dbb1587e6529802b5841dadf5f605f49ea0afd75e0b8dfdbefcbfe43aa1f4636"
     },
     {
       "path": "src/ui/DocumentationIllustration.tsx",
-      "size": 9592,
-      "sha256": "0a57b362822c6512eac56fd9cbe34ae40c0ae70113bac9cab87c2cd26439b3b7"
+      "size": 24250,
+      "sha256": "dc8b0354caf07dd16d96af2f0b89b621fafc3754a9aef01170e13d5bd2cc863c"
     },
     {
       "path": "src/ui/GitAccess.tsx",

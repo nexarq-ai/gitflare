@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { ArrowBendDownRightIcon, ArrowUpRightIcon, CheckIcon, CodeIcon, DiamondIcon, GitBranchIcon, LightningIcon, ShieldCheckIcon, SquaresFourIcon, XIcon } from "@phosphor-icons/react";
 import "./documentation-diagrams.css";
 
 const revisionSteps = [
@@ -82,4 +83,215 @@ export function DocumentationIllustration({ kind }: { kind: "revision" | "mcp" }
 <p className="docs-artifact-caption" aria-live="polite">{selected === null ? 'A person consents to a workspace and access level. The AI client sends its token to the Worker, where current role, scope, and state checks govern each tool call. Runtime tasks receive separate fork-scoped credentials.' : steps[selected].description}</p>
 <div className="docs-artifact-footer"><span><span aria-hidden="true">◌</span> One authorization boundary for UI + MCP</span><span>No client credentials in task sandboxes</span></div>
 </figure>);
+}
+
+
+type SystemDiagram = {
+  heading: string;
+  subtitle: string;
+  layers: { label: string; nodes: { title: string; detail: string; symbol: string; accent?: boolean }[] }[];
+  note: string;
+  boundary: string;
+};
+
+const systemDiagrams: Record<string, SystemDiagram> = {
+  architecture: {
+    heading: "One workspace. Connected by design.",
+    subtitle: "The Gitflare control plane",
+    layers: [
+      { label: "Shared entry point", nodes: [
+        { title: "Browser + AI clients", detail: "Workspace UI · SDK MCP", symbol: "⌘" },
+        { title: "Worker", detail: "API + shared authorization", symbol: "»", accent: true },
+        { title: "Security DO", detail: "Identity, roles + scope", symbol: "♙" },
+      ] },
+      { label: "Coordinated state", nodes: [
+        { title: "Artifacts", detail: "Repository + task Streams", symbol: "⑂" },
+        { title: "Coordinator DO", detail: "Mission state + checks", symbol: "◇", accent: true },
+        { title: "Workflows", detail: "Durable task dispatch", symbol: "↳" },
+      ] },
+      { label: "Isolated execution", nodes: [
+        { title: "Task forks", detail: "Scoped repository access", symbol: "⑂" },
+        { title: "Containers", detail: "Task forks + bounded tools", symbol: "▣" },
+        { title: "AI Gateway", detail: "gitflare · pinned model", symbol: "✳", accent: true },
+      ] },
+    ],
+    note: "Worker requests pass shared access checks. The coordinator manages state; Workflows dispatch isolated Containers, which use scoped Artifacts forks and the gitflare AI Gateway.",
+    boundary: "Owner and canonical credentials stay outside task sandboxes.",
+  },
+  trust: {
+    heading: "Separate work. Separate authority.", subtitle: "Execution and landing boundaries",
+    layers: [
+      { label: "Authorized requests", nodes: [
+        { title: "Workspace owner", detail: "Current role + resource scope", symbol: "♙" },
+        { title: "AI client", detail: "User-authorized MCP grant", symbol: "⌘" },
+      ] },
+      { label: "Worker authorization boundary", nodes: [
+        { title: "Task sandbox", detail: "Scoped forks + AI Gateway", symbol: "▣" },
+        { title: "Trusted landing", detail: "Exact approval + canonical write", symbol: "◇", accent: true },
+      ] },
+      { label: "Separate preview origin", nodes: [
+        { title: "Candidate preview", detail: "Expiring, revocable capability", symbol: "↗" },
+      ] },
+    ], note: "Execution and trusted landing are separate paths through the Worker. Task credentials cannot approve changes, write the canonical branch, or access deployment credentials.",
+    boundary: "A task sandbox never inherits its owner's authority.",
+  },
+  "user-journey": {
+    heading: "From intent to a reviewed change.", subtitle: "The workspace review journey",
+    layers: [
+      { label: "Prepare", nodes: [
+        { title: "Choose a repository", detail: "Sign in + pin a base revision", symbol: "⑂" },
+        { title: "Describe the work", detail: "Outcome, criteria + tasks", symbol: "≡" },
+      ] },
+      { label: "Execute and inspect", nodes: [
+        { title: "Isolated tasks", detail: "Separate Streams + Containers", symbol: "▣" },
+        { title: "Review evidence", detail: "Candidate diff + recorded checks", symbol: "✓", accent: true },
+      ] },
+      { label: "Authorize separately", nodes: [
+        { title: "Approve revision", detail: "Exact candidate + current base", symbol: "◇", accent: true },
+        { title: "Land changes", detail: "Separate authorized action", symbol: "⑂" },
+      ] },
+    ], note: "Read the recorded evidence before approving the exact revision. Landing is a separate action and still checks the current base, candidate and authorization.",
+    boundary: "This illustrates the workflow; it is not evidence of a live successful run.",
+  },
+  "agent-loop": {
+    heading: "Your AI client. Its own task agents.", subtitle: "Two distinct kinds of authority",
+    layers: [
+      { label: "User-authorized AI client", nodes: [
+        { title: "Read", detail: "Pin source + inspect evidence", symbol: "≡" },
+        { title: "Plan", detail: "Define outcome + scoped tasks", symbol: "◇" },
+        { title: "Request actions", detail: "MCP checks current role + scope", symbol: "⌘", accent: true },
+      ] },
+      { label: "Authorized execution start", nodes: [
+        { title: "Runtime task agents", detail: "Independent task credentials", symbol: "▣", accent: true },
+      ] },
+      { label: "Bounded capabilities", nodes: [
+        { title: "Task forks", detail: "Scoped repository access", symbol: "⑂" },
+        { title: "Tools + inference", detail: "Bounded shell + AI Gateway", symbol: "✳" },
+      ] },
+    ], note: "An AI client requests operations with the user's current authority. Runtime coding agents receive separate capabilities for their assigned forks and bounded tools.",
+    boundary: "No owner token, approval tools or canonical credentials enter task agents.",
+  },
+  "execution-lifecycle": {
+    heading: "Parallel work. Combined evidence.", subtitle: "The execution lifecycle",
+    layers: [
+      { label: "Isolate and verify", nodes: [
+        { title: "Task A", detail: "Own fork + individual checks", symbol: "⑂" },
+        { title: "Task B", detail: "Own fork + individual checks", symbol: "⑂" },
+      ] },
+      { label: "Combine", nodes: [
+        { title: "Candidate revision", detail: "Merge task results + run checks", symbol: "◇", accent: true },
+      ] },
+      { label: "Review or retain evidence", nodes: [
+        { title: "Passing candidate", detail: "Exact approval → separate land", symbol: "✓", accent: true },
+        { title: "Failure or cancellation", detail: "Keep evidence; never pass", symbol: "×" },
+      ] },
+    ], note: "Individual success does not guarantee combined success. Only the exact passing candidate can proceed to authorized approval and a separate landing action.",
+    boundary: "Failures and cancellation remain recorded outcomes.",
+  },
+  "deployment-flow": {
+    heading: "Check the source. Guard the target.", subtitle: "Development deployment",
+    layers: [
+      { label: "Before deployment", nodes: [
+        { title: "Source checks", detail: "Tests + typecheck", symbol: "✓" },
+        { title: "Development build", detail: "Validate account + environment", symbol: "◇", accent: true },
+      ] },
+      { label: "Separate deployments", nodes: [
+        { title: "Application Worker", detail: "Workspace API + MCP", symbol: "»", accent: true },
+        { title: "Preview Worker", detail: "Isolated preview origin", symbol: "↗" },
+      ] },
+      { label: "Observe the result", nodes: [
+        { title: "API + MCP", detail: "Verify authentication + responses", symbol: "⌘" },
+        { title: "Browser", detail: "Verify actual interface behavior", symbol: "▣" },
+      ] },
+    ], note: "The guarded development deployment checks the dedicated nexarq AI account and target. Application and preview Workers are deployed and verified separately.",
+    boundary: "Deployment checks do not prove a model-backed workflow succeeded.",
+  },
+  roadmap: {
+    heading: "Implementation is one part of proof.", subtitle: "Read the evidence with the roadmap",
+    layers: [
+      { label: "Implemented source", nodes: [
+        { title: "Workspaces + access", detail: "Authentication + scoped actions", symbol: "♙" },
+        { title: "Execution control", detail: "UI + MCP operations", symbol: "⌘" },
+      ] },
+      { label: "Verify each workflow", nodes: [
+        { title: "Live evidence", detail: "Model calls, checks + preview", symbol: "✓", accent: true },
+        { title: "Exact landing", detail: "Approval + canonical revision", symbol: "◇", accent: true },
+      ] },
+      { label: "Track remaining work", nodes: [
+        { title: "Platform roadmap", detail: "Builds, hosting + migrations", symbol: "↗" },
+        { title: "Production readiness", detail: "Separate scope + verification", symbol: "▣" },
+      ] },
+    ], note: "Implemented source, observed live workflows and planned capabilities are different kinds of evidence. Consult the current guide for the status of each integration.",
+    boundary: "A passing build is not a claim of end-to-end product completion.",
+  },
+  "access-control": {
+    heading: "One request. Every boundary checked.", subtitle: "Shared authorization for UI + MCP",
+    layers: [
+      { label: "Resolve an active principal", nodes: [
+        { title: "UI or MCP request", detail: "Session or scoped credential", symbol: "⌘", accent: true },
+      ] },
+      { label: "All checks must pass", nodes: [
+        { title: "Role + grants", detail: "Membership + action permission", symbol: "♙" },
+        { title: "Resource scope", detail: "Repository, Stream + grants", symbol: "⑂" },
+        { title: "Credential limits", detail: "Expiry, revocation + budgets", symbol: "▣" },
+      ] },
+      { label: "Validate the operation", nodes: [
+        { title: "State guards", detail: "Checks, approval + exact revision", symbol: "◇", accent: true },
+        { title: "Allow or deny", detail: "Permitted state or useful error", symbol: "✓" },
+      ] },
+    ], note: "A role alone is insufficient. Current membership, resource scope, credential limits and operation state must permit the requested action.",
+    boundary: "The same authorization and state checks govern UI and MCP actions.",
+  },
+  "workers-builds": {
+    heading: "A reviewed revision. A planned build path.", subtitle: "Workers Builds integration plan",
+    layers: [
+      { label: "Gitflare review workflow", nodes: [
+        { title: "Exact approval", detail: "Review the tested candidate", symbol: "✓" },
+        { title: "Canonical landing", detail: "Separate trusted write", symbol: "⑂", accent: true },
+      ] },
+      { label: "Planned native Builds integration", nodes: [
+        { title: "Artifacts repository", detail: "Cloudflare supports native Builds", symbol: "⑂" },
+        { title: "Configured build", detail: "Trigger from canonical revision", symbol: "»" },
+      ] },
+      { label: "Planned result ingestion", nodes: [
+        { title: "Commit-bound result", detail: "Tie build evidence to revision", symbol: "◇", accent: true },
+      ] },
+    ], note: "Cloudflare supports Artifacts repositories in Workers Builds. This diagram describes the planned Gitflare configuration and result-ingestion path, not a verified integration.",
+    boundary: "Task forks cannot deploy the canonical Worker.",
+  },
+};
+
+const systemGlyphs = {
+  "⌘": CodeIcon, "»": LightningIcon, "♙": ShieldCheckIcon, "⑂": GitBranchIcon,
+  "◇": DiamondIcon, "↳": ArrowBendDownRightIcon, "▣": SquaresFourIcon,
+  "✳": LightningIcon, "↗": ArrowUpRightIcon, "≡": CodeIcon, "✓": CheckIcon, "×": XIcon,
+};
+
+function SystemNode({ node }: { node: SystemDiagram["layers"][number]["nodes"][number] }) {
+  const Icon = systemGlyphs[node.symbol as keyof typeof systemGlyphs] ?? DiamondIcon;
+  return <div className={`docs-system-node${node.accent ? " docs-system-node-accent" : ""}`}><Icon size={21} aria-hidden="true" /><div><strong>{node.title}</strong><small>{node.detail}</small></div></div>;
+}
+
+export function DocumentationSystemDiagram({ id, expanded = false }: { id: string; expanded?: boolean }) {
+  const arrowId = useId();
+  const diagram = systemDiagrams[id];
+  if (!diagram) return null;
+  const architecture = id === "architecture";
+  return <figure className={`docs-artifact docs-system-map${architecture ? " docs-architecture-map" : ""}${expanded ? " docs-system-expanded" : ""}`} data-doc-diagram={id} aria-label={diagram.subtitle}>
+    <figcaption className="docs-artifact-heading"><span className="docs-artifact-glyph" aria-hidden="true"><DiamondIcon size={21} /></span><div><strong>{diagram.heading}</strong><span>{diagram.subtitle}</span></div><span className="docs-artifact-tag">{id === "workers-builds" ? "Planned" : "Illustration"}</span></figcaption>
+    {architecture ? <div className="docs-system-canvas"><div className="docs-architecture-services">
+      {[{ mode: "desktop", height: 314, path: "M183 37H208M392 37H417M300 74V120M208 157H183M392 157H417M509 194V211Q509 217 503 217H306Q300 217 300 223V240M208 277H183M392 277H417" }, { mode: "compact", height: 238, path: "M183 31H208M392 31H417M300 62V88M208 119H183M392 119H417M509 150V157Q509 163 503 163H306Q300 163 300 169V176M208 207H183M392 207H417" }, { mode: "mobile", height: 386, path: "M183 53H208M392 53H417M300 106V140M208 193H183M392 193H417M509 246V257Q509 263 503 263H306Q300 263 300 269V280M208 333H183M392 333H417" }].map(wires => <svg key={wires.mode} className={`docs-architecture-wires docs-architecture-wires-${wires.mode}`} viewBox={`0 0 600 ${wires.height}`} preserveAspectRatio="none" role="img" aria-label="Clients call the Worker, which checks Security and calls the coordinator. The coordinator accesses Artifacts and dispatches Workflows. Workflows start Containers; Containers use scoped task forks and AI Gateway.">
+        <defs><marker id={`${arrowId}-${wires.mode}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="m1 1 4 2-4 2" /></marker></defs>
+        <path markerEnd={`url(#${arrowId}-${wires.mode})`} d={wires.path} />
+      </svg>)}
+      {diagram.layers.flatMap(layer => layer.nodes).map(node => <SystemNode key={node.title} node={node} />)}
+    </div><div className="docs-architecture-preview"><ArrowUpRightIcon size={20} aria-hidden="true" /><div><strong>Preview Worker</strong><span>Candidate preview · separate origin · expiring capability</span></div><span className="docs-architecture-boundary">Separate boundary</span></div></div> :
+    <div className="docs-system-canvas">{diagram.layers.map((layer, index) => <div className="docs-system-layer" key={layer.label}>
+      {index > 0 && !(id === "trust" && index === 2) && <div className="docs-system-connector" aria-hidden="true"><span /><span>↓</span><span /></div>}
+      <p className="docs-system-layer-label">{layer.label}</p>
+      <div className="docs-system-nodes" data-columns={layer.nodes.length}>{layer.nodes.map(node => <SystemNode key={node.title} node={node} />)}</div>
+    </div>)}</div>}
+    <p className="docs-system-caption">{diagram.note}</p>
+    <div className="docs-artifact-footer"><span><ShieldCheckIcon size={14} aria-hidden="true" />{diagram.boundary}</span></div>
+  </figure>;
 }
