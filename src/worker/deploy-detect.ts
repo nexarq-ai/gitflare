@@ -43,6 +43,7 @@ export interface DetectedTarget {
   customDomains: string[];
   workersDev: boolean;
   requiredScopes: string[];
+  wranglerEnv?: typeof PRODUCTION;
   exists?: boolean | null;
   urls?: string[];
 }
@@ -265,6 +266,7 @@ interface ParsedConfig {
   directory: string;
   name: string;
   top: Json;
+  production: Json | null;
   environments: Record<string, Json>;
   packageDir: string | null;
   packageJson: Json | null;
@@ -311,10 +313,13 @@ export async function detectDeploySetup(scan: RepositoryScan, read: (path: strin
     }
     const directory = dirname(path);
     const environments: Record<string, Json> = {};
+    let production: Json | null = null;
     for (const [environment, block] of Object.entries(isRecord(top.env) ? top.env : {})) {
       if (!isRecord(block)) continue;
-      if (environment === PRODUCTION) notes.push(`${path} defines env.production, which Gitflare ignores: production is always the top level of the config.`);
-      else if (!ENVIRONMENT_NAME.test(environment)) notes.push(`${path} defines env.${environment}; environment names must be lowercase letters, digits and dashes starting with a letter, so it is not deployed.`);
+      if (environment === PRODUCTION) {
+        production = block;
+        notes.push(`${path} defines env.production, so production builds and deploys that environment instead of the top level.`);
+      } else if (!ENVIRONMENT_NAME.test(environment)) notes.push(`${path} defines env.${environment}; environment names must be lowercase letters, digits and dashes starting with a letter, so it is not deployed.`);
       else environments[environment] = block;
     }
     const packageDir = packageDirectory(directory, files);
@@ -327,13 +332,13 @@ export async function detectDeploySetup(scan: RepositoryScan, read: (path: strin
     const assets = isRecord(top.assets) ? text(top.assets.directory) : undefined;
     if (assets) { const resolved = join(directory, assets); if (!resolved || !directories.has(resolved)) buildReasons.push(`assets directory ${assets} is not committed`); }
     configs.push({ path, workerName: name, environments: orderedEnvironments([PRODUCTION, ...Object.keys(environments)]) });
-    parsed.push({ path, directory, name, top, environments, packageDir, packageJson, buildReasons });
+    parsed.push({ path, directory, name, top, production, environments, packageDir, packageJson, buildReasons });
   }
   if (!parsed.length && !errors.length) notes.push('No wrangler.jsonc, wrangler.json or wrangler.toml was found outside node_modules, test fixtures and .gitflare.');
 
   const shared = sharedWatchPaths(files, directories);
   const targetFor = (config: ParsedConfig, environment: DeployEnvironment): DetectedTarget => {
-    const block = environment === PRODUCTION ? null : config.environments[environment];
+    const block = environment === PRODUCTION ? config.production : config.environments[environment];
     const resolved = block ? environmentConfig(config.top, block, config.name, environment) : config.top;
     const effective = productionOnlyConfig(resolved, environment, declaresRoutes(block));
     const name = text(effective.name)!;
@@ -354,6 +359,7 @@ export async function detectDeploySetup(scan: RepositoryScan, read: (path: strin
       routes: routes.routes, customDomains: routes.customDomains,
       workersDev: workersDevEnabled(effective),
       requiredScopes: requiredDeployScopes(effective, { d1Migrations, uploadOnly: false }),
+      ...(environment === PRODUCTION && block ? { wranglerEnv: PRODUCTION } : {}),
     };
   };
 
@@ -461,6 +467,7 @@ export function detectedTargets(environment: DetectedEnvironment): DeployTarget[
     ...(target.buildCommand ? { buildCommand: target.buildCommand } : {}),
     d1Migrations: target.d1Migrations,
     ...(target.watchPaths.length ? { watchPaths: target.watchPaths } : {}),
+    ...(target.wranglerEnv ? { wranglerEnv: target.wranglerEnv } : {}),
   }));
 }
 

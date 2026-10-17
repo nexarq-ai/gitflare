@@ -144,7 +144,7 @@ if (redirected) {
 }
 const configDir = join(root, dirname(configPath));
 const repoRelative = (value) => { if (typeof value !== 'string') return value; const absolute = resolve(configDir, value); return inside(absolute) ? (relative(root, absolute) || '.') : null; };
-const DEPLOY_KEYS = ['name', 'compatibility_date', 'compatibility_flags', 'vars', 'kv_namespaces', 'd1_databases', 'r2_buckets', 'services', 'queues', 'workflows', 'durable_objects', 'migrations', 'exports', 'ai', 'send_email', 'browser', 'images', 'version_metadata', 'analytics_engine_datasets', 'hyperdrive', 'vectorize', 'ratelimits', 'secrets_store_secrets', 'dispatch_namespaces', 'mtls_certificates', 'pipelines', 'worker_loaders', 'artifacts', 'ai_search', 'ai_search_namespaces', 'flagship', 'vpc_services', 'vpc_networks', 'logfwdr', 'unsafe', 'assets', 'observability', 'workers_dev', 'preview_urls', 'routes', 'route', 'triggers', 'placement', 'limits', 'logpush', 'tail_consumers', 'streaming_tail_consumers', 'containers'];
+const DEPLOY_KEYS = ['name', 'compatibility_date', 'compatibility_flags', 'vars', 'kv_namespaces', 'd1_databases', 'r2_buckets', 'services', 'queues', 'workflows', 'durable_objects', 'migrations', 'exports', 'ai', 'send_email', 'browser', 'images', 'version_metadata', 'analytics_engine_datasets', 'hyperdrive', 'vectorize', 'ratelimits', 'secrets_store_secrets', 'secrets', 'dispatch_namespaces', 'mtls_certificates', 'pipelines', 'worker_loaders', 'artifacts', 'ai_search', 'ai_search_namespaces', 'flagship', 'vpc_services', 'vpc_networks', 'logfwdr', 'unsafe', 'assets', 'observability', 'workers_dev', 'preview_urls', 'routes', 'route', 'triggers', 'placement', 'limits', 'logpush', 'tail_consumers', 'streaming_tail_consumers', 'containers'];
 const deploy = Object.fromEntries(DEPLOY_KEYS.filter((key) => config[key] !== undefined).map((key) => [key, config[key]]));
 if (deploy.assets && typeof deploy.assets === 'object') deploy.assets = { ...deploy.assets, directory: repoRelative(deploy.assets.directory) };
 if (Array.isArray(deploy.d1_databases)) deploy.d1_databases = deploy.d1_databases.map((item) => item && typeof item.migrations_dir === 'string' ? { ...item, migrations_dir: repoRelative(item.migrations_dir) } : item);
@@ -367,7 +367,7 @@ export async function buildWorkerBundle(sandbox: BundleSandbox, config: Resolved
   return parseWorkerBundle(output.stdout, config);
 }
 
-export type PreviewBinding = { type: 'plain_text'; text: string } | { type: 'json'; json: unknown } | { type: 'durable_object_namespace'; class_name: string } | { type: 'assets' } | { type: 'd1'; database_id: string; database_name: string } | { type: 'send_email'; allowed_destination_addresses: string[]; allowed_sender_addresses?: string[] };
+export type PreviewBinding = { type: 'secrets_store_secret'; store_id: string; secret_name: string } | { type: 'plain_text'; text: string } | { type: 'json'; json: unknown } | { type: 'durable_object_namespace'; class_name: string } | { type: 'assets' } | { type: 'd1'; database_id: string; database_name: string } | { type: 'send_email'; allowed_destination_addresses: string[]; allowed_sender_addresses?: string[] };
 export interface PreviewD1Database { binding: string; databaseName: string; databaseId: string; migrationsApplied: number }
 export interface PreviewBindingPlan { env: Record<string, PreviewBinding>; notes: string[] }
 

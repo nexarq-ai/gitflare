@@ -6,6 +6,7 @@ import { repositoryLabel } from '../shared/repository-names';
 import type { AppEnv } from './env';
 import type { ExecutionResult } from './execution';
 import { SqlStore } from './store';
+import { SecretLinkBook, type SecretLink, type SecretReceipt } from './repository-secrets';
 import { securityClient, type Principal } from './security';
 import { needsPacking, packMission, summarizeMission, unpackMission, type BlobStore } from './mission-storage';
 import { assertLineInCandidate, assertReviewClear, currentReviewRequests, reviewMissionInput } from './proposal-review';
@@ -1378,6 +1379,20 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   releasePreviewSlot(missionId: string): void { this.store.delete(slotKey('preview', missionId)); }
 
   deployState(): DeployState { return new DeploymentLedger(this.store).state(); }
+
+  secretLinks(): SecretLink[] { return new SecretLinkBook(this.store).links(); }
+
+  secretReceipt(key: string): SecretReceipt | null { return new SecretLinkBook(this.store).receipt(key); }
+
+  saveSecretLink(link: SecretLink, receipt?: { key: string; value: SecretReceipt }): SecretLink {
+    return this.ctx.storage.transactionSync(() => new SecretLinkBook(this.store).save(link, receipt));
+  }
+
+  removeSecretLink(environment: string, binding: string, receipt?: { key: string; value: SecretReceipt }): SecretLink | null {
+    return this.ctx.storage.transactionSync(() => new SecretLinkBook(this.store).remove(environment, binding, receipt));
+  }
+
+  recordSecretRequest(key: string, value: SecretReceipt): void { new SecretLinkBook(this.store).record(key, value); }
 
   saveDeploySettings(settings: DeploySettings): DeploySettings { return new DeploymentLedger(this.store).saveSettings(settings); }
 

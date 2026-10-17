@@ -13,6 +13,8 @@ import type { AppEnv } from './env';
 import { executionReadiness } from './execution';
 import { backgroundState, detectRepositorySetup, dispatchBackground, landingWorkflowId, previewWorkflowId, retireWorkerPreview } from './background-work';
 import { backgroundPrincipal, deploymentsApi, deployWorkflowId, type DeployParams } from './deployments';
+import { repositorySecretsApi } from './repository-secrets';
+import { secretsApiContext, secretsBlocker } from './secrets-wiring';
 import type { ProjectSnapshot } from './cloudflare-projects';
 import { PREVIEW_STEP_MS } from './budgets';
 import { handleMcp, mcpToolNames } from './mcp';
@@ -43,6 +45,7 @@ import { branchApi } from './branches';
 import { branchName, effectiveRules, landingRule, protectionSnapshot } from './branch-protection';
 import { handleUrlImport } from './url-import';
 import { capabilityHash, mintPreviewToken, PREVIEW_CAPABILITY_MS, previewCapabilityStore, previewTarget, relayPreview } from './preview-capability';
+import { withStoreSecrets } from './store-secrets';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -438,7 +441,14 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
       },
       failDispatch: async (record) => { await coordinator.updateDeployment(record.id, ['queued'], { status: 'failed', errorCode: 'DEPLOYMENT_NOT_STARTED', error: 'The deployment could not be scheduled.' }); },
       audit: (action) => access.auditRepositoryChange(principal, action, repository.id),
+      secretsBlocker: secretsBlocker(env, repository, coordinator),
     });
+  }
+  const secretsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/secrets(\/catalog)?$/.exec(url.pathname);
+  if (secretsRoute) {
+    const repository = await catalog.getRepository(secretsRoute[1]);
+    if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+    return repositorySecretsApi(request, secretsApiContext(env, principal, repository, env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`)));
   }
   const issues = await handleIssues(request, url, principal, access, catalog, (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`));
   if (issues) return issues;
@@ -904,8 +914,9 @@ const application = {
 } satisfies ExportedHandler<AppEnv>;
 
 export default {
-  async fetch(request: Request, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, workerEnv: AppEnv, ctx?: ExecutionContext): Promise<Response> {
     try {
+      const env = await withStoreSecrets(workerEnv);
       const path = new URL(request.url).pathname;
       if (env.OAUTH_KV && (path === '/mcp' || path.startsWith('/oauth/') || path.startsWith('/.well-known/'))) {
         if (path.startsWith('/oauth/') && request.method === 'POST') await security(env).rateLimit(`oauth:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 60, 60000);
