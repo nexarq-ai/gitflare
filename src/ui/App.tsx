@@ -136,7 +136,7 @@ function takeReturnRoute(): string {
 
 export default function App() {
   return (
-    <Suspense fallback={currentRoute() === "home" ? <main className="route-loading" aria-busy="true" /> : <WorkspaceLoader />}>
+    <Suspense fallback={<WorkspaceLoader publicPage={currentRoute() === "home"} />}>
       <Workspace />
     </Suspense>
   );

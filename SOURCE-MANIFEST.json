@@ -90,13 +90,13 @@
     },
     {
       "path": "public/boot-loader.css",
-      "size": 44126,
-      "sha256": "1cf008f8957e7a3b4eb88337e7db635f1ec87258e07e10593e5aba3c2fbebe02"
+      "size": 73995,
+      "sha256": "4081b5efe2d4443afc25ae6a1adb6a0773f666dd9fe0b0567cb93fdbb69aef74"
     },
     {
       "path": "public/boot-loader.js",
-      "size": 2417,
-      "sha256": "8ad431f0f009fe9866c03a4a929b4624b9015c46b3ec42b896f3b9e4994d0739"
+      "size": 3269,
+      "sha256": "f41a8c019f2ee342358e69b0359a559584cf42e0d08c1c56323959f7fdb6e364"
     },
     {
       "path": "public/favicon.svg",
@@ -235,8 +235,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 78158,
-      "sha256": "4eab457f635894b4f849289299b909444c0c642ba196844b959ccf96aace8961"
+      "size": 78115,
+      "sha256": "c4d43cb3a1dc7576d1bd4a1f49c8e925b9b3b933b636046d8a29a17fede91aff"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -370,8 +370,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 122439,
-      "sha256": "6759f80950744c70cabdf564ad283186943d8b5f2050d7cfdf5c4dde4944627b"
+      "size": 52392,
+      "sha256": "35ef90c6e8ad9e5bf96959cd3594774c6c4b4ca2bd950ff19ce94701ecc06f81"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -440,8 +440,8 @@
     },
     {
       "path": "src/ui/main.tsx",
-      "size": 833,
-      "sha256": "95d62cbac9aea8c88762234f923aefe519899817e73ccbc397ba8ceebae25072"
+      "size": 999,
+      "sha256": "b9fe3d32b824d1b3c71415a11fd2abfe8990b8623e89d54006b30f25cff54807"
     },
     {
       "path": "src/ui/McpConnections.tsx",
@@ -615,8 +615,8 @@
     },
     {
       "path": "src/ui/WorkspaceLoader.tsx",
-      "size": 2658,
-      "sha256": "92ceeb0bda1ab658153bd6468a87a7fa389d5e68edc051a372a2495c02ca949f"
+      "size": 2785,
+      "sha256": "837ba7c3e912ea0e62c7e601a5bdab09c337e3b44a61acece318dc26b88fb78b"
     },
     {
       "path": "src/worker/agent-rules.ts",
