@@ -45,8 +45,8 @@
     },
     {
       "path": "docs/public/mcp.md",
-      "size": 10842,
-      "sha256": "f1256dd78ce298bd981201d4f1fa731678ea8c30d86161dd0e72884831b98749"
+      "size": 12794,
+      "sha256": "1779d0f2f6de3badad9c704722ed964fc404f4614867dcb75e621c0f1d408e83"
     },
     {
       "path": "docs/public/overview.md",
@@ -695,8 +695,8 @@
     },
     {
       "path": "src/worker/env.ts",
-      "size": 2392,
-      "sha256": "8faa53f956602ef5682d899ad2598c178d6abb607a1543419d468c1b52dcc61c"
+      "size": 2426,
+      "sha256": "6889979b7b5012160aefddaec33e40daad9d10f52b20bba075932ada4d0668c6"
     },
     {
       "path": "src/worker/execution.ts",
@@ -740,8 +740,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 89448,
-      "sha256": "cc99a184f02c97246c1e1213da3b74475ec5c630a0fb31ab07abc0cff2795f6c"
+      "size": 89786,
+      "sha256": "a663b11488a20458811c15069b881b19d4762e3b159a2a9ba2a2932d4dc149a3"
     },
     {
       "path": "src/worker/mfa.ts",

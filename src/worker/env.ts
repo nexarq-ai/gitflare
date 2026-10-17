@@ -50,4 +50,5 @@ export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRE
   PREVIEW_ORIGIN?: string;
   SUPPORT_EMAIL?: string;
   OPERATOR_NAME?: string;
+  OPENAI_APPS_CHALLENGE?: string;
 };
