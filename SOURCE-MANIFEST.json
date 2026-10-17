@@ -360,8 +360,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 119335,
-      "sha256": "d7f7454421374a224153b32b3dc9fff0e3d2edff1b503d83545f49aeb2f3582d"
+      "size": 121055,
+      "sha256": "5589e4b702343468a810b17d1577c60613bb96b39c633ed9200782ac755aaf10"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -385,13 +385,13 @@
     },
     {
       "path": "src/ui/documentation.css",
-      "size": 10679,
-      "sha256": "883bde6114c88f687186f8c8e92f73ba2afe0593b41a243d875352463e84ad72"
+      "size": 11395,
+      "sha256": "be952488727b79287e8f77665dfaf2b06135d94893a38113ddf6bb2c4b56a146"
     },
     {
       "path": "src/ui/Documentation.tsx",
-      "size": 13806,
-      "sha256": "5a3c59fa3d743ca26f3a4b649a87906ed83f86e34ba807ad295efbbde3bd0f54"
+      "size": 13825,
+      "sha256": "dfc240fc187677c3df252df2fb8290867eed31563b4e897c33b4d50fc6fcb33d"
     },
     {
       "path": "src/ui/GitAccess.tsx",

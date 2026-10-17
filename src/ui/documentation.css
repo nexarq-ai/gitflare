@@ -43,7 +43,7 @@
 .wiki-page .documentation-toc .level-3 { padding-left: 22px; }
 .wiki-page .documentation-article-footer { display: flex; align-items: center; gap: 8px; padding-top: 24px; margin-top: 44px; border-top: 1px solid var(--gf-color-border); color: var(--gf-color-text-secondary); font-size: 12px; }
 .wiki-page .documentation-article-footer button { margin-left: auto; color: var(--gf-color-info); background: transparent; border: 0; padding: 6px; cursor: pointer; }
-.wiki-page button:focus-visible, .wiki-page a:focus-visible, .wiki-page summary:focus-visible { outline: 2px solid var(--gf-color-border-strong); outline-offset: 3px; }
+.wiki-page button:focus-visible, .wiki-page a:focus-visible { outline: 2px solid var(--gf-color-border-strong); outline-offset: 3px; }
 @media (max-width: 1320px) and (min-width: 761px) {
   .wiki-page .documentation-layout { grid-template-columns: 158px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 24px; }
   .wiki-page .documentation-navigation { grid-column: 1; grid-row: 1 / span 2; }
@@ -82,10 +82,19 @@
 .public-docs-nav a:hover { color: var(--gf-color-info); }
 .public-docs-nav > div a:last-child { padding: 7px 10px; border: 1px solid var(--gf-color-border); border-radius: 5px; color: var(--gf-color-text); background: var(--gf-color-surface-raised); }
 .public-docs-nav a:focus-visible, .documentation-format-actions a:focus-visible { outline: 2px solid var(--gf-color-border-strong); outline-offset: 3px; }
-.wiki-page .documentation-format-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-top: 22px; }
-.wiki-page .documentation-format-actions a, .wiki-page .documentation-format-actions button { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; color: var(--gf-color-text-secondary); background: transparent; border: 0; padding: 4px 0; cursor: pointer; text-decoration: none; }
+.wiki-page .documentation-format-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 4px; margin-top: 22px; }
+.wiki-page .documentation-format-actions a, .wiki-page .documentation-format-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 8px 12px; border-radius: var(--gf-radius-pill); font: inherit; font-size: 12px; line-height: 1.5; color: var(--gf-color-text-secondary); background: transparent; border: 0; cursor: pointer; text-decoration: none; }
 .wiki-page .documentation-format-actions a:hover, .wiki-page .documentation-format-actions button:hover { color: var(--gf-color-info); }
-.wiki-page .documentation-copy-status { font-size: 12px; color: var(--gf-color-text-secondary); }
+.wiki-page .documentation-format-actions svg { width: 16px; height: 16px; flex-shrink: 0; }
+.wiki-page .documentation-format-actions button > span { display: inline-flex; }
+.wiki-page .documentation-format-actions :is(a, button):hover { background: var(--gf-color-surface-hover); }
+.wiki-page .documentation-copy-status { display: block; margin-top: 8px; font-size: 12px; color: var(--gf-color-text-secondary); }
+.wiki-page .documentation-copy-status:empty { display: none; }
+.wiki-page .documentation-toc-details > summary { pointer-events: auto; }
+@media (max-width: 380px) {
+  .wiki-page .documentation-format-actions { width: 100%; border-radius: 14px; }
+  .wiki-page .documentation-format-actions a, .wiki-page .documentation-format-actions button { padding-inline: 8px; }
+}
 @media(max-width:760px) {
   .public-documentation { padding: 0 16px 40px; }
   .public-docs-nav { min-height: 64px; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; padding: 14px 0; }
@@ -93,7 +102,6 @@
   .public-docs-nav > div a:first-child { display: none; }
   .public-docs-brand { font-size: 17px; gap: 10px; }
   .public-docs-brand span { padding-left: 10px; font-size: 12px; }
-  .wiki-page .documentation-copy-status { flex-basis: 100%; }
 }
 @media(max-width:440px) { .public-docs-nav > div { width: 100%; justify-content: flex-end; } .public-docs-nav > div a:last-child { padding: 5px 9px; } }
 
