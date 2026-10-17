@@ -7,13 +7,15 @@ import { executeMission, type ExecutionEnv, type ExecutionResult } from './execu
 import type { AppEnv } from './env';
 import { deployLandedWorker, landCandidate, preparePreview, retirePreview, type LandingParams, type PreviewParams, type PreviewRetireParams } from './background-work';
 import type { DeployParams } from './deployments';
+import type { MirrorParams } from './github-mirror';
+import { mirrorWorkflow } from './github-mirror-runtime';
 import { missionStepTimeoutMs } from './budgets';
 import { catalogName } from './capacity';
 import { createModelAccess, type AiAccessOptions, type AiCredentials } from './ai-keys';
 import { withStoreSecrets } from './store-secrets';
 
 export interface MissionRunParams { kind?: 'mission'; repositoryId: string; missionId: string; epoch: number }
-export type MissionWorkflowParams = MissionRunParams | LandingParams | PreviewParams | PreviewRetireParams | DeployParams;
+export type MissionWorkflowParams = MissionRunParams | LandingParams | PreviewParams | PreviewRetireParams | DeployParams | MirrorParams;
 interface Coordinator {
   getModelConnections(): Promise<ModelConnection[]>;
   getAiCredentials(): Promise<AiCredentials>;
@@ -38,6 +40,7 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
     if (params.kind === 'preview') return preparePreview(this.env as unknown as AppEnv, params, step);
     if (params.kind === 'preview-retire') return retirePreview(this.env as unknown as AppEnv, params, step);
     if (params.kind === 'deploy') return deployLandedWorker(this.env as unknown as AppEnv, params, step);
+    if (params.kind === 'mirror') return mirrorWorkflow(this.env as unknown as AppEnv, params, step);
     const { repositoryId, missionId, epoch } = params;
     const coordinator = this.env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`);
     const planned = await coordinator.getMission(missionId);

@@ -24,6 +24,7 @@ import { DeploymentLedger, type DeployEnvironment, type DeployEnvironmentSetting
 import type { AiCredentials, OperatorModelGrant, OperatorUsageKind, StoredAiGateway, StoredAiKey } from './ai-keys';
 import type { PreviewD1Database } from './worker-bundle';
 import { storedPreviewSettings, type PreviewSettings } from './preview-settings';
+import { applyMirrorChange, type MirrorChange, type MirrorChangeResult, type StoredMirror } from './github-mirror';
 
 interface Receipt<T> { fingerprint: string; result: T }
 export interface MissionSummaryCache { repositoryId: string; summaries: MissionSummary[]; cachedAt: string }
@@ -1379,6 +1380,10 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   releasePreviewSlot(missionId: string): void { this.store.delete(slotKey('preview', missionId)); }
 
   deployState(): DeployState { return new DeploymentLedger(this.store).state(); }
+
+  githubMirror(): StoredMirror | null { return this.store.get<StoredMirror>('github-mirror') ?? null; }
+
+  changeGithubMirror(change: MirrorChange): MirrorChangeResult { return this.ctx.storage.transactionSync(() => applyMirrorChange(this.store, change)); }
 
   secretLinks(): SecretLink[] { return new SecretLinkBook(this.store).links(); }
 

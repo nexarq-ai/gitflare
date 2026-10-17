@@ -20,6 +20,7 @@ export interface GitHttpDependencies {
   artifacts?: ArtifactsBinding;
   fetcher?: typeof fetch;
   limits?: GitRateLimits;
+  pushed?(repository: Repository, refs: string[]): Promise<void>;
 }
 
 export class GitProtocolError extends Error {}
@@ -302,7 +303,11 @@ export async function handleGitRequest(request: Request, deps: GitHttpDependenci
     if (!parsed.capabilities.includes('report-status') && !parsed.capabilities.includes('report-status-v2')) return text(403, decisions.filter(decision => !decision.ok).map(decision => `${decision.ref}: ${(decision as { reason: string }).reason}`).join('\n'));
     return new Response(receivePackReport(decisions, parsed.capabilities), { status: 200, headers: { 'Content-Type': 'application/x-git-receive-pack-result', 'Cache-Control': 'no-store' } });
   }
-  return await forward(source, service, 'rpc', request, limitedStream(parsed.prefix, reader, GIT_PUSH_MAX_BYTES), fetcher);
+  const response = await forward(source, service, 'rpc', request, limitedStream(parsed.prefix, reader, GIT_PUSH_MAX_BYTES), fetcher);
+  if (!deps.pushed || response.status !== 200 || !response.body) return response;
+  const notify = deps.pushed.bind(deps);
+  const refs = parsed.updates.map(update => update.ref);
+  return new Response(response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ flush: () => notify(repository, refs).catch(() => {}) })), { status: response.status, headers: response.headers });
 }
 
 export function parseAdvertisedRefs(bytes: Uint8Array): Map<string, string> {
