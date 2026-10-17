@@ -180,8 +180,8 @@
     },
     {
       "path": "src/ui/AccessSettings.tsx",
-      "size": 21731,
-      "sha256": "740ead28953f8596a5276dadf2bffa9458a7595e9a82acf586b3a401c8df4763"
+      "size": 21809,
+      "sha256": "71ff7140b262756de3623d4e91aa31f20b760d08985475323b5e6e428e3b7fa0"
     },
     {
       "path": "src/ui/AgentAssignment.tsx",
@@ -335,8 +335,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 118585,
-      "sha256": "e9604088d87c6a112da0e9aaa127f1a926d9c4441ada7a0f21a3a5495457f0fb"
+      "size": 119335,
+      "sha256": "d7f7454421374a224153b32b3dc9fff0e3d2edff1b503d83545f49aeb2f3582d"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -545,8 +545,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 70244,
-      "sha256": "60fe9b20c1fae3de3e9e3a727b2bc91f047093bb06a9b4811b562642b8c2cb5f"
+      "size": 73562,
+      "sha256": "4b06e2a1f223ce5cc88a0150d8999446dc65ee091feeee0c6c5f989bf8d836c8"
     },
     {
       "path": "src/ui/ThemeToggle.tsx",
