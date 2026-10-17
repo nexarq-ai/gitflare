@@ -2976,9 +2976,10 @@ a svg {
 .access-field select[multiple] { padding: 8px; }
 .access-field select[multiple] option { padding: 8px; border-radius: 5px; }
 .access-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--gf-color-border); border-radius: 11px; }
-.access-table { border-collapse: collapse; width: 100%; font-size: 12px; text-align: left; }
+.access-table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 12px; text-align: left; }
 .access-table th { background: var(--gf-color-surface); color: var(--gf-color-text-tertiary); font-weight: 500; padding: 13px 16px; white-space: nowrap; text-transform: capitalize; }
-.access-table td { padding: 16px; border-top: 1px solid var(--gf-color-border); color: var(--gf-color-text-secondary); max-width: 280px; overflow-wrap: anywhere; line-height: 1.65; }
+.access-table td { min-width: 120px; padding: 16px; border-top: 1px solid var(--gf-color-border); color: var(--gf-color-text-secondary); max-width: 280px; overflow-wrap: anywhere; line-height: 1.65; }
+.access-table-wrap:focus-visible { outline: 2px solid var(--gf-color-focus); outline-offset: 2px; }
 .access-table tbody tr:hover { background: color-mix(in srgb, var(--gf-color-surface) 45%, transparent); }
 .access-row-actions { min-width: 210px; }
 .access-row-actions select { min-width: 135px; min-height: 38px; margin-bottom: 8px; }
