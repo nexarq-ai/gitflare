@@ -5,6 +5,7 @@ import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { Input } from "@cloudflare/kumo/components/input";
 import { ArrowClockwiseIcon, ArrowLeftIcon, MagnifyingGlassIcon, TrashIcon } from "@phosphor-icons/react";
 import type { ProjectResource, Repository } from "../shared/types";
+import { CLOUDFLARE_PERMISSIONS, cloudflarePermissionGroups, type CloudflarePermissionPlan } from "../shared/cloudflare-permissions";
 import { request } from "./api";
 import { ErrorNotice } from "./components";
 import cloudflareIcon from "./assets/cloudflare-icon.svg";
@@ -13,7 +14,7 @@ import { RouteProgress } from "./WorkspaceLoader";
 import InstallationCredential from "./InstallationCredential";
 
 type Account = { id: string; name: string };
-type Connection = { configured: boolean; connected: boolean; expiresAt?: number; identity?: { subject: string; email?: string }; account?: Account; scopes?: string[]; source?: "repository" | "workspace" | "none" };
+type Connection = { configured: boolean; connected: boolean; expiresAt?: number; identity?: { subject: string; email?: string }; account?: Account; scopes?: string[]; source?: "repository" | "workspace" | "none"; permissions?: CloudflarePermissionPlan };
 type ResourceType = ProjectResource["type"];
 type Resources = { account: Account; workers: { id: string; name: string }[]; durableObjects: { id: string; name: string; script?: string }[]; databases: { id: string; name: string }[]; containers?: { id: string; name: string }[]; workflows?: { id: string; name: string }[]; availability?: Record<string, { available: boolean; reason?: string }> };
 const resourceTypes: { type: ResourceType; label: string; plural: string }[] = [{ type: "worker", label: "Worker", plural: "Workers" }, { type: "d1", label: "D1 database", plural: "D1 databases" }, { type: "durable_object", label: "Durable Object", plural: "Durable Objects" }, { type: "container", label: "Container", plural: "Containers" }, { type: "workflow", label: "Workflow", plural: "Workflows" }];
@@ -36,17 +37,17 @@ type UsageMetric = { available: boolean; reason?: string; data?: unknown; window
 type Usage = { observedAt: string; resources: (UsageMetric & { resource: ProjectResource })[] };
 
 
-const scopeLabels: Record<string, string> = {
-  "offline_access": "Stay connected between sign-ins",
-  "account-settings.read": "Read account details",
-  "workers-scripts.metadata_read": "List Workers and Durable Objects",
-  "workers-scripts.read": "Read Workers",
-  "d1.read": "Read D1 databases",
-  "d1.write": "Apply reviewed D1 migrations",
-  "account-analytics.read": "Read usage analytics",
-  "containers.read": "List containers",
-  "workflows.read": "List workflows",
-};
+function ConnectPermissions({ plan, open, busy, onOpenChange, onContinue }: { plan?: CloudflarePermissionPlan; open: boolean; busy: boolean; onOpenChange: (open: boolean) => void; onContinue: () => void }) {
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog size="lg" className="dialog-content cf-permissions-dialog">
+      <Dialog.Title className="dialog-title">What Gitflare will ask Cloudflare for</Dialog.Title>
+      <Dialog.Description className="dialog-description">Cloudflare shows these permissions next. You choose which accounts to grant there.</Dialog.Description>
+      {plan ? <div className="cf-permission-groups">{cloudflarePermissionGroups(plan.permissions).map(({ group, permissions }) => <section key={group}><h3>{group}</h3><ul>{permissions.map((permission) => <li key={permission.scope}><strong>{permission.name}</strong><code>{permission.scope}</code><span>{permission.reason}</span></li>)}</ul></section>)}</div> : <p className="cf-muted">The permission list could not be loaded. Refresh before connecting.</p>}
+      <p className="cf-permission-docs"><a href={plan?.docsUrl ?? "/docs/cloudflare-permissions"} target="_blank" rel="noreferrer">What Gitflare asks for and never does</a></p>
+      <div className="dialog-actions"><Button variant="secondary" size="base" type="button" onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="primary" size="base" type="button" loading={busy} disabled={!plan || busy} onClick={onContinue}>Continue to Cloudflare</Button></div>
+    </Dialog>
+  </Dialog.Root>;
+}
 
 function CloudflareAccount({ status, accounts, resources, repositories, busy, accountId, onAccount, onUseAccount, onConnect, onDisconnect }: { status: Connection; accounts: Account[]; resources: Resources | null; repositories: Repository[]; busy: string; accountId: string; onAccount: (id: string) => void; onUseAccount: () => void; onConnect: () => void; onDisconnect: () => void }) {
   const [search, setSearch] = useState("");
@@ -88,7 +89,7 @@ function CloudflareAccount({ status, accounts, resources, repositories, busy, ac
           {status.identity?.email && <div><dt>Signed in as</dt><dd>{status.identity.email}</dd></div>}
         </dl> : <p>Signed in to Cloudflare. Choose which account this workspace uses.</p>}
         {(!status.account || accounts.length > 1) && <div className="cf-form-row"><label htmlFor="cf-account">{status.account ? "Switch account" : "Cloudflare account"}<select id="cf-account" value={accountId} onChange={(event) => onAccount(event.target.value)} disabled={!!busy}><option value="">Choose an account</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><Button variant="secondary" size="base" disabled={!accountId || accountId === status.account?.id || !!busy} onClick={onUseAccount}>Use account</Button></div>}
-        {!!status.scopes?.length && <div className="cf-scopes"><h3>What Gitflare may do</h3><ul>{status.scopes.map((scope) => <li key={scope}>{scopeLabels[scope] ?? scope}</li>)}</ul></div>}
+        {!!status.scopes?.length && <div className="cf-scopes"><h3>What Gitflare may do</h3><ul>{status.scopes.map((scope) => <li key={scope}>{CLOUDFLARE_PERMISSIONS[scope]?.name ?? scope}</li>)}</ul></div>}
         <div className="cf-actions"><Button variant="secondary" size="base" disabled={!!busy} onClick={onConnect}>Re-authorize</Button><Button variant="secondary" size="base" disabled={!!busy} onClick={() => setConfirmDisconnect(true)}>Disconnect</Button><span className="cf-reconnect-help">Re-authorize after changing permissions or accounts in Cloudflare.</span></div>
       </div>
     </section>
@@ -166,6 +167,7 @@ export default function CloudflareConnection({ repository, repositoryId, reposit
   const [plan, setPlan] = useState<MigrationPlan | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [migrationSql, setMigrationSql] = useState("");
+  const [connectOpen, setConnectOpen] = useState(false);
   const projectBase = `/api/repositories/${encodeURIComponent(repositoryId ?? "")}/cloudflare`;
   const connectionBase = repositoryId ? `${projectBase}/connection` : "/api/cloudflare";
 
@@ -257,8 +259,9 @@ export default function CloudflareConnection({ repository, repositoryId, reposit
     {error && <ErrorNotice message={error} onRetry={() => setRetry((value) => value + 1)} />}
     {message && <p className="cf-notice" role="status">{message}</p>}
     {canManage && !repositoryId && <InstallationCredential workspace={status} />}
-    {canManage && !repositoryId && (status ? <CloudflareAccount status={status} accounts={accounts} resources={resources} repositories={repositories} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request("/api/cloudflare/select-account", { accountId }); setRetry((value) => value + 1); })} onConnect={() => void perform("connect", async () => { const result = await request<{ authorizationUrl: string }>("/api/cloudflare/connect", {}); window.location.assign(result.authorizationUrl); })} onDisconnect={() => void perform("disconnect", async () => { await request("/api/cloudflare/disconnect", {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <RouteProgress /> : <p role="status">Cloudflare account details are unavailable.</p>)}
-    {repositoryId && canManage && (status ? <RepositoryAccount status={status} accounts={accounts} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request(`${connectionBase}/select-account`, { accountId }); setRetry((value) => value + 1); })} onConnect={() => void perform("connect", async () => { const result = await request<{ authorizationUrl: string }>(`${connectionBase}/connect`, {}); window.location.assign(result.authorizationUrl); })} onDisconnect={() => void perform("disconnect", async () => { await request(`${connectionBase}/disconnect`, {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <RouteProgress /> : <p role="status">Cloudflare account details are unavailable.</p>)}
+    {canManage && !repositoryId && (status ? <CloudflareAccount status={status} accounts={accounts} resources={resources} repositories={repositories} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request("/api/cloudflare/select-account", { accountId }); setRetry((value) => value + 1); })} onConnect={() => setConnectOpen(true)} onDisconnect={() => void perform("disconnect", async () => { await request("/api/cloudflare/disconnect", {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <RouteProgress /> : <p role="status">Cloudflare account details are unavailable.</p>)}
+    {repositoryId && canManage && (status ? <RepositoryAccount status={status} accounts={accounts} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request(`${connectionBase}/select-account`, { accountId }); setRetry((value) => value + 1); })} onConnect={() => setConnectOpen(true)} onDisconnect={() => void perform("disconnect", async () => { await request(`${connectionBase}/disconnect`, {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <RouteProgress /> : <p role="status">Cloudflare account details are unavailable.</p>)}
+    {canManage && <ConnectPermissions plan={status?.permissions} open={connectOpen} busy={busy === "connect"} onOpenChange={setConnectOpen} onContinue={() => void perform("connect", async () => { const result = await request<{ authorizationUrl: string }>(`${connectionBase}/connect`, {}); window.location.assign(result.authorizationUrl); })} />}
     {!canManage && !repositoryId && <p>Cloudflare account connections are managed by a workspace owner. Open a repository’s Cloudflare page to view its associated resources.</p>}
     {repositoryId && project && <>
       <section className="panel cf-resource-panel">

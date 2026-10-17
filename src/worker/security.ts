@@ -32,8 +32,8 @@ interface MfaRecord { id: string; encryptedSecret: string; enabled: boolean; las
 interface AuthChallenge { id: string; userId: string; kind: 'setup' | 'enroll' | 'login'; workspaceId?: string; expiresAt: number; used?: boolean; linkId?: string }
 export interface CloudflareSigninState { id: string; browserHash: string; expiresAt: number; encrypted: string }
 interface CloudflareLink { id: string; cloudflareId: string; email: string; expiresAt: number }
-export interface CloudflareSigninInput { identity: CloudflareIdentity; userId: string; workspaceId: string; workspaceName: string; connection?: CloudflareConnection; sessionHash?: string; linkHash: string; invitation?: string; mintToken?: boolean }
-export type CloudflareSigninResult = { status: 'signed-in'; user: ReturnType<typeof safeUser>; workspaceId: string; created: boolean; connectionStored: boolean; token?: string } | { status: 'link-required'; created: false; connectionStored: false }
+export interface CloudflareSigninInput { identity: CloudflareIdentity; userId: string; workspaceId: string; workspaceName: string; sessionHash?: string; linkHash: string; invitation?: string; mintToken?: boolean }
+export type CloudflareSigninResult = { status: 'signed-in'; user: ReturnType<typeof safeUser>; workspaceId: string; created: boolean; token?: string } | { status: 'link-required'; created: false }
 interface Installation { workspaceName?: string; workspaceId?: string; pendingUser?: User; challengeId?: string; pendingWorkspaceId?: string }
 interface EmailToken { id: string; userId: string; email: string; kind: 'verify' | 'reset'; expiresAt: number }
 interface LoginFailures { count: number; lockedUntil: number; updatedAt: number }

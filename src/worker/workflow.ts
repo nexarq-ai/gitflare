@@ -10,6 +10,7 @@ import type { DeployParams } from './deployments';
 import { missionStepTimeoutMs } from './budgets';
 import { catalogName } from './capacity';
 import { createModelAccess, type AiAccessOptions, type AiCredentials } from './ai-keys';
+import { withStoreSecrets } from './store-secrets';
 
 export interface MissionRunParams { kind?: 'mission'; repositoryId: string; missionId: string; epoch: number }
 export type MissionWorkflowParams = MissionRunParams | LandingParams | PreviewParams | PreviewRetireParams | DeployParams;
@@ -31,6 +32,7 @@ interface WorkflowEnv extends ExecutionEnv, AiAccessOptions {
 
 export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWorkflowParams> {
   async run(event: WorkflowEvent<MissionWorkflowParams>, step: WorkflowStep): Promise<void> {
+    this.env = await withStoreSecrets(this.env);
     const params = event.payload;
     if (params.kind === 'land') return landCandidate(this.env as unknown as AppEnv, params, step);
     if (params.kind === 'preview') return preparePreview(this.env as unknown as AppEnv, params, step);
