@@ -41,8 +41,8 @@
 @media(max-width:600px) { .public-install-nav { flex-wrap: wrap; align-items: center; gap: 16px; padding-bottom: 16px; margin-bottom: 24px; } .public-install-nav > div { gap: 14px; width: 100%; justify-content: flex-start; align-items: center; } .public-install-nav > div a:last-child { margin-left: auto; } .installation-heading { padding-top: 4px; } .installation-page .public-install-actions { gap: 14px; } }
 
 .public-install { color: var(--gf-color-text); }
-.public-install .public-install-primary { color: var(--gf-color-on-accent); background: var(--gf-color-orange); border-radius: var(--gf-radius-pill); }
-.public-install .public-install-primary:hover { background: var(--gf-color-orange-light); }
+.public-install .public-install-primary { color: var(--gf-color-primary-text); background: var(--gf-color-primary); border: 1px solid var(--gf-color-primary-border); border-radius: var(--gf-radius-pill); }
+.public-install .public-install-primary:hover { background: var(--gf-color-primary-hover); color: var(--gf-color-primary-text); }
 .public-install-nav > div a:last-child { border-radius: var(--gf-radius-pill); background: var(--gf-color-surface-raised); }
 .public-source-list button:hover { background: var(--gf-color-surface); }
 .auth-recovery-codes, .auth-enrollment, .public-source-clone code { border: 1px solid var(--gf-color-border); border-radius: 12px; }

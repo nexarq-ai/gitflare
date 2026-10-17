@@ -45,6 +45,10 @@
   --gf-color-accent-hover: var(--gf-color-orange-light);
   --gf-color-on-accent: #1c0c00;
   --gf-color-on-white: #0b0c0e;
+  --gf-color-primary: #ffffff;
+  --gf-color-primary-hover: #f1f3f6;
+  --gf-color-primary-text: #0b0c0e;
+  --gf-color-primary-border: #d0d6df;
   --gf-color-focus: #ffb16e;
   --gf-color-success: #7cdea8;
   --gf-color-success-bg: #10271d;
@@ -341,9 +345,9 @@ a { color: var(--gf-color-info); }
 .form-field textarea, .form-field select, .filter-select { background: var(--gf-color-surface-raised); border-color: var(--gf-color-border-strong); border-radius: 10px; }
 .form-field label { font-weight: 500; color: var(--gf-color-text); }
 .form-field textarea { padding: 12px 14px; line-height: 1.7; }
-:where(button, a)[class*='bg-kumo-brand'] { color: var(--gf-color-on-accent); border-radius: var(--gf-radius-pill); font-weight: 600; }
+:where(button, a)[class*='bg-kumo-brand'] { background: var(--gf-color-primary); color: var(--gf-color-primary-text); border-radius: var(--gf-radius-pill); font-weight: 600; }
 :where(button, a)[class*='bg-kumo-base'] { border-radius: var(--gf-radius-pill); }
-:where(button, a)[class*='bg-kumo-brand']:hover { background: var(--gf-color-orange-light); }
+:where(button, a)[class*='bg-kumo-brand']:not(:disabled):hover { background: var(--gf-color-primary-hover); }
 :where(input)[class*='bg-kumo-base'], :where(input)[class*='bg-kumo-control'] { border-radius: 10px; }
 [role='dialog'] { background: var(--gf-color-surface-raised); color: var(--gf-color-text); border-color: var(--gf-color-border); border-radius: 20px; box-shadow: var(--gf-shadow-lg); }
 .dialog-content { padding: 28px; }
@@ -419,8 +423,19 @@ a { color: var(--gf-color-info); }
 }
 
 button[style*='--kumo-button-emphasis'], a[style*='--kumo-button-emphasis'] { border-radius: var(--gf-radius-pill); }
+button[style*='--color-kumo-brand'], a[style*='--color-kumo-brand'] {
+  --kumo-button-emphasis-bg: var(--gf-color-primary) !important;
+  --kumo-button-emphasis-gradient-start: var(--gf-color-primary) !important;
+  --kumo-button-emphasis-gradient-end: var(--gf-color-primary) !important;
+  --kumo-button-emphasis-ring: var(--gf-color-primary-border) !important;
+}
+:is(button, a)[style*='--color-kumo-brand']:not(:disabled):hover {
+  --kumo-button-emphasis-bg: var(--gf-color-primary-hover) !important;
+  --kumo-button-emphasis-gradient-start: var(--gf-color-primary-hover) !important;
+  --kumo-button-emphasis-gradient-end: var(--gf-color-primary-hover) !important;
+}
 @layer utilities {
-  button[style*='--color-kumo-brand'], a[style*='--color-kumo-brand'] { color: var(--gf-color-on-accent) !important; }
+  button[style*='--color-kumo-brand'], a[style*='--color-kumo-brand'] { color: var(--gf-color-primary-text) !important; }
 }
 .cf-connection-page select, .cf-target input:not([type='checkbox']), .cf-target select { background: var(--gf-color-surface-raised); color: var(--gf-color-text); border-radius: 10px; border-color: var(--gf-color-border-strong); }
 .cf-environment-badge { color: var(--gf-color-accent); background: var(--gf-color-accent-bg); border-radius: var(--gf-radius-pill); padding: 4px 9px; }

@@ -295,8 +295,8 @@
     },
     {
       "path": "src/ui/auth-loading.css",
-      "size": 817,
-      "sha256": "e4e4ae02dd408e559d99c366b9b365b8a315e45a41292adfa16ae52c37166e85"
+      "size": 751,
+      "sha256": "87bc7ff0c57d6c84602eb6e51ac950eb9cc6993322c112b191c6e31a8d09b706"
     },
     {
       "path": "src/ui/AuthScreen.tsx",
@@ -345,8 +345,8 @@
     },
     {
       "path": "src/ui/connection-error.css",
-      "size": 4590,
-      "sha256": "c5dfde1bac3efaac5498fc8d7364a5e82ecc4978b75da2eb339cd56df88810f8"
+      "size": 4605,
+      "sha256": "d267761887916c02938ff79b5fed53aa46d540aa5dafd2b413926fa08ed611a9"
     },
     {
       "path": "src/ui/ConnectionError.tsx",
@@ -365,8 +365,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 121571,
-      "sha256": "9b9dbdec503fca2c683393a2524a74a2d9ea987bbc67ad77d1b1634b599c2054"
+      "size": 122439,
+      "sha256": "6759f80950744c70cabdf564ad283186943d8b5f2050d7cfdf5c4dde4944627b"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -510,8 +510,8 @@
     },
     {
       "path": "src/ui/public-install.css",
-      "size": 5250,
-      "sha256": "bf5dd562de187badce9477402559dda2759aa5360af8bfb28a6442885e9386f8"
+      "size": 5342,
+      "sha256": "6dc9f97e64db81af28dcb5b4d481b0db2b013df29f584c54a0fda592d6a7aade"
     },
     {
       "path": "src/ui/pull-requests.css",
