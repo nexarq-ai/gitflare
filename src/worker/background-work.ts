@@ -23,6 +23,7 @@ import { POLICY_FILE } from './repository-policy';
 import type { ProjectSnapshot } from './cloudflare-projects';
 import { declaresRoutes, detectDeploySetup, environmentBlock, parseWranglerConfig, scanRepository, withAccountFacts, type DetectedSetup } from './deploy-detect';
 import type { Repository } from '../shared/types';
+import { previewSecretBindings } from './repository-secrets';
 
 export interface LandingParams { kind: 'land'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimId: string; principal: Principal }
 export interface PreviewParams { kind: 'preview'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; claimId: string; principal: Principal }
@@ -248,6 +249,7 @@ export async function deployLandedWorker(env: AppEnv, params: DeployParams, step
       const { mapping } = await access.projectStore(principal, repositoryId, 'get') as ProjectSnapshot;
       return mapping ? { accountId: mapping.accountId, workers: (mapping.resources ?? []).filter((resource) => resource.type === 'worker').map((resource) => resource.id) } : null;
     },
+    secretLinks: () => coordinator.secretLinks(),
     declaresRoutes: async (repository, record, target) => {
       if (!env.ARTIFACTS || !record.commitSha || !target.configPath) return false;
       using source = await env.ARTIFACTS.get(repository.name);
@@ -320,7 +322,11 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
           if (host.access === 'cloudflare-access') await ensurePreviewAccess(previewCall, previews.accountId, previews.workerName, await previewAccessIncludes(env, principal, repositoryId, settings));
           const { uploadAssets } = built;
           const d1 = built.d1?.length ? await bindPreviewD1(previewCall, previews.accountId, built.d1) : undefined;
+          const links = await coordinator.secretLinks();
+          const scopes = host.kind === 'connection' && links.length ? (await connectionAccess(env, principal, repositoryId, host.accountId).catch(() => null))?.scopes ?? [] : [];
+          const secrets = previewSecretBindings(links, host, scopes);
           return upsertWorkerPreview(previews, {
+            secrets,
             alias,
             bundle: built.bundle,
             annotations: { 'workers/commit_sha': candidateSha, 'workers/message': mission.title.slice(0, 100), 'workers/pull_request_title': mission.title.slice(0, 100) },

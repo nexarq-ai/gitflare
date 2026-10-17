@@ -37,6 +37,8 @@ An installation that deploys Workers also requests these:
 | Queues Write | `queues.write` | Create the queues a deployed Worker produces to or consumes from. |
 | Workers Routes Write | `workers-routes.write` | Attach the custom domains a deployed Worker declares. |
 | Workers AI Write | `ai.write` | Bind Workers AI to a deployed Worker that declares it. |
+| Secrets Store Read | `secrets-store.read` | Requested only when you turn on repository secrets. List the Secrets Store secrets you can link to a repository, by name only. |
+| Secrets Store Write | `secrets-store.write` | Requested only when you turn on repository secrets. Create or rotate a secret you enter and bind linked secrets to your deployed Workers. Gitflare never reads a secret's value back. |
 
 ## Optional permissions
 

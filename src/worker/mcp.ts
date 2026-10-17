@@ -6,6 +6,7 @@ import { z } from 'zod';
 import type { IssueDetail, IssueList, Mission, MissionAttempt, Release, ReleaseList, Repository, RepositoryFile, RepositoryTree, Workspace } from '../shared/types';
 import { RELEASE_NOTES_MAX, RELEASE_REQUEST_MAX_BYTES } from './releases';
 import { ENVIRONMENT_NAME } from './deploy-environments';
+import { SECRET_ACTIONS, SECRET_VALUE_MAX_BYTES } from '../shared/secrets';
 import { ApiError, MISSION_REQUEST_MAX_BYTES, publicError, readJson, repositoryPath, repositoryRef, RETRY_GUIDANCE_MAX } from './domain';
 import type { DocMetadata, ProductDoc } from './docs';
 import { ISSUE_BODY_MAX, ISSUE_COMMENT_MAX, ISSUE_REQUEST_MAX_BYTES } from './issues';
@@ -31,7 +32,7 @@ export const mcpToolNames = [
   'gitflare_inspect_mission', 'gitflare_draft_mission', 'gitflare_create_mission', 'gitflare_start_mission', 'gitflare_cancel_mission',
   'gitflare_review_mission', 'gitflare_revert_mission', 'gitflare_select_candidate', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval',
   'gitflare_preview_mission', 'gitflare_mission_history', 'gitflare_workspace_status',
-  'gitflare_list_docs', 'gitflare_read_doc', 'gitflare_public_source', 'gitflare_ai_settings', 'gitflare_access_status', 'gitflare_manage_access', 'gitflare_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_deployments', 'gitflare_deploy',
+  'gitflare_list_docs', 'gitflare_read_doc', 'gitflare_public_source', 'gitflare_ai_settings', 'gitflare_access_status', 'gitflare_manage_access', 'gitflare_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_deployments', 'gitflare_deploy', 'gitflare_secrets', 'gitflare_manage_secret',
   'gitflare_list_issues', 'gitflare_read_issue', 'gitflare_create_issue', 'gitflare_comment_issue', 'gitflare_update_issue',
   'gitflare_list_branches', 'gitflare_create_branch', 'gitflare_delete_branch', 'gitflare_create_pull_request', 'gitflare_update_pull_request', 'gitflare_branch_protection',
   'gitflare_check_settings', 'gitflare_retry_checks', 'gitflare_preview_settings',
@@ -53,7 +54,7 @@ const external = { ...mutation, openWorldHint: true };
 const commit = z.string().regex(/^[a-f0-9]{40}$/).describe('Exact 40-character commit SHA observed in current evidence.');
 const evidenceInput = { view: z.enum(['summary', 'context', 'runs', 'changes', 'checks', 'events', 'reviews']).default('summary').describe('Evidence to return.'), offset, limit: z.number().int().min(1).max(20).default(5).describe('Items per page.'), detail_offset: offset.describe('Start character within each long text field.'), detail_limit: z.number().int().min(1).max(8000).default(3000).describe('Characters per long text field.') };
 const LAND_TOOLS = new Set(['gitflare_check_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
-const ADMIN_TOOLS = new Set(['gitflare_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_ai_settings', 'gitflare_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway']);
+const ADMIN_TOOLS = new Set(['gitflare_manage_secret', 'gitflare_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_ai_settings', 'gitflare_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway']);
 
 export function requiredAccess(name: string, annotations: { readOnlyHint?: boolean } | undefined, input: Record<string, unknown>): AccessLevel {
   if (annotations?.readOnlyHint) return 'read';
@@ -232,6 +233,20 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
       : input.action === 'promote' ? { action: 'promote', ...environment, ...(input.from ? { from: input.from } : {}), ...(input.deployment_id ? { deploymentId: input.deployment_id } : {}), ...(input.confirm !== undefined ? { confirm: input.confirm } : {}) }
       : { action: 'rollback', ...environment };
     return call<Record<string, unknown>>(path, body, input.idempotency_key);
+  }));
+  server.registerTool('gitflare_secrets', {
+    title: 'Read repository secret links', description: 'Read a repository’s Secrets Store links per environment (preview means Worker Previews): binding, store, secret, consumers, rotation and validation; the secrets each Wrangler config requires and which are missing; and the connection’s Secrets Store access. view catalog lists stores, or a store’s secret names (secret managers only). Values are never readable. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId, view: z.enum(['status', 'catalog']).default('status'), store_id: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('For catalog: list this store’s secrets.') }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => {
+    const path = `/api/repositories/${input.repository_id}/secrets`;
+    return call<Record<string, unknown>>(input.view === 'catalog' ? `${path}/catalog${input.store_id ? `?store_id=${input.store_id}` : ''}` : path);
+  }));
+  server.registerTool('gitflare_manage_secret', {
+    title: 'Link, create or rotate a repository secret', description: 'Change Secrets Store links: link an existing secret, create one from value, rotate its value, update consumers or preview_allowed, validate, unlink (the secret stays in Cloudflare) or create-store. value is write-only: sent to Cloudflare, never stored or returned. Deploys bind the environment’s links. Owner or a secret grant; needs admin access.',
+    inputSchema: z.object({ repository_id: repositoryId, action: z.enum(SECRET_ACTIONS), environment: z.string().regex(ENVIRONMENT_NAME).optional().describe('production, staging, another Wrangler env, or preview. Required except for create-store.'), binding: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/).optional().describe('Worker binding name, e.g. STRIPE_KEY. Required except for create-store.'), store_id: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('For link and create: the Secrets Store ID.'), secret_id: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('For link: the secret ID.'), secret_name: z.string().regex(/^[A-Za-z0-9_-]{1,255}$/).optional().describe('For link (instead of secret_id) and create: the secret name in the store.'), value: z.string().min(1).max(SECRET_VALUE_MAX_BYTES).optional().describe('For create and rotate only. Write-only; never echoed.'), comment: z.string().max(300).optional().describe('For create: a note stored on the secret in Cloudflare.'), preview_allowed: z.boolean().optional().describe('For link, create and update in the preview environment: allow Worker Previews to bind it.'), consumers: z.array(z.string().regex(/^[a-zA-Z0-9_-]{1,63}$/)).max(20).optional().describe('Worker names that receive the binding; empty means every Worker the environment deploys.'), name: z.string().regex(/^[A-Za-z0-9_-]{1,255}$/).optional().describe('For create-store: the store name.'), idempotency_key: requestKey }).strict(), annotations: { ...destructive, openWorldHint: true, idempotentHint: false },
+  }, (input) => guarded(async () => {
+    const body = Object.fromEntries(Object.entries({ action: input.action, environment: input.environment, binding: input.binding, storeId: input.store_id, secretId: input.secret_id, secretName: input.secret_name, value: input.value, comment: input.comment, previewAllowed: input.preview_allowed, consumers: input.consumers, name: input.name }).filter(([, value]) => value !== undefined));
+    return call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/secrets`, body, input.idempotency_key);
   }));
   server.registerTool('gitflare_access_status', {
     title: 'Read workspace access', description: 'Read your identity, role, memberships, teams, invitations, task credentials, sessions, protection rules and the audit events your role may see. Read-only.',
