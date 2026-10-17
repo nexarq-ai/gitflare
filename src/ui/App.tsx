@@ -57,7 +57,8 @@ import { showOwnerTokenNotice } from "./owner-token-notice";
 import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
 import AiSettingsPanel from "./AiSettingsPanel";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
-import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, PUBLIC_PRODUCT_ROUTES } from "./router";
+import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, PUBLIC_PRODUCT_ROUTES, SIGNED_IN_PRODUCT_ROUTES } from "./router";
+import { crossHostTarget, pageHostOrigins } from "./hosts";
 import AccountMenu from "./AccountMenu";
 
 import ConnectionError from "./ConnectionError";
@@ -280,6 +281,12 @@ function Workspace() {
       });
     });
   }, []);
+
+  useEffect(() => {
+    const { origin, pathname, search, hash } = window.location;
+    const target = crossHostTarget(pageHostOrigins(), origin, route, `${pathname}${search}${hash}`, authState === "checking" ? null : authState === "authenticated");
+    if (target) window.location.replace(target);
+  }, [authState, route]);
 
   useEffect(() => {
     if (authState === "authenticated" && ["signin", "signup"].includes(route)) {

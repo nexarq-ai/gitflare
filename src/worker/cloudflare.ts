@@ -30,7 +30,7 @@ const authorizeEndpoint = 'https://dash.cloudflare.com/oauth2/auth';
 const tokenEndpoint = 'https://dash.cloudflare.com/oauth2/token';
 const revokeEndpoint = 'https://dash.cloudflare.com/oauth2/revoke';
 const apiOrigin = 'https://api.cloudflare.com/client/v4';
-const cookieName = '__Host-gitflare-cloudflare-state';
+export const CLOUDFLARE_CONNECT_STATE_COOKIE = '__Host-gitflare-cloudflare-state';
 export const CLOUDFLARE_LINK_COOKIE = '__Host-gitflare-cloudflare-link';
 export const CLOUDFLARE_SIGNIN_STATE_COOKIE = '__Host-gitflare-signin-state';
 export const CLOUDFLARE_CALLBACK_PATH = '/api/cloudflare/callback';
@@ -227,11 +227,11 @@ async function start(env:AppEnv,p:Principal,origin:string,repositoryId?:string,s
   const pending:Pending={verifier,redirectUri:`${uri.origin}/api/cloudflare/callback`,expectedVersion:previous?.version??null,...repositoryScope(repositoryId),...(extraScopes.length?{extraScopes}:{})};
   const record:CloudflareOAuthState={id,browserHash:await sha(binder),principal:p,expiresAt,encrypted:await encryptAuth(JSON.stringify(pending),env.AUTH_ENCRYPTION_KEY,`cloudflare-state:${id}`),...repositoryScope(repositoryId)};
   await service(env).connectionStore(p,'state-put',{value:record,...repositoryScope(repositoryId)});
-  return {authorizationUrl:await cloudflareAuthorizationUrl(env,pending.redirectUri,state,verifier,'connect',extraScopes),expiresAt,permissions:connectPermissionPlan(env,extraScopes),cookie:`${cookieName}=${binder}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`};
+  return {authorizationUrl:await cloudflareAuthorizationUrl(env,pending.redirectUri,state,verifier,'connect',extraScopes),expiresAt,permissions:connectPermissionPlan(env,extraScopes),cookie:`${CLOUDFLARE_CONNECT_STATE_COOKIE}=${binder}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`};
 }
 async function callback(request:Request,env:AppEnv):Promise<Response> {
   requireConfiguration(env);const url=new URL(request.url);const state=requireString(url.searchParams.get('state'),'OAuth state',128,64);
-  const binder=requestCookie(request,cookieName);
+  const binder=requestCookie(request,CLOUDFLARE_CONNECT_STATE_COOKIE);
   if(!binder||!/^[a-f0-9]{64}$/.test(binder)) throw new ApiError(403,'OAUTH_BROWSER_REQUIRED','Restart the Cloudflare connection in the browser where you began.');
   const record=await service(env).connectionStore(null,'state-consume',{id:await sha(state),browserHash:await sha(binder)}) as CloudflareOAuthState;
   const pending=JSON.parse(await decryptAuth(record.encrypted,env.AUTH_ENCRYPTION_KEY,`cloudflare-state:${record.id}`)) as Pending;
@@ -242,7 +242,7 @@ async function callback(request:Request,env:AppEnv):Promise<Response> {
   const vault=await exchangeCloudflareCode(env,code,pending.redirectUri,pending.verifier,'connect',pending.extraScopes);
   await save(env,record.principal,vault,pending.expectedVersion,undefined,record.repositoryId);
   const destination=record.repositoryId?`/repository/${encodeURIComponent(record.repositoryId)}/cloudflare`:'/settings/cloudflare';
-  return new Response(null,{status:303,headers:{Location:`${url.origin}${destination}`,'Set-Cookie':`${cookieName}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
+  return new Response(null,{status:303,headers:{Location:`${url.origin}${destination}`,'Set-Cookie':`${CLOUDFLARE_CONNECT_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
 }
 async function resourceCatalog(env:AppEnv,vault:Vault,source:CloudflareConnectionSource) {
   const account=selectedAccount(vault,source);
@@ -319,7 +319,7 @@ async function connectionResponse(request:Request,env:AppEnv,p:Principal,action:
 }
 export async function handleCloudflare(request:Request,env:AppEnv,authenticate:(request:Request,env:AppEnv)=>Promise<Principal>):Promise<Response|null> {
   const url=new URL(request.url);const path=url.pathname;if(!path.startsWith('/api/cloudflare'))return null;
-  if(path===CLOUDFLARE_CALLBACK_PATH&&request.method==='GET'&&!requestCookie(request,cookieName))return null;
+  if(path===CLOUDFLARE_CALLBACK_PATH&&request.method==='GET'&&!requestCookie(request,CLOUDFLARE_CONNECT_STATE_COOKIE))return null;
   if(path===CLOUDFLARE_CALLBACK_PATH&&request.method==='GET')return callback(request,env);
   const p=await authenticate(request,env);await owner(env,p);await service(env).rateLimit(`cloudflare:${p.userId}`,30,60000);
   const credential=/^\/api\/cloudflare\/installation-credential(?:\/([a-z-]+))?$/.exec(path);

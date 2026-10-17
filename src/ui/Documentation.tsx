@@ -11,6 +11,7 @@ import "./documentation.css";
 import { grammarFor, tokenize } from "./diff-highlight";
 import { DocumentationIllustration } from "./DocumentationIllustration";
 import { navigate as goTo } from "./router";
+import { appOrigin } from "./hosts";
 import { RouteProgress } from "./WorkspaceLoader";
 
 type DocumentItem = {
@@ -181,7 +182,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
             <div className="documentation-guide-heading"><h2>Find your starting point</h2><span>{items.length ? `${String(items.length).padStart(2, "0")} ${publicMode ? "PUBLIC " : ""}GUIDES` : "LOADING GUIDES"}</span></div>
             {!items.length && !error && <RouteProgress />}
             <div className="documentation-card-grid">{items.filter((item) => `${item.title} ${item.description}`.toLowerCase().includes(guideQuery.toLowerCase())).map((item, index) => <a className="documentation-card" href={`/docs/${item.id}`} key={item.id}><div className="documentation-card-top"><span>{String(index + 1).padStart(2, "0")} / {item.audience === "agent" ? "AGENT CONTEXT" : item.audience === "human" ? "THE WORKSPACE" : "REFERENCE"}</span><ArrowSquareOutIcon size={18} /></div><h3>{item.title}</h3><p>{item.description}</p><span className="documentation-card-bottom">Open guide <span aria-hidden="true">→</span></span></a>)}</div>
-            <section className="documentation-connect-banner" aria-labelledby="documentation-connect-title"><div className="documentation-connect-icon" aria-hidden="true">⌘</div><div><p className="documentation-eyebrow">YOUR CLIENT. YOUR WORKSPACE.</p><h2 id="documentation-connect-title">Bring your AI along.</h2><p>One authenticated MCP endpoint. The same permissions and review checks.</p><code>{new URL("/mcp", window.location.origin).href}</code></div><a href="/connectors">Connect a client <span aria-hidden="true">↗</span></a></section>
+            <section className="documentation-connect-banner" aria-labelledby="documentation-connect-title"><div className="documentation-connect-icon" aria-hidden="true">⌘</div><div><p className="documentation-eyebrow">YOUR CLIENT. YOUR WORKSPACE.</p><h2 id="documentation-connect-title">Bring your AI along.</h2><p>One authenticated MCP endpoint. The same permissions and review checks.</p><code>{new URL("/mcp", appOrigin()).href}</code></div><a href="/connectors">Connect a client <span aria-hidden="true">↗</span></a></section>
             <p className="documentation-index-footnote">Guides from this installation's documentation library. Implementation and live verification are identified separately in each guide.</p>
           </> : loading ? <p role="status">Opening document…</p> : document ? <>
             <nav className="documentation-breadcrumb" aria-label="Breadcrumb"><a href="/docs">Docs</a><span aria-hidden="true">/</span><span>{category}</span></nav>

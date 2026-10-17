@@ -7,7 +7,7 @@ import type { MissionWorkflowParams } from './workflow';
 import type { RateLimitEnv } from './rate-limits';
 import type { ModelRelay } from './model-relay';
 
-export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRET' | 'CLOUDFLARE_OAUTH_SCOPES' | 'CLOUDFLARE_CLIENT_AUTH_METHOD' | 'EDITION' | 'ADMIN_EMAIL' | 'ADMIN_PASSWORD' | 'EMAIL_FROM' | 'OAUTH_KV' | 'GITFLARE_SECURITY' | 'APP_ENV' | 'GITFLARE_COORDINATOR' | 'ARTIFACTS' | 'SANDBOX' | 'MISSION_WORKFLOW' | 'MODEL' | 'AI' | 'AI_GATEWAY_ID' | 'MODEL_RELAY' | 'MODEL_RELAY_LOCATION_HINT' | 'AI_FEATURES' | 'TEST_COMMAND' | keyof RateLimitEnv> & RateLimitEnv & {
+export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRET' | 'CLOUDFLARE_OAUTH_SCOPES' | 'CLOUDFLARE_CLIENT_AUTH_METHOD' | 'EDITION' | 'ADMIN_EMAIL' | 'ADMIN_PASSWORD' | 'EMAIL_FROM' | 'OAUTH_KV' | 'GITFLARE_SECURITY' | 'APP_ENV' | 'GITFLARE_COORDINATOR' | 'ARTIFACTS' | 'SANDBOX' | 'MISSION_WORKFLOW' | 'MODEL' | 'AI' | 'AI_GATEWAY_ID' | 'MODEL_RELAY' | 'MODEL_RELAY_LOCATION_HINT' | 'AI_FEATURES' | 'TEST_COMMAND' | 'SITE_ORIGIN' | 'APP_ORIGIN' | keyof RateLimitEnv> & RateLimitEnv & {
   GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity>;
   APP_ENV: 'local' | 'production';
   GITFLARE_COORDINATOR: DurableObjectNamespace<GitflareCoordinator>;
@@ -52,6 +52,8 @@ export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRE
   TEST_COMMAND?: string;
   MISSION_WATCHDOG_SECONDS?: string;
   PREVIEW_ORIGIN?: string;
+  SITE_ORIGIN?: string;
+  APP_ORIGIN?: string;
   SUPPORT_EMAIL?: string;
   OPERATOR_NAME?: string;
   OPENAI_APPS_CHALLENGE?: string;

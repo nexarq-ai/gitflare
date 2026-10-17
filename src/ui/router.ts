@@ -101,6 +101,7 @@ export function onRouteChange(listener: () => void): () => void {
 export const PUBLIC_DOC_IDS = ["overview", "install", "admin", "cloudflare-permissions", "repositories", "github-mirror", "mcp", "agents"];
 export const POLICY_ROUTES = ["terms", "privacy", "acceptable-use", "cookies", "security", "support"];
 export const PUBLIC_PRODUCT_ROUTES = ["product", "ai-clients", "open-source", "repositories", "connectors", "connect"];
+export const SIGNED_IN_PRODUCT_ROUTES = ["repositories", "connect"];
 
 export function isPublicDocumentationRoute(route: string): boolean {
   return route === "docs" || PUBLIC_DOC_IDS.some(id => route === `docs/${id}`);
@@ -114,4 +115,8 @@ export function isKnownAppRoute(route: string): boolean {
     || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|cloudflare|import)|\/settings\/branches|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
     || /^(?:forgot-password|reset-password|verify-email)(?:\/[^/]+)?$/.test(route)
     || route === "invite" || route.startsWith("invite?");
+}
+
+export function isSiteRoute(route: string): boolean {
+  return ["home", "deploy", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route) || !!publicSourceLocation(route) || /^docs(?:\/|$)/.test(route) || !isKnownAppRoute(route);
 }
