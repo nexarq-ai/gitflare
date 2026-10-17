@@ -1,3 +1,4 @@
+import CloudflareDeployButton, { isGitflareDeployUrl } from "./CloudflareDeployButton";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -205,6 +206,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
                 return diagram ? <div className="documentation-diagram"><DocumentationFigure id={diagramId} /><div className="documentation-diagram-tools"><button type="button" data-diagram-key={`${id}:${src}`} onClick={() => { diagramTrigger.current = `${id}:${src}`; setExpandedDiagram({ ...diagram, key: diagramId, alt: alt || diagram.caption }); }} aria-label={`Expand diagram: ${diagram.title}`}><ArrowsOutIcon size={15} />Expand diagram</button></div></div> : <span className="documentation-image-label">{alt ? `Image: ${alt}` : "Image reference"}</span>;
               },
               a: ({ href, children }) => {
+                if (isGitflareDeployUrl(href)) return <CloudflareDeployButton />;
                 if (href?.startsWith("#")) return <button className="documentation-inline-link" onClick={() => scrollToHeading(href.slice(1))}>{children}</button>;
                 if (href && /^https?:\/\//i.test(href)) return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
                 const [path, anchor] = (href ?? "").split("#");

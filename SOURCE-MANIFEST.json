@@ -405,8 +405,8 @@
     },
     {
       "path": "src/ui/Documentation.tsx",
-      "size": 20035,
-      "sha256": "dbb1587e6529802b5841dadf5f605f49ea0afd75e0b8dfdbefcbfe43aa1f4636"
+      "size": 20205,
+      "sha256": "d8a9c7c718f7ccd2ff81cd8d5c97e933558ff68a76ed4b549154f983e6e52549"
     },
     {
       "path": "src/ui/DocumentationIllustration.tsx",
@@ -570,8 +570,8 @@
     },
     {
       "path": "src/ui/RepositoryBrowser.tsx",
-      "size": 12376,
-      "sha256": "6acd38800da717c32dae13071a0b8ab81fad2071dccd78cf0bcff824df1f0f27"
+      "size": 12521,
+      "sha256": "b462e2e99a30527bc5bbe02d7efc85fa336de5fc88816fde04e0dc349d882637"
     },
     {
       "path": "src/ui/RepositoryImport.tsx",
