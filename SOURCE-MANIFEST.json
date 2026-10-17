@@ -55,8 +55,8 @@
     },
     {
       "path": "index.html",
-      "size": 2408,
-      "sha256": "4c66635cc613d2c40e2804b09847ac0bcf66b8f39e6b7b7708a72011b156a5e3"
+      "size": 2309,
+      "sha256": "446630559a3e1a9a843414703be0d063ecce0f57cf77cfd862cc7803e8e99e19"
     },
     {
       "path": "LICENSE",
@@ -80,8 +80,8 @@
     },
     {
       "path": "public/boot-loader.css",
-      "size": 44616,
-      "sha256": "9a39229fd34523331d895f14a1e89790e152dd493ad38b1bce46fde42d4ba78d"
+      "size": 44126,
+      "sha256": "1cf008f8957e7a3b4eb88337e7db635f1ec87258e07e10593e5aba3c2fbebe02"
     },
     {
       "path": "public/boot-loader.js",
@@ -570,8 +570,8 @@
     },
     {
       "path": "src/ui/WorkspaceLoader.tsx",
-      "size": 2770,
-      "sha256": "779a8623d0ddabd4d822c519c59eee4abe60888578b59c75567a5f8f76d8778e"
+      "size": 2658,
+      "sha256": "92ceeb0bda1ab658153bd6468a87a7fa389d5e68edc051a372a2495c02ca949f"
     },
     {
       "path": "src/worker/ai-keys.ts",

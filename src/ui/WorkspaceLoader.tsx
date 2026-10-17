@@ -33,7 +33,6 @@ export default function WorkspaceLoader() {
           <h1>Loading workspace</h1>
           <p>Gathering your repositories and workspace.</p>
         </div>
-        <a className="workspace-loading-back" href="/">Back to Gitflare <span aria-hidden="true">↗</span></a>
       </div>
     </main>
   );
