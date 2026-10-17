@@ -381,7 +381,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     const visible = repositories.filter((_, index) => allowed[index]);
     const visibleIds = new Set(visible.map(repository => repository.id));
     const missions = summaries.filter((mission, index) => allowed[repositories.length + index] && visibleIds.has(mission.repositoryId));
-    const workspace: Workspace = { name, mode: local ? 'local' : 'connected', repositories: visible.map(repository => ({ ...repository, displayName: repositoryLabel(repository) })), missions: missions.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), integrations: integrations(env, local), ai };
+    const workspace: Workspace = { id: principal.workspaceId, name, mode: local ? 'local' : 'connected', repositories: visible.map(repository => ({ ...repository, displayName: repositoryLabel(repository) })), missions: missions.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), integrations: integrations(env, local), ai };
     console.log(JSON.stringify({ event: 'workspace_timing', repositories: repositories.length, missions: summaries.length, staleRepositories: stale, catalogMs, summariesMs, accessMs: Date.now() - started - catalogMs - summariesMs, totalMs: Date.now() - started }));
     return Response.json(workspace);
   }
