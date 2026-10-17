@@ -190,8 +190,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 13003,
-      "sha256": "d7ecd2c7743fbb7268b2dc19f4cd107791f7033600f800031bcd0bef50037715"
+      "size": 13018,
+      "sha256": "d2e128a9ac9bf6d019c89929176e9fce804fcd623ddef5ff84af0cc8cd0c7cf3"
     },
     {
       "path": "src/ui/AccessSettings.tsx",
@@ -785,8 +785,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 85945,
-      "sha256": "685baa4ac93c6d782c98afdd0e9ead654cbae2fa94a57670ab1df7d9dab7c79f"
+      "size": 85972,
+      "sha256": "019783977d9c4b58b7b14f5e34321cf2d3ad80fb36074d35766cf4ccbf5ead4d"
     },
     {
       "path": "src/worker/installation-credential.ts",
