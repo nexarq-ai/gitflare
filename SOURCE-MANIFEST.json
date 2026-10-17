@@ -55,8 +55,8 @@
     },
     {
       "path": "index.html",
-      "size": 327,
-      "sha256": "8e3de1cb9f49ad9eceb43a203953f013eea46ac6e946e232513aed953e6ad143"
+      "size": 2408,
+      "sha256": "4c66635cc613d2c40e2804b09847ac0bcf66b8f39e6b7b7708a72011b156a5e3"
     },
     {
       "path": "LICENSE",
@@ -77,6 +77,16 @@
       "path": "package.json",
       "size": 2204,
       "sha256": "8247b0ba1162f00daaa2185536a682fd737eb63b068a1dd02cc405a39efc998e"
+    },
+    {
+      "path": "public/boot-loader.css",
+      "size": 44616,
+      "sha256": "9a39229fd34523331d895f14a1e89790e152dd493ad38b1bce46fde42d4ba78d"
+    },
+    {
+      "path": "public/boot-loader.js",
+      "size": 2417,
+      "sha256": "8ad431f0f009fe9866c03a4a929b4624b9015c46b3ec42b896f3b9e4994d0739"
     },
     {
       "path": "public/favicon.svg",
@@ -260,8 +270,8 @@
     },
     {
       "path": "src/ui/auth-loading.css",
-      "size": 2676,
-      "sha256": "3280cff703cc73d60686563afc2fca5ed98205057abe8954383a08df2acd4626"
+      "size": 817,
+      "sha256": "e4e4ae02dd408e559d99c366b9b365b8a315e45a41292adfa16ae52c37166e85"
     },
     {
       "path": "src/ui/AuthScreen.tsx",
@@ -545,8 +555,8 @@
     },
     {
       "path": "src/ui/WorkspaceLoader.tsx",
-      "size": 960,
-      "sha256": "bd943a9b004329168525e6b737cdd89e8150f1a8358c78aadfa5d16012bab84f"
+      "size": 2770,
+      "sha256": "779a8623d0ddabd4d822c519c59eee4abe60888578b59c75567a5f8f76d8778e"
     },
     {
       "path": "src/worker/ai-keys.ts",
