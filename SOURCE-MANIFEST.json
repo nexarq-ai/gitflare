@@ -685,8 +685,8 @@
     },
     {
       "path": "src/worker/env.ts",
-      "size": 2356,
-      "sha256": "4107d67ed7ac827904dc7eac7e4d9a307ab1be4dc73283cd3db08dc80811c1c4"
+      "size": 2390,
+      "sha256": "f28e6920acbb06f3f6a1bfe1f25d42fde3b9c2e40e8ad0e9a35a178595578385"
     },
     {
       "path": "src/worker/execution.ts",
@@ -730,8 +730,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 89183,
-      "sha256": "f9852eb886aee8df0880c285c666aacfcda563474d65a810b675a502ec2cec4a"
+      "size": 89521,
+      "sha256": "2c8fbf4aff98b72e4e7d2c481e9aaae3ec95dc47959a1cc8620652a8f440799a"
     },
     {
       "path": "src/worker/mfa.ts",
