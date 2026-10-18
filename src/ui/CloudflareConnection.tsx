@@ -11,7 +11,6 @@ import { ErrorNotice } from "./components";
 import cloudflareIcon from "./assets/cloudflare-icon.svg";
 import "./cloudflare-connection.css";
 import { RouteProgress } from "./WorkspaceLoader";
-import InstallationCredential from "./InstallationCredential";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import type { DemoMarked } from "../shared/demo-features";
 
@@ -267,10 +266,8 @@ export default function CloudflareConnection({ repository, repositoryId, reposit
     {error && <ErrorNotice message={error} onRetry={() => setRetry((value) => value + 1)} />}
     {demoPanels.length > 0 ? <>
       {demoPanels.map((item) => <DemoFeaturePanel key={item.demo!.feature} demo={item.demo} examples={item.examples} />)}
-      {canManage && !repositoryId && <InstallationCredential />}
     </> : <>
     {message && <p className="cf-notice" role="status">{message}</p>}
-    {canManage && !repositoryId && <InstallationCredential workspace={status} />}
     {canManage && !repositoryId && (status ? <CloudflareAccount status={status} accounts={accounts} resources={resources} repositories={repositories} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request("/api/cloudflare/select-account", { accountId }); setRetry((value) => value + 1); })} onConnect={() => setConnectOpen(true)} onDisconnect={() => void perform("disconnect", async () => { await request("/api/cloudflare/disconnect", {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <RouteProgress /> : <p role="status">Cloudflare account details are unavailable.</p>)}
     {repositoryId && canManage && (status ? <RepositoryAccount status={status} accounts={accounts} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request(`${connectionBase}/select-account`, { accountId }); setRetry((value) => value + 1); })} onConnect={() => setConnectOpen(true)} onDisconnect={() => void perform("disconnect", async () => { await request(`${connectionBase}/disconnect`, {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <RouteProgress /> : <p role="status">Cloudflare account details are unavailable.</p>)}
     {canManage && <ConnectPermissions plan={status?.permissions} open={connectOpen} busy={busy === "connect"} onOpenChange={setConnectOpen} onContinue={() => void perform("connect", async () => { const result = await request<{ authorizationUrl: string }>(`${connectionBase}/connect`, {}); window.location.assign(result.authorizationUrl); })} />}
