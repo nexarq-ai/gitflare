@@ -51,6 +51,7 @@ import { capabilityHash, mintPreviewToken, PREVIEW_CAPABILITY_MS, previewCapabil
 import { withStoreSecrets } from './store-secrets';
 import { DEMO_WRITE_LIMIT, demoGitRestriction, demoMode, demoRestrictionError, demoRouteRestriction } from './demo';
 import { demoDisabledApi, demoVisitor, handleDemoRoute, runDemoReset } from './demo-runtime';
+import { assertCookieRequestOrigin, CLEAR_SESSION_COOKIE, sessionCookie, sessionCookieValue } from './session-policy';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -90,8 +91,9 @@ async function aiCredentials(catalog: { getAiCredentials?(): Promise<AiCredentia
   return typeof catalog.getAiCredentials === 'function' ? catalog.getAiCredentials() : { keys: [], gateway: null };
 }
 function catalogName(workspaceId: string) { return workspaceId === 'legacy' ? 'catalog:owner' : `catalog:${workspaceId}`; }
-function cookieValue(request: Request) { return request.headers.get('Cookie')?.split(';').map(item => item.trim()).find(item => item.startsWith('gitflare_session='))?.slice(17); }
-function sessionResponse(result: { token?: string; user?: unknown; workspaceId?: string; mfaRequired?: boolean }, clearLink = false) { const headers = new Headers(); if (clearLink) headers.append('Set-Cookie', `${CLOUDFLARE_LINK_COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`); if (!result.token) return Response.json(result, { headers }); const { token, ...body } = result; headers.append('Set-Cookie', `gitflare_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`); return Response.json({ ok: true, ...body }, { headers }); }
+const cookieValue = sessionCookieValue;
+const sessionRenewals = new WeakMap<Request, string>();
+function sessionResponse(result: { token?: string; user?: unknown; workspaceId?: string; mfaRequired?: boolean }, clearLink = false) { const headers = new Headers(); if (clearLink) headers.append('Set-Cookie', `${CLOUDFLARE_LINK_COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`); if (!result.token) return Response.json(result, { headers }); const { token, ...body } = result; headers.append('Set-Cookie', sessionCookie(token)); return Response.json({ ok: true, ...body }, { headers }); }
 async function authorize(request: Request, env: AppEnv, bearerOnly = false): Promise<Principal> {
   const authorization = request.headers.get('Authorization'); const bearer = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
   if (demoMode(env) && !bearer) return demoVisitor(env);
@@ -99,8 +101,13 @@ async function authorize(request: Request, env: AppEnv, bearerOnly = false): Pro
   if (env.EDITION !== 'self-hosted' && bearer && env.OWNER_TOKEN && env.OWNER_TOKEN.length >= 32 && await tokenMatches(bearer, env.OWNER_TOKEN)) {
     const workspace = request.headers.get('X-Gitflare-Workspace'); if (workspace && workspace !== 'legacy') throw new ApiError(403, 'FORBIDDEN', 'The legacy key cannot access other workspaces.'); return security(env).bootstrap();
   }
-  const value = bearer ?? (!bearerOnly ? cookieValue(request) : undefined);
-  if (value) return security(env).authenticate(value, request.headers.get('X-Gitflare-Workspace') ?? undefined);
+  if (bearer) return security(env).authenticate(bearer, request.headers.get('X-Gitflare-Workspace') ?? undefined);
+  const cookie = bearerOnly ? undefined : cookieValue(request);
+  if (cookie) {
+    const { principal, renewedUntil } = await security(env).authenticateSession(cookie, request.headers.get('X-Gitflare-Workspace') ?? undefined);
+    if (renewedUntil !== undefined) sessionRenewals.set(request, sessionCookie(cookie, renewedUntil - Date.now()));
+    return principal;
+  }
   throw new ApiError(401, 'AUTH_REQUIRED', 'Sign in to Gitflare.');
 }
 
@@ -294,6 +301,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   }
   const principal = await authorize(request, env);
   const access = security(env);
+  if (url.pathname === '/api/session' && request.method === 'GET') return Response.json({ authenticated: true, userId: principal.userId, workspaceId: principal.workspaceId });
   if (request.method === 'GET' && (['/api/docs', '/api/mcp'].includes(url.pathname) || url.pathname.startsWith('/api/docs/'))) await access.authorizeMetadata(principal);
   if (url.pathname === '/api/access' && request.method === 'GET') {
     const [snapshot, name] = await Promise.all([access.snapshot(principal), workspaceName(env, access, principal)]);
@@ -428,7 +436,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (request.method === 'POST' && url.pathname === '/api/session/logout') {
     assertMutationOrigin(request);
     await access.logout(principal);
-    return Response.json({ ok: true }, { headers: { 'Set-Cookie': 'gitflare_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0' } });
+    sessionRenewals.delete(request);
+    return Response.json({ ok: true }, { headers: { 'Set-Cookie': CLEAR_SESSION_COOKIE } });
   }
   if (request.method === 'GET' && url.pathname === '/api/workspace') {
     const started = Date.now();
@@ -1000,6 +1009,7 @@ const application = {
           return api(new Request(internal, { headers }), env);
         }, kind => consume(env, kind === 'read' ? 'MCP_READ_RATE_LIMIT' : 'MCP_WRITE_RATE_LIMIT', subject), demoMode(env));
       } else {
+        assertCookieRequestOrigin(request);
         const bearer = request.headers.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
         const limited = bearer ? await consume(env, 'API_RATE_LIMIT', `token:${await hashToken(bearer)}`) : demoMode(env) ? await consume(env, 'API_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`) : null;
         const demoRoute = limited ? null : await handleDemoRoute(request, env);
@@ -1010,6 +1020,8 @@ const application = {
       if (failure.code === 'INTERNAL_ERROR') console.error(JSON.stringify({ event: 'api_unexpected_error', method: request.method, route: path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/g, ':id'), name: error instanceof Error ? error.name : typeof error, message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 200), stack: error instanceof Error ? error.stack?.split('\n').slice(1, 6).join(' | ') : undefined }));
       response = Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status });
     }
+    const renewal = sessionRenewals.get(request);
+    if (renewal && response.status !== 401 && !response.headers.getSetCookie().some(cookie => cookie.startsWith('gitflare_session='))) response.headers.append('Set-Cookie', renewal);
     response.headers.set('Cache-Control', 'no-store');
     response.headers.set('X-Content-Type-Options', 'nosniff');
     response.headers.set('X-Frame-Options', 'DENY');

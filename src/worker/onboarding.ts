@@ -5,10 +5,11 @@ import { cloudflareSigninConfigured } from './cloudflare';
 import { handleHostedOnboarding, type AuthenticateRequest } from './hosted-onboarding';
 import { securityClient } from './security';
 import { DEMO_RESET_TIME, demoMode } from './demo';
+import { sessionCookie } from './session-policy';
 
 function authenticatedResponse(result: { token: string; user: unknown; workspaceId: string; recoveryCodes?: string[] }): Response {
   const { token, ...body } = result;
-  return Response.json({ ok: true, ...body }, { headers: { 'Cache-Control': 'no-store', 'Set-Cookie': `gitflare_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800` } });
+  return Response.json({ ok: true, ...body }, { headers: { 'Cache-Control': 'no-store', 'Set-Cookie': sessionCookie(token) } });
 }
 const noStore = { headers: { 'Cache-Control': 'no-store' } };
 const RESET_REQUESTED = { ok: true, message: 'If an account exists for that address, a password reset link is on its way.' };

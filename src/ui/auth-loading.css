@@ -26,3 +26,8 @@
   margin-right: 8px;
   flex-shrink: 0;
 }
+
+.reconnecting-notice { position: fixed; left: 50%; bottom: 16px; z-index: 1000; display: inline-flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px); padding: 6px 12px; transform: translateX(-50%); border: 1px solid var(--gf-color-border); border-radius: 999px; background: var(--gf-color-surface-raised); color: var(--gf-color-text-secondary); font-size: 12px; box-shadow: 0 4px 16px rgb(0 0 0 / 12%); pointer-events: none; }
+.reconnecting-notice span { width: 6px; height: 6px; border-radius: 50%; background: var(--gf-color-warning); animation: reconnecting-pulse 1.2s ease-in-out infinite; }
+@keyframes reconnecting-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .reconnecting-notice span { animation: none; } }

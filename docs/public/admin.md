@@ -16,7 +16,7 @@ In **Settings → People**, Owners can create users or send a single-use invitat
 
 The current role presets are Viewer, Contributor, Reviewer, Maintainer, Deployer, and Owner. Membership can be limited to selected repositories. Teams and exact-resource grants can refine access, but grant records do not provision secrets, databases, deployment credentials, or migration executors. Keep at least one active Owner and review the audit trail after access changes.
 
-Revoke browser sessions, personal MCP sessions, task credentials, and invitations during offboarding. Task credentials have bounded repository scope, expiry, request budget, and execution budget. A coding agent must never receive owner credentials, personal MCP credentials, or deployment credentials.
+Browser sessions end after seven days without use and always 30 days after sign-in; personal MCP tokens last eight hours. Recent-sign-in checks for ownership transfer, authenticator setup and new tokens count from the actual sign-in, not from the last renewal. Revoke browser sessions, personal MCP sessions, task credentials, and invitations during offboarding. Task credentials have bounded repository scope, expiry, request budget, and execution budget. A coding agent must never receive owner credentials, personal MCP credentials, or deployment credentials.
 
 An authenticated MCP client acts with the signed-in user's current authority; it can approve or land only if the user's role and the exact candidate state allow it. See [MCP authorization](mcp.md) and [repository review](repositories.md). The hosted service's global administration and hosted-agent claim process are separate from this self-hosted workspace and are excluded from the source package.
 
