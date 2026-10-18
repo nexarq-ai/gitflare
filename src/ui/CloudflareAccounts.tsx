@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { CheckCircleIcon, CopyIcon, TrashIcon } from "@phosphor-icons/react";
@@ -12,7 +12,7 @@ import { RouteProgress } from "./WorkspaceLoader";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import { ConnectPermissions } from "./CloudflareConnection";
 import InfoTip from "./InfoTip";
-import { accountUsage, FEATURE_HELP, FEATURE_LABELS, removeRefusal, type AccountsOverview } from "./cloudflare-accounts-data";
+import { accountRows, accountUsage, FEATURE_HELP, FEATURE_LABELS, removeRefusal, type AccountsOverview } from "./cloudflare-accounts-data";
 import "./cloudflare-connection.css";
 import "./people-settings.css";
 
@@ -30,7 +30,7 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
   const [busy, setBusy] = useState("");
   const [retry, setRetry] = useState(0);
   const [authorization, setAuthorization] = useState<Authorization | null>(null);
-  const [chooser, setChooser] = useState<{ grantId: string | null; accounts: Reachable[] } | null>(null);
+  const [reachable, setReachable] = useState<{ grantId: string | null; accounts: Reachable[] }[]>([]);
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   useEffect(() => {
     if (!authorization?.features || authorization.plan) return;
@@ -38,7 +38,7 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
     void request<Status>(`/api/cloudflare?features=${authorization.features.join(",")}`).then(value => { if (active && value.permissions) setAuthorization(current => current && { ...current, plan: value.permissions }); }).catch(() => {});
     return () => { active = false; };
   }, [authorization]);
-  const connectedGrant = useMemo(() => new URLSearchParams(window.location.search).get("connected"), []);
+  useEffect(() => { if (new URLSearchParams(window.location.search).has("connected")) window.history.replaceState(null, "", "/settings/cloudflare"); }, []);
 
   useEffect(() => {
     let active = true;
@@ -50,17 +50,15 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
       ]);
       if (!active) return;
       setOverview(view); setStatus(state);
-      if (!canManage || !state?.connected || demoOf(state)) return;
-      const grantId = connectedGrant && view.grants?.includes(connectedGrant) ? connectedGrant : null;
-      if (!grantId && state.account && view.accounts.length) return;
-      const reachable = await request<{ accounts: Reachable[] }>(grantId ? `/api/cloudflare/logins/${grantId}/accounts` : "/api/cloudflare/accounts");
+      if (!canManage || !state?.connected || demoOf(state)) { setReachable([]); return; }
+      const logins = [null, ...(view.grants ?? [])];
+      const lists = await Promise.all(logins.map(grantId => request<{ accounts: Reachable[] }>(grantId ? `/api/cloudflare/logins/${grantId}/accounts` : "/api/cloudflare/accounts").then(result => ({ grantId, accounts: result.accounts })).catch(() => ({ grantId, accounts: [] as Reachable[] }))));
       if (!active) return;
-      const known = new Set(view.accounts.map(item => item.id));
-      const fresh = reachable.accounts.filter(item => !known.has(item.id));
-      if (fresh.length > 1) setChooser({ grantId, accounts: fresh });
-      else if (fresh.length === 1 && !grantId && !state.account) {
-        await request("/api/cloudflare/select-account", { accountId: fresh[0].id });
-        if (active) { setNotice(`Connected. ${fresh[0].name} is this workspace's default Cloudflare account.`); setRetry(value => value + 1); }
+      setReachable(lists);
+      const first = lists[0]?.accounts ?? [];
+      if (!state.account && !view.accounts.length && first.length === 1) {
+        await request("/api/cloudflare/select-account", { accountId: first[0].id });
+        if (active) { setNotice(`Connected. ${first[0].name} is this workspace's default Cloudflare account.`); setRetry(value => value + 1); }
       }
     };
     void load().catch(failure => { if (active) setError(failure instanceof Error ? failure.message : "Cloudflare accounts could not be loaded."); });
@@ -93,7 +91,11 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
   const granted = features.filter(item => item.granted).map(item => item.feature);
   const grants = overview?.grants ?? [];
   const loginName = (grantId: string | null) => grantId === null ? "First login" : `Login ${grants.indexOf(grantId) + 2}`;
-  const single = accounts.length === 1 ? accounts[0] : !accounts.length && status?.account ? { ...status.account, grantId: null } : null;
+  const rows = accountRows(accounts, reachable, status?.account ?? null);
+  async function addAccount(row: { id: string; name: string; grantId: string | null }) {
+    if (row.grantId === null && !status?.account) { await act(`add:${row.id}`, "/api/cloudflare/select-account", { accountId: row.id }, `${row.name} added as the default.`); setRetry(value => value + 1); return; }
+    await act(`add:${row.id}`, "/api/cloudflare/account-put", { accountId: row.id, ...(row.grantId ? { grantId: row.grantId } : {}) }, `${row.name} added.`);
+  }
 
   return <div className="cf-accounts-page">
     <div className="page-heading"><div><h1>Cloudflare accounts</h1><p>Accounts your repositories can deploy to. Connecting Cloudflare is separate from signing in.</p></div></div>
@@ -109,40 +111,27 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
         </div>
       </section>
       : <>
-        {chooser && owner && <AccountChooser workspaceName={workspaceName} grantId={chooser.grantId} accounts={chooser.accounts} hasDefault={!!overview.defaultAccount} busy={busy} onSave={async (ids, defaultId) => {
-          setBusy("choose"); setError("");
-          try {
-            if (chooser.grantId === null && !status?.account && defaultId) await request("/api/cloudflare/select-account", { accountId: defaultId });
-            for (const id of ids) if (!(chooser.grantId === null && !status?.account && id === defaultId)) await request("/api/cloudflare/account-put", { accountId: id, ...(chooser.grantId ? { grantId: chooser.grantId } : {}) });
-            if (defaultId && (chooser.grantId !== null || status?.account)) await request("/api/cloudflare/account-default", { accountId: defaultId });
-            setChooser(null); setNotice(`${ids.length === 1 ? "1 account" : `${ids.length} accounts`} added.`);
-            window.history.replaceState(null, "", "/settings/cloudflare");
-            setRetry(value => value + 1);
-          } catch (failure) { setError(failure instanceof Error ? failure.message : "The accounts could not be added."); }
-          finally { setBusy(""); }
-        }} onSkip={() => { setChooser(null); window.history.replaceState(null, "", "/settings/cloudflare"); }} />}
-
-        {single ? <section className="panel">
-          <div className="panel-header"><h2>Account</h2><span className="account-method-on"><CheckCircleIcon size={16} weight="fill" aria-hidden="true" />Connected</span></div>
-          <div className="panel-body cf-single-account"><strong>{single.name}</strong><AccountId id={single.id} name={single.name} onCopied={() => setNotice("Account ID copied.")} /><p className="people-muted">Every repository deploys here unless it chooses another account.</p></div>
-        </section> : <section className="panel">
-          <div className="panel-header"><h2>Connected accounts</h2><span className="number-tag">{accounts.length}</span></div>
-          {accounts.length ? <div className="people-table-wrap"><table className="people-table">
-            <thead><tr><th scope="col">Account</th><th scope="col">Default<InfoTip label="the default account">The default is used by every repository that does not choose its own account. Changing it affects their next deploy, not what is already running.</InfoTip></th>{grants.length > 0 && <th scope="col">Login</th>}<th scope="col">Used by</th>{owner && <th scope="col"><span className="sr-only">Actions</span></th>}</tr></thead>
-            <tbody>{accounts.map(account => {
-              const used = accountUsage(account.id, overview, repositories);
-              const isDefault = overview.defaultAccount?.id === account.id;
-              return <tr key={account.id}>
-                <td><div className="people-person"><div><strong>{account.name}</strong><AccountId id={account.id} name={account.name} onCopied={() => setNotice("Account ID copied.")} /></div></div></td>
-                <td>{owner ? <input type="radio" name="cf-default" aria-label={`Make ${account.name} the default`} checked={isDefault} disabled={!!busy} onChange={() => void act(`default:${account.id}`, "/api/cloudflare/account-default", { accountId: account.id }, `${account.name} is the default for repositories that do not choose an account.`)} /> : isDefault ? <span className="people-tag">Default</span> : null}</td>
-                {grants.length > 0 && <td><span className="people-muted">{loginName(account.grantId)}</span></td>}
-                <td>{used.length ? <details className="cf-used-by"><summary>{used.length === 1 ? "1 repository" : `${used.length} repositories`}</summary><ul>{used.map(item => <li key={item.repository.id}><a href={`/repository/${item.repository.id}/settings/deploys`}>{repositoryLabel(item.repository)}</a> <small>{item.where}</small></li>)}</ul></details> : <span className="people-muted">{isDefault ? "Repositories without their own choice" : "Not used"}</span>}</td>
-                {owner && <td className="people-actions">{!isDefault && <Button variant="ghost" size="sm" shape="square" icon={TrashIcon} aria-label={`Remove ${account.name}`} loading={busy === `remove:${account.id}`} disabled={!!busy} onClick={() => void act(`remove:${account.id}`, "/api/cloudflare/account-remove", { accountId: account.id }, `${account.name} removed.`)} />}</td>}
+        <section className="panel">
+          <div className="panel-header"><h2>Accounts</h2><span className="number-tag">{rows.filter(row => row.added).length} used</span></div>
+          {rows.length ? <div className="people-table-wrap"><table className="people-table cf-accounts-table">
+            <thead><tr><th scope="col">Account</th><th scope="col">Status</th><th scope="col">Default<InfoTip label="the default account">The default is used by every repository that does not choose its own account. Changing it affects their next deploy, not what is already running.</InfoTip></th>{grants.length > 0 && <th scope="col">Login</th>}<th scope="col">Used by</th>{owner && <th scope="col"><span className="sr-only">Actions</span></th>}</tr></thead>
+            <tbody>{rows.map(row => {
+              const used = accountUsage(row.id, overview, repositories);
+              const isDefault = overview.defaultAccount?.id === row.id;
+              return <tr key={row.id} className={row.added ? undefined : "cf-account-not-added"}>
+                <td><div className="people-person"><div><strong>{row.name}</strong><AccountId id={row.id} name={row.name} onCopied={() => setNotice("Account ID copied.")} /></div></div></td>
+                <td>{row.added ? <span className="account-method-on"><CheckCircleIcon size={16} weight="fill" aria-hidden="true" />Used by this workspace</span> : <span className="people-muted">Not added</span>}</td>
+                <td data-label="Default">{row.added ? owner ? <input type="radio" name="cf-default" aria-label={`Make ${row.name} the default`} checked={isDefault} disabled={!!busy} onChange={() => void act(`default:${row.id}`, "/api/cloudflare/account-default", { accountId: row.id }, `${row.name} is the default for repositories that do not choose an account.`)} /> : isDefault ? <span className="people-tag">Default</span> : null : null}</td>
+                {grants.length > 0 && <td><span className="people-muted">{loginName(row.grantId)}</span></td>}
+                <td data-label="Used by">{!row.added ? null : used.length ? <details className="cf-used-by"><summary>{used.length === 1 ? "1 repository" : `${used.length} repositories`}</summary><ul>{used.map(item => <li key={item.repository.id}><a href={`/repository/${item.repository.id}/settings/deploys`}>{repositoryLabel(item.repository)}</a> <small>{item.where}</small></li>)}</ul></details> : <span className="people-muted">{isDefault ? "Repositories without their own choice" : "None yet"}</span>}</td>
+                {owner && <td className="people-actions">{row.added ? !isDefault && <Button variant="ghost" size="sm" shape="square" icon={TrashIcon} aria-label={`Remove ${row.name}`} loading={busy === `remove:${row.id}`} disabled={!!busy} onClick={() => void act(`remove:${row.id}`, "/api/cloudflare/account-remove", { accountId: row.id }, `${row.name} removed from this workspace.`)} />
+                  : <Button variant="secondary" size="sm" loading={busy === `add:${row.id}`} disabled={!!busy} onClick={() => void addAccount(row)}>Add</Button>}</td>}
               </tr>;
             })}</tbody>
           </table></div> : <div className="panel-body"><p className="people-muted">No Cloudflare account is connected to this workspace.</p></div>}
-          {!owner && <div className="panel-body"><p className="people-muted">An Owner manages Cloudflare connections.</p></div>}
-        </section>}
+          {owner ? rows.some(row => !row.added) && <div className="panel-body"><p className="people-muted">Your Cloudflare {grants.length ? "logins reach" : "login reaches"} every account listed. Add the ones repositories here should deploy to.</p></div>
+            : <div className="panel-body"><p className="people-muted">An Owner manages Cloudflare connections.</p></div>}
+        </section>
 
         {owner && status && <section className="panel">
           <div className="panel-header"><h2>What Gitflare can do</h2></div>
@@ -180,21 +169,4 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
 
 function AccountId({ id, name, onCopied }: { id: string; name: string; onCopied: () => void }) {
   return <small className="cf-account-id"><code>{id}</code><button type="button" className="cf-copy" aria-label={`Copy the account ID of ${name}`} onClick={() => void navigator.clipboard.writeText(id).then(onCopied).catch(() => {})}><CopyIcon size={12} /></button></small>;
-}
-
-function AccountChooser({ workspaceName, grantId, accounts, hasDefault, busy, onSave, onSkip }: { workspaceName: string; grantId: string | null; accounts: Reachable[]; hasDefault: boolean; busy: string; onSave: (ids: string[], defaultId: string | null) => Promise<void>; onSkip: () => void }) {
-  const [chosen, setChosen] = useState<string[]>([]);
-  const [defaultId, setDefaultId] = useState<string | null>(null);
-  const effectiveDefault = defaultId && chosen.includes(defaultId) ? defaultId : hasDefault ? null : chosen[0] ?? null;
-  return <section className="panel cf-chooser" aria-labelledby="cf-chooser-title">
-    <div className="panel-header"><h2 id="cf-chooser-title">Which accounts should {workspaceName} use?</h2></div>
-    <div className="panel-body">
-      <p className="people-muted">You can add more later. One account is the default for repositories that do not choose their own.{grantId ? " These come from the login you just added." : ""}</p>
-      <ul className="cf-chooser-list">{accounts.map(account => <li key={account.id}>
-        <label><input type="checkbox" checked={chosen.includes(account.id)} onChange={event => setChosen(current => event.target.checked ? [...current, account.id] : current.filter(id => id !== account.id))} /><span><strong>{account.name}</strong><small>{account.id}</small></span></label>
-        {chosen.includes(account.id) && <label className="cf-chooser-default"><input type="radio" name="cf-chooser-default" checked={effectiveDefault === account.id} onChange={() => setDefaultId(account.id)} />Default</label>}
-      </li>)}</ul>
-      <div className="general-row"><Button variant="primary" size="base" loading={busy === "choose"} disabled={!chosen.length || !!busy} onClick={() => void onSave(chosen, effectiveDefault)}>{chosen.length > 1 ? `Add ${chosen.length} accounts` : "Add account"}</Button><Button variant="ghost" size="base" disabled={!!busy} onClick={onSkip}>Not now</Button></div>
-    </div>
-  </section>;
 }
