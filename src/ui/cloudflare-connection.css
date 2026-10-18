@@ -174,3 +174,26 @@ label.cf-warning { display: flex; align-items: flex-start; gap: 8px; margin-top:
 .cf-permission-groups li span { grid-column: 1 / -1; color: var(--gf-color-text-secondary); }
 .cf-permission-docs { margin-top: 16px; font-size: 13px; }
 @media (max-width: 520px) { .cf-permission-groups li { grid-template-columns: 1fr; } }
+.cf-accounts-page { display: flex; flex-direction: column; gap: 20px; }
+.cf-account-id { display: inline-flex; align-items: center; gap: 4px; color: var(--gf-color-text-tertiary); }
+.cf-account-id code { font-size: 11px; overflow-wrap: anywhere; }
+.cf-copy { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--gf-color-text-tertiary); cursor: pointer; }
+.cf-copy:hover { background: var(--gf-color-surface-hover); color: var(--gf-color-text); }
+.cf-single-account { display: flex; flex-direction: column; gap: 4px; }
+.cf-single-account strong { font-size: 15px; }
+.cf-single-account .people-muted { margin-top: 8px; }
+.cf-used-by summary { cursor: pointer; font-size: 13px; }
+.cf-used-by ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.cf-used-by small { color: var(--gf-color-text-tertiary); }
+.cf-features li > div strong { display: inline-flex; align-items: center; }
+.cf-permission-details { border-top: 1px solid var(--gf-color-border); padding: 14px 18px; }
+.cf-permission-details summary { cursor: pointer; color: var(--gf-color-text-secondary); font-size: 13px; }
+.cf-permission-details .cf-permission-groups { margin-top: 12px; }
+.cf-login-actions { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.cf-chooser-list { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 16px; padding: 0; list-style: none; }
+.cf-chooser-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--gf-color-border); border-radius: 8px; }
+.cf-chooser-list li > label:first-child { display: flex; flex: 1; align-items: center; gap: 10px; cursor: pointer; }
+.cf-chooser-list span { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.cf-chooser-list small { color: var(--gf-color-text-tertiary); font-size: 11px; }
+.cf-chooser-default { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--gf-color-text-secondary); }
+.people-table th { white-space: nowrap; }

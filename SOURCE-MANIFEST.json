@@ -270,8 +270,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 83147,
-      "sha256": "d1be76ac7559f1732f8f3a305a869bdf38fc8db9b7df9fab819c469b016c86fc"
+      "size": 83247,
+      "sha256": "564e772294b647ad0174af009271c192c6030bdabea38fd1ba28564a4da3cf83"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -374,9 +374,14 @@
       "sha256": "25378dfa22e2f70152c038aeb96ae65840cd80be91eb1e8ee2ed466558cafdba"
     },
     {
+      "path": "src/ui/cloudflare-accounts-data.ts",
+      "size": 2533,
+      "sha256": "49c4cab1728e2a3752f0dcbb2300588386844543c185506afcd9f8652c426c84"
+    },
+    {
       "path": "src/ui/cloudflare-connection.css",
-      "size": 17960,
-      "sha256": "c2ee96da371aaf2f0fe5fdeaf918f1c9ca1d98d376d3cbaa6e44502752effa01"
+      "size": 20131,
+      "sha256": "c9e2da759b0ab5eadec354e508e4638da58365d8be2dfaa69ea6e7d11d7ead8c"
     },
     {
       "path": "src/ui/cloudflare-deploy-button.css",
@@ -384,9 +389,14 @@
       "sha256": "61443f7bd18286248176467c17af5ef16d361a4362888c46a7182f711c27d630"
     },
     {
+      "path": "src/ui/CloudflareAccounts.tsx",
+      "size": 19110,
+      "sha256": "458c8b0046b9f64b5e586d42d69c4ce1404bb15f8cfbc4242220529d93dd1a6e"
+    },
+    {
       "path": "src/ui/CloudflareConnection.tsx",
-      "size": 44117,
-      "sha256": "ae73bcd0cddb5f767796de2dccef1c93a56641876f299a4731a77e1eb454f743"
+      "size": 33142,
+      "sha256": "c90ddb5b2b569d71df52c28796e2ccfad98499630230d04784d52c5f2be8d336"
     },
     {
       "path": "src/ui/CloudflareConnectPrompt.tsx",
@@ -522,6 +532,16 @@
       "path": "src/ui/hosts.ts",
       "size": 1511,
       "sha256": "0c5b20db80dfd1fb7a14ff77de8d88519786cb06ac304bb03a257be8cbf4f9cc"
+    },
+    {
+      "path": "src/ui/info-tip.css",
+      "size": 1183,
+      "sha256": "3f6eace7879312f226a7aeb5b7c4d7df8c906a9b25d5534f27fbbce5ce49d752"
+    },
+    {
+      "path": "src/ui/InfoTip.tsx",
+      "size": 1477,
+      "sha256": "9dd458055727f6689ab2f5d4a605f8541a97c5781aef0a9b1a74bb08c64dde8c"
     },
     {
       "path": "src/ui/InstallationAdmin.tsx",

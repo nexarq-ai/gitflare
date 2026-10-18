@@ -93,6 +93,7 @@ const PeopleSettings = lazy(loadPeopleSettings);
 const AuditLog = lazy(() => import("./AuditLog"));
 const RepositoryAccess = lazy(() => import("./RepositoryAccess"));
 const InstallationAdmin = lazy(() => import("./InstallationAdmin"));
+const CloudflareAccounts = lazy(() => import("./CloudflareAccounts"));
 const loadRepositoryWork = () => import("./RepositoryWork");
 const RepositoryWork = lazy(loadRepositoryWork);
 const loadProposalCreate = () => import("./ProposalCreate");
@@ -681,7 +682,7 @@ function Workspace() {
             {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify("Mission draft created."); }} /> : page === "settings" ? (
               <WorkspaceSettingsLayout route={route}>
                 {route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} />
-                  : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} />
+                  : route === "settings/cloudflare" ? <CloudflareAccounts canManage={permissions.includes("manage")} repositories={workspace.repositories} workspaceName={workspace.name} />
                   : !account ? <RouteProgress />
                   : route === "settings/people" ? <PeopleSettings data={account} repositories={workspace.repositories} workspaceName={workspace.name} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} />
                   : route === "settings/audit" ? <AuditLog data={account} repositories={workspace.repositories} workspaceName={workspace.name} />
