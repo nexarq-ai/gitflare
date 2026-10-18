@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
+import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { CopyIcon, KeyIcon, PlusIcon, UserPlusIcon, UsersThreeIcon, XIcon } from "@phosphor-icons/react";
@@ -64,7 +65,7 @@ export default function PeopleSettings({ data, repositories, workspaceName, self
     </section> : <section className="panel">
       <div className="panel-header"><h2>Members</h2><span className="number-tag">{data.members.length}</span></div>
       <div className="people-table-wrap"><table className="people-table">
-        <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Access</th>{owner && <th scope="col"><span className="sr-only">Actions</span></th>}</tr></thead>
+        <thead><tr><th scope="col">Person</th><th scope="col">Role<InfoTip label="roles">Viewer reads. Contributor proposes and runs agents. Reviewer approves. Maintainer also lands. Deployer deploys. Owner manages everything.</InfoTip></th><th scope="col">Access<InfoTip label="repository access">All repositories, or only the ones you pick. Someone limited to billing-api does not see the other repositories at all.</InfoTip></th>{owner && <th scope="col"><span className="sr-only">Actions</span></th>}</tr></thead>
         <tbody>{members.map(member => {
           const self = member.userId === data.user.id;
           const name = member.user?.name || member.user?.email || "Workspace member";
@@ -88,7 +89,7 @@ export default function PeopleSettings({ data, repositories, workspaceName, self
     {invitations.length > 0 && <section className="panel">
       <div className="panel-header"><h2>Waiting to accept</h2><span className="number-tag">{invitations.length}</span></div>
       <div className="people-table-wrap"><table className="people-table">
-        <thead><tr><th scope="col">Email</th><th scope="col">Access</th><th scope="col">Role</th><th scope="col">Expires</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th scope="col">Email</th><th scope="col">Access</th><th scope="col">Role</th><th scope="col">Expires<InfoTip label="invitation expiry">Invitations work once and expire after 24 hours. Resend makes a new link and restarts the 24 hours.</InfoTip></th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{invitations.map(invitation => <tr key={invitation.id}>
           <td><strong className="people-email">{invitation.email}</strong></td>
           <td>{invitationAccess(invitation, repositories)}</td>
@@ -143,18 +144,18 @@ function TaskCredentials({ data, repositories, canCreate, busy, act }: { data: A
         <div className="people-form-grid">
           <Field label="Name"><input name="name" required maxLength={100} /></Field>
           <Field label="Repository"><select name="repositoryId" required>{repositories.map(repo => <option key={repo.id} value={repo.id}>{repositoryLabel(repo)}</option>)}</select></Field>
-          <Field label="Expires after (minutes)"><input name="expiresInSeconds" type="number" min="1" max="1440" defaultValue="60" required /></Field>
-          <Field label="Request budget"><input name="maxRequests" type="number" min="1" max="1000" defaultValue="100" required /></Field>
-          <Field label="Agent run budget"><input name="maxExecutions" type="number" min="1" max="10" defaultValue="1" required /></Field>
+          <Field label="Expires after (minutes)" tip="The credential stops working after this many minutes, at most 1440 (one day)."><input name="expiresInSeconds" type="number" min="1" max="1440" defaultValue="60" required /></Field>
+          <Field label="Request budget" tip="The most API requests the agent can make with it. 100 is enough for most single tasks."><input name="maxRequests" type="number" min="1" max="1000" defaultValue="100" required /></Field>
+          <Field label="Agent run budget" tip="How many agent runs it may start. 1 means a single run."><input name="maxExecutions" type="number" min="1" max="10" defaultValue="1" required /></Field>
         </div>
-        <fieldset className="people-checks"><legend>Allows</legend>{[["read", "Read"], ["contribute", "Propose changes"], ["execute", "Run agents"]].map(([value, label]) => <label key={value}><input type="checkbox" name="actions" value={value} defaultChecked={value === "read"} />{label}</label>)}</fieldset>
+        <fieldset className="people-checks"><legend>Allows<InfoTip label="credential actions">Read lets the agent look at code. Propose changes lets it push a proposal. Run agents lets it start further agent runs.</InfoTip></legend>{[["read", "Read"], ["contribute", "Propose changes"], ["execute", "Run agents"]].map(([value, label]) => <label key={value}><input type="checkbox" name="actions" value={value} defaultChecked={value === "read"} />{label}</label>)}</fieldset>
         <Button type="submit" variant="secondary" size="base" loading={busy === "credential"} disabled={!!busy}>Create credential</Button>
       </form>}
     </div>
   </details>;
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="people-field"><span>{label}</span>{children}</label>; }
+function Field({ label, tip, children }: { label: string; tip?: string; children: ReactNode }) { return <label className="people-field"><span className="field-label">{label}{tip && <InfoTip label={label}>{tip}</InfoTip>}</span>{children}</label>; }
 
 function CreateUserDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (message: string) => Promise<void> }) {
   const [busy, setBusy] = useState(false);

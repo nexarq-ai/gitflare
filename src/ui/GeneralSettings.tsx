@@ -7,6 +7,9 @@ import { InstallationCredentialPrompt } from "./InstallationCredential";
 import { ROLE_HELP } from "./people-data";
 import { needsRecentSignIn, signInAgain } from "./reauth";
 import { demoOf } from "./DemoFeaturePanel";
+import InfoTip from "./InfoTip";
+import CheckChips from "./CheckChips";
+import { approvalWarning, eligibleApprovers, knownCheckNames, selfApprovalNote } from "./approvals";
 import "./people-settings.css";
 
 type Props = { workspace: Workspace; data: AccessSnapshot; selfHosted: boolean; onChanged: () => Promise<void>; onLeft: (remaining: { id: string }[]) => Promise<void>; onOpenInstallation: () => void };
@@ -21,7 +24,7 @@ export default function GeneralSettings({ workspace, data, selfHosted, onChanged
     {selfHosted && owner && <InstallationCredentialPrompt onOpen={onOpenInstallation} />}
     <NameCard name={workspace.name} role={data.role} owner={owner} onChanged={onChanged} />
     <AiSettingsPanel settings={workspace.ai} canManage={owner} onChanged={onChanged} />
-    <ProtectionCard protection={data.protection} owner={owner} onChanged={onChanged} />
+    <ProtectionCard key={JSON.stringify(data.protection)} protection={data.protection} owner={owner} approvers={eligibleApprovers(data.members)} knownChecks={knownCheckNames(workspace.missions)} onChanged={onChanged} />
     {owner && <OwnershipCard data={data} onChanged={onChanged} />}
     {canLeave && <LeaveCard name={workspace.name} onLeft={onLeft} />}
   </>;
@@ -52,13 +55,20 @@ function NameCard({ name, role, owner, onChanged }: { name: string; role: string
   </section>;
 }
 
-function ProtectionCard({ protection, owner, onChanged }: { protection: AccessSnapshot["protection"]; owner: boolean; onChanged: () => Promise<void> }) {
+function ProtectionCard({ protection, owner, approvers, knownChecks, onChanged }: { protection: AccessSnapshot["protection"]; owner: boolean; approvers: number; knownChecks: string[]; onChanged: () => Promise<void> }) {
+  const [required, setRequired] = useState(protection.requiredApprovals);
+  const [checks, setChecks] = useState(protection.requiredChecks);
+  const [preventSelf, setPreventSelf] = useState(protection.preventSelfApproval);
+  const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const fields = new FormData(event.currentTarget); setBusy(true); setError(""); setSaved(false);
-    try { await request("/api/access/protection", { requiredApprovals: Number(fields.get("requiredApprovals")), requiredChecks: String(fields.get("requiredChecks") ?? "").split(",").map(item => item.trim()).filter(Boolean), preventSelfApproval: fields.get("preventSelfApproval") === "on" }); setSaved(true); await onChanged(); }
+  const warning = approvalWarning(required, approvers, preventSelf);
+  const blocked = !!warning?.blocking && !confirmed;
+  async function save(event: FormEvent) {
+    event.preventDefault(); if (blocked) return;
+    setBusy(true); setError(""); setSaved(false);
+    try { await request("/api/access/protection", { requiredApprovals: required, requiredChecks: checks, preventSelfApproval: preventSelf }); setSaved(true); setConfirmed(false); await onChanged(); }
     catch (failure) { setError(failure instanceof Error ? failure.message : "The rules could not be saved."); }
     finally { setBusy(false); }
   }
@@ -66,11 +76,18 @@ function ProtectionCard({ protection, owner, onChanged }: { protection: AccessSn
     <div className="panel-header"><h2>Before a change lands</h2></div>
     <div className="panel-body">
       <p className="people-muted">Defaults for every repository. A repository's Streams settings can be stricter.</p>
-      {owner ? <form key={JSON.stringify(protection)} className="general-protection" onSubmit={event => void save(event)}>
-        <label className="people-field"><span>Approvals needed</span><input name="requiredApprovals" type="number" min={1} max={10} defaultValue={protection.requiredApprovals} required /></label>
-        <label className="people-field"><span>Checks that must pass</span><input name="requiredChecks" defaultValue={protection.requiredChecks.join(", ")} placeholder="test, lint" /><small>Check names, separated by commas. Leave empty to require none.</small></label>
-        <label className="people-check"><input name="preventSelfApproval" type="checkbox" defaultChecked={protection.preventSelfApproval} />Authors cannot approve their own changes</label>
-        <div className="general-row"><Button type="submit" variant="secondary" size="base" loading={busy}>Save rules</Button>{saved && <span className="people-muted" role="status">Saved.</span>}</div>
+      {owner ? <form className="general-protection" onSubmit={event => void save(event)}>
+        <div className="people-field"><span className="field-label"><label htmlFor="required-approvals">Approvals needed</label><InfoTip label="Approvals needed">How many people must approve the exact revision before it lands. 1 means one reviewer; higher numbers need more reviewers. {approvers === 1 ? "1 person" : `${approvers} people`} can approve in this workspace today.</InfoTip></span>
+          <input id="required-approvals" type="number" min={1} max={10} value={required} required onChange={event => { setRequired(Number(event.target.value)); setConfirmed(false); }} />
+          <small>{approvers === 1 ? "1 person" : `${approvers} people`} can approve here (Reviewers, Maintainers and Owners).</small>
+          {warning && <p className={`approval-warning${warning.blocking ? " approval-warning-blocking" : ""}`} role="status">{warning.text}</p>}
+          {warning?.blocking && <label className="people-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />Save anyway, I will invite reviewers</label>}
+        </div>
+        <div className="people-field"><span className="field-label">Checks that must pass<InfoTip label="Checks that must pass">A change can land only after these checks pass on the exact revision. Pick none to land without checks, or pick test to require the test check, for example.</InfoTip></span>
+          <CheckChips label="Checks that must pass" known={knownChecks} selected={checks} onChange={setChecks} />
+        </div>
+        <div><label className="people-check"><input type="checkbox" checked={preventSelf} onChange={event => setPreventSelf(event.target.checked)} />Authors cannot approve their own changes<InfoTip label="Authors cannot approve their own changes">{selfApprovalNote(approvers)}</InfoTip></label></div>
+        <div className="general-row"><Button type="submit" variant="secondary" size="base" loading={busy} disabled={blocked}>Save rules</Button>{saved && <span className="people-muted" role="status">Saved.</span>}</div>
         {error && <div className="form-error" role="alert">{error}</div>}
       </form> : <dl className="general-facts">
         <dt>Approvals needed</dt><dd>{protection.requiredApprovals}</dd>

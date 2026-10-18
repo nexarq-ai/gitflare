@@ -9,6 +9,10 @@ import CheckSettings from "./CheckSettings";
 import { ErrorNotice, relativeTime } from "./components";
 import { navigate } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
+import InfoTip from "./InfoTip";
+import CheckChips from "./CheckChips";
+import { approvalWarning, selfApprovalNote } from "./approvals";
+import "./people-settings.css";
 import "./pull-requests.css";
 import "./branches.css";
 
@@ -34,7 +38,8 @@ export function BranchCreated({ repositoryId, name, onDismiss, onNotify }: { rep
   );
 }
 
-export default function BranchProtection({ repository, canManage: mayManage, demo = false, onNotify }: { repository: Repository; canManage: boolean; demo?: boolean; onNotify: (message: string) => void }) {
+export default function BranchProtection({ repository, canManage: mayManage, demo = false, approvers, knownChecks = [], onNotify }: { repository: Repository; canManage: boolean; demo?: boolean; approvers?: number; knownChecks?: string[]; onNotify: (message: string) => void }) {
+  const [confirmedRules, setConfirmedRules] = useState<string[]>([]);
   const canManage = mayManage && !demo;
   const [branches, setBranches] = useState<BranchList | null>(null);
   const [protection, setProtection] = useState<Protection | null>(null);
@@ -112,7 +117,8 @@ export default function BranchProtection({ repository, canManage: mayManage, dem
   if (!branches || !protection) return <RouteProgress />;
   const readOnly = !canManage || busy;
   const patterns = rules.map(rule => rule.pattern.trim());
-  const invalid = rules.some((rule, index) => !rule.pattern.trim() || patterns.indexOf(rule.pattern.trim()) !== index);
+  const warnings = new Map(rules.map(rule => [rule.id, approvers === undefined ? null : approvalWarning(rule.requiredApprovals, approvers, rule.preventSelfApproval)]));
+  const invalid = rules.some((rule, index) => !rule.pattern.trim() || patterns.indexOf(rule.pattern.trim()) !== index) || rules.some(rule => warnings.get(rule.id)?.blocking && !confirmedRules.includes(rule.id));
   return (
     <div className="branch-settings">
       <div className="repository-work-heading"><div><h2>Streams &amp; protection<span className="git-term">· Git branches</span></h2><p>Protected streams only change through proposals or missions that pass checks and get approval on the exact revision.</p></div></div>
@@ -169,18 +175,19 @@ export default function BranchProtection({ repository, canManage: mayManage, dem
           {rules.map((rule, index) => (
             <fieldset className="branch-rule" key={rule.id} disabled={readOnly} aria-label={`Rule ${index + 1}`}>
               <div className="branch-rule-row">
-                <div className="form-field"><label htmlFor={`rule-pattern-${rule.id}`}>Stream name or pattern</label><Input id={`rule-pattern-${rule.id}`} maxLength={200} value={rule.pattern} placeholder="release/*" aria-invalid={!rule.pattern.trim() || patterns.indexOf(rule.pattern.trim()) !== index} onChange={event => update(rule.id, { pattern: event.target.value })} /></div>
-                <div className="form-field branch-rule-approvals"><label htmlFor={`rule-approvals-${rule.id}`}>Required approvals</label><select id={`rule-approvals-${rule.id}`} value={rule.requiredApprovals} onChange={event => update(rule.id, { requiredApprovals: Number(event.target.value) })}>{[0, 1, 2, 3, 4, 5, 6].map(count => <option key={count} value={count}>{count}</option>)}</select></div>
+                <div className="form-field"><span className="field-label"><label htmlFor={`rule-pattern-${rule.id}`}>Stream name or pattern</label><InfoTip label="Stream name or pattern">The streams this rule protects. Use an exact name like main, or a pattern like release/* to protect every release stream.</InfoTip></span><Input id={`rule-pattern-${rule.id}`} maxLength={200} value={rule.pattern} placeholder="release/*" aria-invalid={!rule.pattern.trim() || patterns.indexOf(rule.pattern.trim()) !== index} onChange={event => update(rule.id, { pattern: event.target.value })} /></div>
+                <div className="form-field branch-rule-approvals"><span className="field-label"><label htmlFor={`rule-approvals-${rule.id}`}>Required approvals</label><InfoTip label="Required approvals">How many people must approve the exact revision before it lands in a matching stream. 0 lets changes land without review.{approvers !== undefined ? ` ${approvers === 1 ? "1 person" : `${approvers} people`} can approve in this repository today.` : ""}</InfoTip></span><select id={`rule-approvals-${rule.id}`} value={rule.requiredApprovals} onChange={event => update(rule.id, { requiredApprovals: Number(event.target.value) })}>{[0, 1, 2, 3, 4, 5, 6].map(count => <option key={count} value={count}>{count}</option>)}</select></div>
                 {canManage && <Button variant="ghost" size="base" icon={TrashIcon} aria-label={`Remove rule ${rule.pattern || index + 1}`} onClick={() => setRules(current => current.filter(item => item.id !== rule.id))}>Remove</Button>}
               </div>
               <div className="branch-rule-options">
-                <label><input type="checkbox" checked={rule.requirePullRequest} onChange={event => update(rule.id, { requirePullRequest: event.target.checked })} />Require a proposal before landing</label>
-                <label><input type="checkbox" checked={rule.preventSelfApproval} onChange={event => update(rule.id, { preventSelfApproval: event.target.checked })} />Authors cannot approve their own changes</label>
-                <span>Who can land:</span>
+                <label><input type="checkbox" checked={rule.requirePullRequest} onChange={event => update(rule.id, { requirePullRequest: event.target.checked })} />Require a proposal before landing<InfoTip label="Require a proposal before landing">Changes reach this stream only through a proposal that passes its checks and approvals. Turn it off to allow direct pushes, for example on a scratch stream.</InfoTip></label>
+                <label><input type="checkbox" checked={rule.preventSelfApproval} onChange={event => update(rule.id, { preventSelfApproval: event.target.checked })} />Authors cannot approve their own changes<InfoTip label="Authors cannot approve their own changes">{selfApprovalNote(approvers ?? 2)}</InfoTip></label>
+                <span className="field-label">Who can land:<InfoTip label="Who can land">Only these roles may land into a matching stream. Leave both off to let anyone with land permission do it.</InfoTip></span>
                 {landerRoles.map(role => <label key={role}><input type="checkbox" checked={rule.restrictLanders.includes(role)} onChange={event => update(rule.id, { restrictLanders: event.target.checked ? [...rule.restrictLanders, role] : rule.restrictLanders.filter(item => item !== role) })} />{role}</label>)}
                 {!rule.restrictLanders.length && <small>Anyone with land permission</small>}
               </div>
-              <div className="form-field"><label htmlFor={`rule-checks-${rule.id}`}>Required check names <span className="proposal-optional">(optional, one per line)</span></label><textarea id={`rule-checks-${rule.id}`} rows={2} value={rule.checks} placeholder="test" onChange={event => update(rule.id, { checks: event.target.value })} /></div>
+              {warnings.get(rule.id) && <div><p className={`approval-warning${warnings.get(rule.id)!.blocking ? " approval-warning-blocking" : ""}`} role="status">{warnings.get(rule.id)!.text}</p>{warnings.get(rule.id)!.blocking && <label className="people-check"><input type="checkbox" checked={confirmedRules.includes(rule.id)} onChange={event => setConfirmedRules(current => event.target.checked ? [...current, rule.id] : current.filter(id => id !== rule.id))} />Save anyway, I will invite reviewers</label>}</div>}
+              <div className="form-field"><span className="field-label">Checks that must pass<InfoTip label="Checks that must pass">A change can land only after these checks pass on the exact revision. Pick none to rely on the repository check settings alone.</InfoTip></span><CheckChips label="Checks that must pass" known={knownChecks} selected={rule.checks.split(/[\n,]/).map(name => name.trim()).filter(Boolean)} onChange={names => update(rule.id, { checks: names.join("\n") })} /></div>
               <p className="branch-rule-fixed"><ShieldCheckIcon size={14} />All checks must pass. New revisions dismiss approvals because approval is pinned to the exact revision. Force pushes are blocked.</p>
             </fieldset>
           ))}

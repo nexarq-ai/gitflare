@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import type { Repository } from "../shared/types";
 import { request } from "./api";
@@ -96,9 +97,9 @@ function AccessProtection({ environment, access, busy, perform }: { environment:
         <details className="cf-environment-settings">
           <summary>{on ? "Change Cloudflare Access" : "Protect with Cloudflare Access"}</summary>
           <div className="cf-form-row">
-            <label>Allowed emails (one per line)<textarea rows={3} value={emails} placeholder="alex@example.com" onChange={(event) => setEmails(event.target.value)} /></label>
-            <label>Allowed email domains<textarea rows={2} value={domains} placeholder="example.com" onChange={(event) => setDomains(event.target.value)} /></label>
-            <label>Access group id (optional)<input value={groupId} placeholder="Existing Zero Trust group" onChange={(event) => setGroupId(event.target.value)} /></label>
+            <label>Allowed emails (one per line)<InfoTip label="Allowed emails">Only these people can open the environment after signing in with Cloudflare Access.</InfoTip><textarea rows={3} value={emails} placeholder="alex@example.com" onChange={(event) => setEmails(event.target.value)} /></label>
+            <label>Allowed email domains<InfoTip label="Allowed email domains">Everyone whose email ends in one of these domains can open the environment, for example example.com.</InfoTip><textarea rows={2} value={domains} placeholder="example.com" onChange={(event) => setDomains(event.target.value)} /></label>
+            <label>Access group id (optional)<InfoTip label="Access group">An existing Cloudflare Zero Trust group to allow, instead of or as well as the lists above.</InfoTip><input value={groupId} placeholder="Existing Zero Trust group" onChange={(event) => setGroupId(event.target.value)} /></label>
           </div>
           <div className="cf-actions">
             <Button variant="primary" size="base" disabled={!!busy || empty} loading={busy === `${environment}-access`} onClick={() => void submit()}>{on ? "Update protection" : "Protect"}</Button>
@@ -289,17 +290,17 @@ export default function Deployments({ repository, onNotify }: { repository: Repo
           <details className="cf-environment-settings">
             <summary>Settings</summary>
             <div className="cf-form-row">
-              <label>Environment<select value={editing} onChange={(event) => switchEditing(event.target.value as Environment)}>{environmentNames.map((environment) => <option key={environment} value={environment}>{environmentLabel(environment)}</option>)}</select></label>
+              <label>Environment<InfoTip label="Environment">Which environment these settings change. Staging can deploy on land; production waits for an Owner.</InfoTip><select value={editing} onChange={(event) => switchEditing(event.target.value as Environment)}>{environmentNames.map((environment) => <option key={environment} value={environment}>{environmentLabel(environment)}</option>)}</select></label>
             </div>
             <div className="cf-targets">
               {draft.targets.map((target, index) => (
                 <fieldset key={index} className="cf-target">
                   <legend>Target {index + 1}</legend>
-                  <label>Worker<select value={target.workerName} onChange={(event) => updateTarget(index, { workerName: event.target.value })}>{state.workers.map((worker) => <option key={worker.id} value={worker.id}>{worker.name}</option>)}</select></label>
-                  <label>Wrangler config<input value={target.configPath} placeholder="apps/api/wrangler.jsonc" onChange={(event) => updateTarget(index, { configPath: event.target.value })} /></label>
-                  <label>Build command (optional)<input value={target.buildCommand ?? ""} placeholder="pnpm --filter @app/web build" onChange={(event) => updateTarget(index, { buildCommand: event.target.value })} /></label>
-                  <label>Watch paths (optional, one per line)<textarea rows={3} value={(target.watchPaths ?? []).join("\n")} placeholder={"apps/api/**\npackages/**\npnpm-lock.yaml"} onChange={(event) => updateTarget(index, { watchPaths: event.target.value.split("\n").map((line) => line.trim()).filter(Boolean) })} /></label>
-                  <label className="cf-inline"><input type="checkbox" checked={target.d1Migrations} onChange={(event) => updateTarget(index, { d1Migrations: event.target.checked })} /> Apply D1 migrations first</label>
+                  <label>Worker<InfoTip label="Worker">The Worker this target deploys, as named in its Wrangler config.</InfoTip><select value={target.workerName} onChange={(event) => updateTarget(index, { workerName: event.target.value })}>{state.workers.map((worker) => <option key={worker.id} value={worker.id}>{worker.name}</option>)}</select></label>
+                  <label>Wrangler config<InfoTip label="Wrangler config">Path to the wrangler.jsonc or wrangler.toml for this Worker, for example apps/api/wrangler.jsonc.</InfoTip><input value={target.configPath} placeholder="apps/api/wrangler.jsonc" onChange={(event) => updateTarget(index, { configPath: event.target.value })} /></label>
+                  <label>Build command (optional)<InfoTip label="Build command">Runs before the deploy, for example pnpm build. Leave empty when Wrangler builds the Worker itself.</InfoTip><input value={target.buildCommand ?? ""} placeholder="pnpm --filter @app/web build" onChange={(event) => updateTarget(index, { buildCommand: event.target.value })} /></label>
+                  <label>Watch paths (optional, one per line)<InfoTip label="Watch paths">A landed change deploys this target only if it touches these paths, for example apps/api/**. Leave empty to deploy on every change.</InfoTip><textarea rows={3} value={(target.watchPaths ?? []).join("\n")} placeholder={"apps/api/**\npackages/**\npnpm-lock.yaml"} onChange={(event) => updateTarget(index, { watchPaths: event.target.value.split("\n").map((line) => line.trim()).filter(Boolean) })} /></label>
+                  <label className="cf-inline"><input type="checkbox" checked={target.d1Migrations} onChange={(event) => updateTarget(index, { d1Migrations: event.target.checked })} /> Apply D1 migrations first<InfoTip label="D1 migrations">Runs pending D1 migrations before the new version takes traffic. A failed migration stops the deploy.</InfoTip></label>
                   <div className="cf-target-actions">
                     <Button variant="secondary" size="sm" disabled={index === 0} onClick={() => moveTarget(index, -1)}>Move up</Button>
                     <Button variant="secondary" size="sm" disabled={index === draft.targets.length - 1} onClick={() => moveTarget(index, 1)}>Move down</Button>
@@ -310,10 +311,10 @@ export default function Deployments({ repository, onNotify }: { repository: Repo
               {draft.targets.length < 5 && <Button variant="secondary" size="sm" onClick={() => setDraft({ ...draft, targets: [...draft.targets, { workerName: state.workers.find((worker) => !draft.targets.some((target) => target.workerName === worker.id))?.id ?? state.workers[0].id, configPath: "", d1Migrations: false }] })}>Add target</Button>}
             </div>
             <div className="cf-form-row">
-              <label>Rollout<select value={draft.rollout} onChange={(event) => setDraft({ ...draft, rollout: event.target.value as Settings["rollout"] })}><option value="immediate">100% at once</option><option value="gradual">10%, then 100% after 10 minutes</option></select></label>
-              <label>Mode<select value={draft.mode} onChange={(event) => setDraft({ ...draft, mode: event.target.value as Settings["mode"] })}><option value="deploy">Deploy</option><option value="upload-only">Upload versions only (no traffic, no migrations)</option></select></label>
+              <label>Rollout<InfoTip label="Rollout">All traffic moves at once, or 10% first and the rest after 10 minutes so you can watch for errors.</InfoTip><select value={draft.rollout} onChange={(event) => setDraft({ ...draft, rollout: event.target.value as Settings["rollout"] })}><option value="immediate">100% at once</option><option value="gradual">10%, then 100% after 10 minutes</option></select></label>
+              <label>Mode<InfoTip label="Mode">Deploy sends traffic to the new version. Upload only stores the version without traffic or migrations, for a later promote.</InfoTip><select value={draft.mode} onChange={(event) => setDraft({ ...draft, mode: event.target.value as Settings["mode"] })}><option value="deploy">Deploy</option><option value="upload-only">Upload versions only (no traffic, no migrations)</option></select></label>
               <label>{editing === PRODUCTION ? "After a promotable deployment succeeds" : "After landing"}<select value={draft.trigger} onChange={(event) => setDraft({ ...draft, trigger: event.target.value as Settings["trigger"] })}><option value="manual">{editing === PRODUCTION ? "Wait for Owner confirmation" : "Wait for Deploy"}</option><option value="auto">{editing === PRODUCTION ? "Deploy automatically (Owner only)" : "Deploy automatically"}</option></select></label>
-              <label className="cf-inline"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> Deploy on land</label>
+              <label className="cf-inline"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> Deploy on land<InfoTip label="Deploy on land">Deploys automatically when a change lands. Turn it off to deploy only by hand.</InfoTip></label>
               <Button variant="secondary" size="base" disabled={!!busy} loading={busy === "settings"} onClick={() => void save()}>Save {environmentLabel(editing).toLowerCase()}</Button>
             </div>
           </details>

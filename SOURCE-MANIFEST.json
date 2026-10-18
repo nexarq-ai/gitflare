@@ -260,8 +260,8 @@
     },
     {
       "path": "src/ui/AiSettingsPanel.tsx",
-      "size": 2119,
-      "sha256": "35a5e9241856c577e397d6ff697d9b94fea240b103594fca79e1a5f9cb0a3859"
+      "size": 2346,
+      "sha256": "0697cbcc0660c14ab6b41b8b164d079a674242009d9727235c67aafabd9bba9e"
     },
     {
       "path": "src/ui/api.ts",
@@ -270,8 +270,13 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 83247,
-      "sha256": "564e772294b647ad0174af009271c192c6030bdabea38fd1ba28564a4da3cf83"
+      "size": 83435,
+      "sha256": "498be23d6f02d8086d3ee4e754f6ea0cfc80ec5a5e7b8cd66e31ed7a8bee749a"
+    },
+    {
+      "path": "src/ui/approvals.ts",
+      "size": 2099,
+      "sha256": "6eadaae3a2aec79cdf84d9efd54ade0fa4a4d54dfcf9988f1ef4ea3596861959"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -355,8 +360,8 @@
     },
     {
       "path": "src/ui/BranchProtection.tsx",
-      "size": 17500,
-      "sha256": "4a7c3dd6f5cb3dbef91eb0458680eb060c0d0b3f4c93241212135875f0322dae"
+      "size": 19769,
+      "sha256": "33b187b8e9deafebd353380627662482dbe5e0ea2f79428a992c195465037eae"
     },
     {
       "path": "src/ui/BrandMark.tsx",
@@ -369,9 +374,14 @@
       "sha256": "166302dc0cc71cb17c263cfb28b1a665ebdc7babc878376aa7f4e26c991b2ffa"
     },
     {
+      "path": "src/ui/CheckChips.tsx",
+      "size": 1022,
+      "sha256": "5425e87e55aacff5dc184c9e9c2b9d930829e2e306b58e30c291aa27e800208f"
+    },
+    {
       "path": "src/ui/CheckSettings.tsx",
-      "size": 13751,
-      "sha256": "25378dfa22e2f70152c038aeb96ae65840cd80be91eb1e8ee2ed466558cafdba"
+      "size": 15368,
+      "sha256": "4f937e3b9712d91ff46fdbd53dad7445f5ef768c3bd0b2016beda485c2f3915a"
     },
     {
       "path": "src/ui/cloudflare-accounts-data.ts",
@@ -460,8 +470,8 @@
     },
     {
       "path": "src/ui/Deployments.tsx",
-      "size": 34244,
-      "sha256": "9d71875f4088f0c448ea170ad231bfe2e31cfc2cdf9f787eddbb94bc078623a0"
+      "size": 35918,
+      "sha256": "a3517345b104079c24ad8f29b8acdb1bda29b555e33ff2316faaea6078c6c56f"
     },
     {
       "path": "src/ui/design-system.css",
@@ -510,8 +520,8 @@
     },
     {
       "path": "src/ui/GeneralSettings.tsx",
-      "size": 10095,
-      "sha256": "6705bd925b218a7889703ba213b4901279b7c25544103975d21349b651f27552"
+      "size": 11843,
+      "sha256": "cee7fba7291feefde42404f949c0294e657496e2ccfb6566a6f085e0c933f3df"
     },
     {
       "path": "src/ui/GitAccess.tsx",
@@ -525,8 +535,8 @@
     },
     {
       "path": "src/ui/GitHubMirror.tsx",
-      "size": 13678,
-      "sha256": "dd03b708b60d23d5aa8c4e1116bbb44ef8615647553da3f8fcee549f4f1ed026"
+      "size": 14433,
+      "sha256": "41894464472dd965969046bc5b1f1a423379522242b6cc4f1025b5f66431d81e"
     },
     {
       "path": "src/ui/hosts.ts",
@@ -535,13 +545,13 @@
     },
     {
       "path": "src/ui/info-tip.css",
-      "size": 1183,
-      "sha256": "3f6eace7879312f226a7aeb5b7c4d7df8c906a9b25d5534f27fbbce5ce49d752"
+      "size": 2216,
+      "sha256": "acdaf9d4cf16ba88871f8431a812c872512d7a593b78f2ee064759b1598a6946"
     },
     {
       "path": "src/ui/InfoTip.tsx",
-      "size": 1477,
-      "sha256": "9dd458055727f6689ab2f5d4a605f8541a97c5781aef0a9b1a74bb08c64dde8c"
+      "size": 2195,
+      "sha256": "45c49588d1cfb543d7eeebdf7567269e75d3480df75f48210f8e388e5c02feaa"
     },
     {
       "path": "src/ui/InstallationAdmin.tsx",
@@ -605,8 +615,8 @@
     },
     {
       "path": "src/ui/ModelConnections.tsx",
-      "size": 10811,
-      "sha256": "329220adb736045c8b722490b3f170c3f683f47d7eb793ce33bdd37c8e27b739"
+      "size": 11065,
+      "sha256": "d078d7e4190d10d8539a5aa05a4116f1e5722ee0e1399a89091489ab8f788801"
     },
     {
       "path": "src/ui/models-data.ts",
@@ -655,8 +665,8 @@
     },
     {
       "path": "src/ui/PeopleSettings.tsx",
-      "size": 17737,
-      "sha256": "14557e8519edf2af19c90a94c3e8d7a1f44476a71ce4b975539d4d4948d5cf3c"
+      "size": 18742,
+      "sha256": "5a4ccfc36aa971ae7ef3478a372a3d4fab06c2fa7452b8da976b02ff35325c51"
     },
     {
       "path": "src/ui/policy-pages.css",
@@ -665,8 +675,8 @@
     },
     {
       "path": "src/ui/PreviewSettings.tsx",
-      "size": 9477,
-      "sha256": "41d097963f44ed965c1ab587423c35021bd4c215ebc35b708b263c90a6bf1f47"
+      "size": 10423,
+      "sha256": "b284b79caca4b36c408ed18f3843a69d79cb4e286a98f81986cf3e24e5585744"
     },
     {
       "path": "src/ui/proposal-create.css",
@@ -780,8 +790,8 @@
     },
     {
       "path": "src/ui/SecretSettings.tsx",
-      "size": 19019,
-      "sha256": "15d5a6e661670450827a98981a54f777f43b3e35394cf3ea26de45a6919606a3"
+      "size": 20292,
+      "sha256": "35e12b34d97574d6c6e4366739045401c4444c1a5cbca245a70a9c0bee880f0b"
     },
     {
       "path": "src/ui/SelfHostedHome.tsx",
