@@ -3,6 +3,9 @@ import { ApiError } from './domain';
 import type { AccessLevel } from './client-access';
 import type { BuiltDemoHistory } from './demo-git';
 import { demoSeedPlan, type DemoRecord, type DemoSeedPlan } from './demo-seed';
+import { demoDisabled, type DemoDisabled, type DemoExamples, type DemoFeatureId } from '../shared/demo-features';
+
+export { DEMO_FEATURES, demoDisabled, type DemoDisabled, type DemoFeatureId } from '../shared/demo-features';
 
 export const DEMO_RESET_CRON = '0 3 * * *';
 export const DEMO_RESET_TIME = '03:00 UTC';
@@ -81,6 +84,43 @@ const TOOL_FEATURES: [RegExp, string][] = [
 export function demoToolRestriction(name: string, required: AccessLevel): DemoRestriction | null {
   if (required === 'read' || DEMO_ALLOWED_TOOLS.has(name)) return null;
   return demoRestriction(TOOL_FEATURES.find(([pattern]) => pattern.test(name))?.[1] ?? 'Changing workspace data');
+}
+
+export interface DemoDisabledRoute { feature: DemoFeatureId; mode: 'replace' | 'merge'; field?: string; repositoryId?: string }
+
+const REPOSITORY = '\\/api\\/repositories\\/([a-zA-Z0-9-]+)';
+const DISABLED_ROUTES: [RegExp, DemoFeatureId, DemoDisabledRoute['mode'], string?][] = [
+  [/^\/api\/cloudflare\/installation-credential$/, 'installation-credential', 'replace'],
+  [/^\/api\/cloudflare(?:\/(?:status|accounts|resources))?$/, 'cloudflare', 'replace'],
+  [new RegExp(`^${REPOSITORY}\\/cloudflare\\/connection(?:\\/(?:accounts|resources))?$`), 'cloudflare', 'replace'],
+  [new RegExp(`^${REPOSITORY}\\/cloudflare(?:\\/usage)?$`), 'cloudflare-resources', 'replace'],
+  [new RegExp(`^${REPOSITORY}\\/deployments(?:\\/detect)?$`), 'deployments', 'replace'],
+  [new RegExp(`^${REPOSITORY}\\/secrets(?:\\/catalog)?$`), 'secrets', 'replace'],
+  [new RegExp(`^${REPOSITORY}\\/github-mirror$`), 'github-mirror', 'replace'],
+  [new RegExp(`^${REPOSITORY}\\/preview-settings$`), 'previews', 'replace'],
+  [new RegExp(`^${REPOSITORY}\\/check-settings$`), 'checks', 'merge'],
+  [/^\/api\/models$/, 'ai-models', 'merge'],
+  [/^\/api\/ai-keys$/, 'ai-keys', 'merge'],
+  [/^\/api\/settings\/ai$/, 'ai-features', 'merge'],
+  [/^\/api\/workspace$/, 'ai-features', 'merge', 'ai'],
+  [/^\/api\/access$/, 'people', 'merge'],
+  [/^\/api\/mcp$/, 'mcp-clients', 'merge'],
+  [/^\/api\/workspaces$/, 'workspace-creation', 'merge'],
+];
+
+export function demoDisabledRoute(method: string, pathname: string): DemoDisabledRoute | null {
+  if (method !== 'GET') return null;
+  for (const [pattern, feature, mode, field] of DISABLED_ROUTES) {
+    const match = pattern.exec(pathname);
+    if (match) return { feature, mode, ...(field ? { field } : {}), ...(match[1] ? { repositoryId: match[1] } : {}) };
+  }
+  return null;
+}
+
+export interface DemoDisabledSnapshot { canManage: false; demo: DemoDisabled; examples?: DemoExamples }
+
+export function demoDisabledSnapshot(feature: DemoFeatureId, examples?: DemoExamples): DemoDisabledSnapshot {
+  return { canManage: false, demo: demoDisabled(feature), ...(examples ? { examples } : {}) };
 }
 
 export function demoRestrictionError(restriction: DemoRestriction): ApiError { return new ApiError(403, restriction.code, restriction.message); }

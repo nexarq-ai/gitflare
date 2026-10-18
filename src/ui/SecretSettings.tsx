@@ -4,6 +4,8 @@ import { Input } from "@cloudflare/kumo/components/input";
 import { request } from "./api";
 import { ErrorNotice, relativeTime } from "./components";
 import { RouteProgress } from "./WorkspaceLoader";
+import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
+import type { DemoMarked } from "../shared/demo-features";
 import { PREVIEW_SECRET_ENVIRONMENT, type SecretAction, type SecretLinkView, type SecretRequirementView } from "../shared/secrets";
 import "./cloudflare-connection.css";
 import "./check-settings.css";
@@ -11,7 +13,7 @@ import "./pull-requests.css";
 import "./secret-settings.css";
 
 type Connection = { connected: false; reason: string; requiredScopes: string[] } | { connected: true; source: "repository" | "workspace"; accountId: string; requiredScopes: string[]; missingScopes: string[]; canRead: boolean; canWrite: boolean };
-interface Snapshot { repositoryId: string; canManage: boolean; environments: string[]; links: SecretLinkView[]; requirements: SecretRequirementView[]; missing: Record<string, string[]>; requirementErrors: string[]; connection: Connection; valuePolicy: string }
+interface Snapshot extends DemoMarked { repositoryId: string; canManage: boolean; environments: string[]; links: SecretLinkView[]; requirements: SecretRequirementView[]; missing: Record<string, string[]>; requirementErrors: string[]; connection: Connection; valuePolicy: string }
 interface Catalog { stores: { id: string; name: string }[]; storeId?: string; secrets?: { id: string; name: string; scopes: string[] }[] }
 type Mode = "link" | "create";
 
@@ -45,7 +47,7 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
     let active = true;
     setLoadError("");
     request<Snapshot>(path)
-      .then((current) => { if (!active) return; setSnapshot(current); setEnvironment((selected) => current.environments.includes(selected) ? selected : current.environments[0]); })
+      .then((current) => { if (!active) return; setSnapshot(current); if (demoOf(current)) return; setEnvironment((selected) => current.environments.includes(selected) ? selected : current.environments[0]); })
       .catch((failure) => { if (active) setLoadError(failure instanceof Error ? failure.message : "Secrets could not be loaded."); });
     return () => { active = false; };
   }, [path, attempt]);
@@ -116,6 +118,8 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
 
   if (loadError) return <ErrorNotice message={loadError} onRetry={() => setAttempt((count) => count + 1)} />;
   if (!snapshot) return <RouteProgress />;
+  const demo = demoOf(snapshot);
+  if (demo) return <DemoFeaturePanel demo={demo} examples={snapshot.examples} />;
   const { connection, canManage } = snapshot;
   const links = snapshot.links.filter((link) => link.environment === environment);
   const requirements = snapshot.requirements.filter((item) => item.environment === environment);

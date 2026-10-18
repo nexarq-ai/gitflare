@@ -7,11 +7,13 @@ import { request } from './api';
 import './model-connections.css';
 import { RouteProgress } from "./WorkspaceLoader";
 import AiKeys from './AiKeys';
+import DemoFeaturePanel, { demoOf } from './DemoFeaturePanel';
+import type { DemoMarked } from '../shared/demo-features';
 
 const transportLabels = { responses: 'OpenAI Responses', chat: 'Compatible chat', anthropic: 'Anthropic Messages', 'workers-ai': 'Workers AI function calling' };
 
 export default function ModelConnections({ canManage }: { canManage: boolean }) {
-  const [snapshot, setSnapshot] = useState<ModelConnectionsSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<(ModelConnectionsSnapshot & DemoMarked) | null>(null);
   const [busy, setBusy] = useState('load');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -55,7 +57,7 @@ export default function ModelConnections({ canManage }: { canManage: boolean }) 
     {notice && <p className="models-notice" role="status">{notice}</p>}
     {busy === 'load' && <RouteProgress />}
     <AiKeys canManage={canManage} />
-    {snapshot && <>
+    {snapshot && demoOf(snapshot) ? <DemoFeaturePanel demo={demoOf(snapshot)} examples={snapshot.examples} /> : snapshot && <>
       <section className="panel"><div className="panel-header"><h2>Connection</h2><span>{snapshot.gateway.configured ? 'Configured' : 'Setup required'}</span></div><div className="panel-body models-connection"><dl><div><dt>AI Gateway</dt><dd>{snapshot.gateway.id ?? 'Not configured'}</dd></div><div><dt>Workers AI binding</dt><dd>{snapshot.workersAI.enabled ? 'Enabled' : 'Not enabled'}</dd></div></dl><p>All inference runs through AI Gateway: this deployment’s gateway, or your own if you connect one above. Workspace AI keys are sent as the provider credential on each gateway request; without one, operator-funded workspaces use the gateway’s stored default BYOK key. Unified Billing fallback is blocked. Workers AI uses the deployment account’s billing.</p><p>Model discovery is manual. Adding an identifier records your configuration; verification sends one small inference request. A successful check confirms text inference, while coding and tool use need a real Mission run.</p></div></section>
       <section className="panel"><div className="panel-header"><h2>Available models</h2><span>{snapshot.models.length} configured</span></div><div className="models-list">{snapshot.models.length ? snapshot.models.map(model => <div className="models-item" key={model.id}><div className="models-identity"><strong>{model.label}</strong><code>{model.id}</code><span>{model.source === 'workers-ai' ? 'Cloudflare hosted' : 'AI Gateway'} · {transportLabels[model.protocol]}</span>{model.verification ? <p className={model.verification.status === 'failed' ? 'models-failed' : ''}>{model.verification.status === 'verified' ? 'Inference verified' : 'Verification failed'} · {new Date(model.verification.checkedAt).toLocaleString()}</p> : <p>Configured · Inference not yet verified</p>}</div>{canManage && <div className="models-actions"><Button variant="secondary" size="base" disabled={!!busy || !snapshot.gateway.configured} loading={busy === `verify:${model.id}`} onClick={() => void action({ action: 'verify', modelId: model.id }, `verify:${model.id}`)}>Verify</Button><Button variant="ghost" size="base" icon={TrashIcon} disabled={!!busy} aria-label={`Remove ${model.label}`} onClick={() => void action({ action: 'remove', modelId: model.id }, `remove:${model.id}`)}>Remove</Button></div>}</div>) : <p className="panel-body">No models are enabled. A workspace owner can add a model below.</p>}</div></section>
       {!canManage ? <p>Workspace owners manage model connections. You can select enabled models when creating a proposal.</p> : <>

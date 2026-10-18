@@ -7,7 +7,9 @@ const TOKEN_ROUTES: Record<string, (fragment: string) => string> = {
 };
 const ROUTE_ALIASES: [RegExp, string][] = [
   [/^login$/, "signin"],
-  [/^(repository\/[^/]+)\/streams$/, "$1/settings/branches"],
+  [/^(repository\/[^/]+)\/(?:streams|settings|settings\/(?:streams|checks|previews|mirror|github-mirror))$/, "$1/settings/branches"],
+  [/^(repository\/[^/]+)\/(?:deployments|settings\/(?:cloudflare|deploys|deployments|environments))$/, "$1/cloudflare"],
+  [/^repository\/[^/]+\/settings\/access$/, "access"],
   [/^(repository\/[^/]+)\/checkpoints(\/|$)/, "$1/releases$2"],
 ];
 const SERVER_PATH = /^\/(api|mcp|oauth|\.well-known|llms\.txt|assets|social|git|source\/gitflare\.git)(\/|$)|\.[a-z0-9]+$/i;
@@ -117,7 +119,7 @@ export function isKnownAppRoute(route: string): boolean {
     || /^settings(?:\/(?:models|cloudflare))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
-    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|cloudflare|import)|\/settings\/branches|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
+    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|cloudflare|import)|\/settings\/(?:branches|secrets)|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
     || /^(?:forgot-password|reset-password|verify-email)(?:\/[^/]+)?$/.test(route)
     || route === "invite" || route.startsWith("invite?");
 }

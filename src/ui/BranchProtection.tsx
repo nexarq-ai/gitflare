@@ -36,7 +36,8 @@ export function BranchCreated({ repositoryId, name, onDismiss, onNotify }: { rep
   );
 }
 
-export default function BranchProtection({ repository, canManage, onNotify }: { repository: Repository; canManage: boolean; onNotify: (message: string) => void }) {
+export default function BranchProtection({ repository, canManage: mayManage, demo = false, onNotify }: { repository: Repository; canManage: boolean; demo?: boolean; onNotify: (message: string) => void }) {
+  const canManage = mayManage && !demo;
   const [branches, setBranches] = useState<BranchList | null>(null);
   const [protection, setProtection] = useState<Protection | null>(null);
   const [rules, setRules] = useState<DraftRule[]>([]);
@@ -128,7 +129,7 @@ export default function BranchProtection({ repository, canManage, onNotify }: { 
                   <td><div className="resource-name"><GitBranchIcon size={18} /><div><code>{branch.name}</code>{(branch.ahead !== undefined || branch.behind !== undefined) && <small>{branch.ahead ?? 0} ahead · {branch.behind ?? 0} behind</small>}</div></div></td>
                   <td><code>{branch.headSha.slice(0, 12)}</code></td>
                   <td className="branch-flags">{branch.default && <span className="pill">Default</span>}{branch.protected && <span className="pill approved"><LockSimpleIcon size={11} />Protected</span>}</td>
-                  {canContribute && <td className="branch-actions">{!branch.default && !branch.protected && <Button variant="ghost" size="base" icon={TrashIcon} aria-label={`Delete ${branch.name}`} onClick={() => { setBranchError(""); setDeleting(branch); }}>Delete</Button>}</td>}
+                  {canContribute && <td className="branch-actions">{!demo && !branch.default && !branch.protected && <Button variant="ghost" size="base" icon={TrashIcon} aria-label={`Delete ${branch.name}`} onClick={() => { setBranchError(""); setDeleting(branch); }}>Delete</Button>}</td>}
                 </tr>
               ))}
             </tbody>
@@ -165,7 +166,7 @@ export default function BranchProtection({ repository, canManage, onNotify }: { 
         </div>
         <div className="panel-body">
           {!protection.configured && <p className="branch-rule-note">No rules have been saved. The default rule below protects <code>{protection.defaultBranch}</code>.</p>}
-          {!canManage && <p className="branch-rule-note">Only workspace owners can change protection rules.</p>}
+          {!canManage && <p className="branch-rule-note">{demo ? "Protection rules are read-only in the shared demo." : "Only workspace owners can change protection rules."}</p>}
           {!rules.length && <p className="branch-rule-note">No streams are protected.</p>}
           {rules.map((rule, index) => (
             <fieldset className="branch-rule" key={rule.id} disabled={readOnly} aria-label={`Rule ${index + 1}`}>

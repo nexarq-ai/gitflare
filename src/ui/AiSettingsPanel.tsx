@@ -3,11 +3,13 @@ import { Button } from "@cloudflare/kumo/components/button";
 import { RobotIcon } from "@phosphor-icons/react";
 import type { AiSettings } from "../shared/types";
 import { request } from "./api";
+import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 
 export default function AiSettingsPanel({ settings, canManage, onChanged }: { settings?: AiSettings; canManage: boolean; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const enabled = settings?.enabled !== false;
+  const demo = demoOf(settings);
   async function toggle() {
     setBusy(true);
     setError("");
@@ -20,6 +22,7 @@ export default function AiSettingsPanel({ settings, canManage, onChanged }: { se
       setBusy(false);
     }
   }
+  if (demo) return <DemoFeaturePanel demo={demo} />;
   return (
     <section className="panel settings-cloudflare">
       <div className="settings-cloudflare-heading">

@@ -5,6 +5,7 @@ import { defaultBranchRule } from './branch-protection';
 import type { DeployEnvironmentSettings, DeploymentRecord, DeploySettings } from './deployments';
 import type { LastPreview } from './coordinator';
 import type { Principal, Role } from './security';
+import { neonDriftRuns, type DemoRunsPlan } from './demo-runs';
 
 export const DEMO_VISITOR_ID = 'demo-visitor';
 export const DEMO_WORKSPACE_NAME = 'Gitflare demo';
@@ -307,12 +308,27 @@ function mcpExamples(generation: number, workspaceId: string, c: Clock): DemoRep
   return { repository, history, records: issueRecords(generation, repository.id, [{ number: 1, title: 'Add a Zed example', body: 'Zed supports remote MCP servers now.', state: 'open', labels: ['docs'], assignees: [], missionIds: [], authorId: 'demo-visitor', createdAt: c.iso(1, 9), updatedAt: c.iso(1, 9), comments: [] }]) };
 }
 
+export function demoRunsPlan(generation: number, anchor: number): DemoRunsPlan {
+  const workspaceId = demoWorkspaceId(generation);
+  return neonDriftRuns({
+    generation, workspaceId, anchor, uuid: demoUuid,
+    repository: (name, description, headSha, created, updated) => repositoryRecord(workspaceId, generation, name, description, headSha, created, updated),
+    people: { maya: people['demo-maya'], agent: agentPerson },
+    principal: { userId: 'demo-maya', workspaceId, role: 'Maintainer' },
+  });
+}
+
+function neonDrift(generation: number, anchor: number): DemoRepositoryPlan {
+  const plan = demoRunsPlan(generation, anchor);
+  return { repository: plan.repository, history: plan.history, records: [...plan.missions.map((item): DemoRecord => [`mission:${item.id}`, item]), ...plan.attempts] };
+}
+
 export function demoSeedPlan(generation: number, now: Date): DemoSeedPlan {
   if (!Number.isSafeInteger(generation) || generation < 1) throw new Error('Demo generation must be a positive integer');
   const anchor = demoAnchor(now);
   const c = clock(anchor);
   const workspaceId = demoWorkspaceId(generation);
-  const repositories = [edgeStore(generation, workspaceId, c), billingApi(generation, workspaceId, c), docsSite(generation, workspaceId, c), mcpExamples(generation, workspaceId, c)];
+  const repositories = [edgeStore(generation, workspaceId, c), billingApi(generation, workspaceId, c), docsSite(generation, workspaceId, c), mcpExamples(generation, workspaceId, c), neonDrift(generation, anchor)];
   for (const plan of repositories) plan.records.unshift([`repository:${plan.repository.id}`, plan.repository]);
   const catalogRecords: DemoRecord[] = [
     ...repositories.map((plan): DemoRecord => [`repository:${plan.repository.id}`, plan.repository]),

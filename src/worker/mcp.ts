@@ -221,7 +221,7 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     inputSchema: z.object({ repository_id: repositoryId, deployment_id: z.string().max(80).optional().describe('Return only this deployment.') }).strict(), annotations: readOnly,
   }, (input) => guarded(async () => {
     const state = await call<{ deployments: { id: string }[] } & Record<string, unknown>>(`/api/repositories/${input.repository_id}/deployments`);
-    if (!input.deployment_id) return state;
+    if (!input.deployment_id || state.demo) return state;
     const deployment = state.deployments.find((item) => item.id === input.deployment_id);
     if (!deployment) throw new ApiError(404, 'DEPLOYMENT_NOT_FOUND', 'This deployment could not be found.');
     return { deployment };
@@ -234,7 +234,8 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     title: 'Read deploy environment Access protection', description: 'Read each deploy environment’s Cloudflare Access protection: status (protected, unprotected or error with the exact reason), Access application id, protected hostnames, allowed emails, domains or group, whether Gitflare created the application, and canChange. Read-only.',
     inputSchema: z.object({ repository_id: repositoryId, environment: z.string().regex(ENVIRONMENT_NAME).optional().describe('Return only this environment, e.g. staging.') }).strict(), annotations: readOnly,
   }, (input) => guarded(async () => {
-    const state = await call<{ environments: Record<string, { access?: unknown }> }>(`/api/repositories/${input.repository_id}/deployments`);
+    const state = await call<{ environments: Record<string, { access?: unknown }>; demo?: unknown }>(`/api/repositories/${input.repository_id}/deployments`);
+    if (state.demo) return state;
     const entries = Object.entries(state.environments).filter(([name]) => !input.environment || name === input.environment);
     if (input.environment && !entries.length) throw new ApiError(404, 'ENVIRONMENT_NOT_FOUND', `${input.environment} is not a deploy environment of this repository.`);
     return { environments: Object.fromEntries(entries.map(([name, value]) => [name, value.access ?? null])) };

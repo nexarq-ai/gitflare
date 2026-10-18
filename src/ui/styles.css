@@ -681,6 +681,7 @@ a svg {
   line-height: 1.4;
 }
 .table-scroll {
+  position: relative;
   overflow-x: auto;
 }
 .empty-state {

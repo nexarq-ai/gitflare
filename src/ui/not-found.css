@@ -1,0 +1,15 @@
+.not-found { min-height: 58vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 64px 16px; color: var(--gf-color-text); }
+.not-found-code { font-family: var(--gf-font-mono); font-size: 12px; letter-spacing: .18em; color: var(--gf-color-accent); padding: 4px 10px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); background: var(--gf-color-surface-raised); }
+.not-found h1 { font-size: clamp(26px, 4vw, 36px); letter-spacing: -.03em; line-height: var(--gf-leading-tight); margin: 20px 0 10px; }
+.not-found > p { margin: 0; max-width: 420px; color: var(--gf-color-text-secondary); font-size: 15px; line-height: var(--gf-leading-relaxed); }
+.not-found-primary { display: inline-flex; align-items: center; gap: 8px; margin-top: 24px; min-height: var(--gf-control-height); padding: 0 16px; border-radius: var(--gf-radius-md); border: 1px solid var(--gf-color-primary-border); background: var(--gf-color-primary); color: var(--gf-color-primary-text); font-size: 14px; font-weight: 600; text-decoration: none; }
+.not-found-primary:hover { background: var(--gf-color-primary-hover); }
+.not-found-primary:focus-visible { outline: 2px solid var(--gf-color-focus); outline-offset: 2px; }
+.not-found .not-found-hint { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin-top: 20px; font-size: 13px; color: var(--gf-color-text-tertiary); }
+.not-found-hint kbd { font-family: var(--gf-font-sans); font-size: 12px; padding: 1px 6px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-sm); background: var(--gf-color-surface-raised); color: var(--gf-color-text-secondary); }
+.not-found-hint a { color: var(--gf-color-accent); text-underline-offset: 3px; }
+.not-found-screen { min-height: 100vh; display: flex; flex-direction: column; background: var(--gf-color-bg); color: var(--gf-color-text); font-family: var(--gf-font-sans); }
+.not-found-header { display: flex; align-items: center; height: 60px; padding: 0 24px; border-bottom: 1px solid var(--gf-color-border); }
+.not-found-header a { display: inline-flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+.not-found-screen main { flex: 1; display: flex; align-items: center; justify-content: center; }
+@media (max-width: 600px) { .not-found-header { padding: 0 16px; } .not-found { padding: 48px 16px; } }

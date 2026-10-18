@@ -2,8 +2,11 @@ import { ApiError } from './domain';
 import type { AppEnv } from './env';
 import { securityClient, type Principal } from './security';
 import { pushDemoHistory } from './demo-git';
-import { DEMO_VISITOR_ID } from './demo-seed';
-import { DEMO_CONTROL, DEMO_RESET_PATH, DEMO_RESET_TIME, DEMO_STATUS_PATH, demoMode, demoTokenMatches, resetDemo, type DemoResetDeps, type DemoResetReport } from './demo';
+import { handleDemoReplay } from './demo-replay-route';
+import { DEMO_VISITOR_ID, demoSeedPlan, type DemoSeedPlan } from './demo-seed';
+import { demoExamples } from './demo-examples';
+import { DEMO_CONTROL, DEMO_RESET_PATH, DEMO_RESET_TIME, DEMO_STATUS_PATH, demoDisabledRoute, demoDisabledSnapshot, demoMode, demoTokenMatches, resetDemo, type DemoResetDeps, type DemoResetReport } from './demo';
+import type { Repository } from '../shared/types';
 
 const PRINCIPAL_CACHE_MS = 30_000;
 let cachedPrincipal: { principal: Principal; until: number } | null = null;
@@ -58,6 +61,8 @@ export async function runDemoReset(env: AppEnv): Promise<DemoResetReport> {
 }
 
 export async function handleDemoRoute(request: Request, env: AppEnv): Promise<Response | null> {
+  const replay = await handleDemoReplay(request, env);
+  if (replay) return replay;
   const path = new URL(request.url).pathname;
   if (path !== DEMO_STATUS_PATH && path !== DEMO_RESET_PATH) return null;
   if (!demoMode(env)) throw new ApiError(404, 'NOT_FOUND', 'This API route could not be found.');
@@ -70,4 +75,39 @@ export async function handleDemoRoute(request: Request, env: AppEnv): Promise<Re
   const bearer = request.headers.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
   if (!await demoTokenMatches(bearer, env.DEMO_RESET_TOKEN)) throw new ApiError(401, 'AUTH_REQUIRED', 'Only the demo operator can reset the demo.');
   return Response.json(await runDemoReset(env));
+}
+
+let cachedPlan: { key: string; plan: DemoSeedPlan } | null = null;
+
+async function currentDemoPlan(env: AppEnv): Promise<DemoSeedPlan> {
+  const current = await env.GITFLARE_COORDINATOR.getByName(DEMO_CONTROL).demoControl().then((state) => state.current, () => null);
+  const generation = current?.generation ?? 1, anchor = current?.anchor ?? new Date().toISOString();
+  const key = `${generation}:${anchor.slice(0, 10)}`;
+  if (cachedPlan?.key !== key) cachedPlan = { key, plan: demoSeedPlan(generation, new Date(anchor)) };
+  return cachedPlan.plan;
+}
+
+export interface DemoDisabledApiDeps {
+  next(): Promise<Response>;
+  principal(): Promise<Principal>;
+  repository(principal: Principal, id: string): Promise<Repository>;
+}
+
+export async function demoDisabledApi(request: Request, env: AppEnv, deps: DemoDisabledApiDeps): Promise<Response> {
+  const route = demoMode(env) ? demoDisabledRoute(request.method, new URL(request.url).pathname) : null;
+  if (!route) return deps.next();
+  if (route.mode === 'merge') {
+    const response = await deps.next();
+    if (!response.ok) return response;
+    const body = await response.json() as Record<string, unknown>;
+    const snapshot = demoDisabledSnapshot(route.feature, demoExamples(route.feature, await currentDemoPlan(env)));
+    const merged = route.field ? { ...body, [route.field]: { ...(body[route.field] as Record<string, unknown> | undefined), ...snapshot } } : { ...body, ...snapshot };
+    const headers = new Headers(response.headers);
+    headers.delete('Content-Length');
+    return Response.json(merged, { status: response.status, headers });
+  }
+  const principal = await deps.principal();
+  const repository = route.repositoryId ? await deps.repository(principal, route.repositoryId) : undefined;
+  const examples = demoExamples(route.feature, await currentDemoPlan(env), repository);
+  return Response.json({ ...(repository ? { repositoryId: repository.id } : {}), ...demoDisabledSnapshot(route.feature, examples) }, { headers: { 'Cache-Control': 'no-store' } });
 }

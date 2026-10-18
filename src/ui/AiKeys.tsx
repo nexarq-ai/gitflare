@@ -4,9 +4,11 @@ import { Input } from '@cloudflare/kumo/components/input';
 import { KeyIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react';
 import type { AiKeyProvider, AiKeysSnapshot } from '../shared/types';
 import { request } from './api';
+import DemoFeaturePanel, { demoOf } from './DemoFeaturePanel';
+import type { DemoMarked } from '../shared/demo-features';
 
 export default function AiKeys({ canManage }: { canManage: boolean }) {
-  const [snapshot, setSnapshot] = useState<AiKeysSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<(AiKeysSnapshot & DemoMarked) | null>(null);
   const [busy, setBusy] = useState('load');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -45,6 +47,8 @@ export default function AiKeys({ canManage }: { canManage: boolean }) {
     if (await send('/api/ai-gateway', { action: 'set', accountId: accountId.trim(), gatewayId: gatewayId.trim(), ...(gatewayToken.trim() ? { token: gatewayToken.trim() } : {}) }, 'gateway')) setGatewayToken('');
   }
 
+  const demo = demoOf(snapshot);
+  if (snapshot && demo) return <DemoFeaturePanel demo={demo} examples={snapshot.examples} />;
   const label = (id: AiKeyProvider) => snapshot?.providers.find(entry => entry.id === id)?.label ?? id;
 
   return <>

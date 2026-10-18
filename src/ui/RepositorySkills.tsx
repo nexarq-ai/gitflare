@@ -42,7 +42,7 @@ function SkillMarkdown({ content }: { content: string }) {
 interface SkillDraft { action: 'create' | 'update'; slug: string; path: string; content: string; originalContent: string; baseSha: string; }
 interface LatestRevision { commitSha: string; content: string | null; exists: boolean; }
 
-export default function RepositorySkills({ repository, canContribute, canExecute, onOpenMission }: { repository: Repository; canContribute: boolean; canExecute: boolean; onOpenMission: (id: string) => void }) {
+export default function RepositorySkills({ repository, canContribute, canExecute, demo = false, onOpenMission }: { repository: Repository; canContribute: boolean; canExecute: boolean; demo?: boolean; onOpenMission: (id: string) => void }) {
   const [reference, setReference] = useState(repository.defaultBranch);
   const [selectedRef, setSelectedRef] = useState(repository.defaultBranch);
   const [refresh, setRefresh] = useState(0);
@@ -63,8 +63,8 @@ export default function RepositorySkills({ repository, canContribute, canExecute
   const editor = useRef<HTMLElement>(null);
   const submission = useRef<{ signature: string; key: string } | null>(null);
   const loadedFile = file?.path === selectedPath && file?.commitSha === data?.commitSha ? file : null;
-  const canEdit = canContribute && canExecute;
-  const permissionReason = !canContribute ? 'Contribute permission is required to propose skill changes.' : !canExecute ? "Execute permission is required to run checks for a skill mission." : '';
+  const canEdit = canContribute && canExecute && !demo;
+  const permissionReason = demo ? 'Editing skills runs agents, which are disabled in the shared demo.' : !canContribute ? 'Contribute permission is required to propose skill changes.' : !canExecute ? "Execute permission is required to run checks for a skill mission." : '';
   const name = draft ? metadata(draft.content, 'name') : '';
   const description = draft ? metadata(draft.content, 'description') : '';
   const path = draft?.action === 'create' ? `docs/skills/${draft.slug}/SKILL.md` : draft?.path ?? '';

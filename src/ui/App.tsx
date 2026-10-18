@@ -53,7 +53,10 @@ import QuickSearch from "./QuickSearch";
 import InvitationScreen from "./InvitationScreen";
 import AuthScreen, { AccountScreen, isAccountRoute, type AuthConfig } from "./AuthScreen";
 import OwnerTokenNotice from "./OwnerTokenNotice";
+import NotFoundScreen, { NotFound } from "./NotFound";
 import DemoBanner from "./DemoBanner";
+import { DemoReplayCard } from "./DemoReplay";
+import DemoFeaturePanel from "./DemoFeaturePanel";
 import { showOwnerTokenNotice } from "./owner-token-notice";
 import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
 import AiSettingsPanel from "./AiSettingsPanel";
@@ -375,7 +378,8 @@ function Workspace() {
     setRefreshing(false);
   }
 
-  if (!isKnownAppRoute(route)) return <main className="route-loading"><h1>Page not found</h1><a href="/overview">Open workspace</a></main>;
+  if (!isKnownAppRoute(route) && authState === "checking") return <WorkspaceLoader />;
+  if (!isKnownAppRoute(route) && authState !== "authenticated") return <NotFoundScreen />;
   if (isPublicDocumentationRoute(route)) return <main className="public-documentation"><Documentation publicMode id={route === "docs" ? "overview" : route.slice(5)} /></main>;
   if (route === "home" && (!authConfig || (authConfig.edition === "hosted" && !authConfig.setupRequired))) return <Homepage authenticated={authState === "authenticated"} />;
   if (!authConfig && !authConfigError) return <WorkspaceLoader />;
@@ -406,7 +410,7 @@ function Workspace() {
   const proposalRepositoryId = route.startsWith("repository/") && creatingProposal ? route.split("/")[1] : undefined;
   const requestedPage = ["signin", "signup"].includes(route) ? "overview" : route.split("/")[0];
   const page = requestedPage === "access" ? "settings" : requestedPage;
-  const pageName = importingRepository ? "Import code" : creatingProposal ? "Ask AI agents" :
+  const pageName = !isKnownAppRoute(route) ? "Page not found" : importingRepository ? "Import code" : creatingProposal ? "Ask AI agents" :
     {
       overview: "Overview",
       repositories: "Repositories",
@@ -565,7 +569,7 @@ function Workspace() {
             <ErrorNotice message={error} onRetry={() => void refresh()} />
           )}
           <Suspense fallback={<RouteProgress />}>
-            {importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify("Mission draft created."); }} /> : route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} /> : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} /> : page === "connect" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
+            {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify("Mission draft created."); }} /> : route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} /> : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} /> : page === "connect" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
               <MissionDetail
                 key={route.split("/")[1]}
                 id={route.split("/")[1]}
@@ -577,6 +581,7 @@ function Workspace() {
                 workspace={workspace}
                 onBack={() => { const mission = workspace.missions.find(item => item.id === route.split("/")[1]); navigate(mission ? `repository/${mission.repositoryId}/pulls` : "missions"); }}
                 onUpdate={() => void load()}
+                demo={!!authConfig.demo}
               />
             ) : page === "repository" ? (
               <RepositoryDetail
@@ -596,6 +601,7 @@ function Workspace() {
                 onTabChange={(tab) => navigate(`repository/${route.split("/")[1]}/${tab}`)}
                 onImport={() => navigate(`repository/${route.split("/")[1]}/import`)}
                 canManage={permissions.includes("manage")}
+                demo={!!authConfig.demo}
                 onNotify={notify}
                 canContribute={permissions.includes("contribute")}
                 canExecute={permissions.includes("execute")}
@@ -666,6 +672,7 @@ function Workspace() {
                 </div>
                 {page === "overview" && (
                   <>
+                    {authConfig.demo && <DemoReplayCard onWatch={(id) => navigate(`mission/${id}/agents`)} />}
                     <div className="workspace-help">
                       <GitBranchIcon size={20} />
                       <p>
@@ -1132,6 +1139,7 @@ function Workspace() {
       />
       <CreationDialog
         modal={modal}
+        demo={!!authConfig.demo}
         cloudflareAvailable={authConfig.cloudflareSignin === true}
         onClose={() => setModal(null)}
         workspace={workspace}
@@ -1230,6 +1238,7 @@ function RepositoryDetail({
   onImport,
   releaseId,
   canLand,
+  demo = false,
 }: {
   repository?: Repository;
   workspace: Workspace;
@@ -1248,6 +1257,7 @@ function RepositoryDetail({
   onImport: () => void;
   releaseId?: string;
   canLand: boolean;
+  demo?: boolean;
 }) {
   if (!repository)
     return (
@@ -1306,7 +1316,7 @@ function RepositoryDetail({
             { value: "overview", label: "Overview" },
           ].map((item) => <button key={item.value} className={"ai" in item && item.ai ? "ai-only" : undefined} aria-current={tab === item.value || `${tab}/${subroute}` === item.value || (tab === "proposals" && item.value === "pulls") ? "page" : undefined} onClick={() => onTabChange(item.value)}>{item.label}</button>)}
       </nav>
-      {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} /> : tab === "settings" && subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} onNotify={onNotify} /> : tab === "settings" && subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} /> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onOpenMission={onOpenMission} /> : tab === "cloudflare" ? <><CloudflareConnection canManage={canManage} repository={repository} repositoryId={repository.id} /><Deployments key={repository.id} repository={repository} onNotify={onNotify} /></> : tab === "code" ? (
+      {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} /> : tab === "settings" && subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} onNotify={onNotify} /> : tab === "settings" && subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} /> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "cloudflare" ? <><CloudflareConnection canManage={canManage} repository={repository} repositoryId={repository.id} /><Deployments key={repository.id} repository={repository} onNotify={onNotify} /></> : tab === "code" ? (
         <><RepositoryImportOnboarding key={repository.id} repository={repository} canManage={canManage} onImport={onImport} onRefresh={onRefresh} /><RepositoryBrowser key={repository.id} repository={repository} />{repository.provider === "artifacts" && <GitAccess key={`git-${repository.id}`} repository={repository} onNotify={onNotify} />}</>
       ) : tab === "overview" ? (
         <>
@@ -1454,8 +1464,10 @@ function CreationDialog({
   onCreated,
   onSignedIn,
   cloudflareAvailable,
+  demo = false,
 }: {
   modal: Modal;
+  demo?: boolean;
   cloudflareAvailable: boolean;
   onClose: () => void;
   workspace: Workspace;
@@ -1610,6 +1622,13 @@ function CreationDialog({
               </Button>
             </div>
           </>
+        ) : demo && (modal === "repository" || modal === "connect") ? (
+          <div className="demo-feature-dialog">
+            <DemoFeaturePanel feature="repository-creation" headingLevel={3} />
+            <div className="dialog-actions">
+              <Button variant="secondary" size="base" onClick={onClose}>Close</Button>
+            </div>
+          </div>
         ) : (
           <form onSubmit={(event) => void submit(event)}>
             {modal === "session" ? (

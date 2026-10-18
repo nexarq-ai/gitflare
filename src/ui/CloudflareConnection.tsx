@@ -12,6 +12,8 @@ import cloudflareIcon from "./assets/cloudflare-icon.svg";
 import "./cloudflare-connection.css";
 import { RouteProgress } from "./WorkspaceLoader";
 import InstallationCredential from "./InstallationCredential";
+import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
+import type { DemoMarked } from "../shared/demo-features";
 
 type Account = { id: string; name: string };
 type Connection = { configured: boolean; connected: boolean; expiresAt?: number; identity?: { subject: string; email?: string }; account?: Account; scopes?: string[]; source?: "repository" | "workspace" | "none"; permissions?: CloudflarePermissionPlan };
@@ -169,22 +171,26 @@ export default function CloudflareConnection({ repository, repositoryId, reposit
   const [confirmed, setConfirmed] = useState(false);
   const [migrationSql, setMigrationSql] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
+  const [demoConnection, setDemoConnection] = useState<DemoMarked | null>(null);
+  const [demoProject, setDemoProject] = useState<DemoMarked | null>(null);
   const projectBase = `/api/repositories/${encodeURIComponent(repositoryId ?? "")}/cloudflare`;
   const connectionBase = repositoryId ? `${projectBase}/connection` : "/api/cloudflare";
 
   useEffect(() => {
     let active = true;
-    setBusy("load"); setError(""); setStatus(null); setResources(null); setProject(null); setPlan(null); setUsage(null);
+    setBusy("load"); setError(""); setStatus(null); setResources(null); setProject(null); setPlan(null); setUsage(null); setDemoConnection(null); setDemoProject(null);
     const loadProject = async () => {
       if (!repositoryId) return;
-      const data = await request<Project>(projectBase);
+      const data = await request<Project & DemoMarked>(projectBase);
       if (!active) return;
+      if (demoOf(data)) { setDemoProject(data); return; }
       setProject(data); setSelectedResources(mappedResources(data.mapping)); setDatabaseId(mappedResources(data.mapping).find((item) => item.type === "d1")?.id ?? "");
     };
     const loadConnection = async () => {
       if (!canManage) return;
-      const connection = await request<Connection>(connectionBase);
+      const connection = await request<Connection & DemoMarked>(connectionBase);
       if (!active) return;
+      if (demoOf(connection)) { setDemoConnection(connection); return; }
       setStatus(connection); setAccountId(connection.account?.id ?? "");
       if (!connection.connected) return;
       if (!repositoryId || connection.source === "repository") {
@@ -254,10 +260,15 @@ export default function CloudflareConnection({ repository, repositoryId, reposit
     return <section className="cf-usage-item"><h3>{label}</h3>{environment && <span className="cf-environment-badge">{environment}</span>}{!value ? <p>Refresh usage to load project metrics.</p> : !value.available ? <p>{value.reason || "Usage is unavailable for this resource."}</p> : <><p>{value.window ? `${new Date(value.window.from).toLocaleDateString()} — ${new Date(value.window.to).toLocaleDateString()}` : "Reported usage"}</p>{Object.keys(totals).length ? <dl>{Object.entries(totals).map(([key, amount]) => <div key={key}><dt>{names[key]}</dt><dd>{amount.toLocaleString()}</dd></div>)}</dl> : <p>No usage records were returned for this period.</p>}</>}</section>;
   }
   if (repositoryId && !repository) return <ErrorNotice message="This repository could not be found." />;
+  const demoPanels = [demoConnection, demoProject].filter((item): item is DemoMarked => !!demoOf(item));
   return <div className="cf-connection-page">
     <a className="header-back" href={repositoryId ? `/repository/${repositoryId}` : "/settings"}><ArrowLeftIcon size={13} />{repositoryId ? repository && repositoryLabel(repository) : "Settings"}</a>
     <div className="page-heading"><div><h1><img src={cloudflareIcon} alt="" width="22" height="22" />Cloudflare{repositoryId ? " resources" : " account"}</h1><p>{repositoryId ? "Associate this repository with your account’s resources and inspect its usage." : "Authorize Cloudflare and choose the account for your workspace."}</p></div><Button variant="secondary" size="base" icon={ArrowClockwiseIcon} disabled={!!busy} onClick={() => setRetry((value) => value + 1)}>Refresh</Button></div>
     {error && <ErrorNotice message={error} onRetry={() => setRetry((value) => value + 1)} />}
+    {demoPanels.length > 0 ? <>
+      {demoPanels.map((item) => <DemoFeaturePanel key={item.demo!.feature} demo={item.demo} examples={item.examples} />)}
+      {canManage && !repositoryId && <InstallationCredential />}
+    </> : <>
     {message && <p className="cf-notice" role="status">{message}</p>}
     {canManage && !repositoryId && <InstallationCredential workspace={status} />}
     {canManage && !repositoryId && (status ? <CloudflareAccount status={status} accounts={accounts} resources={resources} repositories={repositories} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request("/api/cloudflare/select-account", { accountId }); setRetry((value) => value + 1); })} onConnect={() => setConnectOpen(true)} onDisconnect={() => void perform("disconnect", async () => { await request("/api/cloudflare/disconnect", {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <RouteProgress /> : <p role="status">Cloudflare account details are unavailable.</p>)}
@@ -292,6 +303,7 @@ export default function CloudflareConnection({ repository, repositoryId, reposit
       <section className="panel"><div className="panel-header"><h2>Project usage</h2><Button variant="secondary" size="base" disabled={!savedResources.length || !!busy} onClick={() => void perform("usage", async () => { setUsage(await request<Usage>(`${projectBase}/usage`)); })}>Refresh usage</Button></div><div className="panel-body">{usage && <p className="cf-description">Observed {new Date(usage.observedAt).toLocaleString()}</p>}{savedResources.length ? <div className="cf-usage-grid">{savedResources.map((resource) => <div key={resourceKey(resource)}>{metric(resource.name, usage?.resources.find((item) => resourceKey(item.resource) === resourceKey(resource)), resource.environment)}</div>)}</div> : <p>Save project resources to inspect their usage.</p>}</div></section>
       <section className="panel"><div className="panel-header"><h2>D1 migrations</h2></div><div className="panel-body"><p className="cf-description">Prepare a migration from an exact repository revision, then review its checksum before applying it to the selected project database.</p><div className="cf-resource-fields"><label htmlFor="cf-migration-database">Target database<select id="cf-migration-database" value={databaseId} disabled={!!busy} onChange={(event) => { setDatabaseId(event.target.value); resetPlan(); }}><option value="">Choose a saved D1 database</option>{savedDatabases.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.environment}</option>)}</select></label><label htmlFor="cf-migration-sha">Revision SHA<Input id="cf-migration-sha" value={commitSha} onChange={(event) => { setCommitSha(event.target.value); setPlan(null); setMigrationSql(""); setConfirmed(false); }} placeholder="Full 40-character revision SHA" /></label><label htmlFor="cf-migration-path">SQL file path<Input id="cf-migration-path" value={migrationPath} onChange={(event) => { setMigrationPath(event.target.value); setPlan(null); setMigrationSql(""); setConfirmed(false); }} placeholder="migrations/001-example.sql" /></label></div><Button variant="secondary" size="base" disabled={!!busy || !savedDatabases.some((item) => item.id === databaseId) || !/^[a-f0-9]{40}$/i.test(commitSha) || !migrationPath} onClick={() => void perform("plan", async () => { const existing = project.plans.find((entry) => entry.status === "pending" && entry.databaseId === databaseId && entry.commitSha === commitSha && entry.path === migrationPath); if (existing) { await reviewPlan(existing); return; } const data = await projectAction<{ plan: MigrationPlan }>("migration-plan", { databaseId, commitSha, path: migrationPath }); setProject((current) => current ? { ...current, plans: [...current.plans.filter((entry) => entry.id !== data.plan.id), data.plan] } : current); await reviewPlan(data.plan); })}>Prepare migration plan</Button>{plan && <div className="cf-migration-plan"><h3>Migration plan</h3><dl><dt>Database</dt><dd>{savedDatabases.find((item) => item.id === plan.databaseId)?.name ?? plan.databaseId}</dd><dt>Revision</dt><dd><code>{plan.commitSha}</code></dd><dt>Path</dt><dd>{plan.path}</dd><dt>SHA-256</dt><dd><code>{plan.checksum}</code></dd><dt>Status</dt><dd>{plan.status}</dd></dl><h3>Exact SQL preview</h3><pre>{migrationSql}</pre>{plan.status === "pending" ? <><label className="cf-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />I reviewed this SQL and SHA-256 checksum. Applying it changes the selected database and may delete or modify data.</label><Button variant="primary" size="base" disabled={!confirmed || !!busy || !savedDatabases.some((item) => item.id === plan.databaseId)} onClick={() => void perform("apply", async () => { try { const result = await projectAction<{ plan: MigrationPlan }>("migration-execute", { planId: plan.id, checksum: plan.checksum }); setPlan(result.plan); setProject((current) => current ? { ...current, plans: current.plans.map((entry) => entry.id === result.plan.id ? result.plan : entry) } : current); setConfirmed(false); setMessage(`Migration outcome: ${result.plan.status}.`); } catch (failure) { const uncertain: MigrationPlan = { ...plan, status: "unknown" }; setPlan(uncertain); setProject((current) => current ? { ...current, plans: current.plans.map((entry) => entry.id === plan.id ? uncertain : entry) } : current); setConfirmed(false); throw failure; } })}>Apply exact migration</Button></> : <p>{plan.status === "unknown" ? "The outcome is unknown. Inspect the database before taking any further action." : `Migration ${plan.status}.`}</p>}</div>}{!!project?.plans.length && <details className="cf-plan-history"><summary>Previous migration plans ({project.plans.length})</summary>{project.plans.map((entry) => <p key={entry.id}><code>{entry.commitSha.slice(0, 12)}</code> · {entry.path} · {savedDatabases.find((item) => item.id === entry.databaseId)?.name ?? entry.databaseId} · {entry.status}{entry.status === "pending" && <Button variant="secondary" size="base" disabled={!!busy} onClick={() => void perform("review", () => reviewPlan(entry))}>Review saved plan</Button>}</p>)}</details>}</div></section>
       <section className="panel"><div className="panel-header"><h2>Workers Builds</h2></div><div className="panel-body"><p className="cf-description">A verified Workers Builds trigger connection is not available yet.</p><Button variant="secondary" size="base" disabled>Trigger build</Button></div></section>
+    </>}
     </>}
   </div>;
 }

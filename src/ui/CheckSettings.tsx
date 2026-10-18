@@ -5,6 +5,8 @@ import { ArrowCounterClockwiseIcon, ArrowFatLinesUpIcon, CpuIcon, TimerIcon } fr
 import type { Check, CheckLimitSource, CheckPolicyOverride, Mission, RepositoryCheckSettings, RunnerSize, TestEvidence } from "../shared/types";
 import { request } from "./api";
 import { ErrorNotice } from "./components";
+import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
+import type { DemoMarked } from "../shared/demo-features";
 import "./check-settings.css";
 
 export const RUNNER_LABELS: Record<RunnerSize, string> = {
@@ -19,7 +21,7 @@ const seconds = (value: string) => value.trim() ? Number(value) : null;
 
 export default function CheckSettings({ repositoryId, canChange, isOwner = false, onNotify }: { repositoryId: string; canChange: boolean; isOwner?: boolean; onNotify: (message: string) => void }) {
   const path = `/api/repositories/${encodeURIComponent(repositoryId)}/check-settings`;
-  const [settings, setSettings] = useState<RepositoryCheckSettings | null>(null);
+  const [settings, setSettings] = useState<(RepositoryCheckSettings & DemoMarked) | null>(null);
   const [limit, setLimit] = useState("");
   const [runner, setRunner] = useState<RunnerSize | "">("");
   const [autoEnabled, setAutoEnabled] = useState(true);
@@ -35,7 +37,7 @@ export default function CheckSettings({ repositoryId, canChange, isOwner = false
   const [error, setError] = useState("");
   const mutation = useRef<{ signature: string; key: string } | null>(null);
 
-  function show(current: RepositoryCheckSettings) {
+  function show(current: RepositoryCheckSettings & DemoMarked) {
     setSettings(current);
     setLimit(current.testTimeoutSeconds?.toString() ?? "");
     setRunner(current.runner ?? "");
@@ -77,6 +79,8 @@ export default function CheckSettings({ repositoryId, canChange, isOwner = false
 
   if (loadError) return <ErrorNotice message={loadError} onRetry={() => setAttempt(value => value + 1)} />;
   if (!settings) return null;
+  const demo = demoOf(settings);
+  if (demo) return <DemoFeaturePanel demo={demo} examples={settings.examples} />;
   const { minTimeoutSeconds, maxTimeoutSeconds } = settings.limits;
   const outOfRange = (value: string, optional: boolean) => {
     if (!value.trim()) return !optional;

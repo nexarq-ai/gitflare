@@ -5,6 +5,8 @@ import { request } from "./api";
 import { ErrorNotice, relativeTime } from "./components";
 import { OperationTrack } from "./OperationMotion";
 import { RouteProgress } from "./WorkspaceLoader";
+import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
+import type { DemoMarked } from "../shared/demo-features";
 import "./cloudflare-connection.css";
 
 type Environment = string;
@@ -28,7 +30,7 @@ interface EnvironmentState {
   access?: AccessView;
 }
 interface AccessView { status: "protected" | "unprotected" | "error"; reason?: string; appId?: string; hostnames: string[]; includes: { emails: string[]; domains: string[]; groupId?: string } | null; created: boolean; canChange: boolean; updatedAt?: string }
-interface State { environmentOrder?: Environment[]; environments: Record<Environment, EnvironmentState>; deployments: Deployment[]; workers: { id: string; name: string; environment: string }[] }
+interface State extends DemoMarked { environmentOrder?: Environment[]; environments: Record<Environment, EnvironmentState>; deployments: Deployment[]; workers: { id: string; name: string; environment: string }[] }
 interface DetectedResource { type: "d1" | "r2" | "queue"; name: string; status?: "exists" | "create" | "missing" | "unknown"; needsScope?: string }
 interface DetectedTarget { workerName: string; configPath: string; buildCommand?: string; buildReasons: string[]; d1Migrations: boolean; watchPaths: string[]; dependsOn: string[]; resources: DetectedResource[]; customDomains: string[]; routes: string[]; workersDev: boolean; exists?: boolean | null; urls?: string[] }
 interface SetupWarning { id: string; environment: Environment; configPath: string; message: string }
@@ -130,6 +132,7 @@ export default function Deployments({ repository, onNotify }: { repository: Repo
     const load = () => request<State>(path).then((value) => {
       if (!active) return;
       setState(value);
+      if (demoOf(value)) return;
       setDraft((current) => current ?? draftFor(editing, value));
       if (value.deployments.some((item) => ACTIVE.includes(item.status))) timer = window.setTimeout(load, 5000);
     }).catch((failure) => { if (active) setError(failure instanceof Error ? failure.message : "Deployments could not be loaded."); });
@@ -161,6 +164,8 @@ export default function Deployments({ repository, onNotify }: { repository: Repo
   }
 
   if (!state) return error ? <ErrorNotice message={error} /> : <RouteProgress />;
+  const demo = demoOf(state);
+  if (demo) return <DemoFeaturePanel demo={demo} examples={state.examples} />;
   const environmentNames = orderEnvironments([...(state.environmentOrder ?? Object.keys(state.environments)), ...Object.keys(detection?.setup.environments ?? {})]);
   const switchEditing = (environment: Environment) => { setEditing(environment); setDraft(draftFor(environment, state)); };
   const updateTarget = (index: number, patch: Partial<Target>) => draft && setDraft({ ...draft, targets: draft.targets.map((target, position) => position === index ? { ...target, ...patch } : target) });
