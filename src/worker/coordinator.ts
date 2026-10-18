@@ -295,6 +295,15 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
 
   getModelConnections(): ModelConnection[] { return this.store.get<ModelConnection[]>('model-connections') ?? defaultModelConnections(); }
 
+  getDefaultModel(): string | null { return this.store.get<string>('default-model') ?? null; }
+
+  setDefaultModel(id: string): ModelConnection[] {
+    const models = this.getModelConnections();
+    if (!models.some(model => model.id === id)) throw new ApiError(404, 'MODEL_NOT_FOUND', 'This model is not enabled. Enable it before making it the default.');
+    this.store.put('default-model', id);
+    return models;
+  }
+
   getAiCredentials(): AiCredentials { return { keys: this.store.get<StoredAiKey[]>('ai-keys') ?? [], gateway: this.store.get<StoredAiGateway>('ai-gateway') ?? null, operatorModels: this.store.get<OperatorModelGrant>('operator-models') ?? null }; }
 
   setOperatorModels(grant: OperatorModelGrant | null): AiCredentials {
@@ -374,6 +383,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       } else {
         if (!models.some(model => model.id === value)) throw new ApiError(404, 'MODEL_NOT_FOUND', 'This model is not enabled.');
         updated = models.filter(model => model.id !== value);
+        if (this.getDefaultModel() === value) this.store.delete('default-model');
       }
       this.store.put('model-connections', updated);
       this.store.put(`model-request:${key}`, { fingerprint, result: updated });
@@ -744,11 +754,11 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return mission;
   }
 
-  createMission(key: string, input: CreateMissionInput, authorization?: NonNullable<Mission['authorization']>, models = defaultModelConnections()): Mission {
-    return this.mutate(key, JSON.stringify(['mission', input]), () => this.newMission(input, authorization, models));
+  createMission(key: string, input: CreateMissionInput, authorization?: NonNullable<Mission['authorization']>, models = defaultModelConnections(), defaultModel?: string): Mission {
+    return this.mutate(key, JSON.stringify(['mission', input]), () => this.newMission(input, authorization, models, undefined, defaultModel));
   }
 
-  private newMission(input: CreateMissionInput, authorization?: NonNullable<Mission['authorization']>, models = defaultModelConnections(), id: string = crypto.randomUUID()): Mission {
+  private newMission(input: CreateMissionInput, authorization?: NonNullable<Mission['authorization']>, models = defaultModelConnections(), id: string = crypto.randomUUID(), defaultModel?: string): Mission {
       const repository = this.getRepository(input.repositoryId);
       if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
       if (input.expectedBaseSha !== undefined && input.expectedBaseSha !== repository.headSha) throw new ApiError(409, 'STALE_PROPOSAL_BASE', 'The repository changed while you drafted this proposal. Refresh the base and review your assignments before saving.');
@@ -777,7 +787,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
         checks: [], changes: [], events: [], createdAt: now, updatedAt: now,
       };
       if (mission.issueNumber !== undefined) linkIssueMission(this.store, mission.issueNumber, mission.id, now);
-      return this.saveMission(pinMissionModels(mission, models), `Mission created${mission.issueNumber !== undefined ? ` for issue #${mission.issueNumber}` : ''}. Agent execution has not started.`);
+      return this.saveMission(pinMissionModels(mission, models, defaultModel), `Mission created${mission.issueNumber !== undefined ? ` for issue #${mission.issueNumber}` : ''}. Agent execution has not started.`);
   }
 
   getSkillEditRequest(key: string, repositoryId: string, supplied: RepositorySkillChange): Mission | undefined {

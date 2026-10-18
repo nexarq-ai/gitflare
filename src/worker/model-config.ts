@@ -56,17 +56,22 @@ export function assertPinnedModel(models: ModelConnection[], pinned: ModelConnec
   if (current.source !== pinned.source || current.protocol !== pinned.protocol) throw new ApiError(409, 'MODEL_CONNECTION_CHANGED', 'The selected model connection changed. Create a new proposal with the current model settings.');
 }
 
-export function pinMissionModels(mission: Mission, models: ModelConnection[]): Mission {
+export function effectiveDefaultModel(models: ModelConnection[], stored?: string | null): string {
+  if (stored && models.some(model => model.id === stored)) return stored;
+  return models.some(model => model.id === DEFAULT_MODEL) ? DEFAULT_MODEL : models[0]?.id ?? DEFAULT_MODEL;
+}
+
+export function pinMissionModels(mission: Mission, models: ModelConnection[], fallback = DEFAULT_MODEL): Mission {
   if (mission.skillChange) return mission;
   return { ...mission, runs: mission.runs.map(run => {
-    const model = run.modelConfig ?? resolveModelConnection(models, run.model ?? DEFAULT_MODEL);
+    const model = run.modelConfig ?? resolveModelConnection(models, run.model ?? fallback);
     assertPinnedModel(models, model);
     return { ...run, model: model.id, modelConfig: structuredClone(model) };
   }) };
 }
 
-export function modelConnectionsSnapshot(env: ModelEnv, models: ModelConnection[]): ModelConnectionsSnapshot {
-  return { gateway: { id: env.AI_GATEWAY_ID ?? null, configured: !!env.AI && !!env.AI_GATEWAY_ID }, workersAI: { enabled: !!env.AI }, models: structuredClone(models), workersAICatalog: structuredClone(WORKERS_AI_CATALOG), discovery: 'manual' };
+export function modelConnectionsSnapshot(env: ModelEnv, models: ModelConnection[], defaultModel?: string | null): ModelConnectionsSnapshot {
+  return { defaultModel: effectiveDefaultModel(models, defaultModel), gateway: { id: env.AI_GATEWAY_ID ?? null, configured: !!env.AI && !!env.AI_GATEWAY_ID }, workersAI: { enabled: !!env.AI }, models: structuredClone(models), workersAICatalog: structuredClone(WORKERS_AI_CATALOG), discovery: 'manual' };
 }
 
 export async function verifyModelConnection(env: ModelEnv, model: ModelConnection): Promise<ModelConnection> {

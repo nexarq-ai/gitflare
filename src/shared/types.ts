@@ -340,6 +340,7 @@ export interface AiKeysSnapshot {
 }
 
 export interface ModelConnectionsSnapshot {
+  defaultModel: string;
   gateway: { id: string | null; configured: boolean };
   workersAI: { enabled: boolean };
   models: ModelConnection[];
