@@ -35,18 +35,54 @@ function shell(command: string): string[] {
   return ['/bin/bash', '-lc', command];
 }
 
-const LISTEN = ['--host', '0.0.0.0', '--port', '8080'];
+export const PREVIEW_PORT = 8080;
+export const DEV_SERVER_READINESS_MS = 180_000;
+export const WRANGLER_STATE_DIR = '/tmp/gitflare-wrangler-state';
+const LISTEN = ['--host', '0.0.0.0', '--port', String(PREVIEW_PORT)];
 
-export function previewPlan(files: string[], packageJson: string | null, configured: { command?: string; install?: InstallPlan | null } = {}, lockHead: string | null = null): PreviewPlan {
+const EXEC: Record<ReturnType<typeof runnerFor>, string> = { npm: 'npx --no-install', pnpm: 'pnpm exec', yarn: 'yarn' };
+
+export function wranglerDevCommand(pm: ReturnType<typeof runnerFor>, options: { configPath?: string; environment?: string } = {}): string {
+  const args = ['dev', '--ip', '0.0.0.0', '--port', String(PREVIEW_PORT), '--local', '--persist-to', WRANGLER_STATE_DIR];
+  if (options.configPath) args.push('--config', options.configPath);
+  if (options.environment) args.push('--env', options.environment);
+  return `${EXEC[pm]} wrangler ${args.join(' ')}`;
+}
+
+const ANSI = new RegExp(String.raw`\u001b\[[0-9;?]*[A-Za-z]`, 'g');
+const PORT_PATTERNS = [
+  /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|[a-z0-9.-]+):(\d{2,5})\b/gi,
+  /\blistening\s+(?:on|at)\s+(?:port\s+)?(?:(?:[\w.-]+|\[[:\w]*\])?:)?(\d{2,5})\b/gi,
+];
+
+export function detectListeningPort(output: string): number | null {
+  const text = output.replace(ANSI, '');
+  let found: { index: number; port: number } | null = null;
+  for (const pattern of PORT_PATTERNS) {
+    for (const match of text.matchAll(pattern)) {
+      const port = Number(match[1]);
+      if (port < 1 || port > 65_535) continue;
+      if (!found || match.index! >= found.index) found = { index: match.index!, port };
+    }
+  }
+  return found?.port ?? null;
+}
+
+export function previewPlan(files: string[], packageJson: string | null, configured: { command?: string; install?: InstallPlan | null; wranglerEnvironment?: string } = {}, lockHead: string | null = null): PreviewPlan {
   if (configured.command && configured.command !== LEGACY_PREVIEW) return { argv: shell(`exec ${configured.command}`), install: configured.install ?? null, readinessMs: 90_000, description: `the configured preview command (${configured.command})` };
   if (files.includes('src/preview.mjs')) return { argv: ['node', 'src/preview.mjs'], install: configured.install ?? null, readinessMs: 15_000, description: 'src/preview.mjs' };
   const available = scripts(packageJson);
   const detected = detectPackageManager({ files, packageJson, lockHead });
   const install = hasInstallableDependencies(files, packageJson) ? detected : null;
   const pm = runnerFor(detected);
-  if (available.start) return { argv: shell(`exec ${pm} start`), install, readinessMs: 90_000, description: `${pm} start` };
+  if (hasWorkerConfig(files) && dependsOn(packageJson, 'wrangler') && !dependsOn(packageJson, '@cloudflare/vite-plugin')) {
+    const dev = wranglerDevCommand(pm, configured.wranglerEnvironment ? { environment: configured.wranglerEnvironment } : {});
+    const build = available.build && !/\bwrangler\s+(?:deploy|publish)\b/.test(available.build) ? `${runScript(pm, 'build')} && ` : '';
+    return { argv: shell(`${build}exec ${dev}`), install, readinessMs: DEV_SERVER_READINESS_MS, description: `${build ? `${pm} run build, then ` : ''}wrangler dev` };
+  }
+  if (available.start) return { argv: shell(`exec ${pm} start`), install, readinessMs: DEV_SERVER_READINESS_MS, description: `${pm} start` };
   if (available.build && available.preview) return { argv: shell(`${runScript(pm, 'build')} && exec ${runScript(pm, 'preview', LISTEN)}`), install, readinessMs: 180_000, description: `${pm} run build, then ${pm} run preview` };
-  if (available.dev) return { argv: shell(`exec ${runScript(pm, 'dev', LISTEN)}`), install, readinessMs: 120_000, description: `${pm} run dev` };
+  if (available.dev) return { argv: shell(`exec ${runScript(pm, 'dev', LISTEN)}`), install, readinessMs: DEV_SERVER_READINESS_MS, description: `${pm} run dev` };
   const root = ['dist', 'build', 'public', 'site', 'docs'].find((dir) => files.includes(`${dir}/index.html`)) ?? '.';
   return { argv: ['node', '-e', STATIC_SERVER, root], install: null, readinessMs: 15_000, description: root === '.' ? 'the repository files as a static site' : `${root}/ as a static site` };
 }

@@ -82,6 +82,6 @@ export function PreviewAccountLine({ repositoryId, canManage }: { repositoryId: 
   }, [repositoryId, canManage]);
   if (!overview) return null;
   const account = effectiveAccount(overview, repositoryId);
-  if (!account || previews === false) return <p className="cf-preview-account">Previews run on Gitflare's shared previews Worker.{canManage ? <> To preview on your own account, <a href="/settings/cloudflare">grant Worker previews in Settings → Cloudflare</a>.</> : ""}</p>;
-  return <p className="cf-preview-account">Worker previews run on {account.name}, this repository's Cloudflare account.</p>;
+  if (!account || previews === false) return <p className="cf-preview-account">Previews run on Gitflare's shared previews Worker<InfoTip label="Preview account">{canManage ? <>To preview on your own account, <a href="/settings/cloudflare">grant the Previews permission in Settings → Cloudflare</a>.</> : "An Owner can grant the Previews permission in Settings → Cloudflare to preview on this repository's own account."}</InfoTip></p>;
+  return <p className="cf-preview-account">Previews run on Cloudflare account {account.name} ({account.id.slice(0, 4)}…{account.id.slice(-4)})<InfoTip label="Preview account">Account ID {account.id}. Gitflare creates the repository's Worker there on the first preview if it does not exist yet.</InfoTip></p>;
 }

@@ -9,7 +9,9 @@ import { validateRepositorySkillChange } from './skill-edit';
 import { assertPinnedModel, defaultModelConnections, resolveModelConnection, DEFAULT_MODEL, ESCALATION_MODEL } from './model-config';
 import { inferenceMessage, ModelLocationError, ModelResponseError, type InputItem, type ModelEnv, type ModelMessage } from './model-adapter';
 export { DEFAULT_MODEL, ESCALATION_MODEL } from './model-config';
-import { classifyPreview, previewPlan, workerPreviewBuildCommand } from './preview-plan';
+import { classifyPreview, LEGACY_PREVIEW, previewPlan, workerPreviewBuildCommand } from './preview-plan';
+import { containerFallbackNote } from './preview-host';
+import { PREVIEW_FAILURE_MAX } from '../shared/preview-progress';
 import { buildWorkerBundle, DEPLOY_BUILD_TIMEOUT_MS, deployBuildScript, readWorkerConfig, WorkerBuildFailure, workerConfigPath, type BundleSandbox, type ResolvedWorkerConfig, type WorkerBundle } from './worker-bundle';
 import { collectAndUploadAssets, type AssetsOptions } from './worker-assets';
 import { migrationDatabases, readMigrationFiles, type D1MigrationSet } from './d1-migrations';
@@ -1423,15 +1425,21 @@ export async function integrateCandidate(env: ExecutionEnv, { repository, missio
   }
 }
 
+function containerReason(configuredCommand: string | undefined, workerPreviews: boolean, unavailable: string | undefined): string {
+  if (configuredCommand && configuredCommand !== LEGACY_PREVIEW) return containerFallbackNote('the repository policy sets its own preview command', false);
+  if (!workerPreviews) return containerFallbackNote(unavailable ?? 'Worker Previews are not configured for this repository');
+  return containerFallbackNote('the Wrangler config has no main entry, so there is no Worker to preview', false);
+}
+
 export class PreviewFailure extends Error {
   constructor(message: string) {
-    super(message.slice(0, 700));
+    super(message.slice(0, PREVIEW_FAILURE_MAX));
     this.name = 'PreviewFailure';
   }
 }
 
 export interface BuiltPreview { bundle: WorkerBundle; uploadAssets?: BuiltTarget['uploadAssets']; d1?: D1MigrationSet[] }
-export type PreparedPreview<T = undefined> = { kind: 'container'; sandboxName: string; candidateSha: string } | { kind: 'worker'; bundle: WorkerBundle; candidateSha: string; published?: T };
+export type PreparedPreview<T = undefined> = { kind: 'container'; sandboxName: string; candidateSha: string; notes: string[] } | { kind: 'worker'; bundle: WorkerBundle; candidateSha: string; published?: T };
 
 function workerAssetsOptions(config: ResolvedWorkerConfig): AssetsOptions | null {
   if (!config.assets) return null;
@@ -1444,7 +1452,7 @@ function uploadsAssets(sandbox: BundleSandbox, options: AssetsOptions | null): P
   return options ? { uploadAssets: (call, accountId, workerName) => collectAndUploadAssets(sandbox, { call, accountId, workerName, options }) } : {};
 }
 
-export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, { mission, previewAttemptId, assertAuthority = unrestricted, workerPreviews = false, configPath: preferredConfig, publishWorker, onStep = async () => {} }: IntegrationInput & { previewAttemptId: string; workerPreviews?: boolean; configPath?: string; publishWorker?: (built: BuiltPreview) => Promise<T>; onStep?: (step: PreviewStep) => Promise<void> }): Promise<PreparedPreview<T>> {
+export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, { mission, previewAttemptId, assertAuthority = unrestricted, workerPreviews = false, workerPreviewsUnavailable, configPath: preferredConfig, publishWorker, onStep = async () => {} }: IntegrationInput & { previewAttemptId: string; workerPreviews?: boolean; workerPreviewsUnavailable?: string; configPath?: string; publishWorker?: (built: BuiltPreview) => Promise<T>; onStep?: (step: PreviewStep) => Promise<void> }): Promise<PreparedPreview<T>> {
   if (mission.authorization && assertAuthority === unrestricted) throw new Error('Preview authority guard is required');
   if (!/^[a-f0-9-]{36}$/.test(previewAttemptId)) throw new Error('Invalid preview attempt ID');
   if (!env.ARTIFACTS || !env.SANDBOX || !mission.candidateSha || !mission.integrationForkName) throw new Error('A real integration candidate is required for preview');
@@ -1507,6 +1515,7 @@ export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, 
       }
     }
     const { packageJson, lockHead } = await workingTreeInstall(sandbox, files);
+    const notes = configPath ? [containerReason(policy?.previewCommand, workerPreviews, workerPreviewsUnavailable)] : [];
     const plan = previewPlan(files, packageJson, { command: policy?.previewCommand, install: policy?.install }, lockHead);
     try {
       if (plan.install && !installed) {
@@ -1517,9 +1526,9 @@ export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, 
       await onStep('starting');
       await sandbox.startPreview(plan.argv, plan.readinessMs);
     } catch (error) {
-      throw new PreviewFailure(`Preview could not start using ${plan.description}. ${error instanceof Error ? error.message : 'The preview process failed.'}`);
+      throw new PreviewFailure(`${notes.length ? `${notes[0]} ` : ''}Preview could not start using ${plan.description}. ${error instanceof Error ? error.message : 'The preview process failed.'}`);
     }
-    return { kind: 'container', sandboxName, candidateSha: mission.candidateSha };
+    return { kind: 'container', sandboxName, candidateSha: mission.candidateSha, notes };
   } catch (error) {
     await sandbox.destroy();
     if (error instanceof PreviewFailure) throw error;
