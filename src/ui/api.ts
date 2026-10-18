@@ -15,6 +15,15 @@ let workspaceId = "";
 const READ_TIMEOUT_MS = 30_000;
 
 export function selectWorkspace(id: string) { workspaceId = id; }
+export function selectedWorkspace() { return workspaceId; }
+
+const WORKSPACE_KEY = "gitflare:workspace:";
+export function rememberedWorkspace(userId: string): string | null {
+  try { return localStorage.getItem(WORKSPACE_KEY + userId); } catch { return null; }
+}
+export function rememberWorkspace(userId: string, id: string) {
+  try { localStorage.setItem(WORKSPACE_KEY + userId, id); } catch {}
+}
 
 export async function request<T>(
   path: string,

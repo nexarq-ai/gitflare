@@ -7,9 +7,11 @@ const TOKEN_ROUTES: Record<string, (fragment: string) => string> = {
 };
 const ROUTE_ALIASES: [RegExp, string][] = [
   [/^login$/, "signin"],
-  [/^(repository\/[^/]+)\/(?:streams|settings|settings\/(?:streams|checks|previews|mirror|github-mirror))$/, "$1/settings/branches"],
-  [/^(repository\/[^/]+)\/(?:deployments|settings\/(?:cloudflare|deploys|deployments|environments))$/, "$1/cloudflare"],
-  [/^repository\/[^/]+\/settings\/access$/, "access"],
+  [/^access$/, "settings/people"],
+  [/^(repository\/[^/]+)\/(?:streams|settings\/(?:streams|checks))$/, "$1/settings/branches"],
+  [/^(repository\/[^/]+)\/settings\/(?:mirror|github-mirror)$/, "$1/settings"],
+  [/^(repository\/[^/]+)\/(?:deployments|settings\/(?:deployments|environments))$/, "$1/settings/deploys"],
+  [/^(repository\/[^/]+)\/cloudflare$/, "$1/settings/cloudflare"],
   [/^(repository\/[^/]+)\/checkpoints(\/|$)/, "$1/releases$2"],
 ];
 const SERVER_PATH = /^\/(api|mcp|oauth|\.well-known|llms\.txt|assets|social|git|source\/gitflare\.git)(\/|$)|\.[a-z0-9]+$/i;
@@ -115,13 +117,34 @@ export function isPublicDocumentationRoute(route: string): boolean {
 }
 
 export function isKnownAppRoute(route: string): boolean {
-  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "access", "account/profile", "account/security", "proposals/new", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
-    || /^settings(?:\/(?:models|cloudflare))?$/.test(route)
+  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "admin", "account/profile", "account/security", "account/clients", "proposals/new", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
+    || /^settings(?:\/(?:people|cloudflare|models|audit))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
-    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|cloudflare|import)|\/settings\/(?:branches|secrets)|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
+    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|import)|\/settings(?:\/(?:branches|deploys|previews|secrets|cloudflare|access))?|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
     || /^(?:forgot-password|reset-password|verify-email)(?:\/[^/]+)?$/.test(route)
     || route === "invite" || route.startsWith("invite?");
+}
+
+export const WORKSPACE_SETTINGS_PAGES = [
+  { route: "settings", label: "General" },
+  { route: "settings/people", label: "People" },
+  { route: "settings/cloudflare", label: "Cloudflare" },
+  { route: "settings/models", label: "AI models", ai: true },
+  { route: "settings/audit", label: "Audit log" },
+] as const;
+
+export const REPOSITORY_SETTINGS_PAGES = [
+  { path: "", label: "General" },
+  { path: "branches", label: "Streams" },
+  { path: "deploys", label: "Deploys" },
+  { path: "previews", label: "Previews" },
+  { path: "secrets", label: "Secrets" },
+  { path: "cloudflare", label: "Resources" },
+] as const;
+
+export function keepsRouteAcrossWorkspaces(route: string): boolean {
+  return /^(?:settings(?:\/|$)|account\/|docs(?:\/|$)|admin$)/.test(route) || ["overview", "repositories", "missions", "activity"].includes(route);
 }
 
 export function isSiteRoute(route: string): boolean {
