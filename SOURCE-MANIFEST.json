@@ -290,8 +290,8 @@
     },
     {
       "path": "src/ui/AgentSettings.tsx",
-      "size": 8232,
-      "sha256": "d80694ad505f996eebe7f2ef22e64d92d1ad03c7c9651bdb248ff8eb27d2566a"
+      "size": 8287,
+      "sha256": "2f1d66f25a36aa75ef1fe748c12aed67003b04ff1801fd85d39edec77cc6d002"
     },
     {
       "path": "src/ui/AiKeys.tsx",
@@ -935,8 +935,8 @@
     },
     {
       "path": "src/worker/anthropic-adapter.ts",
-      "size": 10809,
-      "sha256": "dab9add34174c5c6727051da376120ab58114a733c7d2824eb26c7d833ccef33"
+      "size": 14441,
+      "sha256": "4fb00eec5dfe97224f65534cb433b10884e80921a182435617da7523595673dd"
     },
     {
       "path": "src/worker/artifacts.ts",
@@ -1195,8 +1195,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 121860,
-      "sha256": "f1c9636e651489b026f5fb9d6ace627ee8e73894133dd1745f59fea246c0cc2a"
+      "size": 121903,
+      "sha256": "3b976c1f063014962ceb1de7b3cdecc3fbd6f33b5213678fc7ce1222fe5178d1"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -1220,8 +1220,8 @@
     },
     {
       "path": "src/worker/model-adapter.ts",
-      "size": 24566,
-      "sha256": "d8c92a8c420a60ccca259f18aad4552ddc06a9464913f9a0faa31b32c8d7861d"
+      "size": 26693,
+      "sha256": "9909379454b2d7bbef332a69fe0b031cd34edb4c64f1290877bf6ca99fa6c8de"
     },
     {
       "path": "src/worker/model-config.ts",
@@ -1235,8 +1235,8 @@
     },
     {
       "path": "src/worker/model-transport.ts",
-      "size": 6954,
-      "sha256": "376b8499650863847cc9d757b2ac6f6af92d79c66391b3f209744e6087f8b77e"
+      "size": 9410,
+      "sha256": "135b2167af8f294fcb42bcc519c45af990ada7399049ac68b276726206c3981f"
     },
     {
       "path": "src/worker/oauth.ts",
@@ -1405,8 +1405,8 @@
     },
     {
       "path": "src/worker/workflow.ts",
-      "size": 6621,
-      "sha256": "d463a7e63519e27a1c1eea88c7d2a23ac2acab02eda76029b064cb27f329c1de"
+      "size": 7858,
+      "sha256": "511055dc13a7ba31c201050cdb69a5de381f675da217e61925f9abf0d7043b0c"
     },
     {
       "path": "src/worker/workspace-summaries.ts",

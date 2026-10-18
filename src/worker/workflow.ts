@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import { securityClient, type GitflareSecurity } from './security';
-import type { CheckPlan, CheckSettings, Mission, ModelConnection, Repository } from '../shared/types';
+import type { AgentRun, CheckPlan, CheckSettings, Mission, ModelConnection, Repository } from '../shared/types';
 import type { LearnedLimits } from './check-settings';
 import { assertPinnedModel } from './model-config';
 import { executeMission, type ExecutionEnv, type ExecutionResult } from './execution';
@@ -30,6 +30,25 @@ interface Coordinator {
 interface WorkflowEnv extends ExecutionEnv, AiAccessOptions {
   GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity>;
   GITFLARE_COORDINATOR: { getByName(name: string): Coordinator };
+}
+
+const platformStop = (after = '') => `Cloudflare Workflows stopped this attempt${after} ("internal workflows error"); Gitflare's code reported no error.`;
+
+export function platformInterruption(error: unknown): boolean {
+  const raw = error && typeof error === 'object' ? error as { name?: unknown; message?: unknown } : {};
+  return raw.name === 'WorkflowInternalError' || /internal workflows error/i.test(String(raw.message ?? ''));
+}
+
+function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return seconds >= 60 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${seconds} s`;
+}
+
+export function interruptedRun(run: Pick<AgentRun, 'status' | 'startedAt' | 'summary'>, now: number): string {
+  const started = run.status === 'running' && run.startedAt ? Date.parse(run.startedAt) : NaN;
+  const after = Number.isFinite(started) ? ` after ${elapsed(now - started)}` : '';
+  const progress = run.summary?.trim() ? ` Last progress: ${run.summary.trim().slice(0, 200)}.` : '';
+  return `${platformStop(after)}${progress} Retry the agent to run it again.`;
 }
 
 export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWorkflowParams> {
@@ -72,13 +91,14 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
       });
     } catch (error) {
       const mission = await coordinator.getMission(missionId);
+      const platform = platformInterruption(error);
       const reason = error instanceof Error && error.message ? `Execution interrupted: ${error.message.slice(0, 300)}` : 'Execution interrupted';
       if (mission && await coordinator.isMissionActive(missionId, epoch)) await coordinator.recordExecution(missionId, epoch, {
-        runs: mission.runs.map((run) => run.status === 'running' || run.status === 'queued' ? { ...run, status: 'failed', error: reason } : run),
+        runs: mission.runs.map((run) => run.status === 'running' || run.status === 'queued' ? { ...run, status: 'failed', error: platform ? interruptedRun(run, Date.now()) : reason } : run),
         checks: mission.checks,
         changes: mission.changes,
         candidateSha: null,
-        error: error instanceof Error ? error.message : 'Workflow failed',
+        error: platform ? platformStop() : error instanceof Error ? error.message : 'Workflow failed',
       }, true);
       throw error;
     } finally {

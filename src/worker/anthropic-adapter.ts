@@ -233,3 +233,90 @@ export function anthropicOutput(raw: Record<string, unknown>): {
   if (!calls.length && !text.trim()) throw new AnthropicOutputError('empty_content', stopToken, `no text or tool call (${content.length} content blocks)`);
   return { output, calls, text };
 }
+
+type StreamBlock = Record<string, unknown>;
+
+export class AnthropicStream {
+  private buffer = '';
+  private raw = '';
+  private sse: boolean | undefined;
+  private message: Record<string, unknown> | undefined;
+  private blocks: StreamBlock[] = [];
+  private partialJson: string[] = [];
+  private usage: Record<string, unknown> = {};
+  private error: Record<string, unknown> | undefined;
+  private stopped = false;
+
+  push(text: string): void {
+    if (this.sse === undefined) {
+      const start = text.trimStart();
+      if (!start) return;
+      this.sse = !start.startsWith('{');
+    }
+    if (!this.sse) { this.raw += text; return; }
+    this.buffer += text;
+    let boundary: RegExpExecArray | null;
+    while ((boundary = /\r?\n\r?\n/.exec(this.buffer))) {
+      this.event(this.buffer.slice(0, boundary.index));
+      this.buffer = this.buffer.slice(boundary.index + boundary[0].length);
+    }
+  }
+
+  result(): Record<string, unknown> | undefined {
+    if (this.sse === false) {
+      try { return JSON.parse(this.raw) as Record<string, unknown>; }
+      catch { return undefined; }
+    }
+    if (this.buffer.trim()) this.event(this.buffer);
+    this.buffer = '';
+    if (this.error) return { type: 'error', error: this.error };
+    if (!this.message || !this.stopped) return undefined;
+    return { ...this.message, content: this.blocks.filter(Boolean), usage: { ...(this.message.usage as Record<string, unknown> | undefined), ...this.usage } };
+  }
+
+  private event(chunk: string): void {
+    const data = chunk.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
+    if (!data) return;
+    let event: Record<string, any>;
+    try { event = JSON.parse(data); }
+    catch { throw new AnthropicOutputError('malformed', null, 'the response stream sent an unparsable event'); }
+    const index = typeof event.index === 'number' ? event.index : -1;
+    switch (event.type) {
+      case 'message_start':
+        this.message = { ...event.message, content: [] };
+        break;
+      case 'content_block_start':
+        this.blocks[index] = { ...event.content_block };
+        this.partialJson[index] = '';
+        break;
+      case 'content_block_delta': {
+        const block = this.blocks[index];
+        const delta = event.delta ?? {};
+        if (!block) throw new AnthropicOutputError('incomplete_block', null, 'the response stream sent a delta for an unknown block');
+        if (delta.type === 'text_delta') block.text = `${block.text ?? ''}${delta.text ?? ''}`;
+        else if (delta.type === 'input_json_delta') this.partialJson[index] += delta.partial_json ?? '';
+        else if (delta.type === 'thinking_delta') block.thinking = `${block.thinking ?? ''}${delta.thinking ?? ''}`;
+        else if (delta.type === 'signature_delta') block.signature = `${block.signature ?? ''}${delta.signature ?? ''}`;
+        break;
+      }
+      case 'content_block_stop': {
+        const block = this.blocks[index];
+        if (block?.type === 'tool_use' && this.partialJson[index]) {
+          try { block.input = JSON.parse(this.partialJson[index]!); }
+          catch { block.input = null; }
+        }
+        break;
+      }
+      case 'message_delta':
+        if (this.message) Object.assign(this.message, event.delta ?? {});
+        if (event.usage && typeof event.usage === 'object') Object.assign(this.usage, event.usage);
+        break;
+      case 'message_stop':
+        this.stopped = true;
+        break;
+      case 'error':
+        this.error = event.error && typeof event.error === 'object' ? event.error : { type: 'api_error' };
+        break;
+    }
+  }
+}
