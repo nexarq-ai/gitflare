@@ -865,8 +865,8 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 111448,
-      "sha256": "1cfa0dde0fcc07be738b3c37216533c0a8063afe6efd42bf389b8dd492949165"
+      "size": 111610,
+      "sha256": "a62c70bcae4fd23ad4b2d11aa5904af34ab56a10336f544e9028471871874962"
     },
     {
       "path": "src/worker/gateway-routing.ts",

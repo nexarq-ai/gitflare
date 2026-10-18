@@ -618,7 +618,7 @@ export async function mergeStartingCandidates(sandbox: SandboxRunner, startFrom:
   const names = merged.join(', ');
   const note = startFrom.reason === 'collision'
     ? `Your previous candidate collided with other agents in ${(startFrom.files ?? []).join(', ') || 'shared files'} when the results were combined. ${merged.length ? `HEAD already contains the merged candidates of ${names}; make your change on top of theirs and keep their edits in those files.` : 'Their candidates could not be merged here, so edit those files as little as possible.'}`
-    : `A reviewer requested changes to the previous candidate. ${merged.length ? `HEAD already contains that candidate (from ${names}); change it to address the review in your task and keep the rest.` : 'The previous candidate could not be restored, so redo the assignment and address the review.'}`;
+    : `A reviewer requested changes to the previous candidate. ${merged.length ? `HEAD already contains that candidate (from ${names}); change it to address the review in your task and keep the rest. Files that candidate added, including its tests, are part of this mission and may be edited; only files that existed at the base commit stay protected.` : 'The previous candidate could not be restored, so redo the assignment and address the review.'}`;
   return { reason: startFrom.reason, ...(startFrom.files?.length ? { collidedFiles: startFrom.files } : {}), mergedCandidates: merged, ...(unavailable.length ? { unavailableCandidates: unavailable } : {}), note };
 }
 
@@ -1084,7 +1084,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
         const staged = changed.split('\n').filter(Boolean);
         if (revertChange && staged.some((path) => !revertPaths.includes(path))) throw new Error('Revert changed files outside the landed change');
         if (!revertChange) {
-          const { blocked } = await reviewChanges(sandbox, await changesWithStatus(sandbox, ['--cached']), policy, 'HEAD', '');
+          const { blocked } = await reviewChanges(sandbox, await changesWithStatus(sandbox, ['--cached', baseSha]), policy, baseSha, '');
           if (blocked.length) throw protectedFailure('Agent changed protected files', blocked);
         }
         if (skillChange && (staged.length !== 1 || staged[0] !== skillChange.path)) throw new Error('Skill editor changed files outside the requested skill');
