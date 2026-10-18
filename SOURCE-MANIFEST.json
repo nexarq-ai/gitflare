@@ -35,8 +35,8 @@
     },
     {
       "path": "docs/public/cloudflare-permissions.md",
-      "size": 5525,
-      "sha256": "a9cc293bff0c6ec0034a5749490a192263c4fd47f12d1654e06aef33c389d97a"
+      "size": 5560,
+      "sha256": "56678e5af8a009abc81c7dcecb4169f9587bf4971364309cbef396e08ab13633"
     },
     {
       "path": "docs/public/github-mirror.md",
@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/public/mcp.md",
-      "size": 12975,
-      "sha256": "cbe920e89940aa707a6ce978bb26b919ecec59d46bfd7e8466c9bfb192b06536"
+      "size": 13027,
+      "sha256": "fe7fa76433a62674fb74708cc53b883ac85e7e2516ca5dc01550724cff230e04"
     },
     {
       "path": "docs/public/overview.md",
@@ -126,7 +126,7 @@
     {
       "path": "README.md",
       "size": 5249,
-      "sha256": "86a1a6de34f1263e8e0107619b2c4a6c507843109564c61eb7a7deacfcea70cf"
+      "sha256": "f06b1ac06f2363fc10277d370ec7cd666f3f5bb88dfcff697d78df29dbfb8387"
     },
     {
       "path": "runner/Dockerfile",
@@ -800,8 +800,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 97691,
-      "sha256": "ddf63028741d023cb09b2823e07be015830800faf3a5e4ab200d90b3b81356c2"
+      "size": 103523,
+      "sha256": "5103a0c1ec51082eba395235023c5418de7028d6a5271897e3d380822807d833"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -845,8 +845,8 @@
     },
     {
       "path": "src/worker/oauth.ts",
-      "size": 16265,
-      "sha256": "0a079f8901b0063f935588d1bebae4eab3e4c0fc39c6bf9394983081c0f1ae37"
+      "size": 16290,
+      "sha256": "5232c5163541eb7218281b427c7cdfd26c9452fa6470457e725c685088639f8f"
     },
     {
       "path": "src/worker/onboarding.ts",
