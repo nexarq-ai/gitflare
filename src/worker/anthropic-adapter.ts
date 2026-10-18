@@ -13,6 +13,9 @@ function getText(content: unknown): string {
   return '';
 }
 
+// Claude 5-generation models reject thinking.type 'disabled'; they take 'adaptive' plus output_config.effort
+const ADAPTIVE_THINKING = /(^|\/)claude-(?:opus|sonnet|haiku|fable)-5(?:[-.]|$)/;
+
 export function nativeModelId(modelId: string): string {
   return modelId.startsWith('anthropic/') ? modelId.slice('anthropic/'.length) : modelId;
 }
@@ -120,13 +123,14 @@ export function anthropicInput(input: InputRecord[], tools: InputRecord[], maxTo
 
   const result: Record<string, unknown> = {
     max_tokens: maxTokens,
-    thinking: { type: 'disabled' },
     messages,
   };
 
-  if (modelId !== undefined && (modelId === 'anthropic/claude-sonnet-5-5' || modelId === 'claude-sonnet-5-5')) {
-    result.thinking = { type: 'between_tools' };
+  if (modelId !== undefined && ADAPTIVE_THINKING.test(modelId)) {
+    result.thinking = { type: 'adaptive' };
     result.output_config = { effort: 'low' };
+  } else {
+    result.thinking = { type: 'disabled' };
   }
 
   if (system) result.system = system;

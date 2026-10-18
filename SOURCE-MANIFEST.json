@@ -695,8 +695,8 @@
     },
     {
       "path": "src/worker/anthropic-adapter.ts",
-      "size": 10649,
-      "sha256": "ccf012a75d68bfe9b691edf0703638a7e6ab8a72a06f6a1b2f754e64f5efc07f"
+      "size": 10809,
+      "sha256": "dab9add34174c5c6727051da376120ab58114a733c7d2824eb26c7d833ccef33"
     },
     {
       "path": "src/worker/artifacts.ts",
@@ -960,8 +960,8 @@
     },
     {
       "path": "src/worker/model-config.ts",
-      "size": 6120,
-      "sha256": "789100a22ec47effd264f86773f52f0ef06dc124cb8cade5557c0eb6f52e8157"
+      "size": 6342,
+      "sha256": "8c18ea02147c6bd6c1e5ce460d9b33945da5dddce82fb1a356310ccaec3ca58b"
     },
     {
       "path": "src/worker/model-relay.ts",
