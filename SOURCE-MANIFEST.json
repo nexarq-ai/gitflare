@@ -360,8 +360,8 @@
     },
     {
       "path": "src/ui/CloudflareConnection.tsx",
-      "size": 43052,
-      "sha256": "76d34ead539511f7027d71d8f601d950b8b6e4dfbf6e16c63e38e562a85780ef"
+      "size": 43130,
+      "sha256": "259df059238978629d3084ecd99fc3a2e70d0991c743f23fbc09df62ea283176"
     },
     {
       "path": "src/ui/CloudflareConnectPrompt.tsx",

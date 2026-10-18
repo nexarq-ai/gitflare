@@ -41,7 +41,7 @@ function ConnectPermissions({ plan, open, busy, onOpenChange, onContinue }: { pl
   return <Dialog.Root open={open} onOpenChange={onOpenChange}>
     <Dialog size="lg" className="dialog-content cf-permissions-dialog">
       <Dialog.Title className="dialog-title">What Gitflare will ask Cloudflare for</Dialog.Title>
-      <Dialog.Description className="dialog-description">Cloudflare shows these permissions next. You choose which accounts to grant there.</Dialog.Description>
+      <Dialog.Description className="dialog-description">Cloudflare asks you to approve these next. Keep them all ticked: unticking one turns off the feature that needs it. You pick the account in Gitflare afterwards.</Dialog.Description>
       {plan ? <div className="cf-permission-groups">{cloudflarePermissionGroups(plan.permissions).map(({ group, permissions }) => <section key={group}><h3>{group}</h3><ul>{permissions.map((permission) => <li key={permission.scope}><strong>{permission.name}</strong><code>{permission.scope}</code><span>{permission.reason}</span></li>)}</ul></section>)}</div> : <p className="cf-muted">The permission list could not be loaded. Refresh before connecting.</p>}
       <p className="cf-permission-docs"><a href={plan?.docsUrl ?? "/docs/cloudflare-permissions"} target="_blank" rel="noreferrer">What Gitflare asks for and never does</a></p>
       <div className="dialog-actions"><Button variant="secondary" size="base" type="button" onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="primary" size="base" type="button" loading={busy} disabled={!plan || busy} onClick={onContinue}>Continue to Cloudflare</Button></div>
