@@ -14,7 +14,7 @@ import { collectAndUploadAssets, type AssetsOptions } from './worker-assets';
 import { migrationDatabases, readMigrationFiles, type D1MigrationSet } from './d1-migrations';
 import { previewD1Migrations } from './preview-d1';
 import type { BuiltTarget } from './deployments';
-import { AGENT_BUDGET_MS, AGENT_CONCURRENCY } from './budgets';
+import { AGENT_BUDGET_MS, AGENT_CONCURRENCY, CLONE_ATTEMPTS, CLONE_CLEANUP_TIMEOUT_MS, CLONE_RETRY_BACKOFF_MS, cloneTimeoutMs } from './budgets';
 import { MAX_MISSION_AGENTS } from '../shared/mission-draft';
 import { DEPENDENCY_FILES, describeInstall, detectPackageManager, hasInstallableDependencies, INSTALL_ATTEMPTS, INSTALL_TIMEOUT_MS, installFailureExcerpt, isTransientInstallFailure, runnerFor, type InstallMode, type InstallPlan } from './package-manager';
 import type { LearnedLimits } from './check-settings';
@@ -376,17 +376,20 @@ async function checked(sandbox: SandboxRunner, argv: string[], cwd = '/workspace
   return result.stdout.trim();
 }
 
-export const CLONE_TIMEOUT_MS = 120_000;
-export const CLONE_ATTEMPTS = 2;
+export { CLONE_ATTEMPTS, CLONE_TIMEOUT_MS, cloneTimeoutMs } from './budgets';
 const TIMEOUT_EXIT_CODES = [124, 137, 143];
-const TRANSIENT_CLONE = /Could not resolve host|Connection (?:reset|refused|timed out)|Operation timed out|early EOF|RPC failed|unexpected disconnect|remote end hung up|Recv failure|SSL_(?:ERROR|read)|TLS connection|returned error: 5\d\d|HTTP\/2 stream/i;
+const TRANSIENT_CLONE = /Could not resolve host|Connection (?:reset|refused|timed out)|Operation timed out|early EOF|RPC failed|unexpected disconnect|remote end hung up|Recv failure|SSL_(?:ERROR|read)|TLS connection|returned error: 5\d\d|HTTP\/2 stream|expected flush after ref listing|protocol error|unexpected EOF|index-pack failed|fetch-pack: invalid/i;
 
 export type CloneRetry = (message: string) => Promise<void>;
+
+function retryPause(attempt: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, CLONE_RETRY_BACKOFF_MS * 2 ** (attempt - 1)));
+}
 
 function gitNetworkFailure(operation: 'clone' | 'fetch', result: CommandResult, attempt: number): { message: string; transient: boolean } {
   const timedOut = !!result.timedOut || TIMEOUT_EXIT_CODES.includes(result.exitCode);
   const detail = (result.stderr.trim() || result.stdout.trim()).split('\n').slice(-6).join('\n').slice(-800);
-  const outcome = timedOut ? `timed out after ${Math.round(CLONE_TIMEOUT_MS / 1000)} s (exit ${result.exitCode})` : `failed (exit ${result.exitCode})`;
+  const outcome = timedOut ? `timed out after ${Math.round(cloneTimeoutMs(attempt) / 1000)} s (exit ${result.exitCode})` : `failed (exit ${result.exitCode})`;
   return { message: `Git ${operation} ${outcome} on attempt ${attempt} of ${CLONE_ATTEMPTS}${detail ? `: ${detail}` : ''}`, transient: timedOut || TRANSIENT_CLONE.test(detail) };
 }
 
@@ -408,18 +411,24 @@ export async function cloneOnFreshRunner(sandbox: SandboxRunner, replace: () => 
   }
 }
 
+export function moveAsideCommand(attempt: number): string[] {
+  return ['/bin/sh', '-c', 'if [ -e /workspace/repo ]; then mv -- /workspace/repo "/workspace/.failed-clone-$1"; fi', 'gitflare-clone-cleanup', String(attempt)];
+}
+
 async function clone(sandbox: SandboxRunner, fork: ArtifactInfo, baseSha: string, onRetry: CloneRetry = async () => {}): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     const started = Date.now();
-    const result = await sandbox.command(['git', 'clone', '--', fork.remote, '/workspace/repo'], '/workspace', CLONE_TIMEOUT_MS);
+    const result = await sandbox.command(['git', 'clone', '--', fork.remote, '/workspace/repo'], '/workspace', cloneTimeoutMs(attempt));
     if (result.exitCode === 0) break;
     const failure = gitNetworkFailure('clone', result, attempt);
     console.warn(JSON.stringify({ event: 'git_clone_failed', attempt, attempts: CLONE_ATTEMPTS, exitCode: result.exitCode, timedOut: !!result.timedOut, transient: failure.transient, durationMs: Date.now() - started }));
     if (!failure.transient || attempt >= CLONE_ATTEMPTS) throw new Error(failure.message);
     await onRetry(`${failure.message}. Retrying the clone in a clean directory`);
-    const cleanup = await sandbox.command(['rm', '-rf', '--', '/workspace/repo'], '/workspace');
-    if (cleanup.exitCode === 137) throw new RunnerKilledError(`Runner was killed while removing the failed clone (exit 137) after ${failure.message.charAt(0).toLowerCase()}${failure.message.slice(1)}`);
-    if (cleanup.exitCode !== 0) throw new Error(`Command failed (${cleanup.exitCode}): rm ${cleanup.stderr.slice(0, 1000)}`);
+    const cleanup = await sandbox.command(moveAsideCommand(attempt), '/workspace', CLONE_CLEANUP_TIMEOUT_MS);
+    const lost = `${failure.message.charAt(0).toLowerCase()}${failure.message.slice(1)}`;
+    if (cleanup.exitCode === 137 || cleanup.timedOut) throw new RunnerKilledError(`Runner was killed while moving the failed clone aside (exit ${cleanup.exitCode}) after ${lost}`);
+    if (cleanup.exitCode !== 0) throw new Error(`Command failed (${cleanup.exitCode}): moving the failed clone aside ${cleanup.stderr.slice(0, 1000)}`);
+    await retryPause(attempt);
   }
   await checked(sandbox, ['git', 'checkout', '--detach', baseSha]);
   await checked(sandbox, ['git', 'config', 'user.name', 'Gitflare']);
@@ -430,11 +439,12 @@ async function clone(sandbox: SandboxRunner, fork: ArtifactInfo, baseSha: string
 async function fetchRef(sandbox: SandboxRunner, remote: string, ref: string, options: string[] = []): Promise<string> {
   for (let attempt = 1; ; attempt++) {
     const started = Date.now();
-    const result = await sandbox.command(['git', 'fetch', ...options, '--', remote, ref], '/workspace/repo', CLONE_TIMEOUT_MS);
+    const result = await sandbox.command(['git', 'fetch', ...options, '--', remote, ref], '/workspace/repo', cloneTimeoutMs(attempt));
     if (result.exitCode === 0) return checked(sandbox, ['git', 'rev-parse', 'FETCH_HEAD']);
     const failure = gitNetworkFailure('fetch', result, attempt);
     console.warn(JSON.stringify({ event: 'git_fetch_failed', attempt, attempts: CLONE_ATTEMPTS, exitCode: result.exitCode, timedOut: !!result.timedOut, transient: failure.transient, durationMs: Date.now() - started }));
     if (!failure.transient || attempt >= CLONE_ATTEMPTS) throw new Error(failure.message);
+    await retryPause(attempt);
   }
 }
 
@@ -778,11 +788,16 @@ async function verify(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: string,
 }
 
 async function verifyOnce(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: string, fork: ArtifactInfo, sha: string, baseSha: string, policy: RepositoryPolicy, assertAuthority: AuthorityGuard, skillChange?: RepositorySkillChange, isActive: () => Promise<boolean> = async () => true, humanBranch = false): Promise<{ check: Check; changes: FileChange[]; dependencyChanges: ManifestDependencyChanges[] }> {
-  const sandbox = env.SANDBOX.getByName(`${key}-verify`);
+  let sandbox = env.SANDBOX.getByName(`${key}-verify`);
   try {
     await assertAuthority();
     await sandbox.prepare([{ ...fork, write: false }], { runner: policy.runner });
-    await clone(sandbox, fork, baseSha);
+    sandbox = await cloneOnFreshRunner(sandbox, async () => {
+      const fresh = env.SANDBOX.getByName(`${key}-verify-fresh`);
+      await assertAuthority();
+      await fresh.prepare([{ ...fork, write: false }], { runner: policy.runner });
+      return fresh;
+    }, fork, baseSha);
     // Dependencies and baseline come from the base commit, before any candidate code executes in this sandbox
     if (policy.install && !policy.untested) await installDependencies(sandbox, policy.install, assertAuthority, isActive);
     const baseline = policy.evidence === 'tap' && !policy.untested ? await runCheck(sandbox, policy) : undefined;
@@ -866,13 +881,18 @@ export async function applyBranchMerge(sandbox: SandboxRunner, remote: string, c
 }
 
 async function verifyRevert(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: string, fork: ArtifactInfo, sha: string, change: RevertChange, defaultTestCommand: string, assertAuthority: AuthorityGuard, isActive: () => Promise<boolean>, runner: RepositoryPolicy['runner'], settings?: CheckPlan | null): Promise<{ check: Check; changes: FileChange[]; learned?: LearnedLimits }> {
-  const sandbox = env.SANDBOX.getByName(`${key}-verify`);
+  let sandbox = env.SANDBOX.getByName(`${key}-verify`);
   try {
     await assertAuthority();
     // The restored revision's policy is only readable after cloning
     await sandbox.prepare([{ ...fork, write: false }], { runner });
     // The restored revision was itself approved and landed, so its tests define what the revert must keep passing
-    await clone(sandbox, fork, change.previousSha);
+    sandbox = await cloneOnFreshRunner(sandbox, async () => {
+      const fresh = env.SANDBOX.getByName(`${key}-verify-fresh`);
+      await assertAuthority();
+      await fresh.prepare([{ ...fork, write: false }], { runner });
+      return fresh;
+    }, fork, change.previousSha);
     const policy = await loadPolicy(sandbox, change.previousSha, defaultTestCommand, settings);
     if (policy.install && !policy.untested) await installDependencies(sandbox, policy.install, assertAuthority, isActive);
     const baseline = policy.evidence === 'tap' && !policy.untested ? await runCheck(sandbox, policy) : undefined;
@@ -1211,7 +1231,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     }
   }
   const key = `gf-${mission.id}-${mission.epoch}-integration`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  const sandbox = SANDBOX.getByName(key);
+  let sandbox = SANDBOX.getByName(key);
   try {
     for (const run of included) run.summary = `${run.summary ?? 'Finished'} — integrating and running combined checks`;
     await publish();
@@ -1219,8 +1239,14 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     const fork = await forkRepository(ARTIFACTS, repository.name, key);
     result.integrationForkName = fork.name;
     await assertAuthority();
-    await sandbox.prepare([{ ...fork, write: true }, ...[...forks.values()].map((item) => ({ ...item, write: false }))]);
-    await clone(sandbox, fork, baseSha);
+    const permissions = [{ ...fork, write: true }, ...[...forks.values()].map((item) => ({ ...item, write: false }))];
+    await sandbox.prepare(permissions);
+    sandbox = await cloneOnFreshRunner(sandbox, async () => {
+      const fresh = SANDBOX.getByName(`${key}-fresh`);
+      await assertAuthority();
+      await fresh.prepare(permissions);
+      return fresh;
+    }, fork, baseSha);
     const policy = sharedPolicy ?? await loadPolicy(sandbox, baseSha, input.testCommand, input.checkSettings);
     const keptGenerated = new Set<string>();
     let keptLockfile: string | null = null;
