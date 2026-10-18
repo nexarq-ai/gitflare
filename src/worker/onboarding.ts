@@ -11,11 +11,11 @@ function authenticatedResponse(result: { token: string; user: unknown; workspace
 }
 const noStore = { headers: { 'Cache-Control': 'no-store' } };
 const RESET_REQUESTED = { ok: true, message: 'If an account exists for that address, a password reset link is on its way.' };
-type Verification = { status: InvitationDelivery['status']; code?: string };
+type Verification = { status: InvitationDelivery['status']; code?: string; message?: string };
 function requireEmail(env: AppEnv) { if (!emailConfigured(env)) throw new ApiError(503, 'EMAIL_NOT_CONFIGURED', 'This installation has no email sender configured, so account email cannot be sent.'); }
 async function sendVerification(env: AppEnv, email: string, token: string, origin: string): Promise<Verification> {
   const delivery = await deliverVerification(env, { email, token, origin });
-  return delivery.status === 'sent' ? { status: 'sent' } : { status: delivery.status, code: delivery.code };
+  return delivery.status === 'sent' ? { status: 'sent' } : { status: delivery.status, code: delivery.code, message: delivery.message };
 }
 async function handleAccountEmail(request: Request, env: AppEnv, authenticate: AuthenticateRequest, ctx?: ExecutionContext): Promise<Response | null> {
   const url = new URL(request.url); const path = url.pathname;
@@ -31,7 +31,7 @@ async function handleAccountEmail(request: Request, env: AppEnv, authenticate: A
     requireEmail(env);
     const pending = await service.resendVerification(principal);
     const delivery = await sendVerification(env, pending.email, pending.token, url.origin);
-    if (delivery.status !== 'sent') throw new ApiError(502, delivery.code ?? 'EMAIL_SEND_FAILED', 'The email service did not accept the verification email. Try again later.');
+    if (delivery.status !== 'sent') throw new ApiError(502, delivery.code ?? 'EMAIL_SEND_FAILED', delivery.message ?? 'The email service did not accept the verification email. Try again later.');
     return Response.json({ ok: true }, noStore);
   }
   requireEmail(env);

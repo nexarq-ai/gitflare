@@ -150,8 +150,8 @@
     },
     {
       "path": "SECURITY.md",
-      "size": 870,
-      "sha256": "f66f8d41a2d2a15087e25dbf71cfa3201f55048298e1a5dd64081409e4332d56"
+      "size": 1016,
+      "sha256": "1898651589a364f24fc52436374f5ce60f2effa98c04aaf15a76e6b92ca5b5ec"
     },
     {
       "path": "src/preview/index.ts",
@@ -749,14 +749,24 @@
       "sha256": "ea591b0f277a97887025bd8d976c9b3503eae9dfc18a710131316d39e6d98950"
     },
     {
-      "path": "src/worker/email.ts",
-      "size": 5962,
-      "sha256": "01170d13b0856ede8775dc215bbe82a6b4a35f96f0209eb1571ffc4b6d115b18"
+      "path": "src/worker/email/index.ts",
+      "size": 5624,
+      "sha256": "5ef938cd885175f07d49dbbc7ae3e30060330cebad64b35dee23048e8d431488"
+    },
+    {
+      "path": "src/worker/email/layout.ts",
+      "size": 12379,
+      "sha256": "308a7b9884ec37fb02c0283cf690a02e2435cafbcdd226f8dc81ba3351722964"
+    },
+    {
+      "path": "src/worker/email/templates.ts",
+      "size": 4327,
+      "sha256": "d757e682214f2eb5146195232929626786133d77232bd55cbfd07812950c23e6"
     },
     {
       "path": "src/worker/env.ts",
-      "size": 2631,
-      "sha256": "4f8b967f28cfdcfc3dbcf0f22c3be4ea5184aa860f90c59cd6ba58add91a8d0a"
+      "size": 2677,
+      "sha256": "d3fb1566e69621d8bfcde5cf27cca9dd7af8ec82d53fe53deaff357c4bb1f8a5"
     },
     {
       "path": "src/worker/execution.ts",
@@ -785,8 +795,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 85945,
-      "sha256": "685baa4ac93c6d782c98afdd0e9ead654cbae2fa94a57670ab1df7d9dab7c79f"
+      "size": 86006,
+      "sha256": "463a9115d6d648c06faf84173bcfb569e040dbb172369924591d1708a7a8d188"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -850,8 +860,8 @@
     },
     {
       "path": "src/worker/onboarding.ts",
-      "size": 5519,
-      "sha256": "9cabad81ea71ef9d06ae51a9c56df1f2dd6e5f2100ec73c59db7ab56802e087b"
+      "size": 5584,
+      "sha256": "e96ce9fd4f3f6243b66e3aedeb272c110dab9425dbc170ec33752930a103adf9"
     },
     {
       "path": "src/worker/package-manager.ts",

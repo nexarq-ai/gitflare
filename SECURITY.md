@@ -8,6 +8,8 @@ Please do not open a public issue for security problems. Report them privately t
 - steps to reproduce or a proof of concept;
 - any suggested fix.
 
+For the hosted service at gitflare.io, you can also email security@gitflare.io. Do not include credentials or other people's data in the report.
+
 You will receive an acknowledgement, and we will agree a disclosure date once a fix is available.
 
 ## Scope
