@@ -235,8 +235,8 @@
     },
     {
       "path": "src/ui/AccountMenu.tsx",
-      "size": 4613,
-      "sha256": "75cf3982c09a6f9841e4062e88f9d3961f1318f46183cd7825ebabdceb893c85"
+      "size": 4819,
+      "sha256": "68b3ea92c0d0d38cac9ce423ebc9c8eccf25c8e792d41dfbbe46b256252b44fb"
     },
     {
       "path": "src/ui/AccountSettings.tsx",
@@ -265,8 +265,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 82400,
-      "sha256": "198a663c016465def529df438e7c38e5e043e3d3a089ed3ae2be92ee548abaf0"
+      "size": 83019,
+      "sha256": "b4c45e8f4dc254e9826e39094140ef116e94b8ed189caa54e22ae86f769f77c6"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -380,8 +380,8 @@
     },
     {
       "path": "src/ui/CloudflareConnection.tsx",
-      "size": 44327,
-      "sha256": "3b5cd44eae193e02817a3cde9aad3af3a5597a543d65c4643359e8b5e274e117"
+      "size": 44117,
+      "sha256": "ae73bcd0cddb5f767796de2dccef1c93a56641876f299a4731a77e1eb454f743"
     },
     {
       "path": "src/ui/CloudflareConnectPrompt.tsx",
@@ -519,9 +519,14 @@
       "sha256": "0c5b20db80dfd1fb7a14ff77de8d88519786cb06ac304bb03a257be8cbf4f9cc"
     },
     {
+      "path": "src/ui/InstallationAdmin.tsx",
+      "size": 5198,
+      "sha256": "9c4fffce17480d883bb2f457d044fa070ca070253f0483e77c877e1fd1ef0fe0"
+    },
+    {
       "path": "src/ui/InstallationCredential.tsx",
-      "size": 15773,
-      "sha256": "5523aaf4221a11b5aa9a791949bd6fdb238e98fafcc8a1b30d2a8f1974d18a88"
+      "size": 15638,
+      "sha256": "205563f6e38265fce7db7defc0e8b7abf20f0c87e7659c86e71a7b86f0326877"
     },
     {
       "path": "src/ui/InvitationScreen.tsx",
@@ -615,8 +620,8 @@
     },
     {
       "path": "src/ui/people-settings.css",
-      "size": 10017,
-      "sha256": "f92e528cd2cdf9876531a7bac8dce6876b69d8b1be72fbd54b0b2ba2056b155e"
+      "size": 10290,
+      "sha256": "8915d50a0c16ec797137853290ae01676465290dc0621d80333e472466d4a0a1"
     },
     {
       "path": "src/ui/PeopleSettings.tsx",
@@ -1050,8 +1055,13 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 94817,
-      "sha256": "956c99f771c71e621aea309460d99dc0c040c41fcc113631c2bf9b374abfb8fe"
+      "size": 95085,
+      "sha256": "eac0f144faa54f49d92236a36c419f25f288ffc6a72ceef4ba6875d33aec02c2"
+    },
+    {
+      "path": "src/worker/installation-admin.ts",
+      "size": 1374,
+      "sha256": "99b51ee2d8c713f1541cdf53c045090c047521f08441b17ae4c3a035c8146cbe"
     },
     {
       "path": "src/worker/installation-credential.ts",

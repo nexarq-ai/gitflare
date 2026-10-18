@@ -110,8 +110,8 @@ export default function InstallationCredential({ workspace }: { workspace?: Work
   const demo = demoOf(status);
   if (demo) return <DemoFeaturePanel demo={demo} examples={status.examples} />;
   const hosted = status.edition === "hosted";
-  const heading = hosted ? "Previews and deploys on this installation (operator credential)" : "Previews and deploys on this installation";
-  const fallback = "Only used for repositories without their own Cloudflare connection. A repository whose own or workspace connection can reach its Worker previews there instead.";
+  const heading = "Shared previews Worker";
+  const fallback = "Used only by repositories whose own connection cannot run Worker Previews. Only the installation's Owners can change it.";
   if (!status.manageable) return <section className="panel">
     <div className="panel-header"><h2>{heading}</h2><span className={`cf-state${status.state === "configured" ? " cf-state-on" : ""}`}>{stateLabel(status)}</span></div>
     <div className="panel-body"><p className="cf-description">{fallback} {hosted ? "Only the operator workspace can change it." : "Only an owner of the installation workspace can change it."}</p></div>

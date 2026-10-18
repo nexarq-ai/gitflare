@@ -1,0 +1,64 @@
+import { useEffect, useState } from "react";
+import { CubeIcon, GitBranchIcon, LockKeyIcon, RobotIcon } from "@phosphor-icons/react";
+import type { Workspace } from "../shared/types";
+import { request, RequestError } from "./api";
+import { ErrorNotice, Status } from "./components";
+import InstallationCredential, { type WorkspaceConnection } from "./InstallationCredential";
+import { RouteProgress } from "./WorkspaceLoader";
+import "./people-settings.css";
+
+export type AdminStatus = { edition: "hosted" | "self-hosted"; superAdmins: string[]; cloudflareOAuth: boolean; email: boolean; previewsWorker: string | null; scopes: { signin: string[]; connect: string[]; access: string[] } };
+
+export function loadAdminStatus(): Promise<AdminStatus | null> {
+  return request<AdminStatus>("/api/admin/status").catch((failure: unknown) => { if (failure instanceof RequestError && [403, 404].includes(failure.status)) return null; throw failure; });
+}
+
+export default function InstallationAdmin({ workspace, notFound }: { workspace: Workspace; notFound: React.ReactNode }) {
+  const [status, setStatus] = useState<AdminStatus | null | undefined>(undefined);
+  const [connection, setConnection] = useState<WorkspaceConnection | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    loadAdminStatus().then(value => { if (active) setStatus(value); }, (failure: unknown) => { if (active) setError(failure instanceof Error ? failure.message : "Installation status is unavailable."); });
+    request<WorkspaceConnection>("/api/cloudflare").then(value => { if (active) setConnection(value); }, () => {});
+    return () => { active = false; };
+  }, [workspace.name]);
+  if (error) return <ErrorNotice message={error} />;
+  if (status === undefined) return <RouteProgress />;
+  if (status === null) return <>{notFound}</>;
+  const hosted = status.edition === "hosted";
+  return <>
+    <div className="page-heading"><div><h1>Installation</h1><p>Settings for the Gitflare service itself, not for a workspace.</p></div></div>
+    <InstallationCredential workspace={connection} />
+    {hosted && <section className="panel">
+      <div className="panel-header"><h2>Super admins</h2><span className="number-tag">{status.superAdmins.length}</span></div>
+      <div className="panel-body"><p className="people-muted">People who become Owners of the operator workspace when they sign in with a verified Cloudflare email. Change the list with <code>SUPER_ADMIN_EMAILS</code> in the deployment.</p></div>
+      {status.superAdmins.length ? <ul className="people-list">{status.superAdmins.map(email => <li key={email}><div><strong>{email}</strong></div></li>)}</ul> : <div className="panel-body"><p className="people-muted">None configured.</p></div>}
+    </section>}
+    <section className="panel">
+      <div className="panel-header"><h2>Edition and configuration</h2><span className="people-role-text">{hosted ? "Hosted" : "Self-hosted"}</span></div>
+      <dl className="general-facts admin-facts">
+        <dt>Cloudflare sign-in and connections</dt><dd>{status.cloudflareOAuth ? "OAuth client configured" : "Not configured: set CLOUDFLARE_CLIENT_ID and CLOUDFLARE_CLIENT_SECRET"}</dd>
+        <dt>Email</dt><dd>{status.email ? "Sender configured" : "No sender: invitations show links to share instead"}</dd>
+        <dt>Shared previews Worker</dt><dd>{status.previewsWorker ? <code>{status.previewsWorker}</code> : "Not set"}</dd>
+        {hosted && <><dt>Sign-in permissions</dt><dd><ScopeList scopes={status.scopes.signin} /></dd></>}
+        <dt>Connect permissions</dt><dd><ScopeList scopes={status.scopes.connect} /></dd>
+        <dt>Cloudflare Access permissions</dt><dd>{status.scopes.access.length ? <ScopeList scopes={status.scopes.access} /> : "Not requested. Protecting deploys with Cloudflare Access is off until CLOUDFLARE_ACCESS_SCOPES is set."}</dd>
+      </dl>
+      {hosted && <div className="panel-body"><p className="people-muted">The operator workspace runs on Gitflare's own Cloudflare account. Gitflare's own Workers and databases are hidden from resource lists there and cannot be linked to a repository.</p></div>}
+    </section>
+    <section className="panel">
+      <div className="panel-header"><h2>Platform services</h2><span className="number-tag">{workspace.integrations.filter(item => item.ready).length} of {workspace.integrations.length} ready</span></div>
+      {workspace.integrations.map(item => <div className="readiness-row" key={item.id}>
+        <div className="service-icon">{item.id === "artifacts" ? <GitBranchIcon size={19} /> : item.id === "sandbox" ? <CubeIcon size={19} /> : item.id === "model" ? <RobotIcon size={19} /> : <LockKeyIcon size={19} />}</div>
+        <div><h3>{item.name}</h3><p>{item.detail}</p></div>
+        <Status status={item.ready ? "ready" : "blocked"} />
+      </div>)}
+      <div className="notice-inline">These are configured in the deployment. Reload the page after changing them.</div>
+    </section>
+  </>;
+}
+
+function ScopeList({ scopes }: { scopes: string[] }) {
+  return scopes.length ? <span className="admin-scopes">{scopes.map(scope => <code key={scope}>{scope}</code>)}</span> : <>None</>;
+}

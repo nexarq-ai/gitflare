@@ -31,6 +31,7 @@ import { publicPageResponse } from './public-pages';
 import { hostRedirect, withHostOrigins } from './host-split';
 import { publicGitResponse } from './hosted-source';
 import { deliverInvitation } from './email';
+import { ADMIN_STATUS_PATH, installationAdminStatus } from './installation-admin';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare, handleRepositoryCloudflare, cloudflareAccount, cloudflareApiRequest, cloudflareAnalyticsRequest, cloudflareDeployAccess } from './cloudflare';
 import { dispatchCloudflareProject, projectDependencies, type ProjectOperation } from './cloudflare-projects';
 import { validateRepositoryInitialization, initializeArtifactsRepository } from './repository-initialization';
@@ -307,6 +308,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const [snapshot, name] = await Promise.all([access.snapshot(principal), workspaceName(env, access, principal)]);
     return Response.json({ ...snapshot, workspace: snapshot.workspace ? { ...snapshot.workspace, name } : snapshot.workspace, workspaces: snapshot.workspaces.map((workspace) => workspace.id === principal.workspaceId ? { ...workspace, name } : workspace) });
   }
+  if (url.pathname === ADMIN_STATUS_PATH && request.method === 'GET') return Response.json(await installationAdminStatus(env, principal), { headers: { 'Cache-Control': 'no-store' } });
   if (url.pathname === '/api/workspaces' && request.method === 'GET') {
     const [items, name] = await Promise.all([access.workspaces(principal), workspaceName(env, access, principal)]);
     return Response.json({ workspaces: items.map(item => item.current ? { ...item, name } : item) });

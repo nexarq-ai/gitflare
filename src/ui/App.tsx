@@ -91,6 +91,7 @@ const loadPeopleSettings = () => import("./PeopleSettings");
 const PeopleSettings = lazy(loadPeopleSettings);
 const AuditLog = lazy(() => import("./AuditLog"));
 const RepositoryAccess = lazy(() => import("./RepositoryAccess"));
+const InstallationAdmin = lazy(() => import("./InstallationAdmin"));
 const loadRepositoryWork = () => import("./RepositoryWork");
 const RepositoryWork = lazy(loadRepositoryWork);
 const loadProposalCreate = () => import("./ProposalCreate");
@@ -179,6 +180,7 @@ function Workspace() {
   const [sidebar, setSidebar] = useState(false);
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [installationAdmin, setInstallationAdmin] = useState(false);
   const located = useRef(new Set<string>());
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -387,6 +389,14 @@ function Workspace() {
       setSwitcherOpen(true);
     });
   }, [loaded, modal, quickSearchOpen]);
+
+  const adminCheck = account?.role === "Owner" ? account.workspace?.id ?? "" : "";
+  useEffect(() => {
+    if (!adminCheck) { setInstallationAdmin(false); return; }
+    let active = true;
+    void import("./InstallationAdmin").then(module => module.loadAdminStatus()).then(status => { if (active) setInstallationAdmin(!!status); }, () => {});
+    return () => { active = false; };
+  }, [adminCheck]);
 
   useEffect(() => {
     if (authState === "authenticated" && route === "connect") { goTo("account/clients", true); setRoute("account/clients"); }
@@ -657,7 +667,7 @@ function Workspace() {
             <span>{pageName}</span>
           </div>
           <div className="utility-actions">
-            <AccountMenu account={account} workspace={workspace} loaded={loaded} signingOut={signingOut} onSignOut={() => void signOut()} />
+            <AccountMenu account={account} workspace={workspace} loaded={loaded} installationAdmin={installationAdmin} signingOut={signingOut} onSignOut={() => void signOut()} />
           </div>
         </header>
         {routePending && <RouteProgress />}
@@ -674,9 +684,9 @@ function Workspace() {
                   : !account ? <RouteProgress />
                   : route === "settings/people" ? <PeopleSettings data={account} repositories={workspace.repositories} workspaceName={workspace.name} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} />
                   : route === "settings/audit" ? <AuditLog data={account} repositories={workspace.repositories} workspaceName={workspace.name} />
-                  : <GeneralSettings workspace={workspace} data={account} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onLeft={async remaining => { if (remaining[0]) await switchWorkspace(remaining[0].id); else await load(); }} onOpenInstallation={() => navigate("settings/cloudflare")} />}
+                  : <GeneralSettings workspace={workspace} data={account} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onLeft={async remaining => { if (remaining[0]) await switchWorkspace(remaining[0].id); else await load(); }} onOpenInstallation={() => navigate("admin")} />}
               </WorkspaceSettingsLayout>
-            ) : route === "admin" ? <NotFoundPanel /> : route === "account/clients" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
+            ) : route === "admin" ? <InstallationAdmin workspace={workspace} notFound={<NotFoundPanel />} /> : route === "account/clients" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
               <MissionDetail
                 key={route.split("/")[1]}
                 id={route.split("/")[1]}

@@ -106,3 +106,7 @@
   .people-list li { flex-wrap: wrap; }
 }
 .panel-body > .people-muted + .general-row { margin-top: 12px; }
+.admin-facts { margin: 0; padding: 16px 18px; }
+.admin-facts dd { overflow-wrap: anywhere; }
+.admin-scopes { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-scopes code { padding: 1px 6px; border: 1px solid var(--gf-color-border); border-radius: 4px; font-size: 11px; }

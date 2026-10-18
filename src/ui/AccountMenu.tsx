@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { BookOpenIcon, CaretDownIcon, MoonIcon, PlugsConnectedIcon, ShieldCheckIcon, SignOutIcon, SunIcon, UserCircleIcon } from "@phosphor-icons/react";
+import { BookOpenIcon, BuildingsIcon, CaretDownIcon, MoonIcon, PlugsConnectedIcon, ShieldCheckIcon, SignOutIcon, SunIcon, UserCircleIcon } from "@phosphor-icons/react";
 import type { AccessSnapshot, Workspace } from "../shared/types";
 import { setTheme, useTheme } from "./ThemeToggle";
 import "./account-settings.css";
 
-export default function AccountMenu({ account, workspace, loaded, signingOut, onSignOut }: { account: AccessSnapshot | null; workspace: Workspace; loaded: boolean; signingOut: boolean; onSignOut: () => void }) {
+export default function AccountMenu({ account, workspace, loaded, installationAdmin = false, signingOut, onSignOut }: { account: AccessSnapshot | null; workspace: Workspace; loaded: boolean; installationAdmin?: boolean; signingOut: boolean; onSignOut: () => void }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -41,6 +41,7 @@ export default function AccountMenu({ account, workspace, loaded, signingOut, on
       <a role="menuitem" href="/account/profile" onClick={() => close()}><UserCircleIcon size={18}/>Profile</a>
       <a role="menuitem" href="/account/security" onClick={() => close()}><ShieldCheckIcon size={18}/>Security</a>
       <a role="menuitem" className="ai-only" href="/account/clients" onClick={() => close()}><PlugsConnectedIcon size={18}/>AI clients</a>
+      {installationAdmin && <a role="menuitem" href="/admin" onClick={() => close()}><BuildingsIcon size={18}/>Installation admin</a>}
       <a role="menuitem" href="/docs/how-it-works" onClick={() => close()}><BookOpenIcon size={18}/>Documentation</a>
       <button role="menuitem" type="button" onClick={() => { setTheme(theme === "dark" ? "light" : "dark"); close(true); }}>{theme === "dark" ? <SunIcon size={18}/> : <MoonIcon size={18}/>}Switch to {theme === "dark" ? "light" : "dark"} theme</button>
       {workspace.mode === "connected" && <button role="menuitem" className="account-menu-signout" type="button" disabled={signingOut} onClick={() => { close(); onSignOut(); }}><SignOutIcon size={18}/>{signingOut ? "Signing out…" : "Sign out"}</button>}
