@@ -121,7 +121,7 @@ export function isKnownAppRoute(route: string): boolean {
     || /^settings(?:\/(?:people|cloudflare|models|audit))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
-    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|import)|\/settings(?:\/(?:branches|deploys|previews|secrets|cloudflare|access))?|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
+    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|import)|\/settings(?:\/(?:branches|deploys|previews|agents|secrets|cloudflare|access))?|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
     || /^(?:forgot-password|reset-password|verify-email)(?:\/[^/]+)?$/.test(route)
     || route === "invite" || route.startsWith("invite?");
 }
@@ -139,6 +139,7 @@ export const REPOSITORY_SETTINGS_PAGES = [
   { path: "branches", label: "Streams" },
   { path: "deploys", label: "Deploys" },
   { path: "previews", label: "Previews" },
+  { path: "agents", label: "Agents" },
   { path: "secrets", label: "Secrets" },
   { path: "cloudflare", label: "Resources" },
   { path: "access", label: "Access" },

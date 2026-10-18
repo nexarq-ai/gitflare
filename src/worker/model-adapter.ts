@@ -277,7 +277,7 @@ async function routedInference(env: ModelEnv, model: ModelConnection, parameters
   return callOutcome(env, call, model, route.credential?.key);
 }
 
-export async function inferenceMessage(env: ModelEnv, model: ModelConnection, input: InputItem[], tools: InputItem[], timeoutMs: number, maxTokens = 4096, onUsage?: (usage: ModelUsage | undefined) => Promise<void>): Promise<ModelMessage> {
+export async function inferenceMessage(env: ModelEnv, model: ModelConnection, input: InputItem[], tools: InputItem[], timeoutMs: number, maxTokens = 4096, onUsage?: (usage: ModelUsage | undefined) => Promise<void>, answerMs?: number): Promise<ModelMessage> {
   const route = env.modelAccess ? await env.modelAccess(model) : undefined;
   const routed = !!(route?.credential || route?.gateway);
   if (!routed && (!env.AI || !env.AI_GATEWAY_ID)) throw new Error('AI Gateway connection is not configured');
@@ -289,7 +289,7 @@ export async function inferenceMessage(env: ModelEnv, model: ModelConnection, in
   else parameters = { messages: model.protocol === 'workers-ai' ? workersAIMessages(input) : chatMessages(input), ...(tools.length ? { tools: tools.map(tool => model.protocol === 'workers-ai' ? { name: tool.name, description: tool.description, parameters: tool.parameters } : { type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } }) } : {}), max_tokens: maxTokens, stream: false };
   let body: unknown;
   let detail: ModelFailureDetail = {};
-  const callTimeout = modelCallTimeoutMs(model, maxTokens, timeoutMs);
+  const callTimeout = answerMs ? Math.min(answerMs, timeoutMs) : modelCallTimeoutMs(model, maxTokens, timeoutMs);
   try {
     if (route && routed) ({ body, detail } = await routedInference(env, model, parameters, route, callTimeout));
     else if (!env.AI || !env.AI_GATEWAY_ID) throw new Error('AI Gateway connection is not configured');

@@ -50,7 +50,7 @@ const FEATURES: [RegExp, string][] = [
   [/^\/api\/missions\/[a-zA-Z0-9-]+\/(approve|integrate|revoke|select|pull)$/, 'Approving and landing changes'],
   [/\/(import|url-import)(\/|$)|^\/api\/repositories\/connect$/, 'Importing repositories'],
   [/\/releases(\/|$)/, 'Publishing releases'],
-  [/\/(branch-protection|check-settings|preview-settings)$/, 'Changing repository settings'],
+  [/\/(branch-protection|check-settings|agent-settings|preview-settings)$/, 'Changing repository settings'],
   [/\/skills$/, 'Editing agent skills'],
 ];
 

@@ -8,6 +8,7 @@ import { assertDependencyApproval } from './dependency-changes';
 import { agentRunIds, ApiError, assertMutationOrigin, findRepositoryByName, isLocalRequest, MISSION_REQUEST_MAX_BYTES, missionInput, publicError, readJson, repositoryName, repositoryPath, repositoryRef, requireIdempotencyKey, requireString, retryGuidance, storageRepositoryName } from './domain';
 import { repositoryLabel } from '../shared/repository-names';
 import { checkSettingsSnapshot, normalizeCheckSettings, retryPlan, samePolicyOverride } from './check-settings';
+import { agentSettingsSnapshot, normalizeAgentSettings, normalizeRetryOverrides } from './agent-settings';
 import { handlePreviewSettings } from './preview-settings-api';
 import type { AppEnv } from './env';
 import { executionReadiness } from './execution';
@@ -612,6 +613,23 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     await access.auditRepositoryChange(principal, overrideChanged ? 'repository.check-settings.policy-override' : 'repository.check-settings', repository.id);
     return Response.json(checkSettingsSnapshot(repository.id, saved, await coordinator.getCheckDurations()));
   }
+  const agentSettingsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/agent-settings$/.exec(url.pathname);
+  if (agentSettingsRoute) {
+    const repository = await catalog.getRepository(agentSettingsRoute[1]);
+    if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+    const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
+    if (request.method === 'GET') {
+      await access.authorize(principal, 'read', 'repository', repository.id);
+      return Response.json(agentSettingsSnapshot(repository.id, await coordinator.getAgentSettings()));
+    }
+    if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET or POST for agent settings.');
+    assertMutationOrigin(request);
+    const key = requireIdempotencyKey(request), body = await readJson(request, 4096);
+    await access.authorize(principal, 'land', 'repository', repository.id);
+    const saved = await coordinator.setAgentSettings(key, normalizeAgentSettings(body), principal.userId);
+    await access.auditRepositoryChange(principal, 'repository.agent-settings', repository.id);
+    return Response.json(agentSettingsSnapshot(repository.id, saved));
+  }
   const previewSettingsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/preview-settings$/.exec(url.pathname);
   if (previewSettingsRoute) {
     const repository = await catalog.getRepository(previewSettingsRoute[1]);
@@ -912,11 +930,14 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       const runIds = match[2] === 'retry-agents' || match[2] === 'address-review' ? agentRunIds(body.runIds) : undefined;
       const guidance = match[2] === 'retry-agents' || match[2] === 'address-review' ? retryGuidance(body.guidance) : undefined;
       if (body.guidance !== undefined && match[2] !== 'retry-agents' && match[2] !== 'address-review') throw new ApiError(400, 'INVALID_INPUT', 'guidance applies only to retrying failed agents or addressing a review.');
+      if (body.overrides !== undefined && match[2] !== 'retry-agents') throw new ApiError(400, 'INVALID_INPUT', 'overrides apply only to retrying failed agents.');
+      const overrides = match[2] === 'retry-agents' ? normalizeRetryOverrides(body.overrides, runIds ?? []) : undefined;
       if (!mission.skillChange && !mission.revertChange && !mission.branchChange) {
         await requireAi(env, catalog);
         const credentials = await aiCredentials(catalog);
         assertWorkspaceAi(env, principal.workspaceId, credentials);
-        const models = mission.runs.flatMap(run => run.modelConfig ? [run.modelConfig] : []);
+        const enabled = overrides && Object.values(overrides).some((override) => override.model) ? await coordinatorRead('getModelConnections', () => catalog.getModelConnections()) : [];
+        const models = [...mission.runs.flatMap(run => run.modelConfig ? [run.modelConfig] : []), ...Object.values(overrides ?? {}).flatMap((override) => override.model ? [resolveModelConnection(enabled, override.model)] : [])];
         assertModelAccess(env, principal.workspaceId, credentials, models);
         await reserveOperatorUsage(env, principal.workspaceId, credentials, models, 'mission', `${mission.id}:${mission.epoch}`, catalog);
       }
@@ -926,7 +947,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       if (!current.headSha) throw new ApiError(409, 'EMPTY_REPOSITORY', 'Push an initial commit before starting a mission.');
       const authorization = { principal, workspaceId: principal.workspaceId, creatorId: mission.authorization?.creatorId ?? principal.userId };
       const models = await coordinatorRead('getModelConnections', () => catalog.getModelConnections());
-      const started = match[2] === 'start' ? await startWithDurableDispatch(coordinator, key, mission.id, authorization, models) : await coordinator.retryAgents(key, mission.id, match[2] === 'retry-agents' ? 'retry' : match[2] === 'address-review' ? 'review' : 'drop', runIds, authorization, models, guidance);
+      const started = match[2] === 'start' ? await startWithDurableDispatch(coordinator, key, mission.id, authorization, models) : await coordinator.retryAgents(key, mission.id, match[2] === 'retry-agents' ? 'retry' : match[2] === 'address-review' ? 'review' : 'drop', runIds, authorization, models, guidance, overrides);
       return Response.json(started, { status: 202 });
     }
     const candidateSha = requireString(body.candidateSha, 'Candidate commit', 40, 40);

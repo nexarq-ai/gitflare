@@ -28,13 +28,21 @@ const VERIFY_ATTEMPT_MS = RUNNER_PREPARE_MS + GIT_ALLOWANCE_MS + 2 * INSTALL_BUD
 export const VERIFY_MS = 2 * VERIFY_ATTEMPT_MS;
 export const LOCKFILE_UPDATE_MS = INSTALL_BUDGET_MS;
 const GENERATE_MS = INSTALL_BUDGET_MS + TEST_BUDGET_MS;
-export const AGENT_RUN_MS = RUNNER_PREPARE_MS + 2 * GIT_ALLOWANCE_MS + INSTALL_BUDGET_MS + AGENT_BUDGET_MS + LOCKFILE_UPDATE_MS + VERIFY_MS;
+export function agentRunMs(agentLoopMs: number): number {
+  return RUNNER_PREPARE_MS + 2 * GIT_ALLOWANCE_MS + INSTALL_BUDGET_MS + agentLoopMs + LOCKFILE_UPDATE_MS + VERIFY_MS;
+}
+export const AGENT_RUN_MS = agentRunMs(AGENT_BUDGET_MS);
 export const COMBINE_MS = RUNNER_PREPARE_MS + 2 * GIT_ALLOWANCE_MS + LOCKFILE_UPDATE_MS + GENERATE_MS + VERIFY_MS;
 export const CANDIDATE_FETCH_MS = FETCH_RETRIES_MS + 5_000;
 export const LANDING_STEP_MS = RUNNER_PREPARE_MS + 2 * GIT_ALLOWANCE_MS + REPORTING_MARGIN_MS;
 export const PREVIEW_STEP_MS = RUNNER_PREPARE_MS + GIT_ALLOWANCE_MS + INSTALL_BUDGET_MS + Math.max(PREVIEW_READINESS_MAX_MS, WORKER_PREVIEW_BUILD_MS) + REPORTING_MARGIN_MS;
 
 type MissionShape = Pick<Mission, 'runs' | 'mode' | 'skillChange' | 'revertChange' | 'branchChange'>;
+
+export function agentLoopMs(run: Partial<Pick<Mission['runs'][number], 'limits'>>): number {
+  if (!run.limits) return AGENT_BUDGET_MS;
+  return run.limits.runSeconds * 1000 * (run.limits.autoRetry ? 2 : 1);
+}
 
 export function agentWaves(mission: MissionShape): number {
   const trusted = !!(mission.skillChange || mission.revertChange || mission.branchChange);
@@ -46,5 +54,5 @@ export function agentWaves(mission: MissionShape): number {
 export function missionStepTimeoutMs(mission: MissionShape): number {
   const trusted = !!(mission.skillChange || mission.revertChange || mission.branchChange);
   const combined = !trusted && mission.mode !== 'race' && mission.runs.length > 1;
-  return agentWaves(mission) * AGENT_RUN_MS + (combined ? COMBINE_MS + mission.runs.length * CANDIDATE_FETCH_MS : 0) + REPORTING_MARGIN_MS;
+  return agentWaves(mission) * agentRunMs(Math.max(AGENT_BUDGET_MS, ...mission.runs.map(agentLoopMs))) + (combined ? COMBINE_MS + mission.runs.length * CANDIDATE_FETCH_MS : 0) + REPORTING_MARGIN_MS;
 }

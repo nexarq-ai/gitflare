@@ -22,10 +22,12 @@ import {
   WarningCircleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import type { Mission, Workspace } from "../shared/types";
+import type { AgentRetryOverride, Mission, ModelConnection, ModelConnectionsSnapshot, Workspace } from "../shared/types";
 import { request } from "./api";
 import { EmptyState, ErrorNotice, relativeTime, Status } from "./components";
 import AgentAssignment from "./AgentAssignment";
+import AgentRetry, { AgentLimitsDetails } from "./AgentRetry";
+import { retryAgentBody } from "./agent-limits";
 import AttemptHistory from "./AttemptHistory";
 import { CheckEscalationNote, CheckTimeoutPanel } from "./CheckSettings";
 import DiffView, {
@@ -103,6 +105,8 @@ export default function MissionDetail({
   const [confirming, setConfirming] = useState<"approve" | "integrate" | null>(null);
   const [dependencyAck, setDependencyAck] = useState({ candidateSha: "", checked: false });
   const pollSequence = useRef(0);
+  const [retryModels, setRetryModels] = useState<ModelConnection[] | null>(null);
+  const needsRetryModels = !!mission && permissions.includes("execute") && mission.runs.some((run) => run.status === "failed");
   const repository = workspace.repositories.find(
     (item) => item.id === mission?.repositoryId,
   );
@@ -148,15 +152,24 @@ export default function MissionDetail({
 
   useEffect(() => { if (isActive) reschedule.current(); }, [isActive]);
 
+  useEffect(() => {
+    if (!needsRetryModels || retryModels) return;
+    let active = true;
+    request<ModelConnectionsSnapshot>("/api/models").then((snapshot) => { if (active) setRetryModels(snapshot.models); }).catch(() => { if (active) setRetryModels([]); });
+    return () => { active = false; };
+  }, [needsRetryModels, retryModels]);
+
   async function act(
     action: "start" | "retry-agents" | "drop-failed-agents" | "address-review" | "cancel" | "approve" | "integrate" | "revoke",
+    retry?: { runId: string; override?: AgentRetryOverride },
   ) {
     if (!mission || busy) return;
-    setBusy(action);
+    setBusy(retry ? `retry-agent:${retry.runId}` : action);
     setError("");
     const body =
       action === "approve" || action === "integrate" || action === "revoke"
         ? { candidateSha: mission.candidateSha, baseSha: mission.baseSha, ...(action === "approve" && mission.dependencyChanges?.length ? { approveDependencies: dependenciesAcknowledged } : {}) }
+        : action === "retry-agents" && retry ? retryAgentBody(retry.runId, retry.override)
         : {};
     const signature = JSON.stringify({
       id,
@@ -1097,6 +1110,17 @@ export default function MissionDetail({
                           {run.error}
                         </p>
                       )}
+                      {run.status === "failed" && mission.epoch > 0 && !replay.active && !mission.skillChange && !mission.revertChange && !mission.branchChange && (
+                        <AgentRetry
+                          run={run}
+                          status={mission.status}
+                          canExecute={permissions.includes("execute")}
+                          busy={!!busy}
+                          loading={busy === `retry-agent:${run.id}`}
+                          models={retryModels}
+                          onRetry={(override) => void act("retry-agents", { runId: run.id, override })}
+                        />
+                      )}
                       {run.skills !== undefined && (
                         <details className="agent-skill-evidence">
                           <summary>{run.skills.length} repository {run.skills.length === 1 ? "skill" : "skills"} loaded</summary>
@@ -1125,6 +1149,7 @@ export default function MissionDetail({
                             ? new Date(run.startedAt).toLocaleTimeString()
                             : "Waiting"}
                         </dd>
+                        <AgentLimitsDetails run={run} />
                       </dl>
                       {tab === "agents" && (
                         <>

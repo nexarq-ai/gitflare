@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { AgentRun, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
+import type { AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependenciesAcknowledged, assertDependencyApprover } from './dependency-changes';
 import { repositoryLabel } from '../shared/repository-names';
@@ -20,6 +20,7 @@ import { applyIssueChange, issueFingerprint, linkIssueMission, listIssues, readI
 import { branchName, normalizeBranchRules, type StoredBranchProtection } from './branch-protection';
 import { capacityError, catalogName, liveSlots, MISSION_SLOT_GRACE_MS, slotKey, WORKSPACE_MISSION_LIMIT, WORKSPACE_PREVIEW_LIMIT, type CapacitySlot } from './capacity';
 import { missionStepTimeoutMs } from './budgets';
+import { effectiveAgentLimits, normalizeAgentSettings } from './agent-settings';
 import { AUTO_INCREASE_ACTOR, checkDurations, checkPlan, DURATION_SAMPLES, normalizeCheckSettings, withLearnedLimits, type CheckSettingsInput, type LearnedLimits } from './check-settings';
 import type { SavedDetection } from './deploy-detect';
 import { DeployAccessBook, type DeployAccessRecord, type DeployAccessResult } from './deploy-access';
@@ -40,6 +41,31 @@ function lastPreview(state: PreviewState, reason: PreviewEndReason, endedAt: num
     ...(state.readyAt ? { readyAt: new Date(state.readyAt).toISOString() } : {}),
     expiresAt: new Date(state.expiresAt).toISOString(), endedAt: new Date(reason === 'expired' ? state.expiresAt : endedAt).toISOString(), reason,
   };
+}
+
+function agentDefaults(overrides: CreateMissionInput['agentOverrides']): Pick<AgentRun, 'editScope' | 'overrides'> {
+  if (!overrides) return {};
+  const { editScope, ...limits } = overrides;
+  return { ...(editScope?.length ? { editScope: [...editScope] } : {}), ...(Object.keys(limits).length ? { overrides: limits } : {}) };
+}
+
+function withRetryOverride(run: AgentRun, override: AgentRetryOverride | undefined): AgentRun {
+  if (!override) return run;
+  const { model, ...limits } = override;
+  const next: AgentRun = { ...run, ...(Object.keys(limits).length ? { overrides: { ...run.overrides, ...limits } } : {}) };
+  if (model && model !== run.model) { next.model = model; delete next.modelConfig; }
+  return next;
+}
+
+function retryOverrideNote(runs: AgentRun[], overrides: Record<string, AgentRetryOverride> | undefined): string {
+  if (!overrides) return '';
+  const notes = runs.flatMap((run) => {
+    const override = overrides[run.id];
+    if (!override) return [];
+    const parts = [override.model ? `model ${override.model}` : '', override.runSeconds ? `${Math.round(override.runSeconds / 60)} min run limit` : '', override.maxSteps ? `${override.maxSteps} steps` : '', override.modelAnswerSeconds ? `${override.modelAnswerSeconds} s per model answer` : ''].filter(Boolean);
+    return parts.length ? [`${run.name.slice(0, 60)}: ${parts.join(', ')}`] : [];
+  });
+  return notes.length ? ` Retry settings: ${notes.join('; ')}.` : '';
 }
 
 export function draftRuns(mission: Mission): Mission {
@@ -195,6 +221,21 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   }
 
   getCheckSettings(): CheckSettings | undefined { return this.store.get<CheckSettings>('check-settings'); }
+
+  getAgentSettings(): AgentSettings | undefined { return this.store.get<AgentSettings>('agent-settings'); }
+
+  setAgentSettings(key: string, input: AgentSettings, actorId: string): AgentSettings {
+    const normalized = normalizeAgentSettings({ ...input });
+    return this.mutate(key, JSON.stringify(['agent-settings', normalized]), () => {
+      const stored: AgentSettings = { ...normalized, updatedAt: new Date().toISOString(), updatedBy: actorId };
+      this.store.put('agent-settings', stored);
+      return stored;
+    });
+  }
+
+  private pinAgentLimits(run: AgentRun): Pick<AgentRun, 'editScope' | 'overrides' | 'limits'> {
+    return { ...(run.editScope ? { editScope: [...run.editScope] } : {}), ...(run.overrides ? { overrides: { ...run.overrides } } : {}), limits: effectiveAgentLimits(this.getAgentSettings(), run.overrides) };
+  }
 
   getCheckDurations(): number[] { return this.store.get<number[]>('check-durations') ?? []; }
 
@@ -796,7 +837,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
         id, repositoryId: repository.id, title: input.title, prompt: input.prompt,
         acceptanceCriteria: criteria, authorization, ...(input.attachments?.length ? { attachments: input.attachments.map(({ name, content }) => ({ name, content })) } : {}), ...(skillChange ? { skillChange } : {}), ...(revertChange ? { revertChange: { ...revertChange } } : {}), ...(branchChange ? { branchChange } : {}), ...(input.issueNumber !== undefined ? { issueNumber: input.issueNumber } : {}), ...(race ? { mode: 'race' as const } : {}),
         status: 'draft', baseSha: repository.headSha, candidateSha: null, epoch: 0,
-        runs: tasks.map((task) => ({ ...task, assignment: task.task, id: crypto.randomUUID(), task: `${input.prompt}\nYou are ${task.name} (${task.role}). ${race ? 'Complete the whole mission on your own; other agents are attempting it independently and a reviewer will choose one result. Your approach' : 'Your assigned task'}: ${task.task}\nPreserve existing tests and run them.${criteria.length ? `\nAcceptance criteria:\n${criteria.map((criterion) => `- ${criterion}`).join('\n')}` : ''}`, status: 'draft', changedFiles: [] })),
+        runs: tasks.map((task) => ({ ...(skillChange || branchChange || revertChange ? {} : agentDefaults(input.agentOverrides)), ...task, assignment: task.task, id: crypto.randomUUID(), task: `${input.prompt}\nYou are ${task.name} (${task.role}). ${race ? 'Complete the whole mission on your own; other agents are attempting it independently and a reviewer will choose one result. Your approach' : 'Your assigned task'}: ${task.task}\nPreserve existing tests and run them.${criteria.length ? `\nAcceptance criteria:\n${criteria.map((criterion) => `- ${criterion}`).join('\n')}` : ''}`, status: 'draft', changedFiles: [] })),
         checks: [], changes: [], events: [], createdAt: now, updatedAt: now,
       };
       if (mission.issueNumber !== undefined) linkIssueMission(this.store, mission.issueNumber, mission.id, now);
@@ -876,7 +917,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       delete mission.selectedRunId;
       delete mission.raceChecks;
       delete mission.raceChanges;
-      mission.runs = mission.runs.map((run) => ({ id: run.id, name: run.name, role: run.role, task: run.task, assignment: run.assignment, model: run.model, modelConfig: run.modelConfig, status: 'queued', changedFiles: [] }));
+      mission.runs = mission.runs.map((run) => ({ id: run.id, name: run.name, role: run.role, task: run.task, assignment: run.assignment, model: run.model, modelConfig: run.modelConfig, ...this.pinAgentLimits(run), status: 'queued', changedFiles: [] }));
       this.queueDispatch(mission);
       return this.saveMission(mission, `Execution attempt ${mission.epoch} queued.`);
     }));
@@ -885,17 +926,18 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return started;
   }
 
-  async retryAgents(key: string, id: string, mode: 'retry' | 'drop' | 'review', runIds: string[] | undefined, authorization?: NonNullable<Mission['authorization']>, models = defaultModelConnections(), guidance?: string): Promise<Mission> {
+  async retryAgents(key: string, id: string, mode: 'retry' | 'drop' | 'review', runIds: string[] | undefined, authorization?: NonNullable<Mission['authorization']>, models = defaultModelConnections(), guidance?: string, overrides?: Record<string, AgentRetryOverride>): Promise<Mission> {
     await this.ensureDispatchAlarm(Date.now() + 1000);
     const release = await this.reserveMissionCapacity(key, id, authorization);
     const action = mode === 'retry' ? 'retry-agents' : mode === 'review' ? 'address-review' : 'drop-failed-agents';
-    const started = await this.releaseOnFailure(release, () => this.mutateMission(key, JSON.stringify([action, id, runIds ? [...runIds].sort() : null, guidance ?? null]), id, () => {
+    const started = await this.releaseOnFailure(release, () => this.mutateMission(key, JSON.stringify([action, id, runIds ? [...runIds].sort() : null, guidance ?? null, ...(overrides ? [overrides] : [])]), id, () => {
       const mission = this.requiredMission(id);
       const reviewing = mode === 'review';
       if (reviewing ? mission.status !== 'needs_review' : !['failed', 'cancelled'].includes(mission.status) || mission.epoch === 0) throw reviewing ? new ApiError(409, 'MISSION_NOT_IN_REVIEW', 'Only a candidate awaiting review can be sent back to its agents.') : new ApiError(409, 'MISSION_NOT_FAILED', 'Only a failed or cancelled attempt can retry or drop individual agents.');
       if (mission.skillChange || mission.revertChange || mission.branchChange) throw new ApiError(409, 'TRUSTED_MISSION', 'This proposal has one trusted editor. Use Retry mission instead.');
       const unknown = (runIds ?? []).filter((runId) => !mission.runs.some((run) => run.id === runId));
       if (unknown.length) throw new ApiError(400, 'UNKNOWN_AGENT', `No agent with ID ${unknown[0]!.slice(0, 64)} belongs to this mission.`);
+      if (overrides && mode !== 'retry') throw new ApiError(400, 'INVALID_RETRY_OVERRIDES', 'Overrides apply only to retrying agents.');
       const checks = mission.raceChecks ?? mission.checks;
       const verified = (run: Mission['runs'][number]) => run.status === 'completed' && !!run.commitSha && !!run.forkName && checks.some((check) => check.runId === run.id && check.status === 'passed' && check.candidateSha === run.commitSha);
       const requests = reviewing ? currentReviewRequests(mission) : [];
@@ -908,6 +950,8 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const reusable = (run: Mission['runs'][number]) => partReusable(run) && (!run.coordinator || mission.mode === 'race' || partsReused);
       const reused = mission.runs.filter(reusable);
       const others = mission.runs.filter((run) => !reusable(run) && (!reviewing || chosen!.includes(run.id)));
+      const notRetried = Object.keys(overrides ?? {}).filter((runId) => !others.some((run) => run.id === runId));
+      if (notRetried.length) throw new ApiError(409, 'AGENT_NOT_RETRIED', 'Overrides apply only to agents this retry reruns; a verified candidate is reused as is.');
       if (!others.length && (mode === 'drop' || mission.mode === 'race')) throw new ApiError(409, 'NO_FAILED_AGENTS', 'Every agent has a verified candidate. Use Retry mission to rerun them all, or choose the agents to rerun.');
       const sourceOf = (run: Mission['runs'][number]) => ({ runId: run.id, name: run.name, forkName: run.forkName!, commitSha: run.commitSha! });
       const startFrom = (run: Mission['runs'][number]): AgentRun['startFrom'] => {
@@ -933,11 +977,11 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const reusedIds = new Set(reused.map((run) => run.id));
       const keptChecks = checks.filter((check) => !!check.runId && reusedIds.has(check.runId));
       const keptChanges = (mission.raceChanges ?? mission.changes).filter((change) => change.runIds.some((runId) => reusedIds.has(runId)));
-      const fresh = (run: Mission['runs'][number]) => ({ id: run.id, name: run.name, role: run.role, task: run.task, assignment: run.assignment, model: run.model, modelConfig: run.modelConfig, changedFiles: [] as string[], ...(run.coordinator ? { coordinator: true } : {}) });
+      const fresh = (run: Mission['runs'][number]) => ({ id: run.id, name: run.name, role: run.role, task: run.task, assignment: run.assignment, model: run.model, modelConfig: run.modelConfig, changedFiles: [] as string[], ...(run.coordinator ? { coordinator: true } : {}), ...this.pinAgentLimits(run) });
       mission.runs = mission.runs.map((run) => {
         if (reusedIds.has(run.id)) return { ...run, reusedFromEpoch: run.reusedFromEpoch ?? previousEpoch, ...(run.candidateBaseSha ?? previousBase ? { candidateBaseSha: run.candidateBaseSha ?? previousBase! } : {}) };
         if (mode === 'drop' || reviewing && !chosen!.includes(run.id)) return { ...fresh(run), status: 'skipped' as const, completedAt: now, skipReason: run.skipReason ?? (reviewing ? `Not sent the review in attempt ${previousEpoch + 1}` : `Excluded in attempt ${previousEpoch + 1} after it ${run.status === 'cancelled' ? 'was cancelled' : 'failed'}${run.error ? `: ${failureLine(run.error)}` : ''}`) };
-        const [pinned] = pinMissionModels({ ...mission, runs: [run] }, models).runs;
+        const [pinned] = pinMissionModels({ ...mission, runs: [withRetryOverride(run, overrides?.[run.id])] }, models).runs;
         const from = startFrom(run);
         const runGuidance = guidanceFor(run, from);
         return { ...fresh(pinned!), status: 'queued' as const, ...(runGuidance ? { retryGuidance: runGuidance } : {}), ...(from ? { startFrom: from } : {}) };
@@ -969,7 +1013,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       return this.saveMission(mission, mode === 'review'
         ? `Attempt ${mission.epoch} queued to address ${requests.length} change request${requests.length === 1 ? '' : 's'} with ${names(others)}, starting from the reviewed candidate.${reuseNote}${moved}${guidanceNote}`
         : mode === 'retry'
-          ? others.length ? `Attempt ${mission.epoch} queued to retry ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}).${reuseNote}${resumeNote}${rebaseNote}${moved}${guidanceNote}` : `Attempt ${mission.epoch} queued to combine again without rerunning any agent.${reuseNote}${moved}`
+          ? others.length ? `Attempt ${mission.epoch} queued to retry ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}).${retryOverrideNote(others, overrides)}${reuseNote}${resumeNote}${rebaseNote}${moved}${guidanceNote}` : `Attempt ${mission.epoch} queued to combine again without rerunning any agent.${reuseNote}${moved}`
           : `Attempt ${mission.epoch} queued without ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}), now marked skipped.${reuseNote} Acceptance criteria are unchanged.${moved}`, mode === 'drop' ? 'warning' : 'info');
     }));
     if (started.status === 'queued') this.queueDispatch(started);

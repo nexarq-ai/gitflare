@@ -113,6 +113,7 @@ const PullRequestCreate = lazy(loadPullRequestCreate);
 const loadBranchProtection = () => import("./BranchProtection");
 const BranchProtection = lazy(loadBranchProtection);
 const PreviewSettings = lazy(() => import("./PreviewSettings"));
+const AgentSettings = lazy(() => import("./AgentSettings"));
 const GitHubMirror = lazy(() => import("./GitHubMirror"));
 const loadSecretSettings = () => import("./SecretSettings");
 const SecretSettings = lazy(loadSecretSettings);
@@ -1465,6 +1466,7 @@ function RepositoryDetail({
           : subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
           : subroute === "deploys" ? <Deployments key={repository.id} repository={repository} canManage={canManage} onNotify={onNotify} />
           : subroute === "previews" ? <PreviewSettings key={repository.id} repositoryId={repository.id} canManage={canManage} onNotify={onNotify} />
+          : subroute === "agents" ? <AgentSettings key={repository.id} repositoryId={repository.id} canChange={canLand} onNotify={onNotify} />
           : subroute === "cloudflare" ? <CloudflareConnection key={repository.id} canManage={canManage} repository={repository} repositoryId={repository.id} />
           : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <RouteProgress />
           : <RepositoryGeneral repository={repository} onNotify={onNotify} />}
