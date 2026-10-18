@@ -1,4 +1,5 @@
 import { useState } from "react";
+import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { RobotIcon } from "@phosphor-icons/react";
 import type { AiSettings } from "../shared/types";
@@ -28,7 +29,7 @@ export default function AiSettingsPanel({ settings, canManage, onChanged }: { se
       <div className="settings-cloudflare-heading">
         <RobotIcon size={27} />
         <div>
-          <h2>AI features {enabled ? "on" : "off"}</h2>
+          <h2>AI features {enabled ? "on" : "off"}<InfoTip label="AI features">Turns agents, mission drafting and AI client connections on or off for the whole workspace. With AI off, people can still propose and land changes by hand.</InfoTip></h2>
           <p>
             {settings?.locked
               ? "This installation runs without AI (AI_FEATURES=disabled). Repositories, reviews, landing, restores and checkpoints work as usual."

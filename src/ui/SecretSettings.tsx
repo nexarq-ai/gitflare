@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { request } from "./api";
@@ -199,11 +200,11 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
             </div>
             <fieldset className="check-settings-fields" disabled={!!busy}>
               <div className="form-field">
-                <label htmlFor="secret-binding">Binding name</label>
+                <span className="field-label"><label htmlFor="secret-binding">Binding name</label><InfoTip label="Binding name">The name your Worker code reads, for example env.STRIPE_KEY. Use capitals and underscores.</InfoTip></span>
                 <Input id="secret-binding" maxLength={64} value={binding} placeholder="STRIPE_KEY" onChange={(event) => setBinding(event.target.value)} />
               </div>
               <div className="form-field">
-                <label htmlFor="secret-store">Store</label>
+                <span className="field-label"><label htmlFor="secret-store">Store</label><InfoTip label="Store">The Cloudflare Secrets Store that holds the value. Gitflare links to it and never shows the value.</InfoTip></span>
                 <select id="secret-store" value={storeId} onChange={(event) => { setStoreId(event.target.value); setSecretId(""); if (event.target.value) void loadCatalog(event.target.value); }}>
                   <option value="">Choose a store</option>
                   {(catalog?.stores ?? []).map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
@@ -212,7 +213,7 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
               </div>
               {mode === "link" ? (
                 <div className="form-field">
-                  <label htmlFor="secret-existing">Secret</label>
+                  <span className="field-label"><label htmlFor="secret-existing">Secret</label><InfoTip label="Secret">Pick a secret that already exists in the store.</InfoTip></span>
                   <select id="secret-existing" value={secretId} disabled={!catalog?.secrets} onChange={(event) => { setSecretId(event.target.value); setSecretName(""); }}>
                     <option value="">{catalog?.secrets ? "Choose a secret" : "Choose a store first"}</option>
                     {(catalog?.storeId === storeId ? catalog.secrets ?? [] : []).map((secret) => <option key={secret.id} value={secret.id} disabled={!secret.scopes.includes("workers")}>{secret.name}{secret.scopes.includes("workers") ? "" : " (not scoped to Workers)"}</option>)}
@@ -221,26 +222,26 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
               ) : (
                 <>
                   <div className="form-field">
-                    <label htmlFor="secret-name">Secret name in the store</label>
+                    <span className="field-label"><label htmlFor="secret-name">Secret name in the store</label><InfoTip label="Secret name in the store">The name the secret gets in Cloudflare. Other Workers in the account can find it by this name.</InfoTip></span>
                     <Input id="secret-name" maxLength={255} value={secretName} placeholder="stripe_live_key" onChange={(event) => setSecretName(event.target.value)} />
                   </div>
                   <div className="form-field">
-                    <label htmlFor="secret-value">Value</label>
+                    <span className="field-label"><label htmlFor="secret-value">Value</label><InfoTip label="Value">Sent once to Cloudflare and never stored or shown by Gitflare.</InfoTip></span>
                     <Input id="secret-value" type="password" autoComplete="off" spellCheck={false} value={value} onChange={(event) => setValue(event.target.value)} />
                     <small>Sent once to Cloudflare Secrets Store. Gitflare never stores or shows it again.</small>
                   </div>
                   <div className="form-field">
-                    <label htmlFor="secret-comment">Comment <span className="proposal-optional">(optional)</span></label>
+                    <span className="field-label"><label htmlFor="secret-comment">Comment <span className="proposal-optional">(optional)</span></label><InfoTip label="Comment">A note shown in Cloudflare next to the secret, for example who owns it.</InfoTip></span>
                     <Input id="secret-comment" maxLength={300} value={comment} onChange={(event) => setComment(event.target.value)} />
                   </div>
                 </>
               )}
               <div className="form-field">
-                <label htmlFor="secret-consumers">Workers <span className="proposal-optional">(optional)</span></label>
+                <span className="field-label"><label htmlFor="secret-consumers">Workers <span className="proposal-optional">(optional)</span></label><InfoTip label="Workers">Only these Workers get the binding. Leave empty to bind it to every Worker this repository deploys.</InfoTip></span>
                 <Input id="secret-consumers" value={consumers} placeholder="All Workers in this environment" onChange={(event) => setConsumers(event.target.value)} />
                 <small>Comma-separated Worker names that receive the binding. Empty binds every Worker this environment deploys.</small>
               </div>
-              {preview && <label className="check-settings-toggle"><input type="checkbox" checked={previewAllowed} onChange={(event) => setPreviewAllowed(event.target.checked)} />Allow Worker Previews to bind this secret</label>}
+              {preview && <label className="check-settings-toggle"><input type="checkbox" checked={previewAllowed} onChange={(event) => setPreviewAllowed(event.target.checked)} />Allow Worker Previews to bind this secret<InfoTip label="Previews and secrets">Previews of proposals can read this secret. Leave it off for production-only values such as live payment keys.</InfoTip></label>}
             </fieldset>
             {error && <div className="error-notice" role="alert">{error}</div>}
             <div className="branch-rule-actions"><Button variant="primary" size="base" type="submit" loading={busy === "link" || busy === "create"} disabled={!formReady || !!busy}>{mode === "create" ? "Create and link" : "Link secret"}</Button></div>

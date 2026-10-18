@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { request } from "./api";
@@ -91,25 +92,25 @@ export default function PreviewSettings({ repositoryId, onNotify }: { repository
         {!canChange && <p className="branch-rule-note">Only Owners can change preview settings.</p>}
         <fieldset className="check-settings-fields" disabled={!canChange || busy}>
           <div className="form-field">
-            <label htmlFor="preview-lifetime">Preview lifetime</label>
+            <span className="field-label"><label htmlFor="preview-lifetime">Preview lifetime</label><InfoTip label="Preview lifetime">How long a preview stays up after it starts. Shorter saves resources; anyone with the link loses access when it ends.</InfoTip></span>
             <select id="preview-lifetime" value={lifetime} onChange={(event) => setLifetime(Number(event.target.value))}>
               {snapshot.lifetime.choices.map((minutes) => <option key={minutes} value={minutes}>{LIFETIME_LABELS[minutes] ?? `${minutes} minutes`}</option>)}
             </select>
             <small>This installation allows at most {LIFETIME_LABELS[snapshot.lifetime.maxMinutes] ?? `${snapshot.lifetime.maxMinutes} minutes`}.</small>
           </div>
           <div className="form-field">
-            <label htmlFor="preview-target">Preview Worker <span className="proposal-optional">(optional)</span></label>
+            <span className="field-label"><label htmlFor="preview-target">Preview Worker <span className="proposal-optional">(optional)</span></label><InfoTip label="Preview Worker">The Worker that previews are made of, when the repository has several. Leave empty to use the one Gitflare detects.</InfoTip></span>
             <Input id="preview-target" maxLength={63} value={targetWorker} placeholder={target?.workerName ?? "my-worker"} onChange={(event) => setTargetWorker(event.target.value.toLowerCase())} />
             <small>For repositories with several Workers: the Worker whose Previews host this repository. Empty uses the deploy target for the root Wrangler configuration.</small>
           </div>
         </fieldset>
         <fieldset className="check-settings-fields" disabled={!canChange || busy}>
-          <label className="check-settings-toggle"><input type="radio" name="preview-access" checked={access === "link"} onChange={() => setAccess("link")} />Unguessable link (public to anyone with the link)</label>
+          <label className="check-settings-toggle"><input type="radio" name="preview-access" checked={access === "link"} onChange={() => setAccess("link")} />Unguessable link (public to anyone with the link)<InfoTip label="Unguessable link">Anyone who has the link can open the preview. Fine for demos; do not use it for private data.</InfoTip></label>
           <label className="check-settings-toggle"><input type="radio" name="preview-access" checked={access === "cloudflare-access"} disabled={!accessAvailable && access !== "cloudflare-access"} onChange={() => setAccess("cloudflare-access")} />Cloudflare Access on the connected account</label>
           {!accessAvailable && <small className="branch-rule-note">{snapshot.access.cloudflareAccess.reason}</small>}
           {access === "cloudflare-access" && (
             <div className="form-field">
-              <label htmlFor="preview-domains">Allowed email domains <span className="proposal-optional">(optional, one per line)</span></label>
+              <span className="field-label"><label htmlFor="preview-domains">Allowed email domains <span className="proposal-optional">(optional, one per line)</span></label><InfoTip label="Allowed email domains">With Cloudflare Access, people whose email ends in these domains can open previews, for example example.com.</InfoTip></span>
               <textarea id="preview-domains" rows={2} value={domains} placeholder="example.com" onChange={(event) => setDomains(event.target.value)} />
               <small>Empty allows the email of every workspace member who can read this repository.</small>
             </div>
@@ -118,7 +119,7 @@ export default function PreviewSettings({ repositoryId, onNotify }: { repository
         <p className="branch-rule-note">{snapshot.access.description} {snapshot.access.containerDescription}</p>
         <fieldset className="check-settings-fields" disabled={!canChange || busy}>
           <div className="form-field">
-            <label htmlFor="preview-email-recipients">Preview email recipients <span className="proposal-optional">(one address per line, at most 50)</span></label>
+            <span className="field-label"><label htmlFor="preview-email-recipients">Preview email recipients <span className="proposal-optional">(one address per line, at most 50)</span></label><InfoTip label="Preview email recipients">These addresses get an email with the preview link when a preview is ready. Leave empty to send none.</InfoTip></span>
             <textarea id="preview-email-recipients" rows={3} value={recipients} placeholder="person@example.com" onChange={(event) => setRecipients(event.target.value)} />
             <small>Preview email goes only to these addresses; leave empty to block all preview email. Exact addresses only: Cloudflare cannot restrict send_email to a domain such as @example.com. Staging and production deploys are unaffected.</small>
             <small>{snapshot.email.blocked ? "Preview email is blocked now: sends from a preview fail." : `Previews may email ${snapshot.email.recipients.length} address${snapshot.email.recipients.length === 1 ? "" : "es"}.`}</small>

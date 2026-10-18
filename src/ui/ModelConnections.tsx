@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import InfoTip from "./InfoTip";
 import { Button } from '@cloudflare/kumo/components/button';
 import { Dialog } from '@cloudflare/kumo/components/dialog';
 import { Input } from '@cloudflare/kumo/components/input';
@@ -50,7 +51,7 @@ export default function ModelConnections({ canManage }: { canManage: boolean }) 
     {!snapshot ? !error && <RouteProgress /> : demo ? <DemoFeaturePanel demo={demo} examples={snapshot.examples} /> : <>
       {route && <p className={`models-route models-route-${route.tone}`}>{route.tone === 'warn' ? <WarningCircleIcon size={16} aria-hidden="true" /> : <CloudIcon size={16} aria-hidden="true" />}{route.text}</p>}
       <section className="panel">
-        <div className="panel-header"><h2>Models</h2><span className="number-tag">{snapshot.models.length}</span></div>
+        <div className="panel-header"><h2>Models<InfoTip label="model status">Ready: agents can use it now. Needs a key: add a provider key for the company that makes it. Not verified: no check has run with your key yet; Verify sends one small billed request.</InfoTip></h2><span className="number-tag">{snapshot.models.length}</span></div>
         {snapshot.models.length ? <fieldset className="models-choices" disabled={!canManage || !!busy}>
           <legend className="sr-only">Default for missions</legend>
           {snapshot.models.map(model => <ModelRow key={model.id} model={model} status={modelStatus(model, keys, snapshot)} isDefault={snapshot.defaultModel === model.id} canManage={canManage} busy={busy}

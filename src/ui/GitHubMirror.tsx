@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { ArrowsClockwiseIcon, GithubLogoIcon } from "@phosphor-icons/react";
@@ -86,15 +87,15 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
         {!canManage && <p className="branch-rule-note">Only workspace Owners can change the mirror.</p>}
         <fieldset className="check-settings-fields" disabled={!canManage || !!busy}>
           <div className="form-field">
-            <label htmlFor="mirror-owner">GitHub owner</label>
+            <span className="field-label"><label htmlFor="mirror-owner">GitHub owner</label><InfoTip label="GitHub owner">The GitHub user or organization that owns the mirror repository, for example acme.</InfoTip></span>
             <Input id="mirror-owner" maxLength={39} value={owner} placeholder="nexarq-ai" onChange={(event) => setOwner(event.target.value)} />
           </div>
           <div className="form-field">
-            <label htmlFor="mirror-name">Repository</label>
+            <span className="field-label"><label htmlFor="mirror-name">Repository</label><InfoTip label="Mirror repository">The GitHub repository Gitflare pushes to. Gitflare stays the source of truth; changes made on GitHub are overwritten.</InfoTip></span>
             <Input id="mirror-name" maxLength={100} value={name} placeholder="my-repository" onChange={(event) => setName(event.target.value)} />
           </div>
           <div className="form-field github-mirror-wide">
-            <label htmlFor="mirror-patterns">Mirrored refs <span className="proposal-optional">(one per line, * matches anything)</span></label>
+            <span className="field-label"><label htmlFor="mirror-patterns">Mirrored refs <span className="proposal-optional">(one per line, * matches anything)</span></label><InfoTip label="Mirrored refs">Which streams and tags are copied, one per line. main copies only main; * copies everything.</InfoTip></span>
             <textarea id="mirror-patterns" rows={2} value={patterns} onChange={(event) => setPatterns(event.target.value)} />
           </div>
         </fieldset>
@@ -120,7 +121,7 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
                 </div>
                 {app.available && (
                   <div className="form-field">
-                    <label htmlFor="mirror-installation">Or GitHub App installation ID</label>
+                    <span className="field-label"><label htmlFor="mirror-installation">Or GitHub App installation ID</label><InfoTip label="GitHub App installation ID">Use a GitHub App installation instead of a personal token. Find the number in the app installation URL.</InfoTip></span>
                     <Input id="mirror-installation" inputMode="numeric" maxLength={12} value={installation} placeholder="12345678" onChange={(event) => setInstallation(event.target.value.replace(/\D/g, ""))} />
                     {app.installUrl && <small><a href={app.installUrl} target="_blank" rel="noreferrer">Install the App</a> on the repository, then paste the installation ID from the URL.</small>}
                   </div>

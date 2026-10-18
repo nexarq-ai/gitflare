@@ -63,6 +63,7 @@ import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLayout";
 import { workspaceChord } from "./workspace-chord";
 import { accountSection } from "./account-data";
+import { eligibleApprovers, knownCheckNames } from "./approvals";
 import { crossHostTarget, pageHostOrigins } from "./hosts";
 import AccountMenu from "./AccountMenu";
 
@@ -1458,7 +1459,7 @@ function RepositoryDetail({
           ].map((item) => <button key={item.value} className={"ai" in item && item.ai ? "ai-only" : undefined} aria-current={tab === item.value || (tab === "proposals" && item.value === "pulls") ? "page" : undefined} onClick={() => onTabChange(item.value)}>{item.label}</button>)}
       </nav>
       {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} /> : tab === "settings" ? <RepositorySettingsLayout repositoryId={repository.id} page={subroute}>
-        {subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} onNotify={onNotify} />
+        {subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} approvers={access ? eligibleApprovers(access.members, repository.id) : undefined} knownChecks={knownCheckNames(missions)} onNotify={onNotify} />
           : subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
           : subroute === "deploys" ? <Deployments key={repository.id} repository={repository} onNotify={onNotify} />
           : subroute === "previews" ? <PreviewSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
