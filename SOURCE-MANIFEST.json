@@ -269,9 +269,29 @@
       "sha256": "39bd658c6edc46c8e2205517191735d889f32c8b778584eb004fd3254aff23db"
     },
     {
+      "path": "src/ui/agent-limits.ts",
+      "size": 4705,
+      "sha256": "a7c5bb129c6a2a26830e67670b69f29d45ddc86c8d568899c32913fd0966e9c2"
+    },
+    {
+      "path": "src/ui/agent-retry.css",
+      "size": 1605,
+      "sha256": "75ff775184f3fcc50b1fd343dc1b8fc82b4bedf176711722f9c112fb517cee23"
+    },
+    {
       "path": "src/ui/AgentAssignment.tsx",
       "size": 1213,
       "sha256": "914686c3ad28ade7269d051e12d5f670fe6b75a577560da85e7906f5b315a40a"
+    },
+    {
+      "path": "src/ui/AgentRetry.tsx",
+      "size": 2760,
+      "sha256": "6a310f0ebea3e0e6e5affdd419c066e200bb8b3fd4e905a53e0f5ea178c42074"
+    },
+    {
+      "path": "src/ui/AgentSettings.tsx",
+      "size": 8232,
+      "sha256": "d80694ad505f996eebe7f2ef22e64d92d1ad03c7c9651bdb248ff8eb27d2566a"
     },
     {
       "path": "src/ui/AiKeys.tsx",
@@ -902,6 +922,11 @@
       "path": "src/worker/agent-rules.ts",
       "size": 13175,
       "sha256": "8640062c20bd272e37f7a065f520b9160abdb6eeadd041dd14cadb188c19a473"
+    },
+    {
+      "path": "src/worker/agent-settings.ts",
+      "size": 7849,
+      "sha256": "d86cf334b820c467c8355c03c8732caaeada44d948b3771f783e01c250adf43c"
     },
     {
       "path": "src/worker/ai-keys.ts",
