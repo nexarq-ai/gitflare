@@ -760,8 +760,8 @@
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 104091,
-      "sha256": "a0edf4564f5837b45a0513adbf7e4c3c5345feb576856e56822843cd5ed65f9b"
+      "size": 104511,
+      "sha256": "f140f6ad9689dfda3470d89de173b60dfe79abc7fb1824817bf9b8c0ad003415"
     },
     {
       "path": "src/worker/d1-migrations.ts",
@@ -840,8 +840,8 @@
     },
     {
       "path": "src/worker/domain.ts",
-      "size": 11352,
-      "sha256": "ea591b0f277a97887025bd8d976c9b3503eae9dfc18a710131316d39e6d98950"
+      "size": 11399,
+      "sha256": "5a39dedb87798adaa00eb09093f582b49345082541e6618c242420731889b5bf"
     },
     {
       "path": "src/worker/email/index.ts",
@@ -915,8 +915,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 88925,
-      "sha256": "c82581ca000ec4747c5d7045c8b40b75207d1256768ed04a318bb82e6c4a6759"
+      "size": 90399,
+      "sha256": "7b7700e8d798094030d91c7ea0397ca70a6dfa6c63e7cd75063b3a64ed2e2ee8"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -930,8 +930,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 108067,
-      "sha256": "dc449f3d604f05a84dcb2ea0f4e0782419754a6c913efa36f8abc26927fc8b6a"
+      "size": 108113,
+      "sha256": "3c79ef0b3de49c9b3764731fc178b52d16f9af4b358173134bec8b232ae2163d"
     },
     {
       "path": "src/worker/mfa.ts",

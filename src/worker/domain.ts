@@ -80,7 +80,7 @@ export function repositoryPath(value: string, allowRoot = true): string {
 
 export function repositoryRef(value: string): string {
   if (!value || value.length > 200 || !/^[a-zA-Z0-9/_\-.]+$/.test(value) || value.includes('..') || value.startsWith('-')) {
-    throw new ApiError(400, 'INVALID_REF', 'Use a branch name, tag, or full commit SHA.');
+    throw new ApiError(400, 'INVALID_REF', 'Use a branch name, tag, or commit SHA (full, or a unique prefix of at least 7 characters).');
   }
   return value;
 }

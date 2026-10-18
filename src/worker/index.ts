@@ -176,7 +176,18 @@ async function workspaceName(env: AppEnv, access: { workspace(principal: Princip
 
 type SourceHandle = Awaited<ReturnType<NonNullable<AppEnv['ARTIFACTS']>['get']>>;
 type SourceCommit = Awaited<ReturnType<SourceHandle['log']>>[number];
-interface CandidateSources { find(commitSha: string): Promise<{ missionId: string; forkName?: string } | undefined>; authorize(missionId: string): Promise<void> }
+interface CandidateSources { find(commitSha: string): Promise<{ missionId: string; forkName?: string } | undefined>; matching?(prefix: string): Promise<string[]>; authorize(missionId: string): Promise<void> }
+
+const SHORT_SHA = /^[a-f0-9]{7,39}$/;
+const PREFIX_HISTORY_LIMIT = 1000;
+
+async function resolveShortSha(source: SourceHandle, repository: Repository, prefix: string, candidates?: CandidateSources): Promise<string | null> {
+  const history = await source.log({ ref: repository.defaultBranch, limit: PREFIX_HISTORY_LIMIT }).catch(() => []);
+  const matches = new Set(history.map((commit) => commit.hash).filter((hash) => hash.startsWith(prefix)));
+  for (const sha of await candidates?.matching?.(prefix) ?? []) matches.add(sha);
+  if (matches.size > 1) throw new ApiError(409, 'AMBIGUOUS_REF', `Commit prefix ${prefix} matches ${matches.size} commits (${[...matches].slice(0, 5).map((sha) => sha.slice(0, 12)).join(', ')}). Pass more characters or the full SHA.`);
+  return matches.size ? [...matches][0]! : null;
+}
 
 async function openFork(env: AppEnv, name: string): Promise<SourceHandle | null> {
   try { return await env.ARTIFACTS!.get(name); } catch { return null; }
@@ -189,6 +200,12 @@ async function browseRepository(env: AppEnv, repository: Repository, kind: strin
   using source = await env.ARTIFACTS.get(repository.name);
   const commit = (await source.log({ ref, limit: 1 }))[0];
   if (commit) return await sourceView(source, commit, kind, path, ref);
+  const resolved = SHORT_SHA.test(ref) ? await resolveShortSha(source, repository, ref, candidates) : null;
+  if (resolved) {
+    const full = new URL(url);
+    full.searchParams.set('ref', resolved);
+    return await browseRepository(env, repository, kind, full, candidates);
+  }
   const fullSha = /^[a-f0-9]{40}$/.test(ref);
   const candidate = fullSha && candidates ? await candidates.find(ref) : undefined;
   if (candidate) {
@@ -199,6 +216,7 @@ async function browseRepository(env: AppEnv, repository: Repository, kind: strin
     throw new ApiError(404, 'MISSION_CANDIDATE_UNAVAILABLE', `Commit ${ref.slice(0, 12)} is a candidate of mission ${candidate.missionId}, and the fork that held it can no longer be read. This commit is a mission candidate; use gitflare_inspect_mission view changes (GET /api/missions/${candidate.missionId}) to read its diff.`);
   }
   if (fullSha) throw new ApiError(404, 'REF_NOT_FOUND', `Commit ${ref.slice(0, 12)} is not in this repository or in any of its mission candidates. Pass a branch, tag or a commit from gitflare_inspect_mission.`);
+  if (SHORT_SHA.test(ref)) throw new ApiError(404, 'REF_NOT_FOUND', `No commit starting with ${ref} is in the last ${PREFIX_HISTORY_LIMIT} commits of ${repository.defaultBranch} or among this repository's mission candidates. Pass the full SHA, a branch or a tag.`);
   throw new ApiError(404, 'REF_NOT_FOUND', 'This branch, tag, or commit does not exist. Push an initial commit if the repository is empty.');
 }
 
@@ -501,7 +519,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     }
     if (repositoryMatch[2] === 'skills') return Response.json(await listRepositorySkills(env.ARTIFACTS, repository, url.searchParams.get('ref') ?? undefined));
     const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
-    return browseRepository(env, repository, repositoryMatch[2], url, { find: (commitSha) => coordinator.missionCandidate(commitSha), authorize: (missionId) => access.authorize(principal, 'read', 'repository', repository.id, missionId) });
+    return browseRepository(env, repository, repositoryMatch[2], url, { find: (commitSha) => coordinator.missionCandidate(commitSha), matching: (prefix) => coordinator.missionCandidateShas(prefix), authorize: (missionId) => access.authorize(principal, 'read', 'repository', repository.id, missionId) });
   }
   const branchWrite = request.method === 'POST' ? /^\/api\/repositories\/([a-zA-Z0-9-]+)\/branches(?:\/(delete))?$/.exec(url.pathname) : null;
   if (branchWrite) {

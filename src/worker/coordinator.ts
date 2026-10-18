@@ -702,6 +702,16 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return undefined;
   }
 
+  missionCandidateShas(prefix: string): string[] {
+    if (!/^[a-f0-9]{7,40}$/.test(prefix)) return [];
+    const matches = new Set<string>();
+    for (const mission of this.store.list<Mission>('mission:')) {
+      for (const sha of [mission.candidateSha, ...mission.runs.map((run) => run.commitSha)]) if (sha?.startsWith(prefix)) matches.add(sha);
+      if (matches.size > 5) break;
+    }
+    return [...matches];
+  }
+
   missionRepository(id: string): string | undefined { return this.store.get<string>(`mission-repository:${id}`); }
 
   indexMission(id: string, repositoryId: string): void { this.store.put(`mission-repository:${id}`, repositoryId); }
