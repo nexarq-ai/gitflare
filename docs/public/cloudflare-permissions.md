@@ -28,7 +28,9 @@ Every installation requests these:
 | Account Analytics Read | `account-analytics.read` | Show request, error and query counts for linked Workers and D1 databases. |
 | Containers Read | `containers.read` | List your Container applications to link them to repositories. |
 
-An installation that deploys Workers also requests these:
+Gitflare asks for the rest feature by feature. When an Owner turns a feature on, Gitflare asks Cloudflare again for the connection's current permissions plus that feature's own (`features` on `POST /api/cloudflare/connect`, or on `gitflare_manage_cloudflare_connection` `connect`). Permissions already granted are kept on every re-authorization. A connect request without `features` asks for the deploy permissions, plus the Access permissions when the installation sets `CLOUDFLARE_ACCESS_SCOPES`, as before. `GET /api/cloudflare` returns `features`: which features the current grant covers and which permissions each one is missing.
+
+**Deploy** (`CLOUDFLARE_DEPLOY_SCOPES`, default `workers-scripts.edit d1.write`):
 
 | Permission | Scope | Why |
 | --- | --- | --- |
@@ -37,8 +39,32 @@ An installation that deploys Workers also requests these:
 | Queues Write | `queues.write` | Create the queues a deployed Worker produces to or consumes from. |
 | Workers Routes Write | `workers-routes.write` | Attach the custom domains a deployed Worker declares. |
 | Workers AI Write | `ai.write` | Bind Workers AI to a deployed Worker that declares it. |
-| Secrets Store Read | `secrets-store.read` | Requested only when you turn on repository secrets. List the Secrets Store secrets you can link to a repository, by name only. |
-| Secrets Store Write | `secrets-store.write` | Requested only when you turn on repository secrets. Create or rotate a secret you enter and bind linked secrets to your deployed Workers. Gitflare never reads a secret's value back. |
+
+The hosted installation also asks for R2, Queues, Routes and Workers AI as part of Deploy.
+
+**Previews** (`CLOUDFLARE_PREVIEWS_SCOPES`, default `workers-scripts.admin d1.write`):
+
+| Permission | Scope | Why |
+| --- | --- | --- |
+| Workers Admin | `workers-scripts.admin` | Create Cloudflare Worker Previews of your Workers for proposals, and deploy them. |
+
+Workers Admin also satisfies every check that asks for Workers Scripts Edit.
+
+**Secrets** (`CLOUDFLARE_SECRETS_SCOPES`):
+
+| Permission | Scope | Why |
+| --- | --- | --- |
+| Secrets Store Read | `secrets-store.read` | List the Secrets Store secrets you can link to a repository, by name only. |
+| Secrets Store Write | `secrets-store.write` | Create or rotate a secret you enter and bind linked secrets to your deployed Workers. Gitflare never reads a secret's value back. |
+
+**Cloudflare Access** (`CLOUDFLARE_ACCESS_SCOPES`, default `zone-access.write zone-access.read`; set it to an empty string to turn Access off):
+
+| Permission | Scope | Why |
+| --- | --- | --- |
+| Access: Apps and Policies Write | `zone-access.write` | Put Cloudflare Access in front of deploy environments when an Owner chooses it. |
+| Access: Apps and Policies Read | `zone-access.read` | Check the Access applications Gitflare created. |
+
+These permissions are zone-level. Gitflare protects a deploy environment's hostnames on one of your zones through that zone's Access applications. workers.dev hostnames, including Worker Preview URLs, are not on a zone, so these permissions cannot protect them.
 
 ## Optional permissions
 
@@ -49,7 +75,6 @@ An installation's operator chooses whether to request these. If they are not req
 | Zone Read | `zone.read` | Gitflare cannot look up a custom domain's zone. Add `zone_id` to that route in the Wrangler configuration yourself. |
 | Workers Scripts Read | `workers-scripts.read` | Linked Worker details beyond names are unavailable. |
 | Workflows Read | `workflows.read` | Workflows do not appear in the resource catalog. |
-| Access: Apps and Policies Write and Read (`zone-access.write`, `zone-access.read`) | set by the operator | Previews cannot be put behind Cloudflare Access; they stay reachable by link only. |
 
 Without the deploy permissions, Gitflare still links resources, shows usage and applies reviewed D1 migrations; deploy and Worker Preview actions explain which permission is missing.
 

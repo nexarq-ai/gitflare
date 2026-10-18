@@ -191,7 +191,7 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
   }));
   server.registerTool('gitflare_manage_cloudflare_connection', {
     title: 'Connect or change the Cloudflare connection', description: 'Change the workspace (or repository_id) Cloudflare connection. connect returns a browser URL and the requested permissions with reasons; select-account and disconnect change it. installation-credential-setup returns a browser URL for the token; -remove deletes a pasted token; installation-connection-use or -remove sets the previews fallback. Needs the Owner role and admin access.',
-    inputSchema: z.object({ action: z.enum(['connect', 'select-account', 'disconnect', 'installation-credential-setup', 'installation-credential-remove', 'installation-connection-use', 'installation-connection-remove']), accountId: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('Cloudflare account ID for select-account, disconnect or installation-connection-use.'), workerName: z.string().regex(/^[a-z0-9][a-z0-9-]{0,52}$/).optional().describe('Previews Worker name for installation-connection-use; defaults to the installation’s configured name.'), repository_id: cloudflareRepository }).strict(), annotations: { ...external, destructiveHint: true },
+    inputSchema: z.object({ action: z.enum(['connect', 'select-account', 'disconnect', 'installation-credential-setup', 'installation-credential-remove', 'installation-connection-use', 'installation-connection-remove']), accountId: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('Cloudflare account ID for select-account, disconnect or installation-connection-use.'), features: z.array(z.enum(['deploy', 'previews', 'secrets', 'access'])).max(4).optional().describe('For connect: features to add permissions for (deploy, previews, secrets, access). Permissions already granted are kept.'), workerName: z.string().regex(/^[a-z0-9][a-z0-9-]{0,52}$/).optional().describe('Previews Worker name for installation-connection-use; defaults to the installation’s configured name.'), repository_id: cloudflareRepository }).strict(), annotations: { ...external, destructiveHint: true },
   }, (input) => guarded(async () => {
     if (input.action === 'installation-connection-use') return call<Record<string, unknown>>('/api/cloudflare/installation-credential/connection', { ...(input.accountId ? { accountId: input.accountId } : {}), ...(input.workerName ? { workerName: input.workerName } : {}) });
     if (input.action === 'installation-connection-remove') return call<Record<string, unknown>>('/api/cloudflare/installation-credential/connection-remove', {});
@@ -202,9 +202,10 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     }
     const base = cloudflareBase(input.repository_id);
     if (input.action === 'connect') {
-      const status = await call<{ permissions?: { docsUrl?: string } }>(base);
+      const features = input.features ? `?features=${input.features.join(',')}` : '';
+      const status = await call<{ permissions?: { docsUrl?: string } }>(`${base}${features}`);
       const permissions = status.permissions ? { ...status.permissions, ...(status.permissions.docsUrl ? { docsUrl: `${origin}${status.permissions.docsUrl}` } : {}) } : undefined;
-      return { browserStartUrl: input.repository_id ? `${origin}/repository/${encodeURIComponent(input.repository_id)}/cloudflare` : `${origin}/settings/cloudflare`, browserAuthorizationRequired: true, ...(permissions ? { permissions } : {}) };
+      return { browserStartUrl: `${input.repository_id ? `${origin}/repository/${encodeURIComponent(input.repository_id)}/cloudflare` : `${origin}/settings/cloudflare`}${features}`, browserAuthorizationRequired: true, ...(permissions ? { permissions } : {}) };
     }
     return call<Record<string, unknown>>(`${base}/${input.action}`, { accountId: input.accountId });
   }));

@@ -18,6 +18,7 @@ export const CLOUDFLARE_PERMISSIONS: Readonly<Record<string, Entry>> = {
   'd1.read': { name: 'D1 Read', group: 'Data', reason: 'List your D1 databases to link them to repositories.' },
   'd1.write': { name: 'D1 Write', group: 'Data', reason: 'Apply D1 migrations an Owner reviewed and confirmed, and create databases a deploy declares.' },
   'workers-scripts.edit': { name: 'Workers Scripts Edit', group: 'Deploys and previews', reason: 'Upload and deploy your Workers and their previews when you land or deploy a change.' },
+  'workers-scripts.admin': { name: 'Workers Admin', group: 'Deploys and previews', reason: 'Create Cloudflare Worker Previews of your Workers for proposals, and deploy them.' },
   'workers-r2.write': { name: 'Workers R2 Storage Write', group: 'Deploys and previews', reason: 'Create the R2 buckets a deployed Worker declares in its Wrangler configuration.' },
   'queues.write': { name: 'Queues Write', group: 'Deploys and previews', reason: 'Create the queues a deployed Worker produces to or consumes from.' },
   'workers-routes.write': { name: 'Workers Routes Write', group: 'Deploys and previews', reason: 'Attach the custom domains a deployed Worker declares.' },
@@ -39,4 +40,48 @@ export function cloudflarePermissionGroups(permissions: CloudflarePermission[]):
   const groups = new Map<CloudflarePermissionGroup, CloudflarePermission[]>();
   for (const permission of permissions) groups.set(permission.group, [...(groups.get(permission.group) ?? []), permission]);
   return [...groups].map(([group, items]) => ({ group, permissions: items }));
+}
+
+export type CloudflareFeature = 'deploy' | 'previews' | 'secrets' | 'access';
+export const CLOUDFLARE_FEATURES: readonly CloudflareFeature[] = ['deploy', 'previews', 'secrets', 'access'];
+export const WORKERS_SCRIPTS_EDIT = 'workers-scripts.edit';
+export const WORKERS_SCRIPTS_ADMIN = 'workers-scripts.admin';
+export interface CloudflareFeatureEnv { CLOUDFLARE_DEPLOY_SCOPES?: string; CLOUDFLARE_PREVIEWS_SCOPES?: string; CLOUDFLARE_SECRETS_SCOPES?: string; CLOUDFLARE_ACCESS_SCOPES?: string }
+export interface CloudflareFeatureState { feature: CloudflareFeature; scopes: string[]; granted: boolean; missing: string[] }
+
+const FEATURE_DEFAULTS: Record<CloudflareFeature, string> = {
+  deploy: 'workers-scripts.edit d1.write',
+  previews: 'workers-scripts.admin d1.write',
+  secrets: 'secrets-store.read secrets-store.write',
+  access: 'zone-access.write zone-access.read',
+};
+const FEATURE_ENV: Record<CloudflareFeature, keyof CloudflareFeatureEnv> = { deploy: 'CLOUDFLARE_DEPLOY_SCOPES', previews: 'CLOUDFLARE_PREVIEWS_SCOPES', secrets: 'CLOUDFLARE_SECRETS_SCOPES', access: 'CLOUDFLARE_ACCESS_SCOPES' };
+const IMPLIED_BY: Record<string, string[]> = { [WORKERS_SCRIPTS_EDIT]: [WORKERS_SCRIPTS_ADMIN] };
+
+function scopeWords(value: string): string[] { return [...new Set(value.split(/\s+/).filter(scope => scope && scope !== 'openid'))]; }
+
+export function featureScopes(env: CloudflareFeatureEnv, feature: CloudflareFeature): string[] {
+  return scopeWords(env[FEATURE_ENV[feature]] ?? FEATURE_DEFAULTS[feature]);
+}
+
+export function hasScope(granted: readonly string[], scope: string): boolean {
+  return granted.includes(scope) || (IMPLIED_BY[scope] ?? []).some(other => granted.includes(other));
+}
+
+export function missingScopes(granted: readonly string[], required: readonly string[]): string[] {
+  return required.filter(scope => !hasScope(granted, scope));
+}
+
+export function featureStates(env: CloudflareFeatureEnv, granted: readonly string[] | null): CloudflareFeatureState[] {
+  return CLOUDFLARE_FEATURES.map(feature => {
+    const scopes = featureScopes(env, feature);
+    const missing = granted ? missingScopes(granted, scopes) : scopes;
+    return { feature, scopes, granted: !!granted && scopes.length > 0 && !missing.length, missing };
+  });
+}
+
+export function parseCloudflareFeatures(value: unknown): CloudflareFeature[] | null | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > CLOUDFLARE_FEATURES.length || value.some(item => !CLOUDFLARE_FEATURES.includes(item as CloudflareFeature))) return null;
+  return [...new Set(value as CloudflareFeature[])];
 }

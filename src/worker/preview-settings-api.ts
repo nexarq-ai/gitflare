@@ -1,11 +1,12 @@
 import { ApiError, assertMutationOrigin, readJson, requireIdempotencyKey } from './domain';
+import { hasScope } from '../shared/cloudflare-permissions';
 import type { AppEnv } from './env';
 import { securityClient, type Principal } from './security';
 import { cloudflareDeployAccess } from './cloudflare';
 import { cloudflareDeployClient, type CloudflareDeployAccess } from './cloudflare-deploy';
 import type { DeployState } from './deployments';
 import type { ProjectSnapshot } from './cloudflare-projects';
-import { ACCESS_SCOPE_MISSING_MESSAGE, accessScopeState, assertAccessScope, ensurePreviewAccess, type PreviewAccessIncludes } from './preview-access';
+import { ACCESS_SCOPE_MISSING_MESSAGE, PREVIEW_ACCESS_ZONE_ONLY, accessMode, accessScopeState, assertAccessScope, ensurePreviewAccess, type PreviewAccessIncludes } from './preview-access';
 import { previewTarget, WORKERS_SCRIPTS_EDIT_SCOPE, type PreviewTarget, type ProjectWorkers } from './preview-host';
 import { effectiveLifetimeMinutes, lifetimeChoices, normalizePreviewSettings, previewMaxLifetimeMinutes, type PreviewSettings } from './preview-settings';
 import type { Fetcher } from './worker-previews';
@@ -50,16 +51,17 @@ export async function previewSettingsSnapshot(env: AppEnv, repositoryId: string,
   const target = await resolvedTarget(settings, deps);
   const connection = await deps.connection(target).catch(() => null);
   const scope = accessScopeState(env, connection?.scopes ?? null);
+  const zoneOnly = accessMode(env) === 'zone';
   return {
     repositoryId, settings, canChange,
     email: { recipients: settings.previewEmailRecipients, blocked: !settings.previewEmailRecipients.length, description: PREVIEW_EMAIL_DESCRIPTION },
     lifetime: { minutes: effectiveLifetimeMinutes(settings, env), choices: lifetimeChoices(env), maxMinutes: previewMaxLifetimeMinutes(env), extendOnce: true },
-    target: target ? { workerName: target.workerName, ...(target.configPath ? { configPath: target.configPath } : {}), ...(connection ? { accountId: connection.accountId, connection: connection.source } : {}), connectionCanPreview: !!connection?.scopes.includes(WORKERS_SCRIPTS_EDIT_SCOPE) } : null,
+    target: target ? { workerName: target.workerName, ...(target.configPath ? { configPath: target.configPath } : {}), ...(connection ? { accountId: connection.accountId, connection: connection.source } : {}), connectionCanPreview: !!connection && hasScope(connection.scopes, WORKERS_SCRIPTS_EDIT_SCOPE) } : null,
     access: {
       mode: settings.access,
       description: PREVIEW_ACCESS_DESCRIPTIONS[settings.access],
       containerDescription: PREVIEW_ACCESS_DESCRIPTIONS.container,
-      cloudflareAccess: { available: scope.granted, ...(scope.granted ? {} : { reason: ACCESS_SCOPE_MISSING_MESSAGE }), requestedScopes: scope.scopes, missingScopes: scope.missing },
+      cloudflareAccess: { available: scope.granted && !zoneOnly, ...(zoneOnly ? { reason: PREVIEW_ACCESS_ZONE_ONLY } : scope.granted ? {} : { reason: ACCESS_SCOPE_MISSING_MESSAGE }), requestedScopes: scope.scopes, missingScopes: scope.missing },
     },
   };
 }
@@ -69,11 +71,12 @@ export async function changePreviewSettings(env: AppEnv, repositoryId: string, k
   const next = normalizePreviewSettings(body, current, env);
   let accessApp: { appId: string; domain: string; accountId: string; workerName: string } | undefined;
   if (next.access === 'cloudflare-access') {
+    if (accessMode(env) === 'zone') throw new ApiError(409, 'CLOUDFLARE_ACCESS_ZONE_ONLY', `${PREVIEW_ACCESS_ZONE_ONLY} Preview access stays unchanged.`);
     const target = await resolvedTarget({ ...current, ...next }, deps);
     if (!target) throw new ApiError(409, 'PREVIEW_TARGET_REQUIRED', 'Cloudflare Access protects the Previews of this repository’s own Worker. Set the preview Worker, a deploy target or a linked Worker first.');
     const connection = await deps.connection(target).catch(() => null);
     assertAccessScope(env, connection?.scopes ?? null);
-    if (!connection!.scopes.includes(WORKERS_SCRIPTS_EDIT_SCOPE)) throw new ApiError(409, 'CLOUDFLARE_SCOPE_MISSING', `The Cloudflare connection was not granted ${WORKERS_SCRIPTS_EDIT_SCOPE}, so previews cannot run on Worker ${target.workerName}. Preview access stays unchanged.`);
+    if (!hasScope(connection!.scopes, WORKERS_SCRIPTS_EDIT_SCOPE)) throw new ApiError(409, 'CLOUDFLARE_SCOPE_MISSING', `The Cloudflare connection was not granted ${WORKERS_SCRIPTS_EDIT_SCOPE}, so previews cannot run on Worker ${target.workerName}. Preview access stays unchanged.`);
     const call = cloudflareDeployClient(connection!, deps.fetcher).call;
     const ensured = await ensurePreviewAccess(call, connection!.accountId, target.workerName, await deps.includes({ ...current, ...next }));
     accessApp = { appId: ensured.appId, domain: ensured.domain, accountId: connection!.accountId, workerName: target.workerName };
