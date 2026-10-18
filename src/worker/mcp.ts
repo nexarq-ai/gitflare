@@ -281,9 +281,9 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     inputSchema: z.object({}).strict(), annotations: readOnly,
   }, () => guarded(async () => call<Record<string, unknown>>('/api/access')));
   server.registerTool('gitflare_list_workspaces', {
-    title: 'List my workspaces', description: 'List every workspace your account belongs to with your role, whether you see only some repositories, and which one this connection uses. This connection stays bound to the workspace you approved; switching is a browser session action. Read-only.',
-    inputSchema: z.object({}).strict(), annotations: readOnly,
-  }, () => guarded(async () => call<Record<string, unknown>>('/api/workspaces')));
+    title: 'List my workspaces', description: 'List every workspace your account belongs to with your role, whether you see only some repositories, and which one this connection uses. With repository_id, list only your workspaces that contain that repository and that you can see. This connection stays bound to the workspace you approved; switching is a browser session action. Read-only.',
+    inputSchema: z.object({ repository_id: z.string().min(1).max(200).optional().describe('Find which of your workspaces holds this repository ID.') }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(input.repository_id ? `/api/workspaces/locate?repository=${encodeURIComponent(input.repository_id)}` : '/api/workspaces')));
   const memberRole = z.enum(['Viewer', 'Contributor', 'Reviewer', 'Maintainer', 'Deployer']).describe('Workspace role. Owner is assigned only with transfer.');
   const accessId = z.string().min(1).max(200);
   const userId = accessId.describe('Member user ID from gitflare_access_status.');
@@ -294,12 +294,15 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     'mfa-enroll': { path: '/account/security', reason: 'Scan the authenticator code under Account → Security.' },
   };
   server.registerTool('gitflare_manage_access', {
-    title: 'Manage workspace access', description: 'Change access with operation.action: invitations to a workspace, a repository or all your workspaces, roles and repository scope, ownership transfer, teams, grants, task credentials, landing protection, sessions, new workspaces, agent claims, verification email. Can remove members and revoke credentials. accept-invite, user-create and mfa-enroll return a browser URL. Tokens show once. Mostly Owner only; admin access.',
+    title: 'Manage workspace access', description: 'Change access with operation.action: invitations to a workspace, repository or all your workspaces (send, resend, withdraw), roles and repository scope, ownership transfer, teams, grants, task credentials, protection, sessions, create, rename or leave a workspace, agent claims, verification email. Can remove members and revoke credentials. Some return a browser URL. Tokens show once. Mostly Owner only; admin access.',
     inputSchema: z.object({ operation: z.discriminatedUnion('action', [
       accessAction('invite', { email: z.string().email().max(254), role: memberRole, scope: z.enum(['workspace', 'repository', 'organization']).optional().describe('workspace (default): this workspace. repository: only repositoryId. organization: every workspace you own now and later.'), repositoryId: accessId.optional().describe('For repository scope: the only repository they will see.') }, 'Invite someone by email. Returns an invitation capability shown once.'),
       accessAction('organization-remove', { userId }, 'Stop adding someone to your future workspaces and remove them from every workspace you own.'),
       accessAction('workspace-create', { name: z.string().min(1).max(100) }, 'Create a workspace you own. People invited to all your workspaces join it.'),
       accessAction('invite-revoke', { id: accessId.describe('Invitation ID.') }, 'Withdraw a pending invitation.'),
+      accessAction('invite-resend', { id: accessId.describe('Invitation ID.') }, 'Send a pending or expired invitation again with a new capability valid for 24 hours; the previous one stops working.'),
+      accessAction('workspace-rename', { name: z.string().min(1).max(100) }, 'Rename this workspace. Owner only.'),
+      accessAction('leave', {}, 'Leave this workspace yourself. Refused for its only Owner and for your only workspace. This connection stops working.'),
       accessAction('accept-invite', {}, 'Returns a browser URL; the invitation capability is entered there.'),
       accessAction('membership', { userId, role: memberRole.nullable().optional().describe('New role, or null to remove the member and revoke their sessions, credentials and grants.'), repositoryIds: z.array(accessId).max(100).nullable().optional().describe('Restrict the member to these repositories; null restores access to all.') }, 'Change a member’s role or repository scope, or remove them.'),
       accessAction('transfer', { userId }, 'Transfer workspace ownership; you become a Maintainer. Needs a sign-in within five minutes.'),

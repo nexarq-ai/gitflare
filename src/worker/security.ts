@@ -68,6 +68,7 @@ function publicValue<T extends { hash: string }>(value: T): Omit<T, 'hash'> { co
 const AUDIT_LIMIT_PER_WORKSPACE = 1000;
 const MAX_DERIVED_SESSION_AGE_MS = 86_400_000;
 const SESSION_MS = 28_800_000;
+const INVITATION_MS = 86_400_000;
 function activeSession(session: Pick<Session, 'revoked' | 'expiresAt' | 'authenticatedAt'>, now: number): boolean {
   return !session.revoked && session.expiresAt > now && (session.authenticatedAt === undefined || session.authenticatedAt <= now && now - session.authenticatedAt < MAX_DERIVED_SESSION_AGE_MS);
 }
@@ -746,6 +747,10 @@ export class WorkspaceStore {
     return this.guarded(() => { const member = this.data.member.get(userId); if (!member) fail(); return { userId, workspaceId: this.workspaceId, role: member.role, sessionId }; });
   }
   async sessionState(id: string): Promise<PublicSession | null> { await this.load(); return this.guarded(() => { const session = this.data.session.get(id); return session ? publicValue(session) : null; }); }
+  async repositoryVisible(userId: string, repositoryId: string, bootstrap = false): Promise<boolean> {
+    await this.load(); if (!this.initialized) return false;
+    return this.guarded(() => { if (bootstrap && this.workspaceId === 'legacy') return true; const member = this.data.member.get(userId); return !!member && (!member.repositoryIds || member.repositoryIds.includes(repositoryId)); });
+  }
   async isMember(userId: string): Promise<boolean> { await this.load(); return this.guarded(() => this.data.member.has(userId)); }
   async validatePrincipal(p: Principal, rules: { account?: boolean; owner?: boolean } = {}): Promise<void> {
     const context = await this.prepare(p);
@@ -955,12 +960,35 @@ export class WorkspaceStore {
         data.session.set(session.id, session); return { token: raw, session: publicValue(session) };
       }
       if (action === 'session-revoke') { const session = data.session.get(String(body.id)); if (!session || session.userId !== p.userId) fail(); session.revoked = true; return { ok: true }; }
+      if (action === 'leave') {
+        if (p.bootstrap) fail('ACCOUNT_REQUIRED', 'Sign in with an account to leave a workspace.');
+        const self = data.member.get(p.userId); if (!self) fail();
+        if (self.role === 'Owner' && ![...data.member.values()].some(item => item.userId !== p.userId && item.role === 'Owner')) fail('LAST_OWNER', 'You are the only Owner. Transfer ownership to another member before leaving this workspace.');
+        for (const invitation of data.invitation.values()) if (invitation.email === context.targetEmail) invitation.accepted = true;
+        data.member.delete(p.userId);
+        for (const c of data.credential.values()) if (c.userId === p.userId) c.revoked = true;
+        for (const [id, g] of data.grant) if (g.subjectType === 'user' && g.subjectId === p.userId) data.grant.delete(id);
+        for (const team of data.team.values()) team.userIds = team.userIds.filter(id => id !== p.userId);
+        return { ok: true, workspaceId };
+      }
       if (p.role !== 'Owner') fail();
       const member = (userId: unknown) => { const found = typeof userId === 'string' ? data.member.get(userId) : undefined; if (!found) throw new ApiError(404, 'MEMBER_NOT_FOUND', 'Select an existing workspace member.'); return found; };
       if (action === 'invite-revoke') { const invitation = data.invitation.get(String(body.id)); if (!invitation || invitation.workspaceId !== workspaceId) fail(); invitation.accepted = true; return { ok: true }; }
+      if (action === 'invite-resend') {
+        const invitation = data.invitation.get(String(body.id));
+        if (!invitation || invitation.workspaceId !== workspaceId) throw new ApiError(404, 'INVITATION_NOT_FOUND', 'Select a pending invitation in this workspace.');
+        if (invitation.accepted) throw new ApiError(409, 'INVITATION_NOT_PENDING', 'This invitation was accepted or withdrawn. Send a new invitation instead.');
+        invitation.hash = hash; invitation.expiresAt = Date.now() + INVITATION_MS;
+        return { token: raw, invitation: publicValue(invitation) };
+      }
+      if (action === 'workspace-rename') {
+        const record = this.record(); if (!record) fail();
+        record.name = requireString(body.name, 'Workspace name', 100);
+        return { workspace: { id: record.id, name: record.name } };
+      }
       if (action === 'invite') {
         const scope = invitationScope(p, body);
-        const invitation: Invitation = { id: crypto.randomUUID(), workspaceId, email: requireString(body.email, 'Email', 254).toLowerCase(), role: role(body.role), hash, expiresAt: Date.now() + 86400000, ...(scope ? { scope } : {}) };
+        const invitation: Invitation = { id: crypto.randomUUID(), workspaceId, email: requireString(body.email, 'Email', 254).toLowerCase(), role: role(body.role), hash, expiresAt: Date.now() + INVITATION_MS, ...(scope ? { scope } : {}) };
         if (invitation.role === 'Owner') fail('TRANSFER_REQUIRED', 'Use ownership transfer to assign the Owner role.');
         if (scope?.kind === 'repository' && invitation.role === 'Deployer') throw new ApiError(400, 'INVALID_SCOPE', 'Deployers act on environments, not one repository. Invite them to the workspace instead.');
         data.invitation.set(invitation.id, invitation);
@@ -1152,7 +1180,7 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
 const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall']);
-const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
+const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
     get: (_target, op) => typeof op !== 'string' || op === 'then' ? undefined : async (...args: unknown[]) => {
@@ -1337,6 +1365,16 @@ export class SecurityService {
     const memberships = await Promise.all(ids.map(id => this.shard(id).membership(p.userId, !!p.bootstrap).catch(() => null)));
     return memberships.flatMap(item => item?.workspace && item.role ? [{ id: item.workspace.id, name: item.workspace.name, role: item.role, repositoryScoped: item.repositoryScoped, current: item.workspace.id === p.workspaceId }] : []);
   }
+  async locateRepository(p: Principal, repositoryId: string, candidates: string[]) {
+    if (p.credentialId) fail();
+    const mine = new Map((await this.workspaces(p)).map(item => [item.id, item]));
+    const found = [];
+    for (const workspaceId of new Set(candidates)) {
+      const workspace = mine.get(workspaceId);
+      if (workspace && await this.shard(workspaceId).repositoryVisible(p.userId, repositoryId, !!p.bootstrap)) found.push(workspace);
+    }
+    return found;
+  }
   async switchWorkspace(p: Principal, workspaceId: string) {
     if (p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to switch workspaces.');
     if (typeof workspaceId !== 'string' || !workspaceId || workspaceId.length > 100) throw new ApiError(400, 'INVALID_WORKSPACE', 'Choose a workspace.');
@@ -1401,6 +1439,16 @@ export class SecurityService {
       await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: `access:${action}` }]);
       return { ok: true };
     }
+    if (action === 'leave') {
+      if (p.credentialId) fail();
+      const remaining = (await this.workspaces(p)).filter(item => !item.current);
+      if (!remaining.length) fail('LAST_WORKSPACE', 'This is your only workspace. Create or join another workspace before leaving this one.');
+      const self = p.bootstrap ? undefined : await this.identity().account(p.userId);
+      const result = await this.shard(p.workspaceId).action(p, action, body, { raw, hash }, { targetEmail: self?.email });
+      await this.identity().removeHint(p.userId, p.workspaceId);
+      return { ...result as object, workspaces: remaining };
+    }
+    if (action === 'invite-resend' && !await this.identity().rateLimit(`invite-resend:${p.workspaceId}:${String(body.id).slice(0, 200)}`, 5, 86_400_000)) throw new ApiError(429, 'RATE_LIMITED', 'This invitation was sent several times today. Try again tomorrow.');
     if (action === 'membership' && body.role === null) {
       const targetId = typeof body.userId === 'string' ? body.userId : '';
       const target = targetId ? await this.identity().account(targetId) : undefined;
@@ -1410,7 +1458,7 @@ export class SecurityService {
       return result;
     }
     const result = await this.shard(p.workspaceId).action(p, action, body, { raw, hash });
-    if (action === 'invite') { const invitation = (result as { invitation: Omit<Invitation, 'hash'> }).invitation; await this.identity().index('invite', hash, { workspaceId: p.workspaceId, expiresAt: invitation.expiresAt }); }
+    if (action === 'invite' || action === 'invite-resend') { const invitation = (result as { invitation: Omit<Invitation, 'hash'> }).invitation; await this.identity().index('invite', hash, { workspaceId: p.workspaceId, expiresAt: invitation.expiresAt }); }
     return result;
   }
   async authConfig() {
@@ -1580,7 +1628,7 @@ export class SecurityService {
   assertLand(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule) { return this.shard(p.workspaceId).assertLand(p, missionId, candidateSha, baseSha, epoch, repositoryId, rule); }
 }
 
-const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'workspaces', 'switchWorkspace', 'createWorkspace', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
+const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'workspaces', 'locateRepository', 'switchWorkspace', 'createWorkspace', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
 export type SecurityEnv = { GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity> } & { [K in keyof SecurityOptions]?: unknown };
 // While a deployment still runs a global instance without the shard protocol, its original methods serve the call
 export function securityClient(env: SecurityEnv): SecurityService {
@@ -1651,6 +1699,7 @@ export class GitflareSecurity extends DurableObject<AppEnv> {
   workspace(p: Principal) { return this.service.workspace(p); }
   snapshot(p: Principal) { return this.service.snapshot(p); }
   workspaces(p: Principal) { return this.service.workspaces(p); }
+  locateRepository(p: Principal, repositoryId: string, candidates: string[]) { return this.service.locateRepository(p, repositoryId, candidates); }
   switchWorkspace(p: Principal, workspaceId: string) { return this.service.switchWorkspace(p, workspaceId); }
   createWorkspace(p: Principal, body: Record<string, unknown>) { return this.service.createWorkspace(p, body); }
   action(p: Principal, action: string, body: Record<string, unknown>) { return this.service.action(p, action, body); }

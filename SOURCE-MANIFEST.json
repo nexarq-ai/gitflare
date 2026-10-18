@@ -915,8 +915,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 91998,
-      "sha256": "d48a147d4b02591df6fa62d7df95ed07ea95ba53304887973689a39af12df306"
+      "size": 93159,
+      "sha256": "087bf1739a86101ce13457f7f1d11e790623da0acc8b129f5ede9a76a2e54bdb"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -930,8 +930,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 109759,
-      "sha256": "a02d6b04e0e4fe6340f91a2a036bd460a4f46e1cb6d77bcceb932ac4a9e003e0"
+      "size": 110557,
+      "sha256": "1b199bd0e5cea4400fcdacfcf5985146c009ffbd423f07dbe2527f6cb62b993a"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -1080,8 +1080,8 @@
     },
     {
       "path": "src/worker/security.ts",
-      "size": 153549,
-      "sha256": "2602f5922a22c14c03e0316e2509aae9c23ed408b75897160d1896318890b5da"
+      "size": 157413,
+      "sha256": "f4b09ff8ade87c028ac811aa5cba420cc339b0ff2f7bf6e3993968f4bf68f3f9"
     },
     {
       "path": "src/worker/skill-edit.ts",
