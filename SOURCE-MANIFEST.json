@@ -51,7 +51,7 @@
     {
       "path": "docs/public/mcp.md",
       "size": 13578,
-      "sha256": "aa48b4ce3b085eaca3b8dd27ce1d3544a68130382cf88a988d5f6b9a574d1905"
+      "sha256": "cb962178cf8e10bf16db925260b69b7e2d4ef11fb1a7337910cff81c9ea31b50"
     },
     {
       "path": "docs/public/overview.md",
@@ -126,7 +126,7 @@
     {
       "path": "README.md",
       "size": 5249,
-      "sha256": "8bdceb8a5b36420f8ca20598fec98c29d65db4d9a6faa2036b309ff8006029cf"
+      "sha256": "ef220bd384426962fbab54c7df69fdbc922bb2db59f069b7c07affa49f72631a"
     },
     {
       "path": "runner/Dockerfile",
@@ -845,8 +845,8 @@
     },
     {
       "path": "src/worker/email/index.ts",
-      "size": 5624,
-      "sha256": "5ef938cd885175f07d49dbbc7ae3e30060330cebad64b35dee23048e8d431488"
+      "size": 5755,
+      "sha256": "ca25e01a6cac8b4b29c23cee0515c4b1894f455c638c9e3865915e39de730150"
     },
     {
       "path": "src/worker/email/layout.ts",
@@ -855,8 +855,8 @@
     },
     {
       "path": "src/worker/email/templates.ts",
-      "size": 4327,
-      "sha256": "d757e682214f2eb5146195232929626786133d77232bd55cbfd07812950c23e6"
+      "size": 6984,
+      "sha256": "63471ebb232f999c2615cf1d3fb9637a82a43187ffce29ead022116985880ca2"
     },
     {
       "path": "src/worker/env.ts",
@@ -915,8 +915,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 90399,
-      "sha256": "7b7700e8d798094030d91c7ea0397ca70a6dfa6c63e7cd75063b3a64ed2e2ee8"
+      "size": 93299,
+      "sha256": "d87fbaabc7c34bc94ab224b6787d60ebddb7f994c2e47d44e1a6afb58c375a8c"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -930,8 +930,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 108522,
-      "sha256": "e430aa2509db530df2ab84967ff255f746506c37ee6c7a8dfb2dbd2d228640c2"
+      "size": 110557,
+      "sha256": "1b199bd0e5cea4400fcdacfcf5985146c009ffbd423f07dbe2527f6cb62b993a"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -1080,8 +1080,8 @@
     },
     {
       "path": "src/worker/security.ts",
-      "size": 143110,
-      "sha256": "e97f062632b26e4ab3d63feec1d03537d3140e9f3b1627da0cb35118d9b7e048"
+      "size": 157735,
+      "sha256": "de43f7dcf8e9a3b6d2f0b05f4f89fd030475a157b190dbdb216c6ea1b1568277"
     },
     {
       "path": "src/worker/skill-edit.ts",

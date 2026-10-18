@@ -1,8 +1,8 @@
 import { absoluteUrl, type EmailContext, type RenderedEmail } from './layout';
-import { invitationEmail, passwordResetEmail, verificationEmail } from './templates';
+import { invitationEmail, passwordResetEmail, verificationEmail, type InvitationEmailScope } from './templates';
 
 export interface InvitationEmailEnv { EMAIL?: SendEmail; EMAIL_FROM?: string; EMAIL_REPLY_TO?: string; EDITION?: string }
-export interface InvitationEmailInput { email: string; token: string; workspaceName: string; origin: string; role?: string }
+export interface InvitationEmailInput { email: string; token: string; workspaceName: string; origin: string; role?: string; scope?: InvitationEmailScope; inviterName?: string }
 export interface AccountEmailInput { email: string; token: string; origin: string }
 export type InvitationDelivery = { status: 'sent'; messageId: string } | { status: 'unconfigured' | 'error'; code: string; message: string };
 export interface EmailSender { email: string; name: string }
@@ -46,7 +46,7 @@ async function deliver(env: InvitationEmailEnv, input: { email: string; token: s
 }
 
 export function deliverInvitation(env: InvitationEmailEnv, input: InvitationEmailInput): Promise<InvitationDelivery> {
-  return deliver(env, input, 'invite#token=', (link, context) => invitationEmail({ email: input.email, workspaceName: input.workspaceName, role: input.role, link }, context), {
+  return deliver(env, input, 'invite#token=', (link, context) => invitationEmail({ email: input.email, workspaceName: input.workspaceName, role: input.role, scope: input.scope, inviterName: input.inviterName, link }, context), {
     unconfigured: 'The invitation is ready. This installation has no email sender configured.',
     prepare: 'The invitation email could not be prepared.',
     origin: 'The invitation link origin is invalid.',
