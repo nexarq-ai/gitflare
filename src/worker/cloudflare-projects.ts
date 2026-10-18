@@ -3,6 +3,7 @@ import type { Principal, Action } from './security';
 import type { Repository, ProjectResource } from '../shared/types';
 import { ApiError } from './domain';
 import { repositoryHead } from './artifacts';
+import { gitflareInfrastructure, isGitflareResource } from '../shared/gitflare-infrastructure';
 
 export interface ProjectMapping {
   repositoryId: string; workspaceId: string; accountId: string; version: string; resources?: ProjectResource[]; workerName?: string; d1DatabaseId?: string; durableObjectNamespaceId?: string; buildTriggerId?: string; updatedAt: string;
@@ -31,6 +32,7 @@ export interface ProjectDependencies {
   authorize(action: Action, type: string, id: string): Promise<void>;
   store(operation: ProjectStoreOperation, payload: Record<string, unknown>): Promise<unknown>;
   source(commitSha: string, path: string): Promise<{ content: string; headSha: string | null }>;
+  installation?: { accountId?: string; primaryWorker?: string; previewsWorker?: string };
 }
 
 function failure(status: number, code: string, message: string): never { throw new ApiError(status, code, message); }
@@ -42,7 +44,7 @@ const checksum = async (text: string) => [...new Uint8Array(await crypto.subtle.
 
 export function projectDependencies(env: AppEnv, principal: Principal, repository: Repository, connection: Pick<ProjectDependencies, 'account' | 'api' | 'analytics'>): ProjectDependencies {
   const access = env.GITFLARE_SECURITY.getByName('security');
-  return { ...connection, authorize: async (action, type, id) => { await access.authorize(principal, action, type, id); }, store: async (operation, payload) => access.projectStore(principal, repository.id, operation, payload), source: async (commitSha, path) => {
+  return { ...connection, installation: { accountId: env.PREVIEWS_ACCOUNT_ID, primaryWorker: env.GITFLARE_PRIMARY_WORKER, previewsWorker: env.PREVIEWS_WORKER_NAME }, authorize: async (action, type, id) => { await access.authorize(principal, action, type, id); }, store: async (operation, payload) => access.projectStore(principal, repository.id, operation, payload), source: async (commitSha, path) => {
     if (!env.ARTIFACTS || repository.provider !== 'artifacts') failure(503, 'REPOSITORY_NOT_CONNECTED', 'A connected Artifacts repository is required.');
     using handle = await env.ARTIFACTS.get(repository.name);
     const file = await handle.readFile({ ref: commitSha, path });
@@ -83,13 +85,15 @@ export async function dispatchCloudflareProject(principal: Principal, repository
     if (!Array.isArray(requested) || requested.length > 100) failure(400, 'INVALID_PROJECT_MAPPING', 'Choose at most 100 resources.');
     const resources: ProjectResource[] = [];
     const seen = new Set<string>();
-    let namespaceCatalog: { id: string; name?: string }[] | undefined;
+    let namespaceCatalog: { id: string; name?: string; script?: string }[] | undefined;
+    const infrastructure = dependencies.installation?.accountId === account.id ? gitflareInfrastructure(dependencies.installation.primaryWorker, dependencies.installation.previewsWorker) : null;
     for (const item of requested) {
       if (!item || typeof item !== 'object' || !['worker','d1','durable_object','container','workflow'].includes(item.type) || typeof item.id !== 'string' || !item.id || item.id.length > 128 || typeof item.name !== 'string' || item.name.length > 200 || typeof item.environment !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(item.environment) || Object.keys(item).some(key => !['type','id','name','environment'].includes(key))) failure(400, 'INVALID_PROJECT_MAPPING', 'Choose valid resources and environment names.');
       const key = `${item.type}:${item.id}`;
       if (seen.has(key)) failure(400, 'DUPLICATE_PROJECT_RESOURCE', 'A resource can be linked only once.');
       seen.add(key);
       let name = item.id;
+      let script: string | undefined;
       if (item.type === 'worker') {
         if (!/^[a-zA-Z0-9_-]{1,63}$/.test(item.id)) failure(400, 'INVALID_WORKER_NAME', 'Invalid Worker name.');
         const settings = await dependencies.api(`/workers/scripts/${item.id}/settings`, { expectedAccountId: account.id });
@@ -105,6 +109,7 @@ export async function dispatchCloudflareProject(principal: Principal, repository
         const namespace = Array.isArray(namespaceCatalog) ? namespaceCatalog.find(value => value.id === item.id) : undefined;
         if (!namespace) failure(404, 'DO_NAMESPACE_NOT_FOUND', 'This namespace was not found in the connected account.');
         name = namespace.name ?? item.id;
+        script = namespace.script;
       } else if (item.type === 'workflow') {
         if (!/^[a-zA-Z0-9_-]{1,64}$/.test(item.id)) failure(400, 'INVALID_WORKFLOW_NAME', 'Invalid Workflow name.');
         const workflow = await dependencies.api(`/workflows/${item.id}`, { expectedAccountId: account.id }) as { name?: string };
@@ -117,6 +122,7 @@ export async function dispatchCloudflareProject(principal: Principal, repository
         name = application.name;
       }
       if (typeof name !== 'string' || !name || name.length > 200) failure(502, 'INVALID_RESOURCE_NAME', 'Cloudflare returned an invalid resource name.');
+      if (infrastructure && isGitflareResource({ type: item.type, id: item.id, name, ...(script ? { script } : {}) }, infrastructure)) failure(403, 'GITFLARE_OWN_RESOURCE', `${name} runs this Gitflare installation and cannot be linked to a repository.`);
       resources.push({ type: item.type, id: item.id, name, environment: item.environment });
     }
     const mapping: ProjectMapping = { repositoryId: repository.id, workspaceId: principal.workspaceId, accountId: account.id, version: crypto.randomUUID(), resources, updatedAt: new Date().toISOString() };

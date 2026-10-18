@@ -5,7 +5,7 @@ import { cloudflareDeployAccess } from './cloudflare';
 import type { CloudflareDeployAccess } from './cloudflare-deploy';
 import { WORKERS_SCRIPTS_EDIT_SCOPE } from './preview-host';
 import { securityClient, type InstallationConnectionRecord, type InstallationCredentialRecord, type Principal } from './security';
-import { probePreviewWorker, workerPreviewsConfig, type Fetcher, type WorkerPreviewsConfig } from './worker-previews';
+import { workerPreviewsConfig, type Fetcher, type WorkerPreviewsConfig } from './worker-previews';
 
 const API_ORIGIN = 'https://api.cloudflare.com/client/v4';
 const CONTEXT = 'installation-cloudflare-credential';
@@ -19,7 +19,7 @@ export const INSTALLATION_CONNECTION_SCOPES = [WORKERS_SCRIPTS_EDIT_SCOPE, D1_WR
 const SCOPE_LABELS: Record<string, string> = { [WORKERS_SCRIPTS_EDIT_SCOPE]: 'Workers Scripts: Edit (workers-scripts.edit)', [D1_WRITE_SCOPE]: 'D1: Write (d1.write)' };
 
 type Account = { id: string; name: string };
-type Outcome = { ok: boolean; status: number; codes: number[]; result: unknown };
+type Outcome = { ok: boolean; status: number; codes: number[]; messages: string[]; result: unknown; call: string };
 export type InstallationCredentialSource = 'connection' | 'installation' | 'environment' | 'none';
 export type InstallationTokenSource = Exclude<InstallationCredentialSource, 'connection'>;
 export interface ConnectionProblem { code: string; message: string }
@@ -74,8 +74,14 @@ async function cloudflare(token: string, path: string, fetcher: Fetcher, init: {
   try {
     response = await fetcher(new Request(`${API_ORIGIN}${path}`, { method: init.method ?? 'GET', headers: { Authorization: `Bearer ${token}`, ...(init.json === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: init.json === undefined ? undefined : JSON.stringify(init.json), redirect: 'manual', signal: AbortSignal.timeout(15_000) }));
   } catch { throw new ApiError(502, 'CLOUDFLARE_UNAVAILABLE', 'Cloudflare could not be reached. Try again.'); }
-  const envelope = await response.json().catch(() => ({})) as { success?: boolean; errors?: { code?: number }[]; result?: unknown };
-  return { ok: response.ok && envelope.success !== false, status: response.status, codes: (envelope.errors ?? []).map((error) => Number(error.code)).filter(Number.isFinite), result: envelope.result };
+  const envelope = await response.json().catch(() => ({})) as { success?: boolean; errors?: { code?: number; message?: unknown }[]; result?: unknown };
+  const errors = envelope.errors ?? [];
+  return { ok: response.ok && envelope.success !== false, status: response.status, codes: errors.map((error) => Number(error.code)).filter(Number.isFinite), messages: errors.map((error) => typeof error.message === 'string' ? error.message.split(token).join('[token]').slice(0, 160) : '').filter(Boolean), result: envelope.result, call: `${init.method ?? 'GET'} ${path.split('?')[0]}` };
+}
+
+export function describeRefusal(outcome: Pick<Outcome, 'call' | 'status' | 'codes' | 'messages'>): string {
+  const detail = outcome.codes.map((code, index) => outcome.messages[index] ? `${code} ${outcome.messages[index]}` : String(code)).join('; ');
+  return `${outcome.call} returned HTTP ${outcome.status}${detail ? ` (${detail})` : ''}`;
 }
 
 const denied = (outcome: Outcome) => outcome.status === 401 || outcome.status === 403;
@@ -88,16 +94,20 @@ function activeToken(outcome: Outcome): boolean {
   return outcome.ok && (outcome.result as { status?: unknown } | undefined)?.status === 'active';
 }
 
-async function ensurePreviewsWorker(token: string, accountId: string, workerName: string, fetcher: Fetcher, missingWorkers: () => ApiError): Promise<boolean> {
+export interface Refusals { list: (outcome: Outcome) => ApiError; create: (outcome: Outcome) => ApiError }
+
+const createByHand = (workerName: string) => `Deploy a Worker named ${workerName} once with Wrangler (workers_dev and preview_urls on) or create it in the Cloudflare dashboard, then try again.`;
+
+async function ensurePreviewsWorker(token: string, accountId: string, workerName: string, fetcher: Fetcher, refused: Refusals): Promise<boolean> {
   const workerPath = `/accounts/${accountId}/workers/workers`;
   const previews = await cloudflare(token, `${workerPath}/${workerName}/previews`, fetcher);
   if (previews.ok) return false;
-  if (denied(previews)) throw missingWorkers();
-  if (!(previews.status === 404 || WORKER_NOT_FOUND.some((code) => previews.codes.includes(code)))) throw new ApiError(502, 'CLOUDFLARE_VERIFY_FAILED', `Cloudflare could not list previews for ${workerName}. Try again.`);
+  if (denied(previews)) throw refused.list(previews);
+  if (!(previews.status === 404 || WORKER_NOT_FOUND.some((code) => previews.codes.includes(code)))) throw new ApiError(502, 'CLOUDFLARE_VERIFY_FAILED', `Cloudflare could not list previews for ${workerName}: ${describeRefusal(previews)}. Try again.`);
   const created = await cloudflare(token, workerPath, fetcher, { method: 'POST', json: { name: workerName, subdomain: { enabled: true, previews_enabled: true } } });
   if (!created.ok) {
-    if (denied(created)) throw missingWorkers();
-    throw new ApiError(502, 'CLOUDFLARE_VERIFY_FAILED', `Cloudflare could not create the previews Worker ${workerName}. Try again.`);
+    if (denied(created)) throw refused.create(created);
+    throw new ApiError(502, 'CLOUDFLARE_VERIFY_FAILED', `The previews Worker ${workerName} does not exist and Cloudflare could not create it: ${describeRefusal(created)}. ${createByHand(workerName)}`);
   }
   return true;
 }
@@ -117,7 +127,10 @@ export async function verifyPreviewsToken(token: string, input: { accountId?: st
   if (!verified) throw new ApiError(400, 'CLOUDFLARE_TOKEN_INVALID', 'Cloudflare did not accept this token as active. Create a new token from the prefilled Cloudflare page and paste it again.');
   if (!accountId) throw new ApiError(400, 'CLOUDFLARE_ACCOUNT_REQUIRED', 'This token cannot see any Cloudflare account. Create it with access to the account that should host previews.');
   if (input.accountId && accountsOutcome.ok && accounts.length && !accounts.some((account) => account.id === accountId)) throw new ApiError(400, 'CLOUDFLARE_ACCOUNT_NOT_GRANTED', `This token does not grant access to account ${accountId}. Create it for that account.`);
-  const createdWorker = await ensurePreviewsWorker(token, accountId, input.workerName, fetcher, () => new ApiError(422, 'CLOUDFLARE_PERMISSION_MISSING', `This token cannot manage Workers on account ${accountId}. Recreate it with Account → Workers Scripts → Edit (the prefilled page includes it).`));
+  const createdWorker = await ensurePreviewsWorker(token, accountId, input.workerName, fetcher, {
+    list: (outcome) => new ApiError(422, 'CLOUDFLARE_PERMISSION_MISSING', `Cloudflare refused this token: ${describeRefusal(outcome)}. Recreate it with Account → Workers Scripts → Edit on account ${accountId} (the prefilled page includes it).`),
+    create: (outcome) => new ApiError(422, 'CLOUDFLARE_PERMISSION_MISSING', `The previews Worker ${input.workerName} does not exist and Cloudflare refused to create it: ${describeRefusal(outcome)}. Recreate the token with Account → Workers Scripts → Edit, or create the Worker yourself. ${createByHand(input.workerName)}`),
+  });
   const d1 = await cloudflare(token, `/accounts/${accountId}/d1/database?per_page=1`, fetcher);
   if (!d1.ok && !denied(d1)) throw new ApiError(502, 'CLOUDFLARE_VERIFY_FAILED', 'Cloudflare could not list D1 databases. Try again.');
   return { accountId, workerName: input.workerName, permissions: d1.ok ? [WORKERS_PERMISSION, D1_PERMISSION] : [WORKERS_PERMISSION], missing: d1.ok ? [] : [D1_PERMISSION], createdWorker };
@@ -170,10 +183,11 @@ async function inspectConnection(env: AppEnv, record: InstallationConnectionReco
   if (missing.length) return { problem: { code: 'CLOUDFLARE_SCOPE_MISSING', message: `The installation workspace’s Cloudflare connection was not granted ${missing.join(' and ')}. An Owner must reconnect Cloudflare and grant it.` }, scopes: access.scopes };
   const config: WorkerPreviewsConfig = { accountId: access.accountId, workerName: record.workerName, token: access.accessToken, connection: 'installation' };
   if (options.probe) {
-    const probe = await probePreviewWorker(config, options.fetcher).catch(() => 'unavailable' as const);
-    if (probe === 'missing') return { problem: { code: 'PREVIEWS_WORKER_MISSING', message: `The previews Worker ${record.workerName} does not exist on account ${record.accountId}. Choose the connection again to create it.` }, scopes: access.scopes };
-    if (probe === 'forbidden') return { problem: { code: 'CLOUDFLARE_CONNECTION_REFUSED', message: `Cloudflare refused the installation workspace’s connection for Worker ${record.workerName}. An Owner must reconnect Cloudflare in Settings → Cloudflare.` }, scopes: access.scopes };
-    if (probe === 'unavailable') return { problem: { code: 'CLOUDFLARE_UNAVAILABLE', message: 'Cloudflare could not be reached to check the previews Worker. Try again.' }, scopes: access.scopes };
+    const probe = await cloudflare(access.accessToken, `/accounts/${access.accountId}/workers/workers/${record.workerName}/previews?per_page=1`, options.fetcher ?? ((request) => fetch(request))).catch(() => null);
+    if (!probe) return { problem: { code: 'CLOUDFLARE_UNAVAILABLE', message: 'Cloudflare could not be reached to check the previews Worker. Try again.' }, scopes: access.scopes };
+    if (!probe.ok && (probe.status === 404 || WORKER_NOT_FOUND.some((code) => probe.codes.includes(code)))) return { problem: { code: 'PREVIEWS_WORKER_MISSING', message: `The previews Worker ${record.workerName} does not exist on account ${record.accountId} (${describeRefusal(probe)}). ${createByHand(record.workerName)}` }, scopes: access.scopes };
+    if (!probe.ok && denied(probe)) return { problem: { code: 'CLOUDFLARE_CONNECTION_REFUSED', message: `Cloudflare refused the connection for the previews Worker ${record.workerName}: ${describeRefusal(probe)}. The connection already has workers-scripts.edit, so reconnecting does not help; use an API token for previews instead.` }, scopes: access.scopes };
+    if (!probe.ok) return { problem: { code: 'CLOUDFLARE_UNAVAILABLE', message: `Cloudflare could not check the previews Worker: ${describeRefusal(probe)}. Try again.` }, scopes: access.scopes };
   }
   return { config, scopes: access.scopes };
 }
@@ -257,7 +271,10 @@ export async function useInstallationConnection(env: AppEnv, p: Principal, body:
   if (wanted && access.accountId !== wanted) throw new ApiError(409, 'CLOUDFLARE_ACCOUNT_MISMATCH', `This workspace’s Cloudflare connection uses account ${access.accountId}. Select account ${wanted} on the connection first.`);
   const missing = INSTALLATION_CONNECTION_SCOPES.filter((scope) => !access.scopes.includes(scope));
   if (missing.length) throw new ApiError(422, 'CLOUDFLARE_SCOPE_MISSING', `This workspace’s Cloudflare connection was not granted ${missing.join(' and ')}. Reconnect Cloudflare and grant it; if Cloudflare does not offer it, the installation must request it through CLOUDFLARE_DEPLOY_SCOPES.`);
-  const createdWorker = await ensurePreviewsWorker(access.accessToken, access.accountId, workerName, fetcher, () => new ApiError(422, 'CLOUDFLARE_PERMISSION_MISSING', `Cloudflare refused this workspace’s connection for Workers on account ${access.accountId}. Reconnect Cloudflare with workers-scripts.edit.`));
+  const createdWorker = await ensurePreviewsWorker(access.accessToken, access.accountId, workerName, fetcher, {
+    list: (outcome) => new ApiError(422, 'CLOUDFLARE_CONNECTION_REFUSED', `Cloudflare refused the connection’s request for the previews Worker ${workerName}: ${describeRefusal(outcome)}. The connection already has workers-scripts.edit, so reconnecting does not help; use an API token for previews instead.`),
+    create: (outcome) => new ApiError(422, 'PREVIEWS_WORKER_NOT_CREATABLE', `The previews Worker ${workerName} does not exist on account ${access.accountId}, and Cloudflare refused to create it with the connection: ${describeRefusal(outcome)}. ${createByHand(workerName)}`),
+  });
   await security(env).changeInstallationConnection(p, {
     version: crypto.randomUUID(), workspaceId: p.workspaceId, accountId: access.accountId, ...(access.accountName ? { accountName: access.accountName } : {}),
     workerName, scopes: access.scopes, verifiedAt: new Date().toISOString(), setBy: p.userId,

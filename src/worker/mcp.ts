@@ -182,10 +182,11 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
   const cloudflareBase = (repository?: string) => repository ? `/api/repositories/${encodeURIComponent(repository)}/cloudflare/connection` : '/api/cloudflare';
   server.registerTool('gitflare_cloudflare_connection', {
     title: 'Read the Cloudflare connection', description: 'Read the workspace (or repository_id) Cloudflare connection: status, the accounts it can reach, or its resources. installation-credential reads the self-hosted previews fallback status. Credentials are never returned. Read-only.',
-    inputSchema: z.object({ action: z.enum(['status', 'accounts', 'resources', 'installation-credential']).default('status'), repository_id: cloudflareRepository }).strict(), annotations: readOnly,
+    inputSchema: z.object({ action: z.enum(['status', 'accounts', 'resources', 'installation-credential']).default('status'), repository_id: cloudflareRepository, include_gitflare: z.boolean().optional().describe('For resources on the account that hosts this installation: also list Gitflare’s own Workers, namespaces, containers and workflows, marked gitflare. They are hidden by default and can never be linked.') }).strict(), annotations: readOnly,
   }, (input) => guarded(async () => {
     if (input.action === 'installation-credential') return call<Record<string, unknown>>('/api/cloudflare/installation-credential');
     const base = cloudflareBase(input.repository_id);
+    if (input.action === 'resources') return call<Record<string, unknown>>(`${base}/resources${input.include_gitflare ? '?includeGitflare=true' : ''}`);
     return call<Record<string, unknown>>(input.action === 'status' && input.repository_id ? base : `${base}/${input.action}`);
   }));
   server.registerTool('gitflare_manage_cloudflare_connection', {
