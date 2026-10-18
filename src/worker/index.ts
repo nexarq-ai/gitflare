@@ -13,6 +13,7 @@ import type { AppEnv } from './env';
 import { executionReadiness } from './execution';
 import { backgroundState, detectRepositorySetup, dispatchBackground, landingWorkflowId, previewWorkflowId, retireWorkerPreview } from './background-work';
 import { backgroundPrincipal, deploymentsApi, deployWorkflowId, type DeployParams } from './deployments';
+import { deployAccessDeps } from './deploy-access-deps';
 import { repositorySecretsApi } from './repository-secrets';
 import { secretsApiContext, secretsBlocker } from './secrets-wiring';
 import type { ProjectSnapshot } from './cloudflare-projects';
@@ -48,6 +49,8 @@ import { handleUrlImport } from './url-import';
 import { githubMirrorApi, triggerMirrorSync } from './github-mirror-runtime';
 import { capabilityHash, mintPreviewToken, PREVIEW_CAPABILITY_MS, previewCapabilityStore, previewTarget, relayPreview } from './preview-capability';
 import { withStoreSecrets } from './store-secrets';
+import { DEMO_WRITE_LIMIT, demoGitRestriction, demoMode, demoRestrictionError, demoRouteRestriction } from './demo';
+import { demoVisitor, handleDemoRoute, runDemoReset } from './demo-runtime';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -91,6 +94,7 @@ function cookieValue(request: Request) { return request.headers.get('Cookie')?.s
 function sessionResponse(result: { token?: string; user?: unknown; workspaceId?: string; mfaRequired?: boolean }, clearLink = false) { const headers = new Headers(); if (clearLink) headers.append('Set-Cookie', `${CLOUDFLARE_LINK_COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`); if (!result.token) return Response.json(result, { headers }); const { token, ...body } = result; headers.append('Set-Cookie', `gitflare_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`); return Response.json({ ok: true, ...body }, { headers }); }
 async function authorize(request: Request, env: AppEnv, bearerOnly = false): Promise<Principal> {
   const authorization = request.headers.get('Authorization'); const bearer = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
+  if (demoMode(env) && !bearer) return demoVisitor(env);
   if (env.EDITION !== 'self-hosted' && !bearerOnly && isLocalRequest(request, env.APP_ENV) && !bearer && !cookieValue(request)) return security(env).bootstrap();
   if (env.EDITION !== 'self-hosted' && bearer && env.OWNER_TOKEN && env.OWNER_TOKEN.length >= 32 && await tokenMatches(bearer, env.OWNER_TOKEN)) {
     const workspace = request.headers.get('X-Gitflare-Workspace'); if (workspace && workspace !== 'legacy') throw new ApiError(403, 'FORBIDDEN', 'The legacy key cannot access other workspaces.'); return security(env).bootstrap();
@@ -228,6 +232,11 @@ async function sourceView(source: SourceHandle, commit: SourceCommit, kind: stri
 async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const local = env.EDITION !== 'self-hosted' && isLocalRequest(request, env.APP_ENV);
+  if (demoMode(env)) {
+    const restricted = demoRouteRestriction(request.method, url.pathname);
+    if (restricted) throw demoRestrictionError(restricted);
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) await security(env).rateLimit(`demo-write:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, DEMO_WRITE_LIMIT.max, DEMO_WRITE_LIMIT.windowMs);
+  }
   if (request.method === 'GET' && url.pathname === '/api/public/docs') return Response.json({ items: listPublicDocs() });
   if (request.method === 'GET' && url.pathname.startsWith('/api/public/docs/diagrams/')) return documentationImage(url.pathname.slice('/api/public/docs/diagrams/'.length));
   if (request.method === 'GET' && url.pathname.startsWith('/api/public/docs/')) {
@@ -445,6 +454,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
       failDispatch: async (record) => { await coordinator.updateDeployment(record.id, ['queued'], { status: 'failed', errorCode: 'DEPLOYMENT_NOT_STARTED', error: 'The deployment could not be scheduled.' }); },
       audit: (action) => access.auditRepositoryChange(principal, action, repository.id),
       secretsBlocker: secretsBlocker(env, repository, coordinator),
+      access: deployAccessDeps(env, principal, repository.id, coordinator),
     });
   }
   const secretsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/secrets(\/catalog)?$/.exec(url.pathname);
@@ -881,7 +891,7 @@ async function hasSession(request: Request, env: AppEnv): Promise<boolean> {
 
 async function entryRedirect(request: Request, env: AppEnv, path: string): Promise<Response | null> {
   if (request.method !== 'GET' || !ENTRY_PATHS.has(path)) return null;
-  const signedIn = await hasSession(request, env);
+  const signedIn = demoMode(env) || await hasSession(request, env);
   const location = signedIn ? (path === '/' && env.EDITION !== 'self-hosted' ? null : '/overview') : env.EDITION === 'self-hosted' && path === '/' ? '/signin' : null;
   return location ? new Response(null, { status: 302, headers: { Location: location, 'Cache-Control': 'no-store' } }) : null;
 }
@@ -890,6 +900,8 @@ const application = {
   async fetch(request: Request, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (path.startsWith('/git/')) {
+      const demoBlocked = demoMode(env) ? demoGitRestriction(request.method, new URL(request.url)) : null;
+      if (demoBlocked) return new Response(`${demoBlocked.message}\n`, { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       try { return (await handleGitRequest(request, gitDependencies(env)))!; }
       catch (error) { console.error(JSON.stringify({ event: 'git_request_failed', name: error instanceof Error ? error.name : typeof error, message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 200), stack: error instanceof Error ? error.stack?.split('\n').slice(1, 6).join(' | ') : undefined })); return new Response('Gitflare could not complete this Git request. Try again shortly.\n', { status: 502, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } }); }
     }
@@ -911,11 +923,12 @@ const application = {
           headers.set('Authorization', request.headers.get('Authorization') ?? '');
           const workspace = request.headers.get('X-Gitflare-Workspace'); if (workspace) headers.set('X-Gitflare-Workspace', workspace);
           return api(new Request(internal, { headers }), env);
-        }, kind => consume(env, kind === 'read' ? 'MCP_READ_RATE_LIMIT' : 'MCP_WRITE_RATE_LIMIT', subject));
+        }, kind => consume(env, kind === 'read' ? 'MCP_READ_RATE_LIMIT' : 'MCP_WRITE_RATE_LIMIT', subject), demoMode(env));
       } else {
         const bearer = request.headers.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
-        const limited = bearer ? await consume(env, 'API_RATE_LIMIT', `token:${await hashToken(bearer)}`) : null;
-        response = limited ? rateLimitedResponse(limited, 'API requests') : await api(request, env, ctx);
+        const limited = bearer ? await consume(env, 'API_RATE_LIMIT', `token:${await hashToken(bearer)}`) : demoMode(env) ? await consume(env, 'API_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`) : null;
+        const demoRoute = limited ? null : await handleDemoRoute(request, env);
+        response = limited ? rateLimitedResponse(limited, 'API requests') : demoRoute ?? await api(request, env, ctx);
       }
     } catch (error) {
       const failure = publicError(error);
@@ -945,5 +958,9 @@ export default {
       }
       return await application.fetch(request, env, ctx);
     } catch (error) { const failure = publicError(error); return Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status, headers: { 'Cache-Control': 'no-store' } }); }
+  },
+  async scheduled(_controller: ScheduledController, workerEnv: AppEnv): Promise<void> {
+    if (!demoMode(workerEnv)) return;
+    await runDemoReset(await withStoreSecrets(workerEnv));
   },
 } satisfies ExportedHandler<AppEnv>;

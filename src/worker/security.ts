@@ -25,7 +25,7 @@ interface Credential { id: string; workspaceId: string; userId: string; name: st
 interface Protection { requiredApprovals: number; requiredChecks: string[]; preventSelfApproval: boolean }
 export interface ReviewRule { requiredApprovals: number; requiredCheckNames: string[]; preventSelfApproval: boolean; restrictLanders: Role[] }
 interface Audit { id: string; workspaceId: string; actorId: string; action: string; timestamp: string; resourceId?: string; sequence?: number }
-export interface SecurityOptions { EDITION?: 'hosted' | 'self-hosted'; SETUP_TOKEN?: string; ADMIN_EMAIL?: string; ADMIN_PASSWORD?: string; AUTH_ENCRYPTION_KEY?: string; INSTALLATION_OWNER_WORKSPACES?: string; SUPER_ADMIN_EMAILS?: string }
+export interface SecurityOptions { EDITION?: 'hosted' | 'self-hosted'; SETUP_TOKEN?: string; ADMIN_EMAIL?: string; ADMIN_PASSWORD?: string; AUTH_ENCRYPTION_KEY?: string; INSTALLATION_OWNER_WORKSPACES?: string; SUPER_ADMIN_EMAILS?: string; DEMO_MODE?: string }
 export interface InstallationCredentialRecord { version: string; encrypted: string; accountId: string; workerName: string; permissions: string[]; missing: string[]; verifiedAt: string; setBy: string }
 export interface InstallationConnectionRecord { version: string; workspaceId: string; accountId: string; accountName?: string; workerName: string; scopes: string[]; verifiedAt: string; setBy: string }
 interface MfaRecord { id: string; encryptedSecret: string; enabled: boolean; lastStep: number; recoveryHashes: string[] }
@@ -43,6 +43,7 @@ export interface ReviewerAccountResult { email: string; userId: string; workspac
 export interface MfaChallengeResult { mfaRequired: true; challengeId: string; expiresAt: number; enrollmentRequired: boolean; secret?: string; otpauthUri?: string }
 interface State { cloudflareConnections: Record<string, CloudflareConnection>; cloudflareStates: Record<string, CloudflareOAuthState>; cloudflareSignins: Record<string, CloudflareSigninState>; cloudflareLinks: Record<string, CloudflareLink>; cloudflareProjects: Record<string, ProjectRecord>; mfa: MfaRecord[]; challenges: AuthChallenge[]; emailTokens: EmailToken[]; loginFailures: Record<string, LoginFailures>; installations: Record<string, Installation>; machines: MachineRegistration[]; users: User[]; members: Member[]; sessions: Session[]; workspaces: WorkspaceRecord[]; invitations: Invitation[]; teams: Team[]; grants: Grant[]; credentials: Credential[]; audit: Audit[]; protections: Record<string, Protection>; approvals: Record<string, string[]>; limits: Record<string, { count: number; until: number }> }
 interface ProjectRecord { mapping: ProjectMapping | null; plans: MigrationPlan[] }
+export interface DemoInstallInput { workspaceId: string; workspaceName: string; users: { id: string; name: string; email: string; role: Role }[]; visitorId: string }
 export interface Principal { userId: string; workspaceId: string; role: Role; sessionId?: string; credentialId?: string; bootstrap?: boolean }
 export interface LegacyWorkspaceSlice { workspace: WorkspaceRecord | null; members: Member[]; sessions: Session[]; teams: Team[]; invitations: Invitation[]; grants: Grant[]; credentials: Credential[]; protection: Protection | null; approvals: Record<string, string[]>; connection: CloudflareConnection | null; cloudflareStates: CloudflareOAuthState[]; projects: Record<string, ProjectRecord>; audit: Audit[] }
 interface IndexEntry { workspaceId: string; expiresAt: number }
@@ -291,6 +292,17 @@ export class IdentityStore {
       const existing = await unit.get<InstallationConnectionRecord>(key.installationConnection) ?? null;
       if (operation === 'put') unit.put(key.installationConnection, value); else unit.delete(key.installationConnection);
       return existing;
+    });
+  }
+  demoInstall(input: { users: { id: string; name: string; email: string }[]; workspaceId: string }) {
+    return this.write(async unit => {
+      for (const account of input.users) {
+        const existing = await this.user(unit, account.id);
+        await this.putUser(unit, { ...existing, id: account.id, name: account.name, email: account.email, salt: existing?.salt ?? token(), hash: existing?.hash ?? token(), emailVerified: true });
+        unit.put(key.hints(account.id), [input.workspaceId]);
+        unit.put(key.mfa(account.id), { id: account.id, encryptedSecret: '', enabled: true, lastStep: -1, recoveryHashes: [] } satisfies MfaRecord);
+      }
+      unit.put(key.installation('self'), { workspaceId: input.workspaceId } satisfies Installation);
     });
   }
   installationWorkspace() { return this.read(async unit => (await unit.get<Installation>(key.installation('self')))?.workspaceId ?? null); }
@@ -1105,7 +1117,7 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
-const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus']);
+const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall']);
 const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
@@ -1236,6 +1248,19 @@ export class SecurityService {
     return { token: value, user: safeUser(linked ?? current), workspaceId, ...(linked ? { cloudflareLinked: true } : {}) };
   }
   async reviewerAccount(operation: ReviewerOperation, body: Record<string, unknown>): Promise<ReviewerAccountResult> { throw new Error('This feature belongs to the hosted edition'); }
+  private assertDemo() { if (this.options.DEMO_MODE !== 'true' || this.options.EDITION !== 'self-hosted') fail('DEMO_ONLY', 'This operation exists only on the self-hosted demo.'); }
+  async demoInstall(input: DemoInstallInput): Promise<void> {
+    this.assertDemo();
+    if (!input.users.some(user => user.id === input.visitorId && user.role === 'Owner')) fail('DEMO_VISITOR_REQUIRED', 'The demo visitor must be an Owner of the demo workspace.');
+    await this.shard(input.workspaceId).initWorkspace({ record: { id: input.workspaceId, name: input.workspaceName, bootstrapDisabled: true }, members: input.users.map(user => ({ userId: user.id, workspaceId: input.workspaceId, role: user.role })), audit: [{ actorId: 'demo-operator', action: 'demo:seed', resourceId: input.workspaceId }] }, true);
+    await this.identity().demoInstall({ users: input.users.map(({ id, name, email }) => ({ id, name, email })), workspaceId: input.workspaceId });
+  }
+  async demoPrincipal(visitorId: string): Promise<Principal> {
+    this.assertDemo();
+    const workspaceId = await this.identity().installationWorkspace();
+    if (!workspaceId) throw new ApiError(503, 'DEMO_NOT_SEEDED', 'The demo is being prepared. Try again in a minute.');
+    return { userId: visitorId, workspaceId, role: 'Owner' };
+  }
   async legacySession() {
     if (this.options.EDITION === 'self-hosted') fail('BOOTSTRAP_DISABLED');
     const value = mintToken('legacy');
@@ -1459,7 +1484,7 @@ export class SecurityService {
   assertLand(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule) { return this.shard(p.workspaceId).assertLand(p, missionId, candidateSha, baseSha, epoch, repositoryId, rule); }
 }
 
-const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand']);
+const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
 export type SecurityEnv = { GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity> } & { [K in keyof SecurityOptions]?: unknown };
 // While a deployment still runs a global instance without the shard protocol, its original methods serve the call
 export function securityClient(env: SecurityEnv): SecurityService {
@@ -1483,8 +1508,12 @@ export class GitflareSecurity extends DurableObject<AppEnv> {
   private service: SecurityService;
   constructor(ctx: DurableObjectState, env: AppEnv) {
     super(ctx, env);
-    const schedule = async () => { const target = Date.now() + 1000; const current = await ctx.storage.getAlarm(); if (current === null || current > target) await ctx.storage.setAlarm(target); };
-    this.service = new SecurityService(ctx.storage, env as AppEnv & SecurityOptions, name => env.GITFLARE_SECURITY.getByName(name) as unknown as SecurityPeer, schedule);
+    this.service = this.createService();
+  }
+  private createService(): SecurityService {
+    const storage = this.ctx.storage;
+    const schedule = async () => { const target = Date.now() + 1000; const current = await storage.getAlarm(); if (current === null || current > target) await storage.setAlarm(target); };
+    return new SecurityService(storage, this.env as AppEnv & SecurityOptions, name => this.env.GITFLARE_SECURITY.getByName(name) as unknown as SecurityPeer, schedule);
   }
   identityCall(op: string, args: unknown[]) { return this.service.identityCall(op, args); }
   shardCall(workspaceId: string, op: string, args: unknown[]) { return this.service.shardCall(workspaceId, op, args); }
@@ -1509,6 +1538,14 @@ export class GitflareSecurity extends DurableObject<AppEnv> {
   cloudflareSigninState(operation: 'put' | 'consume', body: Record<string, unknown>) : never { throw new Error('This feature belongs to the hosted edition'); }
   cloudflareSignin(input: CloudflareSigninInput) : never { throw new Error('This feature belongs to the hosted edition'); }
   legacySession() { return this.service.legacySession(); }
+  demoInstall(input: DemoInstallInput) { return this.service.demoInstall(input); }
+  demoPrincipal(visitorId: string) { return this.service.demoPrincipal(visitorId); }
+  async demoWipe(): Promise<void> {
+    if (this.env.DEMO_MODE !== 'true' || this.env.EDITION !== 'self-hosted') throw new ApiError(404, 'NOT_FOUND', 'This access operation is unavailable.');
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.service = this.createService();
+  }
   bootstrap() { return this.service.bootstrap(); }
   authenticate(value: string, workspaceId?: string) { return this.service.authenticate(value, workspaceId); }
   authorize(p: Principal, action: Action, type?: string, id?: string, missionId?: string) { return this.service.authorize(p, action, type, id, missionId); }

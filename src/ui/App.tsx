@@ -53,6 +53,7 @@ import QuickSearch from "./QuickSearch";
 import InvitationScreen from "./InvitationScreen";
 import AuthScreen, { AccountScreen, isAccountRoute, type AuthConfig } from "./AuthScreen";
 import OwnerTokenNotice from "./OwnerTokenNotice";
+import DemoBanner from "./DemoBanner";
 import { showOwnerTokenNotice } from "./owner-token-notice";
 import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
 import AiSettingsPanel from "./AiSettingsPanel";
@@ -560,6 +561,7 @@ function Workspace() {
         </header>
         {routePending && <RouteProgress />}
         <main className="page-content" id="main-content" tabIndex={-1}>
+          {authConfig.demo && <DemoBanner resetsDaily={authConfig.demo.resetsDaily} />}
           {error && (
             <ErrorNotice message={error} onRetry={() => void refresh()} />
           )}

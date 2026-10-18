@@ -11,6 +11,7 @@ import { DEPLOY_ENVIRONMENTS_MAX, ENVIRONMENT_NAME, orderedEnvironments, PRODUCT
 import { detectedTargets, liveUrls, productionOnlyConfig, setupChanges, type DetectedSetup, type SavedDetection } from './deploy-detect';
 import { assertSecretsAccount, deploySecretRequirements, missingSecretsReason, secretBindingEntries, secretMetadataBindings, unmetRequirements, withSecretBindings, type SecretLink } from './repository-secrets';
 import { SECRETS_STORE_WRITE_SCOPE } from './secrets-scopes';
+import { deployAccessView, manageDeployAccess, type DeployAccessClient, type DeployAccessDeps, type DeployAccessTarget } from './deploy-access';
 
 export { ENVIRONMENT_NAME, orderedEnvironments, PRODUCTION, validEnvironmentName, type DeployEnvironment };
 export const DEPLOY_STEP_MS = 1_800_000;
@@ -659,6 +660,7 @@ export interface DeployApiContext {
   failDispatch(record: DeploymentRecord): Promise<void>;
   audit?(action: string): Promise<void>;
   secretsBlocker?(environment: DeployEnvironment): Promise<string | null>;
+  access?: DeployAccessDeps;
 }
 
 export interface EnvironmentStatus {
@@ -840,6 +842,27 @@ async function applyDetected(body: Record<string, unknown>, context: DeployApiCo
   return Response.json({ settings: publicSettings(await context.ledger.saveDetected(environments, detected)), linked: workers });
 }
 
+function accessTarget(environment: DeployEnvironment, value: DeployEnvironmentSettings | undefined, status: EnvironmentStatus, context: DeployApiContext): DeployAccessTarget {
+  const liveUrls = status.current?.workers.flatMap((worker) => worker.urls) ?? [];
+  const workers = value ? settingsTargets(value).map((target) => target.workerName) : [];
+  return {
+    environment, liveUrls, ...(value ? { settings: value } : {}),
+    ...(context.detectSetup ? { detected: async () => {
+      const own = ((await context.detectSetup!()).environments[environment]?.targets ?? []).filter((target) => workers.includes(target.workerName));
+      return { routes: own.flatMap((target) => target.routes), customDomains: own.flatMap((target) => target.customDomains) };
+    } } : {}),
+  };
+}
+
+async function changeDeployAccess(body: Record<string, unknown>, key: string, context: DeployApiContext): Promise<Response> {
+  if (!context.access) throw new ApiError(503, 'DEPLOY_ACCESS_UNAVAILABLE', 'Cloudflare Access protection of deploy environments is unavailable on this installation.');
+  const environment = parseEnvironment(body.environment);
+  const state = await context.ledger.state();
+  const target = accessTarget(environment, state.settings?.environments[environment], environmentStatus(state.deployments, environment), context);
+  const result = await manageDeployAccess({ principal: context.principal, repositoryName: context.repository.name, key, body, target, deps: context.access, audit: async (action) => { await context.audit?.(action); } });
+  return Response.json(result);
+}
+
 export async function deploymentsApi(request: Request, context: DeployApiContext): Promise<Response> {
   const { principal } = context;
   await context.authorizeRead();
@@ -852,14 +875,19 @@ export async function deploymentsApi(request: Request, context: DeployApiContext
   if (request.method === 'GET') {
     const [state, mapping, connection] = await Promise.all([context.ledger.state(), context.mappedWorkers(), context.connection ? context.connection().catch(() => null) : Promise.resolve(undefined)]);
     const publicValue = publicSettings(state.settings);
-    const names = orderedEnvironments([...Object.keys(state.settings?.environments ?? {}), ...state.deployments.map((item) => item.environment)]);
+    const accessRecords = context.access ? await context.access.store.records().catch(() => []) : [];
+    const names = orderedEnvironments([...Object.keys(state.settings?.environments ?? {}), ...state.deployments.map((item) => item.environment), ...accessRecords.map((record) => record.environment)]);
+    let accessClient: Promise<DeployAccessClient> | undefined;
+    const sharedClient = () => accessClient ??= context.access!.client();
     const environments = Object.fromEntries(await Promise.all(names.map(async (environment) => {
       const value = state.settings?.environments[environment];
       const permitted = value ? (await Promise.all(settingsTargets(value).map((target) => context.canDeploy(target.workerName)))).every(Boolean) : false;
       const secrets = value && context.secretsBlocker ? await context.secretsBlocker(environment).catch(() => null) : null;
       const blocker = (value && connection !== undefined ? deployBlocker(environment, value, connection) : null) ?? (secrets ? { reason: secrets } : null);
       const canDeploy = permitted && !blocker;
-      return [environment, { settings: publicValue?.environments[environment] ?? null, ...environmentStatus(state.deployments, environment), canDeploy, ...(value ? { requiredScopes: environmentScopes(value) } : {}), ...(blocker ? { deployBlockedReason: blocker.reason, ...(blocker.missingScopes ? { missingScopes: blocker.missingScopes } : {}) } : {}), ...(secrets ? { secretsBlockedReason: secrets } : {}), ...(environment === 'production' ? { canConfirm: canDeploy && principal.role === 'Owner' && !principal.credentialId } : {}) }];
+      const status = environmentStatus(state.deployments, environment);
+      const access = context.access ? { access: await deployAccessView(accessRecords.find((record) => record.environment === environment), accessTarget(environment, value, status, context), principal, context.access.scopes, sharedClient) } : {};
+      return [environment, { settings: publicValue?.environments[environment] ?? null, ...status, ...access, canDeploy, ...(value ? { requiredScopes: environmentScopes(value) } : {}), ...(blocker ? { deployBlockedReason: blocker.reason, ...(blocker.missingScopes ? { missingScopes: blocker.missingScopes } : {}) } : {}), ...(secrets ? { secretsBlockedReason: secrets } : {}), ...(environment === 'production' ? { canConfirm: canDeploy && principal.role === 'Owner' && !principal.credentialId } : {}) }];
     })));
     const canDeploy = names.some((environment) => environments[environment].canDeploy);
     const connectionView = connection === undefined ? {} : { connection: connection?.connected ? { connected: true, accountId: connection.accountId, accountName: connection.accountName ?? null, scopes: connection.scopes, source: connection.source } : { connected: false, reason: connection?.reason ?? 'The Cloudflare connection could not be read.' } };
@@ -872,7 +900,8 @@ export async function deploymentsApi(request: Request, context: DeployApiContext
   const action = body.action;
   if (action === 'apply_detected') return applyDetected(body, context);
   if (action === 'settings') return saveEnvironmentSettings(body, context);
-  if (action !== 'deploy' && action !== 'rollback' && action !== 'promote') throw new ApiError(400, 'INVALID_DEPLOY_ACTION', 'Choose settings, apply_detected, deploy, promote or rollback.');
+  if (action === 'access') return changeDeployAccess(body, key, context);
+  if (action !== 'deploy' && action !== 'rollback' && action !== 'promote') throw new ApiError(400, 'INVALID_DEPLOY_ACTION', 'Choose settings, apply_detected, access, deploy, promote or rollback.');
   if (principal.credentialId) throw new ApiError(403, 'DEPLOYER_REQUIRED', 'Task credentials cannot deploy.');
   const state = await context.ledger.state();
   const requireSecrets = async (environment: DeployEnvironment) => {

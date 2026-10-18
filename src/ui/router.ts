@@ -100,7 +100,7 @@ export function onRouteChange(listener: () => void): () => void {
 
 export const PUBLIC_DOC_IDS = ["overview", "install", "admin", "cloudflare-permissions", "repositories", "github-mirror", "mcp", "agents"];
 export const POLICY_ROUTES = ["terms", "privacy", "acceptable-use", "cookies", "security", "support"];
-export const PUBLIC_PRODUCT_ROUTES = ["product", "ai-clients", "open-source", "repositories", "connectors", "connect"];
+export const PUBLIC_PRODUCT_ROUTES = ["product", "ai-clients", "open-source", "repositories", "connectors", "connect", "demo"];
 export const SIGNED_IN_PRODUCT_ROUTES = ["repositories", "connect"];
 const USE_CASE_ROUTE = /^use-cases(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
 
