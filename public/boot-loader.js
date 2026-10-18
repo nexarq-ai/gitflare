@@ -1,21 +1,23 @@
 (() => {
-  const root = document.documentElement;
-  const site = document.querySelector('meta[name="gitflare-site-origin"]')?.content;
-  const app = document.querySelector('meta[name="gitflare-app-origin"]')?.content;
-  let theme = "light";
   try {
-    const stored = localStorage.getItem("gitflare-theme");
-    theme = stored === "dark" || stored === "light" ? stored : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  } catch {
-    theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-  if (site && app && site !== app && location.origin === site) theme = "dark";
-  root.dataset.theme = theme;
-  root.dataset.gfTheme = theme;
-  root.dataset.mode = theme;
-  root.classList.toggle("dark", theme === "dark");
-  root.style.colorScheme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#08090b" : "#ffffff");
+    const root = document.documentElement;
+    const site = document.querySelector?.('meta[name="gitflare-site-origin"]')?.content;
+    const app = document.querySelector?.('meta[name="gitflare-app-origin"]')?.content;
+    let theme = "light";
+    try {
+      const stored = localStorage.getItem("gitflare-theme");
+      theme = stored === "dark" || stored === "light" ? stored : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    } catch {
+      theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    if (site && app && site !== app && location.origin === site) theme = "dark";
+    root.dataset.theme = theme;
+    root.dataset.gfTheme = theme;
+    root.dataset.mode = theme;
+    root.classList?.toggle("dark", theme === "dark");
+    root.style.colorScheme = theme;
+    document.querySelector?.('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#08090b" : "#ffffff");
+  } catch {}
 })();
 
 class GitflareLoadingSignal extends HTMLElement {

@@ -95,8 +95,8 @@
     },
     {
       "path": "public/boot-loader.js",
-      "size": 4193,
-      "sha256": "953a38f59e8491cc23b9a052b563e7619d10f03dc7d52ec1ea70f3b03eb7145c"
+      "size": 4255,
+      "sha256": "c51fae59d45e7db47fc2155404bcbac8417ec4090e76093f13ca3b4befe75b5c"
     },
     {
       "path": "public/favicon.svg",
