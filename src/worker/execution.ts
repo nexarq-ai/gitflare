@@ -7,7 +7,7 @@ import type { CommandResult, GitPermission, PrepareOptions } from '../../runner/
 import { loadRepositorySkillContext } from './repository-skills';
 import { validateRepositorySkillChange } from './skill-edit';
 import { assertPinnedModel, defaultModelConnections, resolveModelConnection, DEFAULT_MODEL, ESCALATION_MODEL } from './model-config';
-import { inferenceMessage, ModelLocationError, ModelResponseError, type InputItem, type ModelEnv, type ModelMessage } from './model-adapter';
+import { inferenceMessage, ModelLocationError, ModelResponseError, ModelTimeoutError, type InputItem, type ModelEnv, type ModelMessage } from './model-adapter';
 export { DEFAULT_MODEL, ESCALATION_MODEL } from './model-config';
 import { classifyPreview, LEGACY_PREVIEW, previewPlan, workerPreviewBuildCommand } from './preview-plan';
 import { containerFallbackNote } from './preview-host';
@@ -218,7 +218,7 @@ const testsTool = { type: 'function', name: 'run_tests', description: 'Run the c
 
 export interface TeamBoard { status(note?: string): Promise<string> }
 export interface AgentWorkspace { install(remainingMs: number): Promise<string>; test(remainingMs: number): Promise<string> }
-export interface AgentLoopOptions { independent?: boolean; starter?: boolean; untested?: boolean; editable?: string[]; policy?: RepositoryPolicy; workspace?: AgentWorkspace; team?: TeamBoard; afterCommand?: () => Promise<void>; maxTurns?: number; onModelCall?: (usage: ModelUsage | undefined) => void }
+export interface AgentLoopOptions { independent?: boolean; starter?: boolean; untested?: boolean; editable?: string[]; policy?: RepositoryPolicy; workspace?: AgentWorkspace; team?: TeamBoard; afterCommand?: () => Promise<void>; maxTurns?: number; onModelCall?: (usage: ModelUsage | undefined) => void; onModelRetry?: (message: string) => Promise<void> }
 
 export function agentLoopPrompt(options: AgentLoopOptions = {}): string {
   const policy = options.policy ?? { editable: options.editable ?? DEFAULT_EDITABLE, starter: !!options.starter, untested: !!options.untested, install: null, testCommand: '' };
@@ -243,7 +243,7 @@ export async function runAgentLoop(env: ExecutionEnv, sandbox: SandboxRunner, pr
   for (let turn = 0; turn < maxTurns; turn++) {
     if (!await isActive()) throw new Error('Mission cancelled');
     let message: ModelMessage;
-    try { message = await modelMessageWithRetry(env, model, messages, deadline, isActive, tools, options.onModelCall, continuing); }
+    try { message = await modelMessageWithRetry(env, model, messages, deadline, isActive, tools, { step: turn + 1, onModelCall: options.onModelCall, onRetry: options.onModelRetry, startExtended: continuing }); }
     catch (error) {
       if (error instanceof ModelResponseError && error.detail.issue === 'max_tokens' && continuations < MAX_OUTPUT_CONTINUATIONS) {
         continuations++;
@@ -339,28 +339,48 @@ export const MAX_OUTPUT_CONTINUATIONS = 4;
 export const OUTPUT_LIMIT_CONTINUATION = 'Your previous response reached the output token limit before it finished, so none of it was applied and no tool ran. Continue from where you were in smaller steps: write a large file with several shell commands of at most about 200 lines each (create it, then append with cat >>), and keep each response short.';
 export const MODEL_RETRY_BACKOFF_MS = 1000;
 
-async function modelMessageWithRetry(env: ExecutionEnv, model: ModelConnection, messages: InputItem[], deadline: number, isActive: () => Promise<boolean>, tools: InputItem[], onModelCall?: (usage: ModelUsage | undefined) => void, startExtended = false): Promise<ModelMessage> {
+interface ModelRetryOptions { step: number; onModelCall?: (usage: ModelUsage | undefined) => void; onRetry?: (message: string) => Promise<void>; startExtended?: boolean }
+export const MIN_MODEL_RETRY_MS = 30_000;
+
+function providerStatus(error: unknown): number {
+  const status = (error as { status?: unknown } | null)?.status;
+  const gatewayStatus = /status (\d{3})\b/.exec(error instanceof Error ? error.message : '')?.[1];
+  return typeof status === 'number' ? status : gatewayStatus ? Number(gatewayStatus) : 0;
+}
+
+function retryNotice(model: ModelConnection, error: unknown, attempt: number): string {
+  const position = `retrying (${attempt}/${MODEL_ATTEMPTS - 1})`;
+  if (error instanceof ModelTimeoutError) return `Model call timed out after ${Math.round(error.timeoutMs / 1000)}s; ${position}`;
+  const status = providerStatus(error);
+  if (status === 529 || (error instanceof ModelResponseError && error.detail.issue === 'overloaded')) return `${model.label} is overloaded; ${position}`;
+  if (status >= 500) return `${model.label} returned HTTP ${status}; ${position}`;
+  return `Model call failed; ${position}`;
+}
+
+async function modelMessageWithRetry(env: ExecutionEnv, model: ModelConnection, messages: InputItem[], deadline: number, isActive: () => Promise<boolean>, tools: InputItem[], options: ModelRetryOptions): Promise<ModelMessage> {
   const limits = OUTPUT_TOKEN_LIMITS[model.protocol] ?? OUTPUT_TOKEN_LIMITS.chat;
-  let maxTokens = startExtended ? limits.extended : limits.initial;
+  let maxTokens = options.startExtended ? limits.extended : limits.initial;
   let responseRetried = false;
   for (let attempt = 1; ; attempt++) {
     if (!await isActive()) throw new Error('Mission cancelled');
     await env.assertModelAllowed?.(model);
     let recorded = false;
-    try { return await inferenceMessage(env, model, messages, tools, remainingAgentBudget(deadline), maxTokens, async (usage) => { recorded = true; onModelCall?.(usage); }); }
+    try { return await inferenceMessage(env, model, messages, tools, remainingAgentBudget(deadline), maxTokens, async (usage) => { recorded = true; options.onModelCall?.(usage); }); }
     catch (error) {
-      if (!recorded) onModelCall?.(undefined);
-      if (error instanceof ModelResponseError) {
+      if (!recorded) options.onModelCall?.(undefined);
+      if (error instanceof ModelTimeoutError) {
+        if (attempt >= MODEL_ATTEMPTS || deadline - Date.now() < MIN_MODEL_RETRY_MS) throw error.atStep(options.step);
+      } else if (error instanceof ModelResponseError) {
         const truncated = error.detail.issue === 'max_tokens' && maxTokens < limits.extended;
         if (responseRetried || attempt >= MODEL_ATTEMPTS || !(error.transient || truncated)) throw error;
         responseRetried = true;
         if (truncated) maxTokens = limits.extended;
         console.warn(JSON.stringify({ event: 'model_response_retry', model: model.id, ...error.detail, maxTokens }));
-      } else {
-        const status = (error as { status?: unknown } | null)?.status;
-        const gatewayStatus = /status (\d{3})\b/.exec(error instanceof Error ? error.message : '')?.[1];
-        const code = typeof status === 'number' ? status : gatewayStatus ? Number(gatewayStatus) : 0;
-        if ([400, 401, 403, 404, 413].includes(code) || attempt === MODEL_ATTEMPTS) throw error;
+      } else if ([400, 401, 403, 404, 413].includes(providerStatus(error)) || attempt === MODEL_ATTEMPTS) throw error;
+      if (!(error instanceof ModelResponseError) || error.detail.issue === 'overloaded') {
+        const notice = retryNotice(model, error, attempt);
+        console.warn(JSON.stringify({ event: 'model_call_retry', model: model.id, step: options.step, attempt, notice }));
+        await options.onRetry?.(notice);
       }
       await new Promise((resolve) => setTimeout(resolve, Math.min(MODEL_RETRY_BACKOFF_MS * 2 ** (attempt - 1), remainingAgentBudget(deadline))));
     }
@@ -1012,6 +1032,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
   });
   const runAgent = async (run: AgentRun) => {
     const key = `gf-${mission.id}-${mission.epoch}-${run.id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    let modelRetries = 0;
     if (modelLocationBlocked) {
       Object.assign(run, { status: 'failed', startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), error: 'Not started: the model provider refused this mission’s Cloudflare locations (see the mission event)' });
       await publish();
@@ -1105,6 +1126,12 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
           total.outputTokens += usage.outputTokens ?? 0;
           total.cacheReadTokens += usage.cacheReadTokens ?? 0;
           total.cacheWriteTokens += usage.cacheWriteTokens ?? 0;
+        },
+        onModelRetry: async (notice) => {
+          modelRetries++;
+          result.events = [...(result.events ?? []), { id: `${key}-model-retry-${modelRetries}`, timestamp: new Date().toISOString(), runId: run.id, type: 'warning', message: `${run.name}: ${notice}` }];
+          run.summary = notice;
+          await publish();
         },
         afterCommand: async () => {
           const files = await touchedFiles(sandbox);

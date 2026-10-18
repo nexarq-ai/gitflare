@@ -61,6 +61,33 @@ function withResponse(error: unknown, detail: ModelFailureDetail): unknown {
   return new ModelResponseError(error.code, `${error.message}${evidence(detail)}`, error.nativeEmptyToolResponse, merged);
 }
 
+export class ModelTimeoutError extends Error {
+  constructor(public readonly modelLabel: string, public readonly timeoutMs: number, public readonly step?: number) {
+    super(step === undefined
+      ? `${modelLabel} did not answer within ${Math.round(timeoutMs / 1000)}s.`
+      : `${modelLabel} did not answer within ${Math.round(timeoutMs / 1000)}s (step ${step}). Retry the agent; Gitflare will resume from its last checkpoint.`);
+    this.name = 'ModelTimeoutError';
+  }
+  atStep(step: number): ModelTimeoutError { return new ModelTimeoutError(this.modelLabel, this.timeoutMs, step); }
+}
+
+export function isTimeoutError(error: unknown): boolean {
+  if (error instanceof ModelTimeoutError) return true;
+  const raw = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  return raw.name === 'TimeoutError' || /operation was aborted due to timeout/i.test(String(raw.message ?? ''));
+}
+
+const LONG_GENERATION_MODEL = /(^|\/)claude-(?:fable|opus)-5(?:[-.]|$)/;
+export const MODEL_CALL_FLOOR_MS = 90_000;
+export const MODEL_CALL_CAP_MS = { long: 300_000, standard: 180_000 } as const;
+const MS_PER_OUTPUT_TOKEN = { long: 25, standard: 15 } as const;
+
+export function modelCallTimeoutMs(model: Pick<ModelConnection, 'id'>, maxTokens: number, remainingMs: number): number {
+  const kind = LONG_GENERATION_MODEL.test(model.id) ? 'long' : 'standard';
+  const scaled = Math.ceil(maxTokens * MS_PER_OUTPUT_TOKEN[kind] / 1000) * 1000;
+  return Math.min(remainingMs, MODEL_CALL_CAP_MS[kind], Math.max(MODEL_CALL_FLOOR_MS, scaled));
+}
+
 export interface ModelFailure {
   operation: 'inference' | 'normalize';
   errorName: 'ModelResponseError' | 'AbortError' | 'TimeoutError' | 'InferenceUpstreamError' | 'AiInternalError' | 'AiGatewayInternalError' | 'Error';
@@ -71,6 +98,7 @@ export interface ModelFailure {
 
 export function classifyModelFailure(error: unknown): ModelFailure {
   if (error instanceof ModelResponseError) return { operation: 'normalize', errorName: 'ModelResponseError', code: error.code };
+  if (error instanceof ModelTimeoutError) return { operation: 'inference', errorName: 'TimeoutError' };
   const raw = error && typeof error === 'object' ? error as Record<string, unknown> : {};
   const knownNames = ['AbortError', 'TimeoutError', 'InferenceUpstreamError', 'AiInternalError', 'AiGatewayInternalError'];
   const errorName = knownNames.includes(String(raw.name)) ? raw.name as ModelFailure['errorName'] : 'Error';
@@ -236,9 +264,8 @@ async function callOutcome(env: ModelEnv, call: ModelCall, model: ModelConnectio
   catch { throw new ModelResponseError('incomplete_response', `AI Gateway returned a truncated or unparsable response body${evidence(detail)}`, false, { ...detail, issue: 'truncated_response' }); }
 }
 
-async function routedInference(env: ModelEnv, model: ModelConnection, parameters: Record<string, unknown>, route: ModelRoute, timeoutMs: number): Promise<{ body: unknown; detail: ModelFailureDetail }> {
+async function routedInference(env: ModelEnv, model: ModelConnection, parameters: Record<string, unknown>, route: ModelRoute, callTimeout: number): Promise<{ body: unknown; detail: ModelFailureDetail }> {
   const request = providerRequest(model, parameters, route);
-  const callTimeout = Math.min(90_000, timeoutMs);
   let call: ModelCall;
   if (route.gateway) {
     const headers = { ...request.headers, ...(route.gateway.token ? { 'cf-aig-authorization': `Bearer ${route.gateway.token}` } : {}) };
@@ -262,26 +289,32 @@ export async function inferenceMessage(env: ModelEnv, model: ModelConnection, in
   else parameters = { messages: model.protocol === 'workers-ai' ? workersAIMessages(input) : chatMessages(input), ...(tools.length ? { tools: tools.map(tool => model.protocol === 'workers-ai' ? { name: tool.name, description: tool.description, parameters: tool.parameters } : { type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } }) } : {}), max_tokens: maxTokens, stream: false };
   let body: unknown;
   let detail: ModelFailureDetail = {};
-  if (route && routed) ({ body, detail } = await routedInference(env, model, parameters, route, timeoutMs));
-  else if (!env.AI || !env.AI_GATEWAY_ID) throw new Error('AI Gateway connection is not configured');
-  else if (model.protocol === 'anthropic' && isSonnet55(model.id)) {
-    if (!env.AI.gateway) throw new Error('AI Gateway connection is not configured');
-    ({ body, detail } = await callOutcome(env, {
-      kind: 'gateway',
-      gatewayId: env.AI_GATEWAY_ID,
-      request: {
-        provider: 'anthropic',
-        endpoint: 'https://api.anthropic.com/v1/messages',
-        headers: { 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json', 'cf-aig-no-wholesale': 'true', ...metadataHeaders },
-        query: { ...parameters, model: nativeModelId(model.id), cache_control: { type: 'ephemeral' } },
-      },
-      extraHeaders: { 'cf-aig-no-wholesale': 'true', ...metadataHeaders },
-      timeoutMs: Math.min(90_000, timeoutMs),
-    }, model));
-  } else if (model.source === 'gateway') {
-    ({ body, detail } = await callOutcome(env, { kind: 'run', gatewayId: env.AI_GATEWAY_ID, model: model.id, input: parameters, ...(metadata ? { metadata } : {}), extraHeaders: { 'cf-aig-no-wholesale': 'true' }, timeoutMs: Math.min(90_000, timeoutMs) }, model));
-  } else {
-    body = await env.AI.run(model.id, parameters, { gateway: { id: env.AI_GATEWAY_ID, ...(metadata ? { metadata } : {}) }, signal: AbortSignal.timeout(Math.min(90_000, timeoutMs)) });
+  const callTimeout = modelCallTimeoutMs(model, maxTokens, timeoutMs);
+  try {
+    if (route && routed) ({ body, detail } = await routedInference(env, model, parameters, route, callTimeout));
+    else if (!env.AI || !env.AI_GATEWAY_ID) throw new Error('AI Gateway connection is not configured');
+    else if (model.protocol === 'anthropic' && isSonnet55(model.id)) {
+      if (!env.AI.gateway) throw new Error('AI Gateway connection is not configured');
+      ({ body, detail } = await callOutcome(env, {
+        kind: 'gateway',
+        gatewayId: env.AI_GATEWAY_ID,
+        request: {
+          provider: 'anthropic',
+          endpoint: 'https://api.anthropic.com/v1/messages',
+          headers: { 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json', 'cf-aig-no-wholesale': 'true', ...metadataHeaders },
+          query: { ...parameters, model: nativeModelId(model.id), cache_control: { type: 'ephemeral' } },
+        },
+        extraHeaders: { 'cf-aig-no-wholesale': 'true', ...metadataHeaders },
+        timeoutMs: callTimeout,
+      }, model));
+    } else if (model.source === 'gateway') {
+      ({ body, detail } = await callOutcome(env, { kind: 'run', gatewayId: env.AI_GATEWAY_ID, model: model.id, input: parameters, ...(metadata ? { metadata } : {}), extraHeaders: { 'cf-aig-no-wholesale': 'true' }, timeoutMs: callTimeout }, model));
+    } else {
+      body = await env.AI.run(model.id, parameters, { gateway: { id: env.AI_GATEWAY_ID, ...(metadata ? { metadata } : {}) }, signal: AbortSignal.timeout(callTimeout) });
+    }
+  } catch (error) {
+    if (isTimeoutError(error)) throw new ModelTimeoutError(model.label, callTimeout);
+    throw error;
   }
   try {
     const message = normalizeModelMessage(body, model.protocol);
