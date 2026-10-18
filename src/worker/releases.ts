@@ -182,9 +182,12 @@ export async function generateReleaseNotes(artifacts: ArtifactsBinding, reposito
     if (index > start && index < end) { end = index; previous = release; }
   }
   const range = commits.slice(start, end), shas = new Set(range.map(commit => commit.hash));
-  const landed = missions.filter(mission => mission.status === 'integrated' && mission.candidateSha && shas.has(mission.candidateSha));
+  const landed = missions.flatMap(mission => {
+    const sha = mission.landedSha ?? mission.candidateSha;
+    return mission.status === 'integrated' && sha && shas.has(sha) ? [{ title: mission.title, sha }] : [];
+  });
   const lines = [`## ${previous ? `Changes since ${previous.tag}` : 'Changes'}`, ''];
-  if (landed.length) lines.push('### Missions', '', ...landed.map(mission => `- ${inline(mission.title)} (\`${mission.candidateSha!.slice(0, 7)}\`)`), '');
+  if (landed.length) lines.push('### Missions', '', ...landed.map(mission => `- ${inline(mission.title)} (\`${mission.sha.slice(0, 7)}\`)`), '');
   lines.push('### Commits', '', ...range.map(commit => `- ${inline(commit.message)} (\`${commit.hash.slice(0, 7)}\`)`));
   const truncated = !previous && commits.length >= RELEASE_HISTORY_LIMIT;
   if (truncated) lines.push('', `_Only the latest ${RELEASE_HISTORY_LIMIT.toLocaleString('en-US')} commits are listed._`);

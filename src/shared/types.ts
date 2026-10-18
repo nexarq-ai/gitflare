@@ -234,13 +234,24 @@ export interface Mission {
   approvedBy?: string;
   dependencyChanges?: ManifestDependencyChanges[];
   dependencyApproval?: DependencyApproval;
+  landingMessage?: LandingMessage;
+  landedSha?: string;
   error?: string;
+}
+
+export interface LandingMessage {
+  message: string;
+  candidateSha: string;
+  baseSha: string;
+  epoch: number;
+  setBy: string;
+  setAt: string;
 }
 
 export type AgentRunSummary = Omit<AgentRun, 'task' | 'modelConfig' | 'skills' | 'skillWarnings' | 'usage'> & { assignment: string };
 export type CheckSummary = Omit<Check, 'output'>;
 
-export interface MissionSummary extends Omit<Mission, 'attachments' | 'authorization' | 'skillChange' | 'raceChecks' | 'raceChanges' | 'runs' | 'checks' | 'changes' | 'events' | 'reviews'> {
+export interface MissionSummary extends Omit<Mission, 'attachments' | 'authorization' | 'landingMessage' | 'skillChange' | 'raceChecks' | 'raceChanges' | 'runs' | 'checks' | 'changes' | 'events' | 'reviews'> {
   runs: AgentRunSummary[];
   checks: CheckSummary[];
   events: MissionEvent[];
