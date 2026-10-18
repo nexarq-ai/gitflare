@@ -70,7 +70,7 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
     try {
       const result = await integrateCandidate(env, {
         repository, mission, integrationAttemptId,
-        beforePush: () => coordinator.claimIntegrationPush(missionId, epoch, claimId),
+        beforePush: (landedSha) => coordinator.claimIntegrationPush(missionId, epoch, claimId, landedSha),
         assertAuthority: async () => {
           await access.check(principal, 'land', 'repository', repositoryId, missionId);
           await access.assertLand(principal, missionId, candidateSha, baseSha, epoch, repositoryId, landingRule(await coordinator.getBranchProtection(), repository.defaultBranch));
@@ -91,27 +91,31 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
   });
   const settled = retrying ? await push('push approved candidate on a fresh runner', `${claimId}-retry`) : first;
   if (settled.kind === 'stale') return;
-  const landed = await step.do('record landing outcome', { retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' }, async () => {
+  const landed: string | boolean | null = await step.do<string | null>('record landing outcome', { retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' }, async () => {
     const repository = await coordinator.getRepository(repositoryId);
     if (!repository || !env.ARTIFACTS) throw new Error('Repository services are unavailable');
     const head = settled.kind === 'pushed' ? settled.sha : await repositoryHead(env.ARTIFACTS, repository.name, repository.defaultBranch).catch(() => null);
+    const claim = settled.kind === 'pushed' ? undefined : await coordinator.integrationClaim();
+    const expected = settled.kind === 'pushed' ? settled.sha : claim?.claimId === claimId && claim.landedSha ? claim.landedSha : candidateSha;
     try {
-      if (head === candidateSha) {
-        await coordinator.completeIntegration(missionId, epoch, candidateSha, claimId);
+      if (head === expected) {
+        await coordinator.completeIntegration(missionId, epoch, expected, claimId);
         const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId));
         const listed = await catalog.getRepository(repositoryId);
-        if (listed) await catalog.saveRepository({ ...listed, headSha: candidateSha, updatedAt: new Date().toISOString() });
-        return true;
+        if (listed) await catalog.saveRepository({ ...listed, headSha: expected, updatedAt: new Date().toISOString() });
+        return expected;
       }
-      const failure = settled.kind === 'failed' ? settled : { outcome: 'unknown' as const, reason: `The default branch did not show pushed commit ${candidateSha.slice(0, 12)}` };
+      const failure = settled.kind === 'failed' ? settled : { outcome: 'unknown' as const, reason: `The default branch did not show pushed commit ${expected.slice(0, 12)}` };
       await coordinator.integrationFailed(missionId, epoch, claimId, failure.outcome, failure.reason);
     } catch (error) { if (!staleExecution(error)) throw error; }
-    return false;
+    return null;
   });
   if (!landed) return;
+  // Workflows started before landed SHAs were recorded replay a cached `true`
+  const landedSha = typeof landed === 'string' ? landed : candidateSha;
   await step.do('retire candidate preview and schedule deployment', { retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' }, async () => {
     await retireMissionPreview(env, repositoryId, missionId, principal.workspaceId);
-    await scheduleLandedDeployment(env, repositoryId, missionId, epoch, candidateSha, baseSha);
+    await scheduleLandedDeployment(env, repositoryId, missionId, epoch, landedSha, baseSha);
     return true;
   });
   await step.do('schedule GitHub mirror sync', { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '1 minute' }, async () => {

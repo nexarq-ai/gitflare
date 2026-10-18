@@ -7,11 +7,12 @@ import type { IssueDetail, IssueList, Mission, MissionAttempt, Release, ReleaseL
 import { RELEASE_NOTES_MAX, RELEASE_REQUEST_MAX_BYTES } from './releases';
 import { ENVIRONMENT_NAME } from './deploy-environments';
 import { SECRET_ACTIONS, SECRET_VALUE_MAX_BYTES } from '../shared/secrets';
-import { ApiError, MISSION_REQUEST_MAX_BYTES, publicError, readJson, repositoryPath, repositoryRef, RETRY_GUIDANCE_MAX } from './domain';
+import { ApiError, COMMIT_MESSAGE_REQUEST_MAX_BYTES, MISSION_REQUEST_MAX_BYTES, publicError, readJson, repositoryPath, repositoryRef, RETRY_GUIDANCE_MAX } from './domain';
 import type { DocMetadata, ProductDoc } from './docs';
 import { ISSUE_BODY_MAX, ISSUE_COMMENT_MAX, ISSUE_REQUEST_MAX_BYTES } from './issues';
 import { mutableSkillPath, SKILL_CONTENT_MAX_BYTES, SKILL_REQUEST_MAX_BYTES } from './skill-edit';
 import { pullRequestState } from '../shared/pull-requests';
+import { activeLandingMessage, COMMIT_MESSAGE_MAX, COMMIT_SUBJECT_MAX } from '../shared/commit-message';
 import { isOutdatedReview } from './proposal-review';
 import { ACCESS_HEADER, ACCESS_LABELS, accessFromHeader, accessScope, allows, type AccessLevel } from './client-access';
 import { URL_IMPORT_LIMITS } from './url-import';
@@ -55,6 +56,7 @@ const mutation = { readOnlyHint: false, destructiveHint: false, idempotentHint: 
 const destructive = { ...mutation, destructiveHint: true };
 const external = { ...mutation, openWorldHint: true };
 const commit = z.string().regex(/^[a-f0-9]{40}$/).describe('Exact 40-character commit SHA observed in current evidence.');
+const commitMessageField = z.string().min(1).max(COMMIT_MESSAGE_MAX).optional().describe(`Commit message for the commit that lands on the default branch: a subject line of at most ${COMMIT_SUBJECT_MAX} characters, optionally a blank line and a body. Control characters are removed and the "Gitflare mission <id>" trailer is kept. The landed commit carries exactly the approved tree; omit to keep the candidate commit as is.`);
 const evidenceInput = { view: z.enum(['summary', 'context', 'runs', 'changes', 'checks', 'events', 'reviews']).default('summary').describe('Evidence to return.'), offset, limit: z.number().int().min(1).max(20).default(5).describe('Items per page.'), detail_offset: offset.describe('Start character within each long text field.'), detail_limit: z.number().int().min(1).max(8000).default(3000).describe('Characters per long text field.') };
 const LAND_TOOLS = new Set(['gitflare_set_check_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
 const ADMIN_TOOLS = new Set(['gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access']);
@@ -99,6 +101,7 @@ function missionSummary(mission: Mission) {
     reviewCount: mission.reviews?.length ?? 0,
     skillChange: mission.skillChange ? { action: mission.skillChange.action, path: mission.skillChange.path, baseSha: mission.skillChange.baseSha } : undefined,
     approvedAt: mission.approvedAt, approvedBy: mission.approvedBy,
+    commitMessage: activeLandingMessage(mission), landedSha: mission.landedSha,
     dependencyChanges: mission.dependencyChanges ?? [], dependencyApproval: mission.dependencyApproval,
     pullRequest: mission.branchChange ? { ...mission.branchChange, description: mission.branchChange.description ? excerpt(mission.branchChange.description, 0, 1600) : undefined, state: pullRequestState(mission) } : undefined,
     review: 'Owner UI and authenticated owner MCP clients share exact-candidate approval and integration checks.',
@@ -130,7 +133,7 @@ function result(value: Record<string, unknown>): CallToolResult {
   return { content: [{ type: 'text', text: serialized }], structuredContent: value };
 }
 
-const MCP_FIELD_NAMES: Record<string, string> = { approveDependencies: 'approve_dependencies' };
+const MCP_FIELD_NAMES: Record<string, string> = { approveDependencies: 'approve_dependencies', commitMessage: 'commit_message' };
 
 async function withMcpFieldNames<T>(operation: Promise<T>): Promise<T> {
   try { return await operation; }
@@ -552,15 +555,15 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
   server.registerTool('gitflare_approve_mission', {
     title: 'Approve an exact checked candidate',
     description: 'Approve the exact checked candidate and base SHAs of a mission. Requires passing checks and an unchanged base; does not land. Inspect diffs and checks first and act only on the user’s instruction. If dependencyChanges is not empty, only an Owner can approve, and approve_dependencies must be true after the user explicitly accepts those package changes. Needs review permission and land access.',
-    inputSchema: z.object({ mission_id: missionId, candidate_sha: commit, base_sha: commit, approve_dependencies: z.boolean().optional().describe('Owner acknowledgement of the candidate’s dependencyChanges. Required when dependencyChanges is not empty.'), idempotency_key: requestKey }).strict(), annotations: mutation,
-  }, (input) => guarded(async () => missionSummary(await withMcpFieldNames(call<Mission>(`/api/missions/${input.mission_id}/approve`, { candidateSha: input.candidate_sha, baseSha: input.base_sha, ...(input.approve_dependencies !== undefined ? { approveDependencies: input.approve_dependencies } : {}) }, input.idempotency_key)))));
+    inputSchema: z.object({ mission_id: missionId, candidate_sha: commit, base_sha: commit, approve_dependencies: z.boolean().optional().describe('Owner acknowledgement of the candidate’s dependencyChanges. Required when dependencyChanges is not empty.'), commit_message: commitMessageField, idempotency_key: requestKey }).strict(), annotations: mutation,
+  }, (input) => guarded(async () => missionSummary(await withMcpFieldNames(call<Mission>(`/api/missions/${input.mission_id}/approve`, { candidateSha: input.candidate_sha, baseSha: input.base_sha, ...(input.approve_dependencies !== undefined ? { approveDependencies: input.approve_dependencies } : {}), ...(input.commit_message !== undefined ? { commitMessage: input.commit_message } : {}) }, input.idempotency_key)))));
   for (const action of ['integrate', 'revoke'] as const) {
     const name = action === 'revoke' ? 'gitflare_revoke_approval' : `gitflare_${action}_mission`;
     server.registerTool(name, {
       title: action === 'integrate' ? 'Integrate an approved candidate' : 'Revoke an exact approval',
       description: action === 'integrate' ? 'Land an approved candidate on the default branch through the protected integration path. Writes the canonical branch and is undone only by a revert; deploys only if deploy on land is enabled. Runs in the background: status integrating means still running; repeat calls never push twice. Needs the exact candidate and base SHAs, a current approval, land permission and land access.' : 'Withdraw approval for the exact candidate and base, returning the mission to review. Not possible while landing or after landing. Needs review permission and land access.',
-      inputSchema: z.object({ mission_id: missionId, candidate_sha: commit, base_sha: commit, idempotency_key: requestKey }).strict(), annotations: destructive,
-    }, (input) => guarded(async () => missionSummary(await withMcpFieldNames(call<Mission>(`/api/missions/${input.mission_id}/${action}`, { candidateSha: input.candidate_sha, baseSha: input.base_sha }, input.idempotency_key)))));
+      inputSchema: z.object({ mission_id: missionId, candidate_sha: commit, base_sha: commit, ...(action === 'integrate' ? { commit_message: commitMessageField } : {}), idempotency_key: requestKey }).strict(), annotations: destructive,
+    }, (input) => guarded(async () => missionSummary(await withMcpFieldNames(call<Mission>(`/api/missions/${input.mission_id}/${action}`, { candidateSha: input.candidate_sha, baseSha: input.base_sha, ...('commit_message' in input && input.commit_message !== undefined ? { commitMessage: input.commit_message } : {}) }, input.idempotency_key)))));
   }
   server.registerTool('gitflare_preview_mission', {
     title: 'Open, extend or stop a candidate preview', description: 'start a preview of the passing candidate in the background; extend a running one once (Owner or Maintainer, land access); stop retires or cancels it. Repeat starts return the running one. Worker projects become a Worker Preview of the repository’s Worker (public to anyone with the link); others run in a members-only container. Previews retire on land or after the lifetime. Needs write access.',
@@ -723,7 +726,8 @@ export async function handleMcp(request: Request, api: McpApi, limiter?: McpLimi
     const archiveImport = parsedBody.method === 'tools/call' && params?.name === 'gitflare_import_repository_archive';
     const issueWrite = parsedBody.method === 'tools/call' && ['gitflare_create_issue', 'gitflare_comment_issue', 'gitflare_update_issue'].includes(String(params?.name));
     const releaseWrite = parsedBody.method === 'tools/call' && ['gitflare_create_release', 'gitflare_update_release'].includes(String(params?.name));
-    const maxBytes = archiveImport ? IMPORT_REQUEST_MAX_BYTES + 1024 : skillEdit ? SKILL_REQUEST_MAX_BYTES : createMission ? MISSION_REQUEST_MAX_BYTES : issueWrite ? ISSUE_REQUEST_MAX_BYTES : releaseWrite ? RELEASE_REQUEST_MAX_BYTES : 16_384;
+    const landingWrite = parsedBody.method === 'tools/call' && ['gitflare_approve_mission', 'gitflare_integrate_mission'].includes(String(params?.name));
+    const maxBytes = archiveImport ? IMPORT_REQUEST_MAX_BYTES + 1024 : skillEdit ? SKILL_REQUEST_MAX_BYTES : createMission ? MISSION_REQUEST_MAX_BYTES : issueWrite ? ISSUE_REQUEST_MAX_BYTES : releaseWrite ? RELEASE_REQUEST_MAX_BYTES : landingWrite ? COMMIT_MESSAGE_REQUEST_MAX_BYTES : 16_384;
     if (new TextEncoder().encode(JSON.stringify(parsedBody)).byteLength > maxBytes) throw new ApiError(413, 'REQUEST_TOO_LARGE', `This MCP request must not exceed ${maxBytes} bytes.`);
     if (parsedBody.method !== 'tools/call') {
       const limited = await limiter?.('read');

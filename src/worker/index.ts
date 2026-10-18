@@ -5,7 +5,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AiSettings, IntegrationStatus, Mission, Repository, Workspace } from '../shared/types';
 import { createArtifactsRepository, repositoryHead } from './artifacts';
 import { assertDependencyApproval } from './dependency-changes';
-import { agentRunIds, ApiError, assertMutationOrigin, findRepositoryByName, isLocalRequest, MISSION_REQUEST_MAX_BYTES, missionInput, publicError, readJson, repositoryName, repositoryPath, repositoryRef, requireIdempotencyKey, requireString, retryGuidance, storageRepositoryName } from './domain';
+import { agentRunIds, ApiError, assertMutationOrigin, COMMIT_MESSAGE_REQUEST_MAX_BYTES, commitMessageInput, findRepositoryByName, isLocalRequest, MISSION_REQUEST_MAX_BYTES, missionInput, publicError, readJson, repositoryName, repositoryPath, repositoryRef, requireIdempotencyKey, requireString, retryGuidance, storageRepositoryName } from './domain';
 import { repositoryLabel } from '../shared/repository-names';
 import { checkSettingsSnapshot, normalizeCheckSettings, retryPlan, samePolicyOverride } from './check-settings';
 import { handlePreviewSettings } from './preview-settings-api';
@@ -662,7 +662,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (request.method !== 'POST') throw new ApiError(404, 'NOT_FOUND', 'This API route could not be found.');
   assertMutationOrigin(request);
   const key = requireIdempotencyKey(request);
-  const body = await readJson(request, repositoryMatch?.[2] === 'import' ? IMPORT_REQUEST_MAX_BYTES : repositoryMatch?.[2] === 'skills' ? SKILL_REQUEST_MAX_BYTES : url.pathname === '/api/missions' ? MISSION_REQUEST_MAX_BYTES : undefined);
+  const body = await readJson(request, repositoryMatch?.[2] === 'import' ? IMPORT_REQUEST_MAX_BYTES : repositoryMatch?.[2] === 'skills' ? SKILL_REQUEST_MAX_BYTES : url.pathname === '/api/missions' ? MISSION_REQUEST_MAX_BYTES : match?.[2] === 'approve' || match?.[2] === 'integrate' ? COMMIT_MESSAGE_REQUEST_MAX_BYTES : undefined);
   if (repositoryMatch?.[2] === 'import') {
     const repository = await catalog.getRepository(repositoryMatch[1]);
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
@@ -904,7 +904,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       const current = await currentRepository(env, repository);
       const models = await coordinatorRead('getModelConnections', () => catalog.getModelConnections());
       const authorization = { principal, workspaceId: principal.workspaceId, creatorId: principal.userId };
-      const draft = await coordinator.createMission(key, { repositoryId: repository.id, expectedBaseSha: current.headSha ?? undefined, title: `Revert: ${mission.title}`.slice(0, 120), prompt: `Undo the change that mission "${mission.title}" landed as commit ${mission.candidateSha}, restoring the files it changed to commit ${mission.baseSha}. Later commits stay in place.`, revertChange: { missionId: mission.id, title: mission.title.slice(0, 120), landedSha: mission.candidateSha, previousSha: mission.baseSha } }, authorization, models);
+      const draft = await coordinator.createMission(key, { repositoryId: repository.id, expectedBaseSha: current.headSha ?? undefined, title: `Revert: ${mission.title}`.slice(0, 120), prompt: `Undo the change that mission "${mission.title}" landed as commit ${mission.landedSha ?? mission.candidateSha}, restoring the files it changed to commit ${mission.baseSha}. Later commits stay in place.`, revertChange: { missionId: mission.id, title: mission.title.slice(0, 120), landedSha: mission.landedSha ?? mission.candidateSha, previousSha: mission.baseSha } }, authorization, models);
       const started = await startWithDurableDispatch(coordinator, `${key.slice(0, 120)}-start`, draft.id, authorization, models);
       return Response.json(started, { status: 202 });
     }
@@ -932,17 +932,19 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const candidateSha = requireString(body.candidateSha, 'Candidate commit', 40, 40);
     const baseSha = requireString(body.baseSha, 'Base commit', 40, 40);
     if (!/^[a-f0-9]{40}$/.test(candidateSha) || !/^[a-f0-9]{40}$/.test(baseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Commit identifiers must be 40 lowercase hexadecimal characters.');
+    if (body.commitMessage !== undefined && match[2] !== 'approve' && match[2] !== 'integrate') throw new ApiError(400, 'INVALID_INPUT', 'commitMessage applies only to approving or landing.');
+    const commitMessage = commitMessageInput(body.commitMessage);
     if (match[2] === 'revoke') { const result = await coordinator.revokeApproval(key, mission.id, candidateSha, baseSha, principal); await coordinator.settleApprovalClears(mission.id, principal); return Response.json(result); }
     const current = await currentRepository(env, repository);
     if (match[2] === 'integrate') {
       if (!env.SANDBOX || !env.ARTIFACTS || !env.MISSION_WORKFLOW) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', 'Connect Artifacts, Sandbox and the Mission Workflow before integrating.');
       const rule = await landingReviewRule(env, repository);
       await access.assertLand(principal, mission.id, candidateSha, baseSha, mission.epoch, repository.id, rule);
-      const claim = await coordinator.beginIntegration(key, mission.id, candidateSha, baseSha);
+      const claim = await coordinator.beginIntegration(key, mission.id, candidateSha, baseSha, commitMessage, principal.userId);
       if (claim.mission.status === 'integrated') return Response.json(claim.mission);
       if (!claim.claimId) throw new ApiError(500, 'INTEGRATION_CLAIM_MISSING', 'The integration claim could not be established.');
       if (!claim.claimed) {
-        if (current.headSha === candidateSha) return Response.json(await coordinator.completeIntegration(mission.id, claim.mission.epoch, candidateSha, claim.claimId));
+        if (current.headSha && current.headSha === (claim.landedSha ?? candidateSha)) return Response.json(await coordinator.completeIntegration(mission.id, claim.mission.epoch, current.headSha, claim.claimId));
         if (await backgroundState(env.MISSION_WORKFLOW, landingWorkflowId(claim.claimId)) === 'running') return Response.json(claim.mission, { status: 202 });
         if (await coordinator.releaseStaleIntegration(mission.id, claim.claimId)) throw new ApiError(409, 'INTEGRATION_RELEASED', 'An earlier landing attempt ended without updating the canonical branch. Its claim was released; retry landing.');
         throw new ApiError(409, 'INTEGRATION_PENDING', integrationPendingMessage(candidateSha));
@@ -960,8 +962,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     await coordinator.settleApprovalClears(mission.id, principal);
     const approval = await access.recordApproval(principal, mission.id, candidateSha, baseSha, mission.epoch, mission.checks, mission.authorization?.creatorId, await landingReviewRule(env, repository));
     if (mission.dependencyChanges?.length) await access.auditRepositoryChange(principal, 'mission.dependencies.approved', mission.id);
-    if (!approval.ready) return Response.json({ ...mission, approval });
-    return Response.json(await coordinator.approveMission(key, mission.id, candidateSha, baseSha, principal.userId, principal.role === 'Owner' && approveDependencies));
+    if (!approval.ready) return Response.json({ ...(commitMessage === undefined ? mission : await coordinator.setLandingMessage(mission.id, candidateSha, baseSha, commitMessage, principal.userId)), approval });
+    return Response.json(await coordinator.approveMission(key, mission.id, candidateSha, baseSha, principal.userId, principal.role === 'Owner' && approveDependencies, commitMessage));
   }
   throw new ApiError(404, 'NOT_FOUND', 'This API route could not be found.');
 }

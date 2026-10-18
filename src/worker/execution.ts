@@ -1,5 +1,6 @@
 import type { AgentRun, BranchChange, Check, CheckPlan, FileChange, ManifestDependencyChanges, Mission, MissionEvent, Repository, RepositorySkillChange, RevertChange, ModelConnection, ModelUsage } from '../shared/types';
 import type { PreviewStep } from '../shared/preview-progress';
+import { activeLandingMessage, withMissionTrailer } from '../shared/commit-message';
 import { branchName } from './branch-protection';
 import { forkRepository, validGitSha, type ArtifactInfo, type ArtifactsBinding } from './artifacts';
 import { failureLine } from './domain';
@@ -1357,7 +1358,7 @@ export function isProtectedCheckFile(path: string): boolean {
 
 export interface IntegrationInput {
   integrationAttemptId?: string;
-  beforePush?: () => Promise<void>;
+  beforePush?: (landedSha: string) => Promise<void>;
   repository: Repository;
   mission: Mission & { integrationForkName?: string };
   assertAuthority?: AuthorityGuard;
@@ -1399,22 +1400,28 @@ export async function integrateCandidate(env: ExecutionEnv, { repository, missio
     phase = 'candidate fetch';
     await clone(sandbox, info, baseSha);
     if (await fetchRef(sandbox, fork.remote, 'refs/heads/gitflare-candidate') !== candidateSha) throw new IntegrationFailure('not_pushed', 'Candidate fork changed after approval');
+    const message = activeLandingMessage(mission);
+    let landedSha = candidateSha;
+    if (message) {
+      phase = 'commit message';
+      landedSha = await recommitWithMessage(sandbox, candidateSha, withMissionTrailer(message, mission.id));
+    }
     phase = 'ancestry verification';
-    await checked(sandbox, ['git', 'merge-base', '--is-ancestor', baseSha, candidateSha]);
+    await checked(sandbox, ['git', 'merge-base', '--is-ancestor', baseSha, landedSha]);
     phase = 'authorization';
     await assertAuthority();
     phase = 'canonical push';
-    await beforePush?.();
+    await beforePush?.(landedSha);
     pushAttempted = true;
-    const push = await sandbox.command(['git', 'push', '--porcelain', `--force-with-lease=refs/heads/${repository.defaultBranch}:${baseSha}`, 'origin', `${candidateSha}:refs/heads/${repository.defaultBranch}`], '/workspace/repo');
+    const push = await sandbox.command(['git', 'push', '--porcelain', `--force-with-lease=refs/heads/${repository.defaultBranch}:${baseSha}`, 'origin', `${landedSha}:refs/heads/${repository.defaultBranch}`], '/workspace/repo');
     phase = 'canonical confirmation';
     const head = (await canonical.log({ ref: repository.defaultBranch, limit: 1 }))[0]?.hash;
-    if (head !== candidateSha) {
+    if (head !== landedSha) {
       const rejected = push.stdout.split('\n').some(line => /^!\t[^\t]+\t\[(?:remote )?rejected\]/.test(line));
       if (push.exitCode !== 0 && rejected) throw new IntegrationFailure('not_pushed', 'The canonical repository rejected the push');
       throw new IntegrationFailure('unknown', 'Canonical head could not be confirmed after integration');
     }
-    return { sha: candidateSha, branch: repository.defaultBranch, integratedAt: new Date().toISOString() };
+    return { sha: landedSha, branch: repository.defaultBranch, integratedAt: new Date().toISOString() };
   } catch (error) {
     if (error instanceof IntegrationFailure) throw error;
     const detail = error instanceof Error && RUNNER_FAILURE.test(error.message) ? `: ${failureLine(error.message)}` : '';
@@ -1423,6 +1430,20 @@ export async function integrateCandidate(env: ExecutionEnv, { repository, missio
     try { await sandbox?.destroy(); }
     catch { console.error('runner.integration.cleanup.failed', mission.id); }
   }
+}
+
+// Identities and dates are copied so a retry on a fresh runner derives the same commit
+export async function recommitWithMessage(sandbox: SandboxRunner, candidateSha: string, message: string): Promise<string> {
+  const tree = await checked(sandbox, ['git', 'rev-parse', `${candidateSha}^{tree}`]);
+  const parents = (await checked(sandbox, ['git', 'show', '-s', '--format=%P', candidateSha])).split(/\s+/).filter(Boolean);
+  const [authorName, authorEmail, authorDate, committerName, committerEmail, committerDate] = (await checked(sandbox, ['git', 'show', '-s', '--date=raw', '--format=%an%x00%ae%x00%ad%x00%cn%x00%ce%x00%cd', candidateSha])).split('\0');
+  const identity = [`GIT_AUTHOR_NAME=${authorName}`, `GIT_AUTHOR_EMAIL=${authorEmail}`, `GIT_AUTHOR_DATE=${authorDate}`, `GIT_COMMITTER_NAME=${committerName}`, `GIT_COMMITTER_EMAIL=${committerEmail}`, `GIT_COMMITTER_DATE=${committerDate}`];
+  const landed = await checked(sandbox, ['env', ...identity, 'git', 'commit-tree', tree, ...parents.flatMap(parent => ['-p', parent]), '-m', message]);
+  if (!validGitSha(landed)) throw new IntegrationFailure('not_pushed', 'The landing commit could not be created');
+  const landedTree = await checked(sandbox, ['git', 'rev-parse', `${landed}^{tree}`]);
+  const landedParents = (await checked(sandbox, ['git', 'show', '-s', '--format=%P', landed])).split(/\s+/).filter(Boolean);
+  if (landedTree !== tree || landedParents.join(' ') !== parents.join(' ')) throw new IntegrationFailure('not_pushed', 'The landing commit does not match the approved tree');
+  return landed;
 }
 
 function containerReason(configuredCommand: string | undefined, workerPreviews: boolean, unavailable: string | undefined): string {

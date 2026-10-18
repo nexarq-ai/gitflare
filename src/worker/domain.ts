@@ -1,4 +1,5 @@
 import { MAX_MISSION_AGENTS } from '../shared/mission-draft';
+import { commitMessageProblem, normalizeCommitMessage, splitCommitMessage } from '../shared/commit-message';
 import { repositoryLabel } from '../shared/repository-names';
 import type { CreateMissionInput, Repository } from '../shared/types';
 import { validateAttachments } from './mission-context';
@@ -212,4 +213,16 @@ export function failureLine(error: string): string {
 
 export function assertReplayFingerprint(stored: string, incoming: string): void {
   if (stored !== incoming) throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'This request key has already been used for a different action.');
+}
+
+export const COMMIT_MESSAGE_REQUEST_MAX_BYTES = 65_536;
+
+export function commitMessageInput(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string') throw new ApiError(400, 'INVALID_INPUT', 'commitMessage must be text.');
+  const { subject, body } = splitCommitMessage(value);
+  const message = normalizeCommitMessage(subject, body);
+  const problem = commitMessageProblem(message);
+  if (problem) throw new ApiError(400, 'INVALID_COMMIT_MESSAGE', problem);
+  return message;
 }
