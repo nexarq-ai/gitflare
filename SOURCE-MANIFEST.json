@@ -510,8 +510,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 62231,
-      "sha256": "f97b11352cfc6b6bfb3f86dfc668128fc2299053caabd1f55280cc213f4cd033"
+      "size": 62987,
+      "sha256": "b46d400d8775318e6e72f940bf0c94e8de5d989d9cd1bf086eb2791992d63b7a"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -705,8 +705,8 @@
     },
     {
       "path": "src/worker/background-work.ts",
-      "size": 27413,
-      "sha256": "8cd8473e2ebdf10801dc164322f6935ae80958c83cf5ba5a29d89e5dde5f0698"
+      "size": 27915,
+      "sha256": "801207418fafdc75f0b9af6d350c7ffb4a17b0a4e58f5b7af3a3b9894581252c"
     },
     {
       "path": "src/worker/branch-protection.ts",
@@ -725,8 +725,8 @@
     },
     {
       "path": "src/worker/capacity.ts",
-      "size": 1472,
-      "sha256": "e7d5fd6c9297240632e0bc2502a72609041ed674fa204b45a6c09c390be64ea7"
+      "size": 1706,
+      "sha256": "af4aab4c0277238fa29e37539d4982cbbebd1a1fef1d62bfa8d728467e2aaecb"
     },
     {
       "path": "src/worker/check-settings.ts",
@@ -760,8 +760,8 @@
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 102902,
-      "sha256": "4322b791a607a7651ff6cbc4508e58c703ea5fba86555e285c4fc793bf4ad95a"
+      "size": 104091,
+      "sha256": "a0edf4564f5837b45a0513adbf7e4c3c5345feb576856e56822843cd5ed65f9b"
     },
     {
       "path": "src/worker/d1-migrations.ts",
@@ -915,8 +915,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 88302,
-      "sha256": "4c0b874e9dd45914dc605fa0f786725d09bf2fc63151936eb7d4268b8f614020"
+      "size": 88913,
+      "sha256": "3133f843edbbcc62d49dcd58d12f90e20c4018200d91fc4bd39c7683663c40ff"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -930,8 +930,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 108015,
-      "sha256": "04918c807517101552a560acdfe5df36419da33706c9aaa578cfa83ed8658c08"
+      "size": 108067,
+      "sha256": "dc449f3d604f05a84dcb2ea0f4e0782419754a6c913efa36f8abc26927fc8b6a"
     },
     {
       "path": "src/worker/mfa.ts",

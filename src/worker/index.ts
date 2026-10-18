@@ -11,7 +11,7 @@ import { checkSettingsSnapshot, normalizeCheckSettings, retryPlan, samePolicyOve
 import { handlePreviewSettings } from './preview-settings-api';
 import type { AppEnv } from './env';
 import { executionReadiness } from './execution';
-import { backgroundState, detectRepositorySetup, dispatchBackground, landingWorkflowId, previewWorkflowId, retireWorkerPreview } from './background-work';
+import { backgroundState, detectRepositorySetup, dispatchBackground, landingWorkflowId, previewWorkflowId, retireMissionPreview } from './background-work';
 import { backgroundPrincipal, deploymentsApi, deployWorkflowId, type DeployParams } from './deployments';
 import { deployAccessDeps } from './deploy-access-deps';
 import { repositorySecretsApi } from './repository-secrets';
@@ -569,7 +569,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     const draft = await coordinator.createMission(key, { repositoryId: repository.id, expectedBaseSha: current.headSha, title, prompt: description ?? `Merge ${branch} into ${repository.defaultBranch}.`, branchChange: { branch, headSha, targetBranch: repository.defaultBranch, ...(description ? { description } : {}) } }, authorization, models);
     return Response.json(await startWithDurableDispatch(coordinator, `${key.slice(0, 120)}-start`, draft.id, authorization, models), { status: 202 });
   }
-  const match = /^\/api\/missions\/([a-zA-Z0-9-]+)(?:\/(start|cancel|approve|revoke|integrate|preview|preview-extend|attempts|review|select|revert|pull|retry-checks|retry-agents|drop-failed-agents|address-review))?$/.exec(url.pathname);
+  const match = /^\/api\/missions\/([a-zA-Z0-9-]+)(?:\/(start|cancel|approve|revoke|integrate|preview|preview-extend|preview-stop|attempts|review|select|revert|pull|retry-checks|retry-agents|drop-failed-agents|address-review))?$/.exec(url.pathname);
   if (request.method === 'GET' && match && !match[2]) { const {mission,repository} = await findMission(env, match[1], principal.workspaceId); await access.authorize(principal, 'read', 'repository', repository.id, mission.id); return Response.json(mission); }
   if (request.method === 'GET' && match?.[2] === 'attempts') {
     const { repository, mission } = await findMission(env, match[1], principal.workspaceId);
@@ -754,10 +754,10 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
       await coordinator.settleApprovalClears(mission.id, principal);
       return Response.json(reviewed);
     }
-    if (match[2] === 'cancel') { const cancelled = await coordinator.cancelMission(key, mission.id); await retireWorkerPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(cancelled); }
+    if (match[2] === 'cancel') { const cancelled = await coordinator.cancelMission(key, mission.id); await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(cancelled); }
     if (match[2] === 'pull') {
       if (!mission.branchChange) throw new ApiError(409, 'NOT_A_PULL_REQUEST', 'This mission is not a pull request.');
-      if (pullAction === 'close') { const closed = await coordinator.pullRequestAction(key, mission.id, 'close', principal.userId, undefined, principal); await coordinator.settleApprovalClears(mission.id, principal); await retireWorkerPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(closed); }
+      if (pullAction === 'close') { const closed = await coordinator.pullRequestAction(key, mission.id, 'close', principal.userId, undefined, principal); await coordinator.settleApprovalClears(mission.id, principal); await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(closed); }
       await access.authorize(principal, 'contribute', 'repository', repository.id, mission.id);
       if (!env.MISSION_WORKFLOW || !executionReadiness(env, 'skill-edit').ready || !env.ARTIFACTS) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', 'Connect the required services before running pull request checks.');
       await currentRepository(env, repository);
@@ -773,6 +773,13 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
       const selected = await coordinator.selectCandidate(key, mission.id, requireString(body.runId, 'Agent run', 100), body.epoch as number, principal.userId, principal);
       await coordinator.settleApprovalClears(mission.id, principal);
       return Response.json(selected);
+    }
+    if (match[2] === 'preview-stop') {
+      const stopped = await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId);
+      if (stopped === 'starting') throw new ApiError(409, 'PREVIEW_STARTING', 'This preview is still starting. Stop it once it is ready or has failed.');
+      if (stopped === 'none') throw new ApiError(409, 'PREVIEW_NOT_RUNNING', 'This mission has no running preview to stop.');
+      await access.auditRepositoryChange(principal, 'mission.preview.stopped', mission.id);
+      return Response.json(await coordinator.previewStatus(mission.id));
     }
     if (match[2] === 'preview-extend') {
       const extension = await coordinator.extendPreview(mission.id);

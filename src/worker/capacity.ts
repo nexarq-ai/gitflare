@@ -10,10 +10,11 @@ export interface CapacitySlot { id: string; expiresAt: number; repositoryId?: st
 
 export function catalogName(workspaceId: string): string { return workspaceId === 'legacy' ? 'catalog:owner' : `catalog:${workspaceId}`; }
 
-export function capacityError(kind: CapacityKind): ApiError {
+export function capacityError(kind: CapacityKind, holders: string[] = []): ApiError {
+  const held = holders.length ? ` They belong to mission${holders.length === 1 ? '' : 's'} ${holders.join(', ')}.` : '';
   return kind === 'mission'
     ? new ApiError(429, 'WORKSPACE_MISSION_LIMIT', `This workspace is already running ${WORKSPACE_MISSION_LIMIT} missions, the most it can run at once (each mission runs up to three agents at a time). Wait for one to finish or cancel it, then start again.`)
-    : new ApiError(429, 'WORKSPACE_PREVIEW_LIMIT', `This workspace already has ${WORKSPACE_PREVIEW_LIMIT} live previews, the most it can keep at once. Wait for one to expire, then try again.`);
+    : new ApiError(429, 'WORKSPACE_PREVIEW_LIMIT', `This workspace already has ${WORKSPACE_PREVIEW_LIMIT} live previews, the most it can keep at once.${held} Stop one (Stop preview on its mission, or gitflare_preview_mission action stop) or wait for it to expire, then try again.`);
 }
 
 export function liveSlots(store: SqlStore, kind: CapacityKind, now = Date.now()): CapacitySlot[] {

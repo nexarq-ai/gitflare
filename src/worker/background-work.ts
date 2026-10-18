@@ -5,7 +5,7 @@ import { repositoryHead } from './artifacts';
 import { landingRule } from './branch-protection';
 import { LANDING_STEP_MS, PREVIEW_STEP_MS } from './budgets';
 import { catalogName } from './capacity';
-import { PREVIEW_HEARTBEAT_MS, type PreviewHost, type WorkerPreviewRecord } from './coordinator';
+import { PREVIEW_HEARTBEAT_MS, type PreviewHost, type StoppedPreview, type WorkerPreviewRecord } from './coordinator';
 import { buildLandedWorker, integrateCandidate, IntegrationFailure, prepareCandidatePreview, PreviewFailure } from './execution';
 import { deleteWorkerPreview, previewAlias, upsertWorkerPreview, WorkerPreviewError, type WorkerPreviewsConfig } from './worker-previews';
 import { resolveWorkerPreviewsConfig } from './installation-credential';
@@ -110,7 +110,7 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
   });
   if (!landed) return;
   await step.do('retire candidate preview and schedule deployment', { retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' }, async () => {
-    await retireWorkerPreview(env, repositoryId, missionId, principal.workspaceId);
+    await retireMissionPreview(env, repositoryId, missionId, principal.workspaceId);
     await scheduleLandedDeployment(env, repositoryId, missionId, epoch, candidateSha, baseSha);
     return true;
   });
@@ -120,11 +120,20 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
   });
 }
 
-export async function retireWorkerPreview(env: AppEnv, repositoryId: string, missionId: string, workspaceId: string): Promise<void> {
-  if (!env.MISSION_WORKFLOW) return;
-  const record = await env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`).retireWorkerPreview(missionId);
-  if (!record) return;
-  if (await dispatchBackground(env.MISSION_WORKFLOW, previewRetireWorkflowId(record.claimId), retireParams(repositoryId, missionId, workspaceId, record)) === 'missing') console.error('preview.retire.dispatch.failed', missionId);
+export async function retireMissionPreview(env: AppEnv, repositoryId: string, missionId: string, workspaceId: string): Promise<StoppedPreview['kind']> {
+  const stopped = await env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`).stopPreview(missionId);
+  const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId));
+  if (stopped.kind === 'container') {
+    await env.SANDBOX?.getByName(stopped.sandboxName).destroy().catch(() => { console.error('preview.stop.sandbox.failed', missionId); });
+    await catalog.releasePreviewSlot(missionId);
+  } else if (stopped.kind === 'worker') {
+    const dispatched = env.MISSION_WORKFLOW ? await dispatchBackground(env.MISSION_WORKFLOW, previewRetireWorkflowId(stopped.record.claimId), retireParams(repositoryId, missionId, workspaceId, stopped.record)) : 'missing';
+    if (dispatched === 'missing') {
+      console.error('preview.retire.dispatch.failed', missionId);
+      await catalog.releasePreviewSlot(missionId);
+    }
+  }
+  return stopped.kind;
 }
 
 function retireParams(repositoryId: string, missionId: string, workspaceId: string, record: WorkerPreviewRecord): PreviewRetireParams {

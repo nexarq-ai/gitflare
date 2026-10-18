@@ -59,6 +59,7 @@ export interface PreviewLifetime { lifetimeMs: number; extendMs: number }
 interface PreviewState { claimId: string; epoch: number; candidateSha: string; phase: 'preparing' | 'ready'; expiresAt: number; sandboxName?: string; worker?: WorkerPreviewInfo; readyAt?: number; extendMs?: number; extended?: boolean }
 export interface WorkerPreviewRecord { previewName: string; claimId: string; expiresAt: number; d1DatabaseIds?: string[]; host?: PreviewHost; principal?: Principal }
 export interface PreviewExtension { expiresAt: number; kind: 'worker' | 'container'; sandboxName?: string }
+export type StoppedPreview = { kind: 'worker'; record: WorkerPreviewRecord } | { kind: 'container'; sandboxName: string } | { kind: 'starting' } | { kind: 'none' };
 export const PREVIEW_LEASE_MS = 120_000;
 export const PREVIEW_HEARTBEAT_MS = 30_000;
 export const PREVIEW_READY_MS = 900_000;
@@ -589,6 +590,26 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
         this.store.delete(`preview-state:${id}`);
       }
       return record;
+    });
+  }
+
+  stopPreview(id: string): StoppedPreview {
+    return this.ctx.storage.transactionSync(() => {
+      const record = this.store.get<WorkerPreviewRecord>(`worker-preview:${id}`);
+      const state = this.store.get<PreviewState>(`preview-state:${id}`);
+      if (record) {
+        this.store.delete(`worker-preview:${id}`);
+        if (state?.worker || state?.claimId === record.claimId) {
+          if (state.phase === 'ready') this.rememberPreview(id, state, state.expiresAt <= Date.now() ? 'expired' : 'retired');
+          this.store.delete(`preview-state:${id}`);
+        }
+        return { kind: 'worker', record };
+      }
+      if (!state) return { kind: 'none' };
+      if (state.phase !== 'ready') return { kind: 'starting' };
+      this.rememberPreview(id, state, state.expiresAt <= Date.now() ? 'expired' : 'retired');
+      this.store.delete(`preview-state:${id}`);
+      return { kind: 'container', sandboxName: state.sandboxName ?? `preview-${id}-${state.claimId}` };
     });
   }
 
@@ -1397,7 +1418,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return this.ctx.storage.transactionSync(() => {
       const slots = liveSlots(this.store, 'preview');
       if (slots.some((slot) => slot.id === missionId)) return false;
-      if (slots.length >= WORKSPACE_PREVIEW_LIMIT) throw capacityError('preview');
+      if (slots.length >= WORKSPACE_PREVIEW_LIMIT) throw capacityError('preview', slots.map((slot) => slot.id));
       this.store.put(slotKey('preview', missionId), { id: missionId, expiresAt } satisfies CapacitySlot);
       return true;
     });
