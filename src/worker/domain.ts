@@ -1,7 +1,8 @@
 import { MAX_MISSION_AGENTS } from '../shared/mission-draft';
 import { commitMessageProblem, normalizeCommitMessage, splitCommitMessage } from '../shared/commit-message';
 import { repositoryLabel } from '../shared/repository-names';
-import type { CreateMissionInput, Repository } from '../shared/types';
+import type { AgentTask, CreateMissionInput, Repository } from '../shared/types';
+import { normalizeAgentOverrides, normalizeEditScope } from './agent-settings';
 import { validateAttachments } from './mission-context';
 import { modelIdentifier } from './model-config';
 
@@ -115,14 +116,26 @@ export function missionInput(body: Record<string, unknown>): CreateMissionInput 
       if (!task || typeof task !== 'object' || Array.isArray(task)) throw new ApiError(400, 'INVALID_TASKS', 'Each task must include a name, role, and task description.');
       const fields = task as Record<string, unknown>;
       if (fields.coordinator !== undefined && typeof fields.coordinator !== 'boolean') throw new ApiError(400, 'INVALID_TASKS', 'coordinator must be true or false.');
-      return { name: requireString(fields.name, 'Agent name', 60), role: requireString(fields.role, 'Agent role', 80), task: requireString(fields.task, 'Agent task', 2500, 10), ...(fields.model === undefined ? {} : { model: modelIdentifier(fields.model) }), ...(fields.coordinator === true ? { coordinator: true } : {}) };
+      return { name: requireString(fields.name, 'Agent name', 60), role: requireString(fields.role, 'Agent role', 80), task: requireString(fields.task, 'Agent task', 2500, 10), ...(fields.model === undefined ? {} : { model: modelIdentifier(fields.model) }), ...(fields.coordinator === true ? { coordinator: true } : {}), ...agentScope(fields) };
     });
     if (new Set(input.tasks.map(task => task.name.toLowerCase())).size !== input.tasks.length) throw new ApiError(400, 'INVALID_TASKS', 'Give each agent a distinct name.');
     const coordinators = input.tasks.filter(task => task.coordinator).length;
     if (coordinators > 1) throw new ApiError(400, 'INVALID_COORDINATOR', 'A mission has at most one coordinator.');
     if (coordinators && (input.mode === 'race' || input.tasks.length < 2)) throw new ApiError(400, 'INVALID_COORDINATOR', 'A coordinator needs combine mode and at least one other agent.');
   }
+  if (body.agentOverrides !== undefined && body.agentOverrides !== null) {
+    if (typeof body.agentOverrides !== 'object' || Array.isArray(body.agentOverrides)) throw new ApiError(400, 'INVALID_AGENT_OVERRIDES', 'agentOverrides must be an object with editScope, runSeconds or maxSteps.');
+    const { editScope, ...limits } = body.agentOverrides as Record<string, unknown>;
+    const scoped = agentScope({ editScope, overrides: limits });
+    if (scoped.editScope || scoped.overrides) input.agentOverrides = { ...scoped.overrides, ...(scoped.editScope ? { editScope: scoped.editScope } : {}) };
+  }
   return input;
+}
+
+function agentScope(fields: Record<string, unknown>): Pick<AgentTask, 'editScope' | 'overrides'> {
+  const editScope = normalizeEditScope(fields.editScope);
+  const overrides = normalizeAgentOverrides(fields.overrides);
+  return { ...(editScope ? { editScope } : {}), ...(overrides ? { overrides } : {}) };
 }
 
 export function requireIdempotencyKey(request: Request): string {

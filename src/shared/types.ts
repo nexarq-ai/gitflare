@@ -86,8 +86,54 @@ export interface AgentRun {
   retryGuidance?: string;
   collision?: { files: string[]; epoch: number };
   coordinator?: boolean;
+  editScope?: string[];
+  overrides?: AgentOverrides;
+  limits?: AgentLimits;
+  autoRetried?: boolean;
   startFrom?: { reason: 'collision' | 'review' | 'retry' | 'coordinator'; files?: string[]; previousError?: string; candidates: { runId: string; name: string; forkName: string; commitSha: string }[] };
 }
+
+export interface AgentLimits {
+  modelAnswerSeconds: number | null;
+  modelRetries: number;
+  maxSteps: number;
+  runSeconds: number;
+  autoRetry: boolean;
+}
+
+export interface AgentOverrides {
+  runSeconds?: number;
+  maxSteps?: number;
+  modelAnswerSeconds?: number;
+}
+
+export interface AgentSettings {
+  modelAnswerSeconds?: number;
+  modelRetries?: number;
+  maxSteps?: number;
+  runSeconds?: number;
+  autoRetry?: boolean;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface AgentSettingsBounds {
+  modelAnswerSeconds: { min: number; max: number };
+  modelRetries: { min: number; max: number };
+  maxSteps: { min: number; max: number };
+  runSeconds: { min: number; max: number };
+  editScope: { maxEntries: number; maxLength: number };
+}
+
+export interface RepositoryAgentSettings {
+  repositoryId: string;
+  settings: AgentSettings;
+  effective: AgentLimits;
+  defaults: AgentLimits;
+  bounds: AgentSettingsBounds;
+}
+
+export interface AgentRetryOverride extends AgentOverrides { model?: string }
 
 export type RunnerSize = 'standard-1' | 'standard-2' | 'standard-3' | 'standard-4';
 export type CheckLimitSource = 'owner' | 'gitflare.json' | 'repository' | 'learned' | 'auto' | 'default';
@@ -298,7 +344,7 @@ export interface WorkspaceCloudflare { connected: boolean; accounts: WorkspaceCl
 
 export interface AiSettings { enabled: boolean; locked: boolean }
 
-export interface AgentTask { name: string; role: string; task: string; model?: string; coordinator?: boolean }
+export interface AgentTask { name: string; role: string; task: string; model?: string; coordinator?: boolean; editScope?: string[]; overrides?: AgentOverrides }
 export interface RevertChange { missionId: string; title: string; landedSha: string; previousSha: string }
 export interface BranchChange { branch: string; headSha: string; targetBranch: string; description?: string; closedAt?: string; closedBy?: string }
 export type PullRequestState = 'open' | 'needs_review' | 'approved' | 'landed' | 'closed';
@@ -311,7 +357,7 @@ export interface BranchChangeResult { name: string; headSha: string; created?: t
 export interface BranchList { repositoryId: string; defaultBranch: string; gitUrl: string; branches: BranchInfo[] }
 export interface CreatePullRequestInput { title: string; description?: string; branch: string }
 export interface RepositorySkillChange { action: 'create' | 'update'; path: string; content: string; baseSha: string }
-export interface CreateMissionInput { attachments?: MissionAttachment[]; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode }
+export interface CreateMissionInput { attachments?: MissionAttachment[]; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
 export interface CreateRepositoryInput { name: string; description?: string }
 export interface ApproveMissionInput { candidateSha: string; baseSha: string }
 export interface ApiError { error: { code: string; message: string } }

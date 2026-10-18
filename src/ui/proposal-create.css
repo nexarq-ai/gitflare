@@ -141,3 +141,7 @@
 @media (max-width: 760px) { .proposal-max-agents { width: auto; } }
 .proposal-plan:focus { outline: none; }
 .proposal-plan-criteria ul { list-style: disc; }
+.proposal-advanced, .proposal-agent-limits { margin-top: 12px; }
+.proposal-advanced summary, .proposal-agent-limits summary { cursor: pointer; font-size: 13px; font-weight: 550; margin-bottom: 8px; }
+.proposal-limit-fields textarea, .proposal-limit-fields input { width: 100%; }
+.proposal-limit-fields small { display: block; margin-top: 4px; color: var(--gf-color-text-secondary); font-size: 12px; }

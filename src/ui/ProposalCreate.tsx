@@ -10,12 +10,13 @@ import './proposal-create.css';
 import './branches.css';
 import { repositoryLabel } from "../shared/repository-names";
 import { DEFAULT_MODEL } from '../shared/models';
+import { emptyLimitFields, limitFieldsProblem, limitOverrides, taskLimits, type LimitFields } from './agent-limits';
 
 type Attachment = { name: string; content: string };
 const maxFiles = 5, maxFileBytes = 16 * 1024, maxTotalBytes = 48 * 1024;
 const bytes = (value: string) => new TextEncoder().encode(value).length;
 
-interface DraftAgent extends AgentTask { id: string; open?: boolean }
+interface DraftAgent extends AgentTask { id: string; open?: boolean; limits?: LimitFields }
 interface ProposalBase { branch: string; commitSha: string; commitMessage?: string; author?: string; date?: string; }
 const startingAgents = (): DraftAgent[] => [
   { id: crypto.randomUUID(), name: '', role: '', task: '' },
@@ -29,6 +30,18 @@ function defaultAgentRole(): string { return 'Implementation'; }
 function Hint({ id, label, text }: { id: string; label: string; text: string }) {
   const [open, setOpen] = useState(false);
   return <><button type="button" className="proposal-hint-button" aria-label={`About ${label}`} aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}><InfoIcon size={15} aria-hidden="true" /></button>{open && <span id={id} className="proposal-hint" role="note">{text}</span>}</>;
+}
+
+export function LimitFieldsEditor({ id, value, disabled, onChange }: { id: string; value: LimitFields; disabled: boolean; onChange: (value: LimitFields) => void }) {
+  const problem = limitFieldsProblem(value);
+  return <div className="proposal-limit-fields">
+    <div className="form-field"><label htmlFor={`${id}-scope`}>Files this agent may edit</label><textarea id={`${id}-scope`} rows={2} aria-invalid={problem?.field === 'editScope'} maxLength={4000} disabled={disabled} value={value.editScope} placeholder="public/render3d.mjs, public/pose*.mjs" onChange={event => onChange({ ...value, editScope: event.target.value })} /><small>Comma or newline separated paths or patterns, up to 20. Empty means the whole repository.</small></div>
+    <div className="proposal-agent-row">
+      <div className="form-field"><label htmlFor={`${id}-time`}>Time limit</label><Input id={`${id}-time`} disabled={disabled} value={value.runTime} placeholder="Repository default" aria-invalid={problem?.field === 'runTime'} onChange={event => onChange({ ...value, runTime: event.target.value })} /><small>Minutes, or seconds with s (900s).</small></div>
+      <div className="form-field"><label htmlFor={`${id}-steps`}>Max steps</label><Input id={`${id}-steps`} inputMode="numeric" disabled={disabled} value={value.maxSteps} placeholder="Repository default" aria-invalid={problem?.field === 'maxSteps'} onChange={event => onChange({ ...value, maxSteps: event.target.value.replace(/[^0-9]/g, '') })} /><small>1–32.</small></div>
+    </div>
+    {problem && <p className="proposal-name-error" role="status">{problem.message}</p>}
+  </div>;
 }
 
 function modelLabel(models: ModelConnection[] | undefined, id: string): string { return models?.find(model => model.id === id)?.label ?? id; }
@@ -76,6 +89,7 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
   const [aiReady, setAiReady] = useState(true);
   const [maxAgents, setMaxAgents] = useState(DEFAULT_MAX_AGENTS);
   const [allowed, setAllowed] = useState<string[] | null>(null);
+  const [autoLimits, setAutoLimits] = useState<LimitFields>(emptyLimitFields);
   const [plan, setPlan] = useState<(MissionPlanResult & { repositoryId: string; goal: string }) | null>(null);
   const mutation = useRef<{ signature: string; key: string } | null>(null);
   const latestDraftInput = useRef({ repositoryId: repoId, goal: prompt });
@@ -189,7 +203,7 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
     if (!currentPlan) return;
     const manual = planToManual(currentPlan);
     setMode(manual.mode); setTitle(manual.title); setCriteria(manual.criteria);
-    setAgents(manual.tasks.map(task => ({ ...task, id: crypto.randomUUID(), open: false })));
+    setAgents(manual.tasks.map(task => ({ ...task, id: crypto.randomUUID(), open: false, ...(limitOverrides(autoLimits) ? { limits: { ...autoLimits } } : {}) })));
     setDraftNote(''); setError(''); setEntry('manual');
   }
 
@@ -223,7 +237,10 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
     if (busy || reading > 0 || !canContribute || !currentPlan || !ready()) return;
     const tasks = planToManual(currentPlan).tasks;
     if (!models || tasks.some(task => !models.models.some(model => model.id === task.model))) { setError('A planned model is no longer enabled. Plan again.'); return; }
-    await save({ mode: currentPlan.mode, repositoryId: repoId, expectedBaseSha: loadedBase!.commitSha, title: currentPlan.title.slice(0, 120), prompt: prompt.trim(), acceptanceCriteria: currentPlan.acceptanceCriteria.length ? currentPlan.acceptanceCriteria : undefined, attachments: attachments.length ? attachments : undefined, tasks, ...(linkedIssue ? { issueNumber: linkedIssue.number } : {}) }, true);
+    const limitProblem = limitFieldsProblem(autoLimits);
+    if (limitProblem) { setError(limitProblem.message); return; }
+    const agentOverrides = limitOverrides(autoLimits);
+    await save({ mode: currentPlan.mode, repositoryId: repoId, expectedBaseSha: loadedBase!.commitSha, title: currentPlan.title.slice(0, 120), prompt: prompt.trim(), acceptanceCriteria: currentPlan.acceptanceCriteria.length ? currentPlan.acceptanceCriteria : undefined, attachments: attachments.length ? attachments : undefined, tasks, ...(agentOverrides ? { agentOverrides } : {}), ...(linkedIssue ? { issueNumber: linkedIssue.number } : {}) }, true);
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -234,11 +251,13 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
     if (!models || agents.some(agent => !models.models.some(model => model.id === (agent.model ?? defaultModel)))) { setError('Choose an enabled model for every agent. A workspace owner can manage AI models in Settings.'); return; }
     if (mode === 'race' && agents.length < 2) { setError('Race mode needs at least two independent candidates.'); return; }
     if (duplicateNames.length) { setError('Give each agent a distinct name.'); return; }
+    const limitProblem = agents.map(agent => agent.limits ? limitFieldsProblem(agent.limits) : null).find(Boolean);
+    if (limitProblem) { setAgents(current => current.map(agent => agent.limits && limitFieldsProblem(agent.limits) ? { ...agent, open: true } : agent)); setError(limitProblem.message); return; }
     if (acceptanceCriteria.length > 12 || acceptanceCriteria.some(line => line.length > 500)) { setError('Use up to 12 acceptance criteria, with at most 500 characters per line.'); return; }
     const unassigned = agents.filter(agent => (agents.length > 1 || agent.task.trim()) && agent.task.trim().length < 10);
     if (unassigned.length) setAgents(current => current.map(agent => unassigned.some(item => item.id === agent.id) ? { ...agent, open: true } : agent));
     if (prompt.trim().length < 10 || unassigned.length) { setError("Describe what should change. With several agents, give each one an assignment. Outcomes and assignments need at least 10 characters."); return; }
-    await save({ mode, repositoryId: repoId, expectedBaseSha: loadedBase!.commitSha, title: title.trim() || prompt.trim().split('\n')[0].slice(0, 80), prompt: prompt.trim(), acceptanceCriteria: acceptanceCriteria.length ? acceptanceCriteria : undefined, attachments: attachments.length ? attachments : undefined, tasks: agents.map(({ name, role, task, model, coordinator }, index) => ({ name: name.trim() || defaultAgentName(index), role: role.trim() || defaultAgentRole(), task: task.trim() || WHOLE_MISSION, model: model ?? defaultModel, ...(coordinator && canCoordinate ? { coordinator: true } : {}) })), ...(linkedIssue ? { issueNumber: linkedIssue.number } : {}) }, false);
+    await save({ mode, repositoryId: repoId, expectedBaseSha: loadedBase!.commitSha, title: title.trim() || prompt.trim().split('\n')[0].slice(0, 80), prompt: prompt.trim(), acceptanceCriteria: acceptanceCriteria.length ? acceptanceCriteria : undefined, attachments: attachments.length ? attachments : undefined, tasks: agents.map(({ name, role, task, model, coordinator, limits }, index) => ({ name: name.trim() || defaultAgentName(index), role: role.trim() || defaultAgentRole(), task: task.trim() || WHOLE_MISSION, model: model ?? defaultModel, ...(coordinator && canCoordinate ? { coordinator: true } : {}), ...taskLimits(limits) })), ...(linkedIssue ? { issueNumber: linkedIssue.number } : {}) }, false);
   }
 
   const repositoryField = <div className="form-field"><label htmlFor="proposal-repository">Repository</label><select id="proposal-repository" required disabled={busy} value={repoId} onChange={event => { setRepoId(event.target.value); setBaseStale(false); }}><option value="" disabled>Choose a repository</option>{repositories.map(repo => <option key={repo.id} value={repo.id}>{repositoryLabel(repo)}{repo.provider === 'local' ? ' (local)' : ''}</option>)}</select></div>;
@@ -254,6 +273,7 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
         <div className="form-field proposal-max-agents"><div className="proposal-control-label"><label htmlFor="proposal-max-agents">Max agents</label><Hint id="proposal-max-agents-hint" label="Max agents" text="Gitflare splits the goal into at most this many agents, one of which coordinates and merges." /></div><select id="proposal-max-agents" disabled={busy || drafting} value={maxAgents} onChange={event => setMaxAgents(Number(event.target.value))}>{Array.from({ length: MAX_MISSION_AGENTS }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count}</option>)}</select><small>Includes the coordinator.</small></div>
         <fieldset className="proposal-allowed-models"><legend className="proposal-control-label"><span>Models allowed</span><Hint id="proposal-models-hint" label="Models allowed" text="Gitflare picks the best of these models per task; stronger models get the building work." /></legend>{!models ? <p className="proposal-muted">Loading models…</p> : !verified.length ? <p className="proposal-muted">No verified models. <a href="/settings/models">Verify a model</a> first.</p> : <div className="proposal-model-chips">{verified.map(model => { const checked = allowedModels.includes(model.id); return <label key={model.id} className={checked ? 'selected' : ''}><input type="checkbox" checked={checked} disabled={busy || drafting} onChange={() => setAllowed(checked ? allowedModels.filter(id => id !== model.id) : [...allowedModels, model.id])} /><span>{model.label}{model.id === defaultModel ? <em>default</em> : null}</span></label>; })}</div>}{models && verified.length > 0 && !allowedModels.length && <small className="proposal-name-error">Choose at least one model.</small>}</fieldset>
       </div>
+      <details className="proposal-advanced"><summary>Advanced <span className="proposal-optional">(applies to every agent)</span></summary><LimitFieldsEditor id="proposal-auto-limits" value={autoLimits} disabled={busy || drafting} onChange={setAutoLimits} /></details>
     </div></section>
     {currentPlan && <section className="panel proposal-section proposal-plan" ref={planRef} tabIndex={-1} aria-labelledby="proposal-plan-title"><div className="panel-header proposal-plan-header"><div><h2 id="proposal-plan-title">{currentPlan.title}</h2><p><strong>{strategyLabel(currentPlan.strategy)}</strong>{currentPlan.strategyReason ? ` · ${currentPlan.strategyReason}` : ''}</p></div><Button type="button" variant="secondary" size="base" icon={PencilSimpleIcon} disabled={busy} onClick={editPlan}>Edit plan</Button></div><div className="panel-body">
       <ol className="proposal-plan-tasks">{currentPlan.tasks.map(task => <li key={task.name} className={task.coordinator ? 'coordinator' : undefined}><div className="proposal-plan-task-head"><span className="proposal-plan-name">{task.coordinator ? <GitMergeIcon size={16} aria-hidden="true" /> : <RobotIcon size={16} aria-hidden="true" />}<strong>{task.name}</strong>{task.coordinator ? <span className="proposal-badge">Coordinator</span> : <span className="proposal-plan-role">{task.role}</span>}</span><span className="proposal-model-badge">{modelLabel(models?.models, task.model)}</span></div><p className="proposal-plan-task">{task.coordinator ? 'Runs after the others pass. Merges their work, resolves conflicts, runs the full test suite and prepares the candidate for review.' : task.task}</p><p className="proposal-plan-reason">{task.reason}</p></li>)}</ol>
@@ -280,6 +300,7 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
           <div className="form-field"><label htmlFor={`agent-model-${agent.id}`}>AI model</label><select id={`agent-model-${agent.id}`} aria-describedby={`agent-model-status-${agent.id}`} required disabled={busy || !models} value={modelId} onChange={event => updateAgent(agent.id, { model: event.target.value })}>{!models ? <option value={DEFAULT_MODEL}>Loading models…</option> : <>{!selected && <option value={modelId} disabled>Selected model is unavailable</option>}{models.models.map(model => <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>)}</>}</select>{selected && <small className={selected.verification?.status === 'failed' ? 'proposal-name-error' : undefined} id={`agent-model-status-${agent.id}`}>{modelVerificationNote(selected)}</small>}</div>
           {canCoordinate && <label className="proposal-coordinator-toggle"><input type="checkbox" checked={coordinator} disabled={busy} onChange={event => setCoordinator(agent.id, event.target.checked)} /><span><strong>Coordinator</strong>Runs after the others pass, merges their work, resolves conflicts and runs the full test suite.</span></label>}
           {agents.length === 1 ? <details className="form-field proposal-optional-assignment" open={!!agent.task.trim()}><summary>Specific instructions <span className="proposal-optional">(optional, this agent works on the whole mission)</span></summary><textarea id={`agent-task-${agent.id}`} maxLength={2500} disabled={busy} rows={4} value={agent.task} placeholder="Leave blank to give it the whole mission, or add specifics such as files to change…" onChange={event => updateAgent(agent.id, { task: event.target.value })} /></details> : <div className="form-field"><label htmlFor={`agent-task-${agent.id}`}>Assignment</label><textarea id={`agent-task-${agent.id}`} required minLength={10} maxLength={2500} disabled={busy} rows={4} value={agent.task} placeholder={coordinator ? 'Integrate the other parts and make the full test suite pass…' : index === 0 ? 'Implement the core change. Name the files this agent owns…' : 'Describe a separate part and how it fits with the others…'} onChange={event => updateAgent(agent.id, { task: event.target.value })} /></div>}
+          <details className="proposal-agent-limits"><summary>Limits <span className="proposal-optional">(optional: files, time, steps)</span></summary><LimitFieldsEditor id={`agent-limits-${agent.id}`} value={agent.limits ?? emptyLimitFields()} disabled={busy} onChange={limits => updateAgent(agent.id, { limits })} /></details>
         </div>}
       </section>;
     })}</div></section>

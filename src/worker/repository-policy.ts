@@ -115,9 +115,11 @@ function globPattern(glob: string): RegExp {
   return new RegExp(`^${pattern}$`);
 }
 
-export function isGeneratedPath(path: string, globs: readonly string[]): boolean {
+export function matchesGlobs(path: string, globs: readonly string[]): boolean {
   return globs.some((glob) => globPattern(glob).test(path));
 }
+
+export const isGeneratedPath = matchesGlobs;
 
 const INSTALL_VALUES = ['npm', 'pnpm', 'yarn', 'auto'];
 
