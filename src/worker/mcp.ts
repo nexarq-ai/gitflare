@@ -650,7 +650,7 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     return call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/check-settings`, { testTimeoutSeconds: input.test_timeout_seconds ?? null, runner: input.runner ?? null, autoIncrease: input.auto_increase ? { enabled: input.auto_increase.enabled, maxTimeoutSeconds: input.auto_increase.max_timeout_seconds, maxRunner: input.auto_increase.max_runner } : null, ...policyOverride }, input.idempotency_key);
   }));
   server.registerTool('gitflare_agent_settings', {
-    title: 'Read agent limits', description: 'Read a repository’s agent limits for new attempts: time per model answer (null: automatic, up to 300 s for Claude Fable and Opus 5.x, 180 s for others), automatic model retries on timeout or overload, max steps per agent, time limit per agent run and whether a failed agent retries once automatically. Read-only.',
+    title: 'Read agent limits', description: 'Read a repository’s agent limits for new attempts: time per model answer (null: automatic, streamed for up to 600 s with a 120 s idle limit for Claude Fable and Opus 5.x, up to 180 s for others), automatic model retries on timeout or overload, max steps per agent, time limit per agent run and whether a failed agent retries once automatically. Read-only.',
     inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
   }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/agent-settings`)));
   server.registerTool('gitflare_set_agent_settings', {
