@@ -113,9 +113,13 @@ export function missionInput(body: Record<string, unknown>): CreateMissionInput 
     input.tasks = body.tasks.map((task: unknown) => {
       if (!task || typeof task !== 'object' || Array.isArray(task)) throw new ApiError(400, 'INVALID_TASKS', 'Each task must include a name, role, and task description.');
       const fields = task as Record<string, unknown>;
-      return { name: requireString(fields.name, 'Agent name', 60), role: requireString(fields.role, 'Agent role', 80), task: requireString(fields.task, 'Agent task', 2500, 10), ...(fields.model === undefined ? {} : { model: modelIdentifier(fields.model) }) };
+      if (fields.coordinator !== undefined && typeof fields.coordinator !== 'boolean') throw new ApiError(400, 'INVALID_TASKS', 'coordinator must be true or false.');
+      return { name: requireString(fields.name, 'Agent name', 60), role: requireString(fields.role, 'Agent role', 80), task: requireString(fields.task, 'Agent task', 2500, 10), ...(fields.model === undefined ? {} : { model: modelIdentifier(fields.model) }), ...(fields.coordinator === true ? { coordinator: true } : {}) };
     });
     if (new Set(input.tasks.map(task => task.name.toLowerCase())).size !== input.tasks.length) throw new ApiError(400, 'INVALID_TASKS', 'Give each agent a distinct name.');
+    const coordinators = input.tasks.filter(task => task.coordinator).length;
+    if (coordinators > 1) throw new ApiError(400, 'INVALID_COORDINATOR', 'A mission has at most one coordinator.');
+    if (coordinators && (input.mode === 'race' || input.tasks.length < 2)) throw new ApiError(400, 'INVALID_COORDINATOR', 'A coordinator needs combine mode and at least one other agent.');
   }
   return input;
 }

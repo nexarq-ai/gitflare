@@ -37,7 +37,7 @@ import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare, handleReposito
 import { dispatchCloudflareProject, projectDependencies, type ProjectOperation } from './cloudflare-projects';
 import { validateRepositoryInitialization, initializeArtifactsRepository } from './repository-initialization';
 import { SKILL_REQUEST_MAX_BYTES, validateRepositorySkillChange, verifyRepositorySkillChange } from './skill-edit';
-import { draftMission, draftRequest, repositorySnapshot } from './mission-draft';
+import { autoDraftRequest, draftMission, draftRequest, planMission, repositorySnapshot } from './mission-draft';
 import { handleIssues } from './issues';
 import { releaseApi } from './releases';
 import { effectiveDefaultModel, modelConnectionsSnapshot, modelIdentifier, resolveModelConnection, validateModelConnection, verifyModelConnection } from './model-config';
@@ -772,18 +772,22 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   }
   if (url.pathname === '/api/missions/draft') {
     await requireAi(env, catalog);
-    const draft = draftRequest(body);
+    const auto = body.mode === 'auto';
+    const [models, storedDefault] = await Promise.all([coordinatorRead('getModelConnections', () => catalog.getModelConnections()), catalog.getDefaultModel()]);
+    const draft = auto ? undefined : draftRequest(body);
+    const plan = auto ? autoDraftRequest(body, models) : undefined;
     const repositoryId = requireString(body.repositoryId, 'Repository', 100);
     const repository = await catalog.getRepository(repositoryId);
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
     await access.authorize(principal, 'contribute', 'repository', repositoryId);
     await security(env).rateLimit(`mission-draft:${principal.userId}`, 30, 3_600_000);
-    const model = resolveModelConnection(await coordinatorRead('getModelConnections', () => catalog.getModelConnections()), typeof body.model === 'string' ? body.model : undefined);
+    const model = resolveModelConnection(models, typeof body.model === 'string' ? body.model : effectiveDefaultModel(models, storedDefault));
     const credentials = await aiCredentials(catalog);
     assertModelAccess(env, principal.workspaceId, credentials, [model]);
     await reserveOperatorUsage(env, principal.workspaceId, credentials, [model], 'draft', key, catalog);
     const snapshot = await repositorySnapshot(env.ARTIFACTS, repository);
-    try { return Response.json({ ...await draftMission({ ...env, modelAccess: createModelAccess(env, principal.workspaceId, { getAiCredentials: () => aiCredentials(catalog) }) }, model, draft, snapshot), baseSha: snapshot.commitSha, model: model.id }); }
+    const modelEnv = { ...env, modelAccess: createModelAccess(env, principal.workspaceId, { getAiCredentials: () => aiCredentials(catalog) }) };
+    try { return Response.json({ ...plan ? await planMission(modelEnv, model, plan, snapshot) : await draftMission(modelEnv, model, draft!, snapshot), baseSha: snapshot.commitSha, model: model.id }); }
     catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(502, 'DRAFT_FAILED', 'The model could not draft this mission right now. Try again, or fill the fields yourself.');

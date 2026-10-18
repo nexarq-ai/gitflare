@@ -4,8 +4,47 @@ export const DRAFT_GOAL_MIN = 10;
 export const DRAFT_GOAL_MAX = 4000;
 export const MISSION_PROMPT_MAX = 8000;
 export const MAX_MISSION_AGENTS = 10;
+export const DEFAULT_MAX_AGENTS = 4;
+export const MAX_ALLOWED_MODELS = 20;
 
 export interface MissionDraftResult { title: string; acceptanceCriteria: string[]; tasks: AgentTask[]; warnings?: string[] }
+export type MissionStrategy = 'combine' | 'race' | 'scaffold';
+export interface PlannedTask extends AgentTask { model: string; reason: string }
+export interface MissionPlanResult { auto: true; title: string; acceptanceCriteria: string[]; strategy: MissionStrategy; strategyReason: string; mode: 'combine' | 'race'; tasks: PlannedTask[]; followUp?: string; warnings?: string[]; baseSha?: string | null; model?: string }
+
+const STRENGTH: [RegExp, number][] = [
+  [/claude-opus/, 100], [/claude-fable/, 95], [/gpt-6\.1-sol/, 90], [/claude-sonnet/, 85], [/gpt-6-luna/, 70], [/claude-haiku/, 50],
+];
+
+export function modelStrength(model: Pick<ModelConnection, 'id' | 'source'>): number {
+  const match = STRENGTH.find(([pattern]) => pattern.test(model.id));
+  return match ? match[1] : model.source === 'workers-ai' ? 10 : 30;
+}
+
+export function byStrength<T extends Pick<ModelConnection, 'id' | 'source'>>(models: T[]): T[] {
+  return [...models].sort((a, b) => modelStrength(b) - modelStrength(a) || a.id.localeCompare(b.id));
+}
+
+export function verifiedModels(models: ModelConnection[]): ModelConnection[] {
+  return models.filter(model => model.verification?.status === 'verified');
+}
+
+export function defaultAllowedModels(models: ModelConnection[]): string[] {
+  return verifiedModels(models).filter(model => model.id.startsWith('anthropic/claude-')).map(model => model.id);
+}
+
+export function strategyLabel(strategy: MissionStrategy): string {
+  return strategy === 'race' ? 'Race' : strategy === 'scaffold' ? 'Scaffold first' : 'Combine';
+}
+
+export function planToManual(plan: MissionPlanResult): { mode: 'combine' | 'race'; title: string; criteria: string; tasks: AgentTask[] } {
+  return { mode: plan.mode, title: plan.title, criteria: plan.acceptanceCriteria.join('\n'), tasks: plan.tasks.map(({ name, role, task, model, coordinator }) => ({ name, role, task, model, ...(coordinator ? { coordinator: true } : {}) })) };
+}
+
+export function firstLine(text: string, max = 90): string {
+  const line = text.trim().split(/\n|(?<=[.!?])\s/)[0] ?? '';
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
 export interface DraftRequestState { repositoryId: string; goal: string }
 
 export function draftGoalProblem(goal: string): string | null {

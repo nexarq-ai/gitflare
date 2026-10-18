@@ -38,7 +38,9 @@ type MissionShape = Pick<Mission, 'runs' | 'mode' | 'skillChange' | 'revertChang
 
 export function agentWaves(mission: MissionShape): number {
   const trusted = !!(mission.skillChange || mission.revertChange || mission.branchChange);
-  return trusted ? 1 : Math.ceil(Math.max(1, mission.runs.length) / AGENT_CONCURRENCY);
+  if (trusted) return 1;
+  const coordinated = mission.mode !== 'race' && mission.runs.length > 1 && mission.runs.some((run) => run.coordinator);
+  return coordinated ? Math.ceil((mission.runs.length - 1) / AGENT_CONCURRENCY) + 1 : Math.ceil(Math.max(1, mission.runs.length) / AGENT_CONCURRENCY);
 }
 
 export function missionStepTimeoutMs(mission: MissionShape): number {

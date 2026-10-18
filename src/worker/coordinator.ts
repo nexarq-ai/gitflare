@@ -890,12 +890,15 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const chosen = reviewing ? runIds ?? (mission.mode === 'race' ? (mission.selectedRunId ? [mission.selectedRunId] : []) : mission.runs.filter(verified).map((run) => run.id)) : runIds;
       if (reviewing && !chosen?.length) throw new ApiError(409, 'SELECT_CANDIDATE', 'Select a candidate first, or name the agents to send the review to.');
       if (reviewing && mission.runs.some((run) => chosen!.includes(run.id) && !verified(run))) throw new ApiError(409, 'AGENT_NOT_VERIFIED', 'Only agents with a verified candidate can address a review.');
-      const reusable = (run: Mission['runs'][number]) => verified(run) && !chosen?.includes(run.id) && !(!reviewing && run.collision);
+      const partReusable = (run: Mission['runs'][number]) => verified(run) && !chosen?.includes(run.id) && !(!reviewing && run.collision);
+      const partsReused = mission.runs.every((run) => run.coordinator || run.status === 'skipped' || partReusable(run));
+      const reusable = (run: Mission['runs'][number]) => partReusable(run) && (!run.coordinator || mission.mode === 'race' || partsReused);
       const reused = mission.runs.filter(reusable);
       const others = mission.runs.filter((run) => !reusable(run) && (!reviewing || chosen!.includes(run.id)));
       if (!others.length && (mode === 'drop' || mission.mode === 'race')) throw new ApiError(409, 'NO_FAILED_AGENTS', 'Every agent has a verified candidate. Use Retry mission to rerun them all, or choose the agents to rerun.');
       const sourceOf = (run: Mission['runs'][number]) => ({ runId: run.id, name: run.name, forkName: run.forkName!, commitSha: run.commitSha! });
       const startFrom = (run: Mission['runs'][number]): AgentRun['startFrom'] => {
+        if (run.coordinator && mission.mode !== 'race' && !reviewing) return undefined;
         if (reviewing) return { reason: 'review', candidates: (mission.mode === 'race' ? [run] : mission.runs.filter(verified)).map(sourceOf) };
         if (run.collision && reused.length) return { reason: 'collision', files: run.collision.files, candidates: reused.map(sourceOf) };
         if (run.commitSha && run.forkName) return { reason: 'retry', candidates: [sourceOf(run)], ...(run.status !== 'completed' && run.error ? { previousError: failureLine(run.error) } : {}) };
@@ -917,7 +920,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const reusedIds = new Set(reused.map((run) => run.id));
       const keptChecks = checks.filter((check) => !!check.runId && reusedIds.has(check.runId));
       const keptChanges = (mission.raceChanges ?? mission.changes).filter((change) => change.runIds.some((runId) => reusedIds.has(runId)));
-      const fresh = (run: Mission['runs'][number]) => ({ id: run.id, name: run.name, role: run.role, task: run.task, assignment: run.assignment, model: run.model, modelConfig: run.modelConfig, changedFiles: [] as string[] });
+      const fresh = (run: Mission['runs'][number]) => ({ id: run.id, name: run.name, role: run.role, task: run.task, assignment: run.assignment, model: run.model, modelConfig: run.modelConfig, changedFiles: [] as string[], ...(run.coordinator ? { coordinator: true } : {}) });
       mission.runs = mission.runs.map((run) => {
         if (reusedIds.has(run.id)) return { ...run, reusedFromEpoch: run.reusedFromEpoch ?? previousEpoch, ...(run.candidateBaseSha ?? previousBase ? { candidateBaseSha: run.candidateBaseSha ?? previousBase! } : {}) };
         if (mode === 'drop' || reviewing && !chosen!.includes(run.id)) return { ...fresh(run), status: 'skipped' as const, completedAt: now, skipReason: run.skipReason ?? (reviewing ? `Not sent the review in attempt ${previousEpoch + 1}` : `Excluded in attempt ${previousEpoch + 1} after it ${run.status === 'cancelled' ? 'was cancelled' : 'failed'}${run.error ? `: ${failureLine(run.error)}` : ''}`) };
