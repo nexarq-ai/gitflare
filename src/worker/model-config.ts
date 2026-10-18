@@ -12,6 +12,8 @@ export function defaultModelConnections(): ModelConnection[] {
   return [
     { id: DEFAULT_MODEL, label: 'GPT-6 Luna', source: 'gateway', protocol: 'responses' },
     { id: ESCALATION_MODEL, label: 'GPT-6.1 Sol', source: 'gateway', protocol: 'responses' },
+    { id: 'anthropic/claude-sonnet-5-5', label: 'Claude Sonnet 5.5', source: 'gateway', protocol: 'anthropic' },
+    { id: 'anthropic/claude-opus-5-5', label: 'Claude Opus 5.5', source: 'gateway', protocol: 'anthropic' },
   ];
 }
 
