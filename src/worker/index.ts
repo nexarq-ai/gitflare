@@ -54,6 +54,7 @@ import { withStoreSecrets } from './store-secrets';
 import { DEMO_WRITE_LIMIT, demoGitRestriction, demoMode, demoRestrictionError, demoRouteRestriction } from './demo';
 import { demoDisabledApi, demoVisitor, handleDemoRoute, runDemoReset } from './demo-runtime';
 import { assertCookieRequestOrigin, CLEAR_SESSION_COOKIE, sessionCookie, sessionCookieValue } from './session-policy';
+import { withSignedInHint } from './signed-in-hint';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -1054,7 +1055,7 @@ export default {
         if (path.startsWith('/oauth/') && request.method === 'POST') await security(env).rateLimit(`oauth:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 60, 60000);
         return await oauthProvider(new URL(request.url).origin, application, authorize).fetch(request, env, ctx!);
       }
-      return await application.fetch(request, env, ctx);
+      return withSignedInHint(request, await application.fetch(request, env, ctx), env);
     } catch (error) { const failure = publicError(error); return Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status, headers: { 'Cache-Control': 'no-store' } }); }
   },
   async scheduled(_controller: ScheduledController, workerEnv: AppEnv): Promise<void> {

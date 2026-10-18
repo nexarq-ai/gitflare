@@ -1,4 +1,5 @@
 import { hostOrigins, type HostOrigins } from "../shared/hosts";
+import { hasSignedInHint } from "../shared/signed-in-hint";
 import { isPublicProductRoute, isSiteRoute, SIGNED_IN_PRODUCT_ROUTES } from "./router";
 
 function meta(name: string): string | undefined {
@@ -32,4 +33,8 @@ export function crossHostTarget(origins: HostOrigins | null, current: string, ro
   if (route === "home") return `${origins.app}${signedIn ? "/overview" : "/signin"}`;
   if (!isPublicProductRoute(route) || (signedIn && SIGNED_IN_PRODUCT_ROUTES.includes(route))) return null;
   return `${origins.site}${location}`;
+}
+
+export function siteSignedInHint(origins: HostOrigins | null = pageHostOrigins()): boolean {
+  return !!origins && typeof document !== "undefined" && window.location.origin === origins.site && hasSignedInHint(document.cookie);
 }
