@@ -449,3 +449,8 @@ button[style*='--color-kumo-danger'], a[style*='--color-kumo-danger'] {
 .gf-brand-name em { font-family: var(--gf-font-serif); font-style: italic; font-weight: 400; letter-spacing: 0; color: var(--gf-color-accent); }
 a:has(> .gf-brand-name), a:has(> .gf-brand-name):hover, a:has(> .gf-brand-name):focus-visible { text-decoration: none; color: inherit; }
 .command-input :is(input, input:focus, input:focus-visible) { outline: none; box-shadow: none; border-color: transparent; background: transparent; }
+.mission-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; padding: 0; }
+.mission-meta > div { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); background: var(--gf-color-surface); font-size: var(--gf-text-sm); line-height: 1.4; }
+.mission-meta dt { color: var(--gf-color-text-tertiary); font-weight: 500; }
+.mission-meta dd { margin: 0; color: var(--gf-color-text); font-weight: 500; }
+.mission-meta code { font-family: var(--gf-font-mono); font-size: 0.92em; color: var(--gf-color-text); background: none; padding: 0; }

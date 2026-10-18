@@ -450,8 +450,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 52683,
-      "sha256": "11ae627fe7c440a2fc0856edd5ec4e7d6ed1106ce6f1d466bb4bf7f9568de49c"
+      "size": 53325,
+      "sha256": "852a8fccf198ad101b4c661986912fd4302bcb6acbcb3540f8618aff26651769"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -555,8 +555,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 63546,
-      "sha256": "5003662a8e287574b8e6a7e8e62dde0c2ff41d6e81cba9bc6efc3edbe06ed832"
+      "size": 63464,
+      "sha256": "ea4780e8b6e1169983bc42970e298bc8fef7b05ca34507558b71bd296e191410"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
