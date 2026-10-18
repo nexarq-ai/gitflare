@@ -39,6 +39,7 @@ import { navigate as goTo } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
 import { ContextFiles, MarkdownContent } from "./MissionDocuments";
 import { useMissionReplay } from "./DemoReplay";
+import { previewProgressLine, resumePreview, type PreviewProgress, type PreviewStatusLike } from "../shared/preview-progress";
 
 type PreviewHost =
   | { kind: "connection"; source: "repository" | "workspace"; accountId: string; workerName: string; access: "link" | "cloudflare-access" }
@@ -70,6 +71,15 @@ function PreviewCountdown({ until }: { until: string }) {
     return () => window.clearInterval(timer);
   }, [until]);
   return <span className="preview-countdown" aria-live="off">{remaining(until, now)} left</span>;
+}
+
+function PreviewProgressLine({ progress }: { progress: PreviewProgress }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <strong aria-live="off">{previewProgressLine(progress, now)}</strong>;
 }
 
 function previewHostLabel(host: PreviewHost | undefined): string {
@@ -133,8 +143,11 @@ export default function MissionDetail({
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
-  const [previewStarting, setPreviewStarting] = useState(false);
-  const [previewNote, setPreviewNote] = useState("");
+  const [previewProgress, setPreviewProgress] = useState<PreviewProgress | null>(null);
+  const [previewFailure, setPreviewFailure] = useState("");
+  const previewStarting = previewProgress !== null;
+  const previewRef = useRef<PreviewState | null>(null);
+  previewRef.current = preview;
   const mutation = useRef<{ signature: string; key: string } | null>(null);
   const revision = useRef(0);
   const [confirming, setConfirming] = useState<"approve" | "integrate" | null>(null);
@@ -370,6 +383,52 @@ export default function MissionDetail({
     onUpdate();
   }
 
+  async function applyPreviewStatus(candidateSha: string, status: PreviewStatusLike) {
+    const resumed = resumePreview(status);
+    if (resumed.kind === "preparing") {
+      setPreviewFailure("");
+      setPreviewProgress(resumed.progress);
+      return;
+    }
+    setPreviewProgress(null);
+    if (resumed.kind === "failed") {
+      setPreview(null);
+      setPreviewFailure(resumed.error);
+      return;
+    }
+    if (resumed.kind === "none") {
+      setPreview(null);
+      return;
+    }
+    const known = previewRef.current;
+    if (known?.candidateSha === candidateSha && Date.parse(known.expiresAt) > Date.now()) return;
+    acceptPreview(candidateSha, await request<PreviewResult>(
+      `/api/missions/${encodeURIComponent(id)}/preview`,
+      {},
+    ));
+  }
+
+  const previewCandidate = mission?.candidateSha;
+  useEffect(() => {
+    if (!previewCandidate) return;
+    let active = true;
+    const read = async () => {
+      try {
+        const status = await request<PreviewStatusLike>(`/api/missions/${encodeURIComponent(id)}/preview`);
+        if (active) await applyPreviewStatus(previewCandidate, status);
+      } catch {
+        return;
+      }
+    };
+    const resume = () => { if (document.visibilityState === "visible") void read(); };
+    void read();
+    document.addEventListener("visibilitychange", resume);
+    return () => {
+      active = false;
+      document.removeEventListener("visibilitychange", resume);
+    };
+  }, [id, previewCandidate]);
+
   useEffect(() => {
     const candidateSha = mission?.candidateSha;
     if (!previewStarting || !candidateSha) return;
@@ -377,30 +436,19 @@ export default function MissionDetail({
     let timer = 0;
     const poll = async () => {
       try {
-        const status = await request<{ status: string; error?: string }>(
+        const status = await request<PreviewStatusLike>(
           `/api/missions/${encodeURIComponent(id)}/preview`,
         );
         if (!active) return;
-        if (status.status === "ready") {
-          acceptPreview(candidateSha, await request<PreviewResult>(
-            `/api/missions/${encodeURIComponent(id)}/preview`,
-            {},
-          ));
-          setPreviewStarting(false);
-          return;
-        }
-        if (status.status !== "starting") {
-          setPreviewStarting(false);
-          setError(status.error ?? "The preview stopped before it was ready. Prepare it again.");
-          return;
-        }
+        await applyPreviewStatus(candidateSha, status);
+        if (status.status !== "starting") return;
       } catch (failure) {
         if (!active) return;
         if (failure instanceof TypeError || (failure instanceof DOMException && failure.name === "TimeoutError")) {
           timer = window.setTimeout(poll, 3000);
           return;
         }
-        setPreviewStarting(false);
+        setPreviewProgress(null);
         setError(failure instanceof Error ? failure.message : "The preview could not be prepared.");
         return;
       }
@@ -455,12 +503,13 @@ export default function MissionDetail({
   }
 
   async function stopPreview() {
-    if (!preview || busy) return;
+    if ((!preview && !previewStarting) || busy) return;
     setBusy("preview-stop");
     setError("");
     try {
       await request(`/api/missions/${encodeURIComponent(id)}/preview-stop`, {}, crypto.randomUUID());
       setPreview(null);
+      setPreviewProgress(null);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "The preview could not be stopped.");
     } finally {
@@ -472,6 +521,7 @@ export default function MissionDetail({
     if (!mission?.candidateSha || busy || previewStarting) return;
     setBusy("preview");
     setError("");
+    setPreviewFailure("");
     const signature = JSON.stringify({
       id,
       action: "preview",
@@ -480,14 +530,14 @@ export default function MissionDetail({
     if (mutation.current?.signature !== signature)
       mutation.current = { signature, key: crypto.randomUUID() };
     try {
-      const result = await request<PreviewResult>(
+      const result = await request<PreviewResult & PreviewStatusLike>(
         `/api/missions/${encodeURIComponent(id)}/preview`,
         {},
         mutation.current.key,
       );
       mutation.current = null;
-      if (result.status === "starting") { setPreviewNote(result.message ?? ""); setPreviewStarting(true); }
-      else acceptPreview(mission.candidateSha, result);
+      if (result.previewUrl) acceptPreview(mission.candidateSha, result);
+      else await applyPreviewStatus(mission.candidateSha, result);
     } catch (failure) {
       setError(
         failure instanceof Error
@@ -640,7 +690,19 @@ export default function MissionDetail({
               disabled={!!busy || previewStarting}
               onClick={() => void preparePreview()}
             >
-              {previewStarting ? "Preparing preview…" : currentPreview ? "Refresh preview" : "Prepare preview"}
+              {previewStarting ? "Preparing…" : currentPreview ? "Refresh preview" : "Prepare preview"}
+            </Button>
+          )}
+          {canPreview && !replay.active && previewStarting && permissions.includes("contribute") && (
+            <Button
+              variant="secondary"
+              size="base"
+              icon={StopIcon}
+              loading={busy === "preview-stop"}
+              disabled={!!busy}
+              onClick={() => void stopPreview()}
+            >
+              Stop
             </Button>
           )}
           {!mission.branchChange && ["draft", "failed", "cancelled", "needs_review"].includes(
@@ -809,12 +871,16 @@ export default function MissionDetail({
           </a>
         </div>
       )}
-      {previewStarting && previewNote && (
+      {previewProgress && (
         <div className="alert info" role="status">
           <InfoIcon size={17} />
-          <div className="alert-text">{previewNote}</div>
+          <div className="alert-text">
+            <PreviewProgressLine progress={previewProgress} />
+            {previewProgress.message && <div>{previewProgress.message}</div>}
+          </div>
         </div>
       )}
+      {previewFailure && !previewStarting && <ErrorNotice message={previewFailure} />}
       {error && <ErrorNotice message={error} />}
       {loadError && <ErrorNotice message={loadError} />}
       {mission.error && mission.error !== error && (

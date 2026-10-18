@@ -19,7 +19,7 @@ import { secretsApiContext, secretsBlocker } from './secrets-wiring';
 import type { ProjectSnapshot } from './cloudflare-projects';
 import { PREVIEW_STEP_MS } from './budgets';
 import { handleMcp, mcpToolNames } from './mcp';
-import { integrationPendingMessage, PREVIEW_STARTING_MESSAGE, startWithDurableDispatch } from './coordinator';
+import { integrationPendingMessage, startWithDurableDispatch } from './coordinator';
 import { hashToken, securityClient, wellFormedToken, type Principal, type Action, type InvitationScope } from './security';
 import { consume, gitRateLimits, rateLimitedResponse, rateSubject } from './rate-limits';
 import { listDocs, readDoc } from './docs';
@@ -859,7 +859,6 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     }
     if (match[2] === 'preview-stop') {
       const stopped = await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId);
-      if (stopped === 'starting') throw new ApiError(409, 'PREVIEW_STARTING', 'This preview is still starting. Stop it once it is ready or has failed.');
       if (stopped === 'none') throw new ApiError(409, 'PREVIEW_NOT_RUNNING', 'This mission has no running preview to stop.');
       await access.auditRepositoryChange(principal, 'mission.preview.stopped', mission.id);
       return Response.json(await coordinator.previewStatus(mission.id));
@@ -888,7 +887,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
           if (await coordinator.previewFailed(mission.id, claim.claimId)) await catalog.releasePreviewSlot(mission.id);
           throw new ApiError(503, 'PREVIEW_NOT_STARTED', 'The preview could not be scheduled. Try again.');
         }
-        return Response.json({ status: 'starting', candidateSha: mission.candidateSha, message: PREVIEW_STARTING_MESSAGE }, { status: 202 });
+        return Response.json(await coordinator.previewStatus(mission.id), { status: 202 });
       }
       const current = await coordinator.getMission(mission.id);
       if (!current || current.epoch !== mission.epoch || current.candidateSha !== mission.candidateSha || !['needs_review', 'approved', 'integrating', 'integrated'].includes(current.status)) throw new ApiError(409, 'STALE_PREVIEW', 'The candidate changed while the preview was starting.');

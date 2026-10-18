@@ -338,6 +338,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       const prepared = await prepareCandidatePreview(env, {
         repository, mission, previewAttemptId: claimId, workerPreviews: !!previews || !!installationProblem, ...(plan.configPath ? { configPath: plan.configPath } : {}),
         assertAuthority: () => access.check(principal, 'read', 'repository', repositoryId, missionId),
+        onStep: (step) => coordinator.previewStep(missionId, epoch, candidateSha, claimId, step),
         publishWorker: async (built) => {
           if (!previews || !previewCall || !host) throw new PreviewFailure(installationProblem ?? 'Worker previews are not configured for this installation.');
           if (host.access === 'cloudflare-access') await ensurePreviewAccess(previewCall, previews.accountId, previews.workerName, await previewAccessIncludes(env, principal, repositoryId, settings));

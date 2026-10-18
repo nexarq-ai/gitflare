@@ -1,4 +1,5 @@
 import type { AgentRun, BranchChange, Check, CheckPlan, FileChange, ManifestDependencyChanges, Mission, MissionEvent, Repository, RepositorySkillChange, RevertChange, ModelConnection, ModelUsage } from '../shared/types';
+import type { PreviewStep } from '../shared/preview-progress';
 import { branchName } from './branch-protection';
 import { forkRepository, validGitSha, type ArtifactInfo, type ArtifactsBinding } from './artifacts';
 import { failureLine } from './domain';
@@ -1443,7 +1444,7 @@ function uploadsAssets(sandbox: BundleSandbox, options: AssetsOptions | null): P
   return options ? { uploadAssets: (call, accountId, workerName) => collectAndUploadAssets(sandbox, { call, accountId, workerName, options }) } : {};
 }
 
-export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, { mission, previewAttemptId, assertAuthority = unrestricted, workerPreviews = false, configPath: preferredConfig, publishWorker }: IntegrationInput & { previewAttemptId: string; workerPreviews?: boolean; configPath?: string; publishWorker?: (built: BuiltPreview) => Promise<T> }): Promise<PreparedPreview<T>> {
+export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, { mission, previewAttemptId, assertAuthority = unrestricted, workerPreviews = false, configPath: preferredConfig, publishWorker, onStep = async () => {} }: IntegrationInput & { previewAttemptId: string; workerPreviews?: boolean; configPath?: string; publishWorker?: (built: BuiltPreview) => Promise<T>; onStep?: (step: PreviewStep) => Promise<void> }): Promise<PreparedPreview<T>> {
   if (mission.authorization && assertAuthority === unrestricted) throw new Error('Preview authority guard is required');
   if (!/^[a-f0-9-]{36}$/.test(previewAttemptId)) throw new Error('Invalid preview attempt ID');
   if (!env.ARTIFACTS || !env.SANDBOX || !mission.candidateSha || !mission.integrationForkName) throw new Error('A real integration candidate is required for preview');
@@ -1455,6 +1456,7 @@ export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, 
   if (!sandbox.startPreview) throw new Error('Preview runner is unavailable');
   try {
     await assertAuthority();
+    await onStep('cloning');
     await sandbox.prepare([{ ...fork, write: false }]);
     await clone(sandbox, fork, mission.candidateSha);
     const policy = mission.baseSha ? await loadPolicy(sandbox, mission.baseSha, '') : undefined;
@@ -1465,12 +1467,16 @@ export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, 
       let built: BuiltPreview | null = null;
       try {
         const { plan, packageJson } = await workingTreeInstall(sandbox, files);
-        if (plan) await installDependencies(sandbox, plan, assertAuthority, async () => true);
+        if (plan) {
+          await onStep('installing');
+          await installDependencies(sandbox, plan, assertAuthority, async () => true);
+        }
         installed = true;
         let config = await readWorkerConfig(sandbox, configPath);
         const assetsDirectory = config?.deploy?.assets && typeof config.deploy.assets === 'object' ? (config.deploy.assets as Record<string, unknown>).directory : undefined;
         const buildCommand = workerPreviewBuildCommand(files, packageJson, typeof assetsDirectory === 'string' ? assetsDirectory : null, plan);
         if (buildCommand) {
+          await onStep('building');
           if (!sandbox.check) throw new WorkerBuildFailure('WORKER_BUILD_UNAVAILABLE', 'The runner cannot run build commands.');
           await assertAuthority();
           const result = await sandbox.check(deployBuildScript(buildCommand), DEPLOY_BUILD_TIMEOUT_MS);
@@ -1491,6 +1497,7 @@ export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, 
         let published: T | undefined;
         try {
           await assertAuthority();
+          await onStep('publishing');
           if (publishWorker) published = await publishWorker(built);
         } catch (error) {
           throw new PreviewFailure(`Worker preview could not be published. ${error instanceof Error ? error.message : 'Cloudflare rejected the preview.'}`);
@@ -1502,8 +1509,12 @@ export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, 
     const { packageJson, lockHead } = await workingTreeInstall(sandbox, files);
     const plan = previewPlan(files, packageJson, { command: policy?.previewCommand, install: policy?.install }, lockHead);
     try {
-      if (plan.install && !installed) await installDependencies(sandbox, plan.install, assertAuthority, async () => true);
+      if (plan.install && !installed) {
+        await onStep('installing');
+        await installDependencies(sandbox, plan.install, assertAuthority, async () => true);
+      }
       await assertAuthority();
+      await onStep('starting');
       await sandbox.startPreview(plan.argv, plan.readinessMs);
     } catch (error) {
       throw new PreviewFailure(`Preview could not start using ${plan.description}. ${error instanceof Error ? error.message : 'The preview process failed.'}`);

@@ -563,11 +563,11 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     }, (input) => guarded(async () => missionSummary(await withMcpFieldNames(call<Mission>(`/api/missions/${input.mission_id}/${action}`, { candidateSha: input.candidate_sha, baseSha: input.base_sha }, input.idempotency_key)))));
   }
   server.registerTool('gitflare_preview_mission', {
-    title: 'Open, extend or stop a candidate preview', description: 'start a preview of the passing candidate in the background; extend a running one once (Owner or Maintainer, land access); stop retires it now and frees its workspace preview slot. Worker projects become a Worker Preview of the repository’s Worker (public to anyone with the link); others run in a members-only container. Previews retire on land or after the lifetime. Needs write access.',
+    title: 'Open, extend or stop a candidate preview', description: 'start a preview of the passing candidate in the background; extend a running one once (Owner or Maintainer, land access); stop retires or cancels it. Repeat starts return the running one. Worker projects become a Worker Preview of the repository’s Worker (public to anyone with the link); others run in a members-only container. Previews retire on land or after the lifetime. Needs write access.',
     inputSchema: z.object({ mission_id: missionId, action: z.enum(['start', 'extend', 'stop']).default('start'), idempotency_key: requestKey }).strict(), annotations: { ...destructive, idempotentHint: false },
   }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/missions/${input.mission_id}/${input.action === 'extend' ? 'preview-extend' : input.action === 'stop' ? 'preview-stop' : 'preview'}`, {}, input.idempotency_key)));
   server.registerTool('gitflare_preview_status', {
-    title: 'Read candidate preview status', description: 'Read a mission’s candidate preview: progress, host, access mode, expiresAt or the failure. Read-only.',
+    title: 'Read candidate preview status', description: 'Read a mission’s candidate preview. While status is starting, step (queued, cloning, installing, building, publishing, starting) and startedAt show progress; the preparation runs server-side, so poll until ready or failed. Otherwise host, access mode, expiresAt or the failure. Read-only.',
     inputSchema: z.object({ mission_id: missionId }).strict(), annotations: readOnly,
   }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/missions/${input.mission_id}/preview`)));
   server.registerTool('gitflare_mission_history', {
