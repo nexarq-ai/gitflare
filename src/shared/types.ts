@@ -276,7 +276,13 @@ export interface Workspace {
   missions: MissionSummary[];
   integrations: IntegrationStatus[];
   ai?: AiSettings;
+  cloudflare?: WorkspaceCloudflare;
 }
+
+export interface WorkspaceCloudflareAccount { id: string; name: string; default: boolean }
+export type RepositoryAccountSource = 'repository' | 'selected' | 'default' | 'none';
+export interface RepositoryCloudflareAccount { accountId: string | null; accountName: string | null; source: RepositoryAccountSource; environments?: Record<string, string> }
+export interface WorkspaceCloudflare { connected: boolean; accounts: WorkspaceCloudflareAccount[]; repositories: Record<string, RepositoryCloudflareAccount> }
 
 export interface AiSettings { enabled: boolean; locked: boolean }
 
@@ -310,6 +316,7 @@ export interface ProjectResource {
   id: string;
   name: string;
   environment: string;
+  accountId?: string;
 }
 
 export interface ModelConnection {

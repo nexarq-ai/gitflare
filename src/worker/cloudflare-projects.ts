@@ -20,8 +20,8 @@ export interface MigrationPlan {
   id: string; repositoryId: string; workspaceId: string; accountId: string; mappingVersion: string; databaseId: string; commitSha: string; path: string; checksum: string; createdAt: string; status: 'pending' | 'executing' | 'succeeded' | 'failed' | 'unknown'; error?: string;
 }
 export type ProjectOperation = 'get' | 'map' | 'usage' | 'migration-plan' | 'migration-execute' | 'build-trigger';
-export type ProjectStoreOperation = 'get' | 'set' | 'link' | 'plan' | 'consume' | 'finish';
-export interface ProjectSnapshot { mapping: ProjectMapping | null; plans: MigrationPlan[] }
+export type ProjectStoreOperation = 'get' | 'set' | 'link' | 'plan' | 'consume' | 'finish' | 'account';
+export interface ProjectSnapshot { mapping: ProjectMapping | null; plans: MigrationPlan[]; accounts?: { accountId?: string; environments?: Record<string, string> } }
 export const WORKER_USAGE_QUERY = 'query GitflareWorkerUsage($accountTag: string!, $scriptName: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: {accountTag: $accountTag}) { workersInvocationsAdaptive(limit: 100, filter: {scriptName: $scriptName, datetime_geq: $start, datetime_leq: $end}) { dimensions {scriptName} sum {requests errors} quantiles {cpuTimeP50 cpuTimeP99} } } } }';
 export const D1_USAGE_QUERY = 'query GitflareD1Usage($accountTag: string!, $databaseId: string!, $start: Date!, $end: Date!) { viewer { accounts(filter: {accountTag: $accountTag}) { d1AnalyticsAdaptiveGroups(limit: 100, filter: {databaseId: $databaseId, date_geq: $start, date_leq: $end}, orderBy: [date_DESC]) { dimensions {date databaseId} sum {readQueries writeQueries rowsRead rowsWritten} } } } }';
 
@@ -92,6 +92,9 @@ export async function dispatchCloudflareProject(principal: Principal, repository
       const key = `${item.type}:${item.id}`;
       if (seen.has(key)) failure(400, 'DUPLICATE_PROJECT_RESOURCE', 'A resource can be linked only once.');
       seen.add(key);
+      const kept = item.accountId === undefined ? undefined : snapshot.mapping?.resources.find(resource => resource.type === item.type && resource.id === item.id && !!resource.accountId && resource.accountId === item.accountId && resource.accountId !== account.id);
+      if (item.accountId !== undefined && !kept) failure(400, 'INVALID_PROJECT_MAPPING', 'Resources on another Cloudflare account can only be linked through an environment that uses that account.');
+      if (kept) { resources.push({ ...kept, environment: item.environment }); continue; }
       let name = item.id;
       let script: string | undefined;
       if (item.type === 'worker') {
@@ -186,6 +189,7 @@ async function projectUsage(mapping: ProjectMapping, dependencies: ProjectDepend
     } catch { return { available: false, reason: 'Analytics permissions or this dataset are unavailable. No usage values were estimated.' }; }
   };
   const resources = await Promise.all(normalizeProjectMapping(mapping).resources.map(async resource => {
+    if (resource.accountId && resource.accountId !== mapping.accountId) return { resource, available: false, reason: `This resource is on Cloudflare account ${resource.accountId}; usage is shown only for the repository account.` };
     if (resource.type === 'worker') return { resource, ...await query(WORKER_USAGE_QUERY, { accountTag: mapping.accountId, scriptName: resource.id, start: from, end: to }, 'workersInvocationsAdaptive', 'scriptName', resource.id), window: { from, to } };
     if (resource.type === 'd1') return { resource, ...await query(D1_USAGE_QUERY, { accountTag: mapping.accountId, databaseId: resource.id, start: from.slice(0, 10), end: to.slice(0, 10) }, 'd1AnalyticsAdaptiveGroups', 'databaseId', resource.id), window: { from: from.slice(0, 10), to: to.slice(0, 10), granularity: 'day' } };
     return { resource, available: false, reason: `${resource.type} usage counters are not supported by this integration.` };

@@ -10,12 +10,16 @@ import { accessScopes } from './preview-access';
 import { gitflareInfrastructure, isGitflareResource, type CatalogItem } from '../shared/gitflare-infrastructure';
 import { CLOUDFLARE_PERMISSIONS_DOCS_PATH, describeCloudflareScopes, type CloudflarePermissionPlan } from '../shared/cloudflare-permissions';
 
-export interface CloudflareConnection { version: string; encrypted: string; issuer: Principal }
-export interface CloudflareOAuthState { id: string; browserHash: string; principal: Principal; expiresAt: number; encrypted: string; repositoryId?: string }
-export type CloudflareStoreOperation = 'get' | 'put' | 'delete' | 'state-put' | 'state-consume';
+export interface CloudflareConnection { version: string; encrypted: string; issuer: Principal; account?: Account }
+export interface CloudflareOAuthState { id: string; browserHash: string; principal: Principal; expiresAt: number; encrypted: string; repositoryId?: string; grantId?: string }
+export type CloudflareStoreOperation = 'get' | 'put' | 'delete' | 'state-put' | 'state-consume' | 'resolve' | 'accounts' | 'account-put' | 'account-remove' | 'account-default';
+export interface ConnectedCloudflareAccount { id: string; name: string; slot: string; addedBy: string; addedAt: string }
+export interface RepositoryAccountSelection { accountId?: string; environments?: Record<string, string> }
+export interface CloudflareAccountsOverview { connected: boolean; defaultAccount: Account | null; accounts: { id: string; name: string; grantId: string | null }[]; repositories: Record<string, RepositoryAccountSelection & { own?: Account | true }>; grants?: string[] }
+interface Resolution { record: CloudflareConnection; slot: string; source: CloudflareConnectionSource; selection: 'own' | 'environment' | 'repository' | 'default'; account?: Account }
 export interface CloudflareAuthorization { action: Action; resourceType: string; resourceId: string; expectedAccountId?: string }
 export interface CloudflareApiOptions { method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; body?: unknown; authorization?: CloudflareAuthorization; expectedAccountId?: string }
-interface Store { connectionStore(p: Principal | null, operation: CloudflareStoreOperation, body: Record<string, unknown>): Promise<unknown>; check(p: Principal, action: Action, resourceType?: string, resourceId?: string): Promise<void>; rateLimit(key: string, max?: number, windowMs?: number): Promise<void> }
+interface Store { connectionStore(p: Principal | null, operation: CloudflareStoreOperation, body: Record<string, unknown>): Promise<unknown>; projectStore(p: Principal, repositoryId: string, operation: 'get' | 'account', body?: Record<string, unknown>): Promise<unknown>; check(p: Principal, action: Action, resourceType?: string, resourceId?: string): Promise<void>; rateLimit(key: string, max?: number, windowMs?: number): Promise<void> }
 interface Account { id: string; name: string }
 export type CloudflareVault = Vault;
 export interface CloudflareIdentity {
@@ -25,7 +29,8 @@ export interface CloudflareIdentity {
 }
 interface Vault { accessToken: string; refreshToken?: string; expiresAt: number; account?: Account; scopes: string[]; clientId: string }
 interface TokenResponse { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown; scope?: unknown; token_type?: unknown }
-interface Pending { verifier: string; redirectUri: string; expectedVersion: string | null; repositoryId?: string; extraScopes?: string[] }
+interface Pending { verifier: string; redirectUri: string; expectedVersion: string | null; repositoryId?: string; grantId?: string; extraScopes?: string[] }
+interface Slot { repositoryId?: string; grantId?: string }
 export type CloudflareConnectionSource = 'repository' | 'workspace';
 const authorizeEndpoint = 'https://dash.cloudflare.com/oauth2/auth';
 const tokenEndpoint = 'https://dash.cloudflare.com/oauth2/token';
@@ -57,8 +62,11 @@ export function grantedScopes(value: unknown): string[] {
 export function cloudflareSigninConfigured(env: AppEnv): boolean { return configured(env); }
 export function requestCookie(request: Request, name: string): string | undefined { return request.headers.get('Cookie')?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${name}=`))?.slice(name.length+1); }
 function requireConfiguration(env: AppEnv) { if (!configured(env)) throw new ApiError(503, 'CLOUDFLARE_NOT_CONFIGURED', 'Configure this installation’s Cloudflare OAuth client before connecting an account.'); }
-function connectionContext(p: Principal, repositoryId?: string): string { return repositoryId ? `cloudflare-connection:${p.workspaceId}:repository:${repositoryId}` : `cloudflare-connection:${p.workspaceId}`; }
+function connectionContext(p: Principal, slot: Slot = {}): string { return slot.repositoryId ? `cloudflare-connection:${p.workspaceId}:repository:${slot.repositoryId}` : slot.grantId ? `cloudflare-connection:${p.workspaceId}:grant:${slot.grantId}` : `cloudflare-connection:${p.workspaceId}`; }
 function repositoryScope(repositoryId?: string): Record<string, string> { return repositoryId ? { repositoryId } : {}; }
+function slotScope(slot: Slot = {}): Record<string, string> { return slot.repositoryId ? { repositoryId: slot.repositoryId } : slot.grantId ? { grantId: slot.grantId } : {}; }
+function slotNamed(name: string): Slot { return name.startsWith('repository:') ? { repositoryId: name.slice('repository:'.length) } : name.startsWith('grant:') ? { grantId: name.slice('grant:'.length) } : {}; }
+function repositorySlot(repositoryId?: string): Slot { return repositoryId ? { repositoryId } : {}; }
 function requireRepositoryId(value: string): string { if (!/^[a-zA-Z0-9-]{1,100}$/.test(value)) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.'); return value; }
 function currentIssuer(p: Principal): Principal { return { userId: p.userId, workspaceId: p.workspaceId, role: p.role, ...(p.bootstrap ? {bootstrap:true} : {}) }; }
 async function owner(env: AppEnv, p: Principal): Promise<void> { if (p.role !== 'Owner' || p.credentialId) throw new ApiError(403, 'OWNER_REQUIRED', 'Only a workspace owner can manage its Cloudflare connection.'); await service(env).check(p, 'manage'); }
@@ -85,42 +93,49 @@ function tokenValues(response: TokenResponse) {
   return {accessToken:response.access_token,refreshToken:typeof response.refresh_token==='string'?response.refresh_token:undefined,expiresAt:Date.now()+expiry*1000};
 }
 export async function sealCloudflareConnection(env: AppEnv, issuer: Principal, vault: Vault): Promise<CloudflareConnection> {
-  return {version:crypto.randomUUID(),issuer,encrypted:await encryptAuth(JSON.stringify(vault),env.AUTH_ENCRYPTION_KEY,connectionContext(issuer))};
+  return {version:crypto.randomUUID(),issuer,encrypted:await encryptAuth(JSON.stringify(vault),env.AUTH_ENCRYPTION_KEY,connectionContext(issuer)),...(vault.account?{account:vault.account}:{})};
 }
-async function save(env: AppEnv, p: Principal, vault: Vault, expectedVersion: string | null, issuer = currentIssuer(p), repositoryId?: string): Promise<CloudflareConnection> {
-  const value = {version:crypto.randomUUID(),issuer,encrypted:await encryptAuth(JSON.stringify(vault),env.AUTH_ENCRYPTION_KEY,connectionContext(p,repositoryId))};
-  await service(env).connectionStore(p,'put',{value,expectedVersion,...repositoryScope(repositoryId)}); return value;
+async function seal(env: AppEnv, p: Principal, vault: Vault, issuer: Principal, slot: Slot): Promise<CloudflareConnection> {
+  return {version:crypto.randomUUID(),issuer,encrypted:await encryptAuth(JSON.stringify(vault),env.AUTH_ENCRYPTION_KEY,connectionContext(p,slot)),...(vault.account?{account:vault.account}:{})};
 }
-async function stored(env: AppEnv, p: Principal, authorization?: CloudflareAuthorization, repositoryId?: string): Promise<CloudflareConnection | null> {
-  return await service(env).connectionStore(p,'get',{...(authorization?{authorization}:{}),...repositoryScope(repositoryId)}) as CloudflareConnection | null;
+async function save(env: AppEnv, p: Principal, vault: Vault, expectedVersion: string | null, issuer = currentIssuer(p), slot: Slot = {}): Promise<CloudflareConnection> {
+  const value = await seal(env,p,vault,issuer,slot);
+  await service(env).connectionStore(p,'put',{value,expectedVersion,...slotScope(slot)}); return value;
 }
-async function unseal(env: AppEnv, p: Principal, record: CloudflareConnection, repositoryId?: string): Promise<Vault> { return JSON.parse(await decryptAuth(record.encrypted,env.AUTH_ENCRYPTION_KEY,connectionContext(p,repositoryId))) as Vault; }
-async function openConnection(env: AppEnv, p: Principal, record: CloudflareConnection, repositoryId?: string): Promise<{record:CloudflareConnection;vault:Vault}> {
-  let vault = await unseal(env,p,record,repositoryId);
+async function stored(env: AppEnv, p: Principal, authorization?: CloudflareAuthorization, slot: Slot = {}): Promise<CloudflareConnection | null> {
+  return await service(env).connectionStore(p,'get',{...(authorization?{authorization}:{}),...slotScope(slot)}) as CloudflareConnection | null;
+}
+async function unseal(env: AppEnv, p: Principal, record: CloudflareConnection, slot: Slot = {}): Promise<Vault> { return JSON.parse(await decryptAuth(record.encrypted,env.AUTH_ENCRYPTION_KEY,connectionContext(p,slot))) as Vault; }
+async function openConnection(env: AppEnv, p: Principal, record: CloudflareConnection, slot: Slot = {}): Promise<{record:CloudflareConnection;vault:Vault}> {
+  let vault = await unseal(env,p,record,slot);
   if (vault.clientId !== env.CLOUDFLARE_CLIENT_ID) throw new ApiError(409,'CONNECTION_REAUTH_REQUIRED','Reconnect after changing this installation’s Cloudflare client.');
   if (vault.expiresAt <= Date.now()+30000) {
     if (!vault.refreshToken) throw new ApiError(409,'CONNECTION_REAUTH_REQUIRED','The Cloudflare authorization expired. Reconnect your account.');
     const values=tokenValues(await tokenRequest(env,new URLSearchParams({grant_type:'refresh_token',refresh_token:vault.refreshToken})));
     vault = {...vault,...values,refreshToken:values.refreshToken??vault.refreshToken};
-    const refreshed = await save(env,currentIssuer(record.issuer),vault,record.version,record.issuer,repositoryId);
+    const refreshed = await save(env,currentIssuer(record.issuer),vault,record.version,record.issuer,slot);
     return {record:refreshed,vault};
+  }
+  if (!record.account && vault.account && !slot.repositoryId && !slot.grantId) {
+    const recorded = await save(env,currentIssuer(record.issuer),vault,record.version,record.issuer,slot).catch(() => null);
+    if (recorded) return {record:recorded,vault};
   }
   return {record,vault};
 }
-async function load(env: AppEnv, p: Principal, authorization?: CloudflareAuthorization, repositoryId?: string): Promise<{record:CloudflareConnection;vault:Vault}> {
+async function load(env: AppEnv, p: Principal, authorization?: CloudflareAuthorization, slot: Slot = {}): Promise<{record:CloudflareConnection;vault:Vault}> {
   requireConfiguration(env);
-  const record = await stored(env,p,authorization,repositoryId);
+  const record = await stored(env,p,authorization,slot);
   if (!record) throw new ApiError(409,'CLOUDFLARE_NOT_CONNECTED','Connect a Cloudflare account first.');
-  return openConnection(env,p,record,repositoryId);
+  return openConnection(env,p,record,slot);
 }
-async function loadPreferred(env: AppEnv, p: Principal, authorization?: CloudflareAuthorization, repositoryId?: string): Promise<{record:CloudflareConnection;vault:Vault;source:CloudflareConnectionSource}> {
+export async function resolveCloudflareConnection(env: AppEnv, p: Principal, authorization?: CloudflareAuthorization, repositoryId?: string, environment?: string): Promise<{record:CloudflareConnection;vault:Vault;source:CloudflareConnectionSource;selection:Resolution['selection']}> {
   requireConfiguration(env);
-  if (repositoryId) {
-    const record = await stored(env,p,authorization,requireRepositoryId(repositoryId));
-    if (record) return {...await openConnection(env,p,record,repositoryId),source:'repository'};
-  }
-  return {...await load(env,p,authorization),source:'workspace'};
+  const resolved = await service(env).connectionStore(p,'resolve',{...(authorization?{authorization}:{}),...(repositoryId?{repositoryId:requireRepositoryId(repositoryId)}:{}),...(environment?{environment}:{})}) as Resolution | null;
+  if (!resolved) throw new ApiError(409,'CLOUDFLARE_NOT_CONNECTED','Connect a Cloudflare account first.');
+  const opened = await openConnection(env,p,resolved.record,slotNamed(resolved.slot));
+  return {...opened,vault:resolved.account?{...opened.vault,account:resolved.account}:opened.vault,source:resolved.source,selection:resolved.selection};
 }
+const loadPreferred = resolveCloudflareConnection;
 function selectedAccount(vault: Vault, source: CloudflareConnectionSource): Account {
   if (!vault.account) throw new ApiError(409,'ACCOUNT_SELECTION_REQUIRED',`Select the Cloudflare account for this ${source} first.`);
   return vault.account;
@@ -179,17 +194,17 @@ export async function cloudflareAnalyticsRequest(env:AppEnv,p:Principal,body:{qu
   const response=await jsonRequest(`${apiOrigin}/graphql`,{method:'POST',headers:{Authorization:`Bearer ${vault.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({query:body.query,variables:{...body.variables,accountTag:account.id}})}) as {data?:unknown;errors?:unknown[]};
   if(response.errors?.length) throw new ApiError(502,'CLOUDFLARE_ANALYTICS_REJECTED','Cloudflare could not return usage for this project. Check analytics permissions.'); return response.data;
 }
-export async function cloudflareDeployAccess(env: AppEnv, p: Principal, authorization: CloudflareAuthorization, repositoryId?: string): Promise<CloudflareDeployAccess> {
-  const {vault,source}=await loadPreferred(env,p,authorization,repositoryId); const account=selectedAccount(vault,source);
+export async function cloudflareDeployAccess(env: AppEnv, p: Principal, authorization: CloudflareAuthorization, repositoryId?: string, environment?: string): Promise<CloudflareDeployAccess> {
+  const {vault,source}=await loadPreferred(env,p,authorization,repositoryId,environment); const account=selectedAccount(vault,source);
   checkAccount(vault,authorization.expectedAccountId);
   return {accessToken:vault.accessToken,accountId:account.id,...(account.name?{accountName:account.name}:{}),scopes:grantedScopes(vault.scopes),source};
 }
 export function assertDeployScope(scopes: string[]): void {
   if (!scopes.includes(CLOUDFLARE_DEPLOY_SCOPE)) throw new ApiError(403,'CLOUDFLARE_SCOPE_MISSING',`The Cloudflare connection was not granted ${CLOUDFLARE_DEPLOY_SCOPE} (Workers Scripts Write). An Owner must reconnect Cloudflare after the installation requests that scope.`);
 }
-export async function cloudflareWorkerDeployer(env:AppEnv,p:Principal,workerName:string,expectedAccountId:string,fetcher:(request:Request)=>Promise<Response>=request=>fetch(request),repositoryId?:string):Promise<WorkerDeployer> {
+export async function cloudflareWorkerDeployer(env:AppEnv,p:Principal,workerName:string,expectedAccountId:string,fetcher:(request:Request)=>Promise<Response>=request=>fetch(request),repositoryId?:string,environment?:string):Promise<WorkerDeployer> {
   if(!/^[a-zA-Z0-9_-]{1,63}$/.test(workerName)) throw new ApiError(400,'INVALID_WORKER_NAME','Invalid Worker name.');
-  const access=await cloudflareDeployAccess(env,p,{action:'deploy',resourceType:'environment',resourceId:workerName,expectedAccountId},repositoryId);
+  const access=await cloudflareDeployAccess(env,p,{action:'deploy',resourceType:'environment',resourceId:workerName,expectedAccountId},repositoryId,environment);
   assertDeployScope(access.scopes);
   return workerDeployer(cloudflareDeployClient(access,fetcher),workerName);
 }
@@ -226,9 +241,9 @@ async function start(env:AppEnv,p:Principal,origin:string,repositoryId?:string,s
   await owner(env,p); requireConfiguration(env); if(!p.sessionId) throw new ApiError(403,'ACCOUNT_SESSION_REQUIRED','Sign in through the browser before connecting Cloudflare.');
   const uri=new URL(origin); if(uri.protocol!=='https:') throw new ApiError(400,'HTTPS_REQUIRED','Cloudflare account connection requires HTTPS.');
   const state=randomCapability(); const binder=randomCapability(); const verifier=randomCapability(); const id=await sha(state); const expiresAt=Date.now()+600000;
-  const previous=await stored(env,p,undefined,repositoryId);
+  const previous=await stored(env,p,undefined,repositorySlot(repositoryId));
   const optional=secretsStoreScopes(env);
-  const kept=previous?await unseal(env,p,previous,repositoryId).then(vault=>vault.scopes,()=>[] as string[]):[];
+  const kept=previous?await unseal(env,p,previous,repositorySlot(repositoryId)).then(vault=>vault.scopes,()=>[] as string[]):[];
   const extraScopes=secrets||optional.some(scope=>kept.includes(scope))?optional:[];
   const pending:Pending={verifier,redirectUri:`${uri.origin}/api/cloudflare/callback`,expectedVersion:previous?.version??null,...repositoryScope(repositoryId),...(extraScopes.length?{extraScopes}:{})};
   const record:CloudflareOAuthState={id,browserHash:await sha(binder),principal:p,expiresAt,encrypted:await encryptAuth(JSON.stringify(pending),env.AUTH_ENCRYPTION_KEY,`cloudflare-state:${id}`),...repositoryScope(repositoryId)};
@@ -246,7 +261,7 @@ async function callback(request:Request,env:AppEnv):Promise<Response> {
   if(url.searchParams.has('error')) throw new ApiError(400,'CLOUDFLARE_AUTHORIZATION_DENIED','Cloudflare authorization was cancelled or denied.');
   const code=requireString(url.searchParams.get('code'),'Authorization code',4096);
   const vault=await exchangeCloudflareCode(env,code,pending.redirectUri,pending.verifier,'connect',pending.extraScopes);
-  await save(env,record.principal,vault,pending.expectedVersion,undefined,record.repositoryId);
+  await save(env,record.principal,vault,pending.expectedVersion,undefined,repositorySlot(record.repositoryId));
   const destination=record.repositoryId?`/repository/${encodeURIComponent(record.repositoryId)}/cloudflare`:'/settings/cloudflare';
   return new Response(null,{status:303,headers:{Location:`${url.origin}${destination}`,'Set-Cookie':`${CLOUDFLARE_CONNECT_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
 }
@@ -286,20 +301,20 @@ async function disconnect(env:AppEnv,p:Principal,repositoryId?:string) {
   const removed=await service(env).connectionStore(p,'delete',repositoryScope(repositoryId)) as CloudflareConnection|null;
   if(!removed)return {connected:false,revoked:true};
   let revoked:boolean;
-  try { revoked=await revokeCloudflareTokens(env,await unseal(env,p,removed,repositoryId)); }catch{revoked=false;}
+  try { revoked=await revokeCloudflareTokens(env,await unseal(env,p,removed,repositorySlot(repositoryId))); }catch{revoked=false;}
   return {connected:false,revoked};
 }
 async function selectAccount(env:AppEnv,p:Principal,body:Record<string,unknown>,repositoryId?:string) {
-  const {record,vault}=await load(env,p,undefined,repositoryId);
+  const {record,vault}=await load(env,p,undefined,repositorySlot(repositoryId));
   const accountId=requireString(body.accountId,'Cloudflare account',32,32);
   const account=accountsValue(await api(env,vault,'/accounts')).find(a=>a.id===accountId);
   if(!account) throw new ApiError(403,'ACCOUNT_NOT_GRANTED','Select an account granted by this Cloudflare authorization.');
-  await save(env,p,{...vault,account},record.version,record.issuer,repositoryId);
+  await save(env,p,{...vault,account},record.version,record.issuer,repositorySlot(repositoryId));
   return status(env,{...vault,account});
 }
 async function repositoryStatus(env:AppEnv,p:Principal,repositoryId:string) {
-  const own=await stored(env,p,undefined,repositoryId);
-  if(own) return {source:'repository' as const,...status(env,await unseal(env,p,own,repositoryId))};
+  const own=await stored(env,p,undefined,repositorySlot(repositoryId));
+  if(own) return {source:'repository' as const,...status(env,await unseal(env,p,own,repositorySlot(repositoryId)))};
   const workspace=await stored(env,p);
   return {source:workspace?'workspace' as const:'none' as const,...status(env,workspace?await unseal(env,p,workspace):undefined)};
 }
@@ -307,7 +322,7 @@ async function dispatchRepository(env:AppEnv,p:Principal,action:string,body:Reco
   if(action==='status') return repositoryStatus(env,p,repositoryId);
   if(action==='connect') return {browserStartUrl:`${new URL(origin).origin}/repository/${encodeURIComponent(repositoryId)}/cloudflare`,browserAuthorizationRequired:true,permissions:connectPermissionPlan(env)};
   if(action==='disconnect') return disconnect(env,p,repositoryId);
-  if(action==='accounts') {const {vault}=await load(env,p,undefined,repositoryId);return {accounts:accountsValue(await api(env,vault,'/accounts'))};}
+  if(action==='accounts') {const {vault}=await load(env,p,undefined,repositorySlot(repositoryId));return {accounts:accountsValue(await api(env,vault,'/accounts'))};}
   if(action==='select-account') return {source:'repository',...await selectAccount(env,p,body,repositoryId)};
   if(action==='resources') {const {vault,source}=await loadPreferred(env,p,undefined,repositoryId);return {source,...await resourceCatalog(env,vault,source,body.includeGitflare===true)};}
   throw new ApiError(404,'NOT_FOUND','This Cloudflare connection operation is unavailable.');

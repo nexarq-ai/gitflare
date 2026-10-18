@@ -49,7 +49,7 @@ An installation's operator chooses whether to request these. If they are not req
 | Zone Read | `zone.read` | Gitflare cannot look up a custom domain's zone. Add `zone_id` to that route in the Wrangler configuration yourself. |
 | Workers Scripts Read | `workers-scripts.read` | Linked Worker details beyond names are unavailable. |
 | Workflows Read | `workflows.read` | Workflows do not appear in the resource catalog. |
-| Access: Apps and Policies Edit | set by the operator | Previews cannot be put behind Cloudflare Access; they stay reachable by link only. |
+| Access: Apps and Policies Write and Read (`zone-access.write`, `zone-access.read`) | set by the operator | Previews cannot be put behind Cloudflare Access; they stay reachable by link only. |
 
 Without the deploy permissions, Gitflare still links resources, shows usage and applies reviewed D1 migrations; deploy and Worker Preview actions explain which permission is missing.
 

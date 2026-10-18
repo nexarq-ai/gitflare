@@ -2,8 +2,9 @@ import { DurableObject } from 'cloudflare:workers';
 import { timingSafeEqual } from 'node:crypto';
 import { ApiError, requireString } from './domain';
 import type { AppEnv } from './env';
-import type { CloudflareConnection, CloudflareIdentity, CloudflareOAuthState } from './cloudflare';
-import { normalizeProjectMapping, type ProjectMapping, type MigrationPlan } from './cloudflare-projects';
+import type { CloudflareConnection, CloudflareIdentity, CloudflareOAuthState, CloudflareStoreOperation, ConnectedCloudflareAccount, RepositoryAccountSelection } from './cloudflare';
+import { validEnvironmentName, DEPLOY_ENVIRONMENTS_MAX } from './deploy-environments';
+import { normalizeProjectMapping, type ProjectMapping, type MigrationPlan, type ProjectStoreOperation } from './cloudflare-projects';
 import { authenticatorUri, decryptAuth, encryptAuth, mfaSecret, randomCapability, verifyTotp } from './mfa';
 import { renewedExpiry, SESSION_ABSOLUTE_MS, slidingExpiry } from './session-policy';
 
@@ -45,7 +46,7 @@ export type ReviewerOperation = 'create' | 'rotate' | 'disable';
 export interface ReviewerAccountResult { email: string; userId: string; workspaceId: string; created: boolean; disabled: boolean; password?: string }
 export interface MfaChallengeResult { mfaRequired: true; challengeId: string; expiresAt: number; enrollmentRequired: boolean; secret?: string; otpauthUri?: string }
 interface State { cloudflareConnections: Record<string, CloudflareConnection>; cloudflareStates: Record<string, CloudflareOAuthState>; cloudflareSignins: Record<string, CloudflareSigninState>; cloudflareLinks: Record<string, CloudflareLink>; cloudflareProjects: Record<string, ProjectRecord>; mfa: MfaRecord[]; challenges: AuthChallenge[]; emailTokens: EmailToken[]; loginFailures: Record<string, LoginFailures>; installations: Record<string, Installation>; machines: MachineRegistration[]; users: User[]; members: Member[]; sessions: Session[]; workspaces: WorkspaceRecord[]; invitations: Invitation[]; teams: Team[]; grants: Grant[]; credentials: Credential[]; audit: Audit[]; protections: Record<string, Protection>; approvals: Record<string, string[]>; limits: Record<string, { count: number; until: number }> }
-interface ProjectRecord { mapping: ProjectMapping | null; plans: MigrationPlan[] }
+interface ProjectRecord { mapping: ProjectMapping | null; plans: MigrationPlan[]; accounts?: RepositoryAccountSelection }
 export interface DemoInstallInput { workspaceId: string; workspaceName: string; users: { id: string; name: string; email: string; role: Role }[]; visitorId: string }
 export interface Principal { userId: string; workspaceId: string; role: Role; sessionId?: string; credentialId?: string; bootstrap?: boolean }
 export interface LegacyWorkspaceSlice { workspace: WorkspaceRecord | null; members: Member[]; sessions: Session[]; teams: Team[]; invitations: Invitation[]; grants: Grant[]; credentials: Credential[]; protection: Protection | null; approvals: Record<string, string[]>; connection: CloudflareConnection | null; cloudflareStates: CloudflareOAuthState[]; projects: Record<string, ProjectRecord>; audit: Audit[] }
@@ -576,11 +577,15 @@ function splitIdentity(legacy: State, unit: Unit, now: number): string[] {
   return [...workspaces];
 }
 
-type ShardGroup = 'meta' | 'workspace' | 'member' | 'session' | 'team' | 'invitation' | 'grant' | 'credential' | 'protection' | 'approval' | 'connection' | 'cfstate' | 'project' | 'revision';
-const SHARD_GROUPS: ShardGroup[] = ['meta', 'workspace', 'member', 'session', 'team', 'invitation', 'grant', 'credential', 'protection', 'approval', 'connection', 'cfstate', 'project', 'revision'];
-interface ShardData { meta: Map<string, { workspaceId: string; source: string; version: number; at: string }>; workspace: Map<string, WorkspaceRecord>; member: Map<string, Member>; session: Map<string, Session>; team: Map<string, Team>; invitation: Map<string, Invitation>; grant: Map<string, Grant>; credential: Map<string, Credential>; protection: Map<string, Protection>; approval: Map<string, string[]>; connection: Map<string, CloudflareConnection>; cfstate: Map<string, CloudflareOAuthState>; project: Map<string, ProjectRecord>; revision: Map<string, number> }
+type ShardGroup = 'meta' | 'workspace' | 'member' | 'session' | 'team' | 'invitation' | 'grant' | 'credential' | 'protection' | 'approval' | 'connection' | 'cfstate' | 'project' | 'revision' | 'cfaccount';
+const SHARD_GROUPS: ShardGroup[] = ['meta', 'workspace', 'member', 'session', 'team', 'invitation', 'grant', 'credential', 'protection', 'approval', 'connection', 'cfstate', 'project', 'revision', 'cfaccount'];
+interface ShardData { meta: Map<string, { workspaceId: string; source: string; version: number; at: string }>; workspace: Map<string, WorkspaceRecord>; member: Map<string, Member>; session: Map<string, Session>; team: Map<string, Team>; invitation: Map<string, Invitation>; grant: Map<string, Grant>; credential: Map<string, Credential>; protection: Map<string, Protection>; approval: Map<string, string[]>; connection: Map<string, CloudflareConnection>; cfstate: Map<string, CloudflareOAuthState>; project: Map<string, ProjectRecord>; revision: Map<string, number>; cfaccount: Map<string, ConnectedCloudflareAccount> }
 function emptyShard(): ShardData { return Object.fromEntries(SHARD_GROUPS.map(group => [group, new Map()])) as unknown as ShardData; }
 function connectionRepository(value: unknown): string | undefined { if (value === undefined) return undefined; if (typeof value !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(value)) fail(); return value; }
+function connectionGrant(value: unknown): string | undefined { if (value === undefined) return undefined; if (typeof value !== 'string' || !/^[a-f0-9-]{36}$/.test(value)) fail(); return value; }
+const CLOUDFLARE_ACCOUNT = /^[a-f0-9]{32}$/;
+const CONNECTED_ACCOUNTS_MAX = 50;
+function accountNotConnected(accountId: string): never { throw new ApiError(409, 'ACCOUNT_NOT_CONNECTED', `Cloudflare account ${accountId} is not connected to this workspace. An Owner must add it in Settings → Cloudflare first.`); }
 function shardKey(group: ShardGroup, id: string): string { return `ws:${group}:${enc(id)}`; }
 function auditKey(sequence: number): string { return `wa:${String(sequence).padStart(12, '0')}`; }
 interface Context { session?: PublicSession | null; trusted?: Set<string> }
@@ -1037,13 +1042,17 @@ export class WorkspaceStore {
       throw new ApiError(404, 'NOT_FOUND', 'This access operation is unavailable.');
     });
   }
-  async connectionStore(p: Principal | null, operation: 'get' | 'put' | 'delete' | 'state-put' | 'state-consume', body: Record<string, unknown> = {}): Promise<unknown> {
+  async connectionStore(p: Principal | null, operation: CloudflareStoreOperation, body: Record<string, unknown> = {}): Promise<unknown> {
     await this.load();
     const repositoryId = connectionRepository(body.repositoryId);
-    const slot = repositoryId ? `repository:${repositoryId}` : 'current';
+    const grantId = connectionGrant(body.grantId);
+    if (repositoryId && grantId) fail();
+    const slot = repositoryId ? `repository:${repositoryId}` : grantId ? `grant:${grantId}` : 'current';
     const pending = operation === 'state-consume' ? this.data.cfstate.get(String(body.id)) : undefined;
     const context = await this.prepare(pending?.principal ?? p);
-    for (const issuer of [this.data.connection.get(slot)?.issuer, (body.value as Partial<CloudflareConnection> | undefined)?.issuer]) if (issuer && !issuer.bootstrap) await this.trustedUser(issuer.userId);
+    const swapSlot = operation === 'account-default' ? this.data.cfaccount.get(String(body.accountId))?.slot : undefined;
+    for (const issuer of [this.data.connection.get(slot)?.issuer, swapSlot ? this.data.connection.get(swapSlot)?.issuer : undefined, (body.value as Partial<CloudflareConnection> | undefined)?.issuer, (body.grantValue as Partial<CloudflareConnection> | undefined)?.issuer]) if (issuer && !issuer.bootstrap) await this.trustedUser(issuer.userId);
+    if (operation === 'resolve') for (const entry of this.data.cfaccount.values()) { const issuer = this.data.connection.get(entry.slot)?.issuer; if (issuer && !issuer.bootstrap) await this.trustedUser(issuer.userId); }
     const issuerContext: Context = {};
     return this.change(change => {
       if (operation === 'state-consume') {
@@ -1052,6 +1061,7 @@ export class WorkspaceStore {
         this.validate(value.principal, context);
         if (value.principal.role !== 'Owner' || !value.principal.sessionId || value.principal.credentialId) fail();
         if (value.repositoryId !== undefined && (connectionRepository(value.repositoryId) !== value.repositoryId || !this.authorityAllows(value.principal, 'read', 'repository', value.repositoryId))) fail();
+        if (value.grantId !== undefined && (connectionGrant(value.grantId) !== value.grantId || value.repositoryId !== undefined)) fail();
         this.data.cfstate.delete(value.id);
         return value;
       }
@@ -1059,20 +1069,61 @@ export class WorkspaceStore {
       this.validate(p, context);
       if (p.credentialId) fail();
       if (repositoryId && !this.authorityAllows(p, 'read', 'repository', repositoryId)) fail();
-      if (operation === 'get') {
+      if (!this.data.cfaccount.size) this.connectCurrentAccount();
+      const issuerValid = (connection: CloudflareConnection | null | undefined) => { if (connection?.issuer) this.validate({ ...connection.issuer, sessionId: undefined }, issuerContext); };
+      if (operation === 'get' || operation === 'resolve') {
         const authorization = body.authorization as { action: Action; resourceType: string; resourceId: string } | undefined;
         if (p.role !== 'Owner' && (!authorization || !this.authorityAllows(p, authorization.action, authorization.resourceType, authorization.resourceId))) fail();
-        const connection = this.data.connection.get(slot) ?? null;
-        if (connection?.issuer) this.validate({ ...connection.issuer, sessionId: undefined }, issuerContext);
-        return connection;
+        if (operation === 'get') {
+          const connection = this.data.connection.get(slot) ?? null;
+          issuerValid(connection);
+          return connection;
+        }
+        if (grantId) fail();
+        const own = repositoryId ? this.data.connection.get(slot) : undefined;
+        if (own) { issuerValid(own); return { record: own, slot, source: 'repository', selection: 'own' }; }
+        const environment = body.environment === undefined ? undefined : validEnvironmentName(body.environment) ? body.environment : fail();
+        const accounts = repositoryId ? this.data.project.get(repositoryId)?.accounts : undefined;
+        const fromEnvironment = environment ? accounts?.environments?.[environment] : undefined;
+        const selected = fromEnvironment ?? accounts?.accountId;
+        if (selected) {
+          const entry = this.data.cfaccount.get(selected);
+          const record = entry ? this.data.connection.get(entry.slot) : undefined;
+          if (!entry || !record) accountNotConnected(selected);
+          issuerValid(record);
+          return { record, slot: entry.slot, source: 'workspace', selection: fromEnvironment ? 'environment' : 'repository', account: { id: entry.id, name: entry.name } };
+        }
+        const current = this.data.connection.get('current') ?? null;
+        issuerValid(current);
+        return current ? { record: current, slot: 'current', source: 'workspace', selection: 'default' } : null;
+      }
+      if (operation === 'accounts') {
+        const repositories: Record<string, RepositoryAccountSelection & { own?: { id: string; name: string } | true }> = {};
+        for (const [id, record] of this.data.project) if (record.accounts && this.authorityAllows(p, 'read', 'repository', id)) repositories[id] = structuredClone(record.accounts);
+        for (const [name, record] of this.data.connection) {
+          if (!name.startsWith('repository:')) continue;
+          const id = name.slice('repository:'.length);
+          if (this.authorityAllows(p, 'read', 'repository', id)) repositories[id] = { ...repositories[id], own: record.account ?? true };
+        }
+        const current = this.data.connection.get('current');
+        return {
+          connected: !!current,
+          defaultAccount: current?.account ?? null,
+          accounts: [...this.data.cfaccount.values()].map(({ id, name, slot: from }) => ({ id, name, grantId: from === 'current' ? null : from.slice('grant:'.length) })),
+          repositories,
+          ...(p.role === 'Owner' ? { grants: [...this.data.connection.keys()].filter(name => name.startsWith('grant:')).map(name => name.slice('grant:'.length)) } : {}),
+        };
       }
       if (p.role !== 'Owner') fail();
       if (operation === 'state-put') {
         const value = body.value as CloudflareOAuthState;
-        if (!p.sessionId || value.principal.userId !== p.userId || value.principal.workspaceId !== p.workspaceId || value.principal.sessionId !== p.sessionId || value.principal.role !== 'Owner' || value.principal.credentialId || value.expiresAt > Date.now() + 600000 || value.expiresAt <= Date.now() || (value.repositoryId ?? undefined) !== repositoryId) fail();
+        if (!p.sessionId || value.principal.userId !== p.userId || value.principal.workspaceId !== p.workspaceId || value.principal.sessionId !== p.sessionId || value.principal.role !== 'Owner' || value.principal.credentialId || value.expiresAt > Date.now() + 600000 || value.expiresAt <= Date.now() || (value.repositoryId ?? undefined) !== repositoryId || (value.grantId ?? undefined) !== grantId) fail();
         this.data.cfstate.set(value.id, value);
         return { ok: true };
       }
+      if (operation === 'account-put') return this.putAccount(p, slot, body, change);
+      if (operation === 'account-remove') return this.removeAccount(p, body, change);
+      if (operation === 'account-default') return this.defaultAccount(p, body, change, issuerValid);
       const existing = this.data.connection.get(slot) ?? null;
       if (operation === 'put') {
         if ((existing?.version ?? null) !== body.expectedVersion) throw new ApiError(409, 'CLOUDFLARE_CONNECTION_CHANGED', 'The Cloudflare connection changed. Refresh and try again.');
@@ -1080,15 +1131,79 @@ export class WorkspaceStore {
         if (value.issuer?.workspaceId !== p.workspaceId || value.issuer.role !== 'Owner' || value.issuer.credentialId) fail();
         this.validate({ ...value.issuer, sessionId: undefined }, issuerContext);
         this.data.connection.set(slot, value);
+        if (slot === 'current') this.connectCurrentAccount();
       } else if (operation === 'delete') {
+        if (!repositoryId) {
+          if (slot === 'current' && [...this.data.cfaccount.values()].some(entry => entry.slot !== 'current')) throw new ApiError(409, 'DEFAULT_ACCOUNT_REQUIRED', 'Make an account from another Cloudflare login the default before disconnecting this one.');
+          const gone = [...this.data.cfaccount.values()].filter(entry => entry.slot === slot).map(entry => entry.id);
+          this.assertUnused(gone);
+          for (const id of gone) this.data.cfaccount.delete(id);
+        }
         this.data.connection.delete(slot);
-        for (const [id, value] of this.data.cfstate) if (value.principal.workspaceId === p.workspaceId && value.repositoryId === repositoryId) this.data.cfstate.delete(id);
+        for (const [id, value] of this.data.cfstate) if (value.principal.workspaceId === p.workspaceId && value.repositoryId === repositoryId && value.grantId === grantId) this.data.cfstate.delete(id);
       }
-      change.audit.push({ actorId: p.userId, action: `cloudflare:${operation}`, ...(repositoryId ? { resourceId: repositoryId } : {}) });
+      change.audit.push({ actorId: p.userId, action: `cloudflare:${operation}`, ...(repositoryId ? { resourceId: repositoryId } : grantId ? { resourceId: grantId } : {}) });
       return operation === 'delete' ? existing : { ok: true };
     });
   }
-  async projectStore(p: Principal, repositoryId: string, operation: 'get' | 'set' | 'link' | 'plan' | 'consume' | 'finish', body: Record<string, unknown> = {}): Promise<unknown> {
+  private connectCurrentAccount() {
+    const current = this.data.connection.get('current');
+    const account = current?.account;
+    if (!account || !CLOUDFLARE_ACCOUNT.test(account.id) || this.data.cfaccount.has(account.id) || this.data.cfaccount.size >= CONNECTED_ACCOUNTS_MAX) return;
+    this.data.cfaccount.set(account.id, { id: account.id, name: String(account.name ?? '').slice(0, 200), slot: 'current', addedBy: current.issuer.userId, addedAt: new Date().toISOString() });
+  }
+  private assertUnused(accountIds: string[]) {
+    const users = [...this.data.project].filter(([, record]) => accountIds.some(id => record.accounts?.accountId === id || Object.values(record.accounts?.environments ?? {}).includes(id))).map(([id]) => id);
+    if (users.length) throw new ApiError(409, 'ACCOUNT_IN_USE', `${users.length === 1 ? 'A repository uses' : `${users.length} repositories use`} this Cloudflare account. Choose another account for ${users.length === 1 ? 'it' : 'them'} first.`);
+  }
+  private putAccount(p: Principal, slot: string, body: Record<string, unknown>, change: Change) {
+    const account = body.account as { id?: unknown; name?: unknown } | undefined;
+    if (typeof account?.id !== 'string' || !CLOUDFLARE_ACCOUNT.test(account.id) || typeof account.name !== 'string') fail();
+    if (slot.startsWith('repository:') || !this.data.connection.has(slot)) throw new ApiError(409, 'CLOUDFLARE_NOT_CONNECTED', 'Connect a Cloudflare account first.');
+    const previous = this.data.cfaccount.get(account.id);
+    const keep = previous?.slot === 'current' && this.data.connection.get('current')?.account?.id === account.id;
+    if (!previous && this.data.cfaccount.size >= CONNECTED_ACCOUNTS_MAX) throw new ApiError(409, 'ACCOUNT_LIMIT', `A workspace can connect at most ${CONNECTED_ACCOUNTS_MAX} Cloudflare accounts.`);
+    const entry: ConnectedCloudflareAccount = { id: account.id, name: account.name.slice(0, 200), slot: keep ? 'current' : slot, addedBy: previous?.addedBy ?? p.userId, addedAt: previous?.addedAt ?? new Date().toISOString() };
+    this.data.cfaccount.set(entry.id, entry);
+    if (!previous || previous.slot !== entry.slot || previous.name !== entry.name) change.audit.push({ actorId: p.userId, action: previous ? 'cloudflare:account:update' : 'cloudflare:account:add', resourceId: entry.id });
+    return entry;
+  }
+  private removeAccount(p: Principal, body: Record<string, unknown>, change: Change) {
+    const accountId = String(body.accountId);
+    const entry = this.data.cfaccount.get(accountId);
+    if (!entry) accountNotConnected(accountId);
+    if (this.data.connection.get('current')?.account?.id === accountId) throw new ApiError(409, 'DEFAULT_ACCOUNT_REQUIRED', 'Make another account the default before removing this one.');
+    this.assertUnused([accountId]);
+    this.data.cfaccount.delete(accountId);
+    let connection: CloudflareConnection | null = null;
+    if (entry.slot.startsWith('grant:') && ![...this.data.cfaccount.values()].some(other => other.slot === entry.slot)) {
+      connection = this.data.connection.get(entry.slot) ?? null;
+      this.data.connection.delete(entry.slot);
+    }
+    change.audit.push({ actorId: p.userId, action: 'cloudflare:account:remove', resourceId: accountId });
+    return { removed: entry, connection, grantId: connection ? entry.slot.slice('grant:'.length) : null };
+  }
+  private defaultAccount(p: Principal, body: Record<string, unknown>, change: Change, issuerValid: (connection: CloudflareConnection | null | undefined) => void) {
+    const accountId = String(body.accountId);
+    const entry = this.data.cfaccount.get(accountId);
+    if (!entry) accountNotConnected(accountId);
+    const current = this.data.connection.get('current');
+    if (!current || current.version !== body.expectedVersion) throw new ApiError(409, 'CLOUDFLARE_CONNECTION_CHANGED', 'The Cloudflare connection changed. Refresh and try again.');
+    const next = body.value as CloudflareConnection | undefined;
+    const swapped = entry.slot === 'current' ? undefined : body.grantValue as CloudflareConnection | undefined;
+    for (const value of [next, ...(entry.slot === 'current' ? [] : [swapped])]) { if (value?.issuer?.workspaceId !== p.workspaceId || value.issuer.role !== 'Owner' || value.issuer.credentialId) fail(); issuerValid(value); }
+    if (next!.account?.id !== accountId) fail();
+    if (entry.slot !== 'current') {
+      const from = entry.slot;
+      if (this.data.connection.get(from)?.version !== body.expectedGrantVersion) throw new ApiError(409, 'CLOUDFLARE_CONNECTION_CHANGED', 'The Cloudflare connection changed. Refresh and try again.');
+      for (const other of this.data.cfaccount.values()) other.slot = other.slot === from ? 'current' : other.slot === 'current' ? from : other.slot;
+      this.data.connection.set(from, swapped!);
+    }
+    this.data.connection.set('current', next!);
+    change.audit.push({ actorId: p.userId, action: 'cloudflare:account:default', resourceId: accountId });
+    return { ok: true };
+  }
+  async projectStore(p: Principal, repositoryId: string, operation: ProjectStoreOperation, body: Record<string, unknown> = {}): Promise<unknown> {
     const context = await this.prepare(p);
     return this.change(change => {
       this.validate(p, context);
@@ -1096,6 +1211,22 @@ export class WorkspaceStore {
       const current = this.data.project.get(repositoryId) ?? { mapping: null, plans: [] };
       if (current.mapping) current.mapping = normalizeProjectMapping(current.mapping);
       if (operation === 'get') return current;
+      if (operation === 'account') {
+        if (p.role !== 'Owner') fail('OWNER_REQUIRED', 'Only a workspace owner can choose the Cloudflare account for a repository.');
+        const environment = body.environment === undefined || body.environment === null ? undefined : validEnvironmentName(body.environment) ? body.environment : (() => { throw new ApiError(400, 'INVALID_ENVIRONMENT', 'Use an environment name of lowercase letters, digits and dashes that starts with a letter.'); })();
+        const accountId = body.accountId === null ? null : typeof body.accountId === 'string' && CLOUDFLARE_ACCOUNT.test(body.accountId) ? body.accountId : (() => { throw new ApiError(400, 'INVALID_ACCOUNT', 'Choose a connected Cloudflare account ID, or null to clear the choice.'); })();
+        if (accountId && !this.data.cfaccount.has(accountId)) accountNotConnected(accountId);
+        const accounts: RepositoryAccountSelection = { ...(current.accounts?.accountId ? { accountId: current.accounts.accountId } : {}), environments: { ...current.accounts?.environments } };
+        if (environment) {
+          if (accountId) accounts.environments![environment] = accountId; else delete accounts.environments![environment];
+          if (Object.keys(accounts.environments!).length > DEPLOY_ENVIRONMENTS_MAX) throw new ApiError(409, 'DEPLOY_ENVIRONMENTS_LIMIT', `A repository can choose accounts for at most ${DEPLOY_ENVIRONMENTS_MAX} environments.`);
+        } else if (accountId) accounts.accountId = accountId; else delete accounts.accountId;
+        if (!Object.keys(accounts.environments!).length) delete accounts.environments;
+        if (Object.keys(accounts).length) current.accounts = accounts; else delete current.accounts;
+        this.data.project.set(repositoryId, current);
+        change.audit.push({ actorId: p.userId, action: `cloudflare:project:account:${environment ?? 'repository'}:${accountId ?? 'cleared'}`, resourceId: repositoryId });
+        return current;
+      }
       if (operation === 'set') {
         if (p.role !== 'Owner') fail();
         const mapping = body.mapping as ProjectMapping;
@@ -1108,15 +1239,18 @@ export class WorkspaceStore {
         const workers = body.workers;
         if (typeof accountId !== 'string' || !/^[a-f0-9]{32}$/.test(accountId) || !Array.isArray(workers) || !workers.length || workers.length > 20) throw new ApiError(400, 'INVALID_PROJECT_MAPPING', 'Choose the detected Workers and the connected account.');
         const existing = current.mapping;
-        if (existing && existing.accountId !== accountId) throw new ApiError(409, 'PROJECT_ACCOUNT_CHANGED', 'The project resources are linked to a different Cloudflare account. An Owner must relink them first.');
+        const selected = current.accounts?.environments ?? {};
+        const scoped = (workers as { environment?: unknown }[]).every(worker => typeof worker?.environment === 'string' && selected[worker.environment] === accountId);
+        if (existing && existing.accountId !== accountId && !scoped) throw new ApiError(409, 'PROJECT_ACCOUNT_CHANGED', 'The project resources are linked to a different Cloudflare account. An Owner must relink them first.');
+        const base = existing?.accountId ?? (scoped && typeof body.repositoryAccountId === 'string' && CLOUDFLARE_ACCOUNT.test(body.repositoryAccountId) ? body.repositoryAccountId : accountId);
         const resources = [...(existing?.resources ?? [])];
         for (const worker of workers as { id?: unknown; environment?: unknown }[]) {
           if (typeof worker?.id !== 'string' || !/^[a-zA-Z0-9_-]{1,63}$/.test(worker.id) || typeof worker.environment !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(worker.environment)) throw new ApiError(400, 'INVALID_PROJECT_MAPPING', 'Choose valid Worker names and environments.');
           if (!this.authorityAllows(p, 'deploy', 'environment', worker.id)) fail();
-          if (!resources.some(resource => resource.type === 'worker' && resource.id === worker.id)) resources.push({ type: 'worker', id: worker.id, name: worker.id, environment: worker.environment });
+          if (!resources.some(resource => resource.type === 'worker' && resource.id === worker.id)) resources.push({ type: 'worker', id: worker.id, name: worker.id, environment: worker.environment, ...(accountId !== base ? { accountId } : {}) });
         }
         if (resources.length > 100) throw new ApiError(400, 'INVALID_PROJECT_MAPPING', 'Choose at most 100 resources.');
-        current.mapping = normalizeProjectMapping({ repositoryId, workspaceId: p.workspaceId, accountId, version: existing?.version ?? crypto.randomUUID(), resources, updatedAt: new Date().toISOString() });
+        current.mapping = normalizeProjectMapping({ repositoryId, workspaceId: p.workspaceId, accountId: base, version: existing?.version ?? crypto.randomUUID(), resources, updatedAt: new Date().toISOString() });
       } else {
         const mapping = current.mapping;
         if (!mapping) fail();
@@ -1263,7 +1397,7 @@ export class SecurityService {
     return { token: value, user: safeUser(user), workspaceId };
   }
 
-  async connectionStore(p: Principal | null, operation: 'get' | 'put' | 'delete' | 'state-put' | 'state-consume', body: Record<string, unknown> = {}): Promise<unknown> {
+  async connectionStore(p: Principal | null, operation: CloudflareStoreOperation, body: Record<string, unknown> = {}): Promise<unknown> {
     if (operation === 'state-consume') {
       const workspaceId = await this.identity().lookup('oauthState', String(body.id));
       if (!workspaceId) throw new ApiError(400, 'CLOUDFLARE_STATE_INVALID', 'The connection request has expired. Start again.');
@@ -1299,7 +1433,7 @@ export class SecurityService {
     const previous = value ? await this.identity().installationConnection('put', value) : await this.identity().installationConnection('delete');
     if (value || previous) await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: value ? 'installation.cloudflare_connection.set' : 'installation.cloudflare_connection.removed', resourceId: (value ?? previous as InstallationConnectionRecord).accountId }]);
   }
-  projectStore(p: Principal, repositoryId: string, operation: 'get' | 'set' | 'link' | 'plan' | 'consume' | 'finish', body: Record<string, unknown> = {}): Promise<unknown> { return this.shard(p.workspaceId).projectStore(p, repositoryId, operation, body); }
+  projectStore(p: Principal, repositoryId: string, operation: ProjectStoreOperation, body: Record<string, unknown> = {}): Promise<unknown> { return this.shard(p.workspaceId).projectStore(p, repositoryId, operation, body); }
   async rateLimit(key: string, max = 15, windowMs = 900000): Promise<void> {
     if (!await this.identity().rateLimit(key, max, windowMs)) throw new ApiError(429, 'RATE_LIMITED', 'Too many authentication attempts. Try again in 15 minutes.');
   }
@@ -1680,8 +1814,8 @@ export class GitflareSecurity extends DurableObject<AppEnv> {
   identityCall(op: string, args: unknown[]) { return this.service.identityCall(op, args); }
   shardCall(workspaceId: string, op: string, args: unknown[]) { return this.service.shardCall(workspaceId, op, args); }
   async alarm() { try { await this.service.alarm(); } catch (error) { await this.ctx.storage.setAlarm(Date.now() + 60_000); throw error; } }
-  connectionStore(p: Principal | null, operation: 'get' | 'put' | 'delete' | 'state-put' | 'state-consume', body: Record<string, unknown> = {}) { return this.service.connectionStore(p, operation, body); }
-  projectStore(p: Principal, repositoryId: string, operation: 'get' | 'set' | 'link' | 'plan' | 'consume' | 'finish', body: Record<string, unknown> = {}) { return this.service.projectStore(p, repositoryId, operation, body); }
+  connectionStore(p: Principal | null, operation: CloudflareStoreOperation, body: Record<string, unknown> = {}) { return this.service.connectionStore(p, operation, body); }
+  projectStore(p: Principal, repositoryId: string, operation: ProjectStoreOperation, body: Record<string, unknown> = {}) { return this.service.projectStore(p, repositoryId, operation, body); }
   authConfig() { return this.service.authConfig(); }
   startSetup(body: Record<string, unknown>) { return this.service.startSetup(body); }
   verifyMfa(body: Record<string, unknown>, setupOnly?: boolean) { return this.service.verifyMfa(body, setupOnly); }
