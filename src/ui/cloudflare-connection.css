@@ -208,3 +208,7 @@ label.cf-warning { display: flex; align-items: flex-start; gap: 8px; margin-top:
   .cf-accounts-table td[data-label]::before { content: attr(data-label) ": "; color: var(--gf-color-text-tertiary); font-size: 12px; }
   .cf-accounts-table td.people-actions { text-align: left; padding-top: 8px; }
 }
+
+.cf-deploy-accounts { margin: 4px 0 18px; }
+.cf-deploy-accounts select { min-height: 34px; max-width: 260px; padding: 4px 8px; border: 1px solid var(--gf-color-border-strong); border-radius: 6px; background: var(--gf-color-surface-sunken); color: var(--gf-color-text); font: inherit; font-size: 13px; }
+.cf-preview-account { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--gf-color-border); border-radius: 8px; background: var(--gf-color-surface); font-size: 13px; }

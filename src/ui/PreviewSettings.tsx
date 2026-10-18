@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PreviewAccountLine } from "./AccountPicker";
 import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
@@ -23,7 +24,7 @@ const LIFETIME_LABELS: Record<number, string> = { 15: "15 minutes", 60: "1 hour"
 const domainsText = (domains: string[]) => domains.join("\n");
 const parseDomains = (text: string) => text.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 
-export default function PreviewSettings({ repositoryId, onNotify }: { repositoryId: string; onNotify: (message: string) => void }) {
+export default function PreviewSettings({ repositoryId, canManage = false, onNotify }: { repositoryId: string; canManage?: boolean; onNotify: (message: string) => void }) {
   const path = `/api/repositories/${encodeURIComponent(repositoryId)}/preview-settings`;
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [lifetime, setLifetime] = useState(15);
@@ -82,7 +83,7 @@ export default function PreviewSettings({ repositoryId, onNotify }: { repository
   return (
     <section className="panel check-settings">
       <div className="panel-header"><h2>Previews</h2></div>
-      <div className="panel-body">
+      <div className="panel-body"><PreviewAccountLine repositoryId={repositoryId} canManage={canManage} />
         <p className="branch-rule-note">
           {target
             ? <>Worker previews run as Cloudflare Worker Previews of <code>{target.workerName}</code>{target.accountId ? <> on account <code>{target.accountId}</code> through the {target.connection} Cloudflare connection</> : null}{target.connectionCanPreview ? "." : ", once a Cloudflare connection with workers-scripts.edit can reach it."} Gitflare never creates a Worker for previews; if the Worker does not exist yet, previews use this installation’s previews Worker or a preview container.</>

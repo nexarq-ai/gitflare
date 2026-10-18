@@ -244,6 +244,11 @@
       "sha256": "68b3ea92c0d0d38cac9ce423ebc9c8eccf25c8e792d41dfbbe46b256252b44fb"
     },
     {
+      "path": "src/ui/AccountPicker.tsx",
+      "size": 7218,
+      "sha256": "05c8626c29073afcee064e08fbea8d6ec33193ac2a66360c365fe442efd9b862"
+    },
+    {
       "path": "src/ui/AccountSettings.tsx",
       "size": 17417,
       "sha256": "39bd658c6edc46c8e2205517191735d889f32c8b778584eb004fd3254aff23db"
@@ -270,8 +275,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 83486,
-      "sha256": "cb57f0919f6e25bbf78800c038054c3e5360fa408f549be2ac7f31e6fa92d371"
+      "size": 83530,
+      "sha256": "a5f7bdb31db874b9410850065191a6f2a5283f051e0c5282ef044575b1bc8f3a"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -385,13 +390,13 @@
     },
     {
       "path": "src/ui/cloudflare-accounts-data.ts",
-      "size": 3467,
-      "sha256": "1de116541ee2d20f9b469ccb7d8890e45521650e592e000a30523c991e049833"
+      "size": 3965,
+      "sha256": "465bfef4ad71928b19b585a1f0c28916d60095ae9f74058f8acd84898f78aa94"
     },
     {
       "path": "src/ui/cloudflare-connection.css",
-      "size": 20880,
-      "sha256": "db68eece9f7b49bb35a2bc8df9e0e8ea168292397868af68db5cde1fc6cee7f9"
+      "size": 21362,
+      "sha256": "a613e4be1b9f06bec34a507c81e76a88709e90d5f68575fa77f717aa1dd23319"
     },
     {
       "path": "src/ui/cloudflare-deploy-button.css",
@@ -470,8 +475,8 @@
     },
     {
       "path": "src/ui/Deployments.tsx",
-      "size": 35918,
-      "sha256": "a3517345b104079c24ad8f29b8acdb1bda29b555e33ff2316faaea6078c6c56f"
+      "size": 36114,
+      "sha256": "7a993aace48785670714956fea82d937ffe99a64102a10f69cbc32073c090a85"
     },
     {
       "path": "src/ui/design-system.css",
@@ -675,8 +680,8 @@
     },
     {
       "path": "src/ui/PreviewSettings.tsx",
-      "size": 10423,
-      "sha256": "b284b79caca4b36c408ed18f3843a69d79cb4e286a98f81986cf3e24e5585744"
+      "size": 10589,
+      "sha256": "1ff324267a80ca04517197515e58daa60c205a9183a8a0bf52e7222cb6979260"
     },
     {
       "path": "src/ui/proposal-create.css",
