@@ -458,7 +458,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     if (request.method === 'POST' && cloudflareProject[2] === 'action') {
       assertMutationOrigin(request);
       const input = await readJson(request);
-      if (!['map', 'migration-plan', 'migration-execute', 'build-trigger'].includes(String(input.action))) throw new ApiError(400, 'INVALID_PROJECT_OPERATION', 'Choose a supported project operation.');
+      if (!['map', 'migration-plan', 'migration-execute', 'build-trigger', 'account'].includes(String(input.action))) throw new ApiError(400, 'INVALID_PROJECT_OPERATION', 'Choose a supported project operation.');
       const { action, ...fields } = input; operation = action as ProjectOperation; body = fields;
     } else if (request.method !== 'GET' || cloudflareProject[2] === 'action') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use a supported project operation.');
     const read = { action: 'read' as const, resourceType: 'repository', resourceId: repository.id };

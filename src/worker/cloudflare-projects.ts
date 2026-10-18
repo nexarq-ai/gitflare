@@ -19,7 +19,7 @@ export function normalizeProjectMapping(mapping: ProjectMapping): ProjectMapping
 export interface MigrationPlan {
   id: string; repositoryId: string; workspaceId: string; accountId: string; mappingVersion: string; databaseId: string; commitSha: string; path: string; checksum: string; createdAt: string; status: 'pending' | 'executing' | 'succeeded' | 'failed' | 'unknown'; error?: string;
 }
-export type ProjectOperation = 'get' | 'map' | 'usage' | 'migration-plan' | 'migration-execute' | 'build-trigger';
+export type ProjectOperation = 'get' | 'map' | 'usage' | 'migration-plan' | 'migration-execute' | 'build-trigger' | 'account';
 export type ProjectStoreOperation = 'get' | 'set' | 'link' | 'plan' | 'consume' | 'finish' | 'account';
 export interface ProjectSnapshot { mapping: ProjectMapping | null; plans: MigrationPlan[]; accounts?: { accountId?: string; environments?: Record<string, string> } }
 export const WORKER_USAGE_QUERY = 'query GitflareWorkerUsage($accountTag: string!, $scriptName: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: {accountTag: $accountTag}) { workersInvocationsAdaptive(limit: 100, filter: {scriptName: $scriptName, datetime_geq: $start, datetime_leq: $end}) { dimensions {scriptName} sum {requests errors} quantiles {cpuTimeP50 cpuTimeP99} } } } }';
@@ -72,6 +72,12 @@ export async function dispatchCloudflareProject(principal: Principal, repository
   const stored = await dependencies.store('get', {}) as ProjectSnapshot;
   const snapshot = { ...stored, mapping: stored.mapping ? normalizeProjectMapping(stored.mapping) : null };
   if (operation === 'get') return { ...snapshot, capabilities: { usage: true, d1Migrations: true, workerBuilds: false, durableObjectMigrations: false } };
+  if (operation === 'account') {
+    if (principal.role !== 'Owner' || principal.credentialId) failure(403, 'OWNER_REQUIRED', 'Only a workspace owner can choose the Cloudflare account for a repository.');
+    if (Object.keys(body).some(key => !['accountId', 'environment'].includes(key)) || body.accountId === undefined) failure(400, 'INVALID_ACCOUNT', 'Send accountId (a connected account ID, or null for the default) and optionally environment.');
+    const updated = await dependencies.store('account', body) as ProjectSnapshot;
+    return { accounts: updated.accounts ?? {} };
+  }
   const account = await dependencies.account();
   if (operation !== 'map' && snapshot.mapping && snapshot.mapping.accountId !== account.id) failure(409, 'PROJECT_ACCOUNT_CHANGED', 'Relink this project after changing the Cloudflare account.');
   if (operation === 'map') {
