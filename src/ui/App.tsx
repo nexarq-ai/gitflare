@@ -58,7 +58,8 @@ import DemoFeaturePanel from "./DemoFeaturePanel";
 import { showOwnerTokenNotice } from "./owner-token-notice";
 import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
-import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, isPublicProductRoute, SIGNED_IN_PRODUCT_ROUTES, keepsRouteAcrossWorkspaces } from "./router";
+import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, isPublicProductRoute, SIGNED_IN_PRODUCT_ROUTES, keepsRouteAcrossWorkspaces, routeUrl } from "./router";
+import DeployStatusPill from "./DeployProgress";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLayout";
 import { workspaceChord } from "./workspace-chord";
@@ -1458,6 +1459,7 @@ function RepositoryDetail({
             { value: "settings", label: "Settings" },
           ].map((item) => <button key={item.value} className={"ai" in item && item.ai ? "ai-only" : undefined} aria-current={tab === item.value || (tab === "proposals" && item.value === "pulls") ? "page" : undefined} onClick={() => onTabChange(item.value)}>{item.label}</button>)}
       </nav>
+      <DeployStatusPill repositoryId={repository.id} location={`${tab}/${subroute}`} href={routeUrl(`repository/${repository.id}/settings/deploys`)} onOpen={() => onTabChange("settings/deploys")} />
       {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} /> : tab === "settings" ? <RepositorySettingsLayout repositoryId={repository.id} page={subroute}>
         {subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} approvers={access ? eligibleApprovers(access.members, repository.id) : undefined} knownChecks={knownCheckNames(missions)} onNotify={onNotify} />
           : subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />

@@ -6,11 +6,12 @@ import { ArrowsClockwiseIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import type { GitHubMirrorSnapshot, MirrorRefStatus } from "../shared/github-mirror";
 import { request } from "./api";
 import { ErrorNotice, relativeTime } from "./components";
+import { useConfirm } from "./ConfirmDialog";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import type { DemoMarked } from "../shared/demo-features";
 import "./github-mirror.css";
 
-const short = (sha: string | null) => sha ? sha.slice(0, 12) : "none";
+const short = (sha: string | null) => sha ? sha.slice(0, 7) : "none";
 const STATE_LABELS: Record<MirrorRefStatus["state"], string> = { pending: "Pending", synced: "Synced", failed: "Failed", diverged: "Diverged" };
 const SYNC_LABELS: Record<string, string> = { idle: "Idle", running: "Syncing", retrying: "Retrying", failed: "Failed" };
 
@@ -26,6 +27,7 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
   const [patterns, setPatterns] = useState("");
   const [token, setToken] = useState("");
   const [installation, setInstallation] = useState("");
+  const [confirm, confirmDialog] = useConfirm();
 
   const show = useCallback((current: GitHubMirrorSnapshot & DemoMarked) => {
     setSnapshot(current);
@@ -71,11 +73,11 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
   const { canManage, mirror, app } = snapshot;
   const refPatterns = patterns.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 
-  function overwrite(ref: MirrorRefStatus) {
-    const message = ref.gitflareSha
-      ? `Overwrite ${ref.ref} on GitHub? GitHub moves from ${short(ref.githubSha)} to Gitflare's ${short(ref.gitflareSha)}. Commits only on GitHub are no longer on that ref.`
-      : `Delete ${ref.ref} on GitHub? Gitflare has no such ref.`;
-    if (!window.confirm(message)) return;
+  async function overwrite(ref: MirrorRefStatus) {
+    const confirmed = await confirm(ref.gitflareSha
+      ? { title: `Overwrite ${ref.ref} on GitHub?`, description: "GitHub's copy of this ref moves to Gitflare's revision. Commits that exist only on GitHub are no longer on that ref.", facts: [{ label: "GitHub now", value: short(ref.githubSha), title: ref.githubSha ?? undefined, code: true }, { label: "Gitflare", value: short(ref.gitflareSha), title: ref.gitflareSha, code: true }], confirmLabel: "Overwrite GitHub", tone: "danger" }
+      : { title: `Delete ${ref.ref} on GitHub?`, description: "Gitflare has no such ref, so the mirror removes it from GitHub.", confirmLabel: "Delete on GitHub", tone: "danger" });
+    if (!confirmed) return;
     void act("overwrite", { ref: ref.ref, expectedGithubSha: ref.githubSha }, (current) => (current.outcome as { state?: string } | undefined)?.state === "diverged" ? "GitHub changed again. Review the new state before overwriting." : `Overwrote ${ref.ref} on GitHub.`);
   }
 
@@ -101,7 +103,7 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
         </fieldset>
         {canManage && (
           <div className="branch-rule-actions github-mirror-actions">
-            {mirror && <Button variant="ghost" size="base" disabled={!!busy} onClick={() => { if (window.confirm(`Stop mirroring to ${mirror.owner}/${mirror.name} and delete the stored credential? GitHub keeps its current content.`)) void act("unlink", {}, () => "The GitHub mirror is unlinked."); }}>Unlink</Button>}
+            {mirror && <Button variant="ghost" size="base" disabled={!!busy} onClick={async () => { if (await confirm({ title: `Unlink ${mirror.owner}/${mirror.name}?`, description: "Gitflare stops mirroring and deletes the stored GitHub credential. GitHub keeps its current content.", confirmLabel: "Unlink", tone: "danger" })) void act("unlink", {}, () => "The GitHub mirror is unlinked."); }}>Unlink</Button>}
             <Button variant="primary" size="base" loading={busy === "link"} disabled={!!busy || !owner.trim() || !name.trim() || !refPatterns.length} onClick={() => void act("link", { owner: owner.trim(), name: name.trim(), refPatterns }, () => mirror ? "Mirror settings saved." : "Linked. Add a GitHub credential next.")}>{mirror ? "Save mirror settings" : "Link GitHub repository"}</Button>
           </div>
         )}
@@ -157,7 +159,7 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
                     {canManage && ref.state === "diverged" && (
                       <span className="github-mirror-resolve" role="cell">
                         {ref.githubSha && <Button variant="secondary" size="sm" disabled={!!busy} loading={busy === "import"} onClick={() => void act("import", { ref: ref.ref }, (current) => `Imported GitHub ${ref.ref} as ${String((current.imported as { branch?: string } | undefined)?.branch ?? "a new stream").replace(/^refs\/heads\//, "")}.`)}>Import from GitHub</Button>}
-                        <Button variant="destructive" size="sm" disabled={!!busy} loading={busy === "overwrite"} onClick={() => overwrite(ref)}>Overwrite GitHub</Button>
+                        <Button variant="destructive" size="sm" disabled={!!busy} loading={busy === "overwrite"} onClick={() => void overwrite(ref)}>Overwrite GitHub</Button>
                       </span>
                     )}
                   </div>
@@ -167,13 +169,14 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
             {error && <div className="error-notice" role="alert">{error}</div>}
             {canManage && mirror.credential && (
               <div className="branch-rule-actions github-mirror-actions">
-                {!mirror.adoptedAt && <Button variant="ghost" size="base" disabled={!!busy} loading={busy === "adopt"} onClick={() => { if (window.confirm(`Copy ${mirror.owner}/${mirror.name} into this repository once? This only works while the repository is empty or has just its setup commit. Afterwards Gitflare pushes to GitHub.`)) void act("adopt", {}, () => "GitHub adopted. Gitflare is now the source of truth."); }}>Adopt from GitHub</Button>}
+                {!mirror.adoptedAt && <Button variant="ghost" size="base" disabled={!!busy} loading={busy === "adopt"} onClick={async () => { if (await confirm({ title: `Adopt ${mirror.owner}/${mirror.name}?`, description: "Gitflare copies the GitHub repository into this one, once. This only works while this repository is empty or has just its setup commit. Afterwards Gitflare is the source of truth and pushes to GitHub.", confirmLabel: "Adopt", tone: "primary" })) void act("adopt", {}, () => "GitHub adopted. Gitflare is now the source of truth."); }}>Adopt from GitHub</Button>}
                 <Button variant="primary" size="base" icon={ArrowsClockwiseIcon} loading={busy === "sync"} disabled={!!busy} onClick={() => void act("sync", {}, () => "Sync started.")}>Sync now</Button>
               </div>
             )}
           </>
         )}
         {!mirror && error && <div className="error-notice" role="alert">{error}</div>}
+        {confirmDialog}
       </div>
     </section>
   );

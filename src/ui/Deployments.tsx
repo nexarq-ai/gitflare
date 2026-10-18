@@ -6,6 +6,9 @@ import type { Repository } from "../shared/types";
 import { request } from "./api";
 import { ErrorNotice, relativeTime } from "./components";
 import { OperationTrack } from "./OperationMotion";
+import { useConfirm } from "./ConfirmDialog";
+import { DeployProgressPanel, Sha, useDeployProgress } from "./DeployProgress";
+import { ACTIVE_STATUSES, environmentLabel, productionPrompt, publishDeployments, type ConfirmPrompt } from "./deploy-progress";
 import { RouteProgress } from "./WorkspaceLoader";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import type { DemoMarked } from "../shared/demo-features";
@@ -13,6 +16,7 @@ import "./cloudflare-connection.css";
 
 type Environment = string;
 type Status = "awaiting_confirmation" | "queued" | "building" | "deploying" | "rolling_out" | "succeeded" | "uploaded" | "failed" | "superseded" | "skipped";
+type Confirm = (prompt: ConfirmPrompt) => Promise<boolean>;
 type TargetStatus = "pending" | "building" | "uploaded" | "deploying" | "rolling_out" | "succeeded" | "failed" | "skipped";
 type Trigger = "land" | "manual" | "rollback" | "promote";
 interface Target { workerName: string; configPath: string; buildCommand?: string; d1Migrations: boolean; watchPaths?: string[] }
@@ -30,6 +34,7 @@ interface EnvironmentState {
   deployBlockedReason?: string;
   canConfirm?: boolean;
   access?: AccessView;
+  account?: { accountId: string; accountName: string | null } | null;
 }
 interface AccessView { status: "protected" | "unprotected" | "error"; reason?: string; appId?: string; hostnames: string[]; includes: { emails: string[]; domains: string[]; groupId?: string } | null; created: boolean; canChange: boolean; updatedAt?: string }
 interface State extends DemoMarked { environmentOrder?: Environment[]; environments: Record<Environment, EnvironmentState>; deployments: Deployment[]; workers: { id: string; name: string; environment: string }[] }
@@ -40,7 +45,6 @@ interface DetectedSetup { commitSha: string; fingerprint: string; packageManager
 interface Detection { setup: DetectedSetup; saved: { fingerprint: string; commitSha: string; appliedAt: string } | null; changed: { path: string; change: "added" | "removed" | "modified" }[]; blocking?: string[]; canApply: boolean; canAcknowledge: boolean }
 
 const PRODUCTION = "production";
-const environmentLabel = (environment: Environment) => environment === PRODUCTION ? "Production" : environment === "staging" ? "Staging" : environment;
 const resourceLabels: Record<DetectedResource["type"], string> = { d1: "D1", r2: "R2", queue: "Queue" };
 const resourceStatus: Record<NonNullable<DetectedResource["status"]>, string> = { exists: "exists", create: "will create", missing: "missing in account", unknown: "not checked" };
 
@@ -51,7 +55,7 @@ function orderEnvironments(names: Environment[]): Environment[] {
 const labels: Record<Status, string> = { awaiting_confirmation: "Waiting for confirmation", queued: "Queued", building: "Building", deploying: "Deploying", rolling_out: "Rolling out", succeeded: "Live", uploaded: "Uploaded", failed: "Failed", superseded: "Superseded", skipped: "Nothing to deploy" };
 const triggers: Record<Trigger, string> = { land: "on land", manual: "manual", rollback: "rollback", promote: "promoted from staging" };
 const targetLabels: Record<TargetStatus, string> = { pending: "Pending", building: "Building", uploaded: "Uploaded", deploying: "Deploying", rolling_out: "Rolling out", succeeded: "Live", failed: "Failed", skipped: "Skipped" };
-const ACTIVE: Status[] = ["queued", "building", "deploying", "rolling_out"];
+const ACTIVE: Status[] = ACTIVE_STATUSES;
 const defaultTrigger = (): Settings["trigger"] => "manual";
 
 function targetSummary(target: TargetRun): string {
@@ -81,7 +85,7 @@ function WorkerUrls({ urls }: { urls?: string[] }) {
 const accessLabels: Record<AccessView["status"], string> = { protected: "Protected by Cloudflare Access", unprotected: "Unprotected", error: "Access error" };
 const listInput = (value: string) => value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 
-function AccessProtection({ environment, access, busy, perform }: { environment: Environment; access: AccessView; busy: string; perform: (name: string, body: Record<string, unknown>, done: string) => Promise<void> }) {
+function AccessProtection({ environment, access, busy, perform, confirm }: { environment: Environment; access: AccessView; busy: string; perform: (name: string, body: Record<string, unknown>, done: string) => Promise<void>; confirm: Confirm }) {
   const [emails, setEmails] = useState(access.includes?.emails.join("\n") ?? "");
   const [domains, setDomains] = useState(access.includes?.domains.join("\n") ?? "");
   const [groupId, setGroupId] = useState(access.includes?.groupId ?? "");
@@ -89,7 +93,7 @@ function AccessProtection({ environment, access, busy, perform }: { environment:
   const label = environmentLabel(environment);
   const empty = !listInput(emails).length && !listInput(domains).length && !groupId.trim();
   const submit = () => perform(`${environment}-access`, { action: "access", environment, enabled: true, emails: listInput(emails), domains: listInput(domains), ...(groupId.trim() ? { groupId: groupId.trim() } : {}) }, `${label} is behind Cloudflare Access.`);
-  const remove = () => window.confirm(`Remove Cloudflare Access from ${label}? Its URLs become public again.`) && perform(`${environment}-access-remove`, { action: "access", environment, enabled: false }, `Cloudflare Access protection removed from ${label}.`);
+  const remove = async () => await confirm({ title: `Remove Cloudflare Access from ${label}?`, description: `Anyone with a ${label} URL can open it again without signing in.`, facts: access.hostnames.length ? [{ label: access.hostnames.length === 1 ? "URL" : "URLs", value: access.hostnames.join(", ") }] : undefined, confirmLabel: "Remove protection", tone: "danger" }) && perform(`${environment}-access-remove`, { action: "access", environment, enabled: false }, `Cloudflare Access protection removed from ${label}.`);
   return (
     <div className="cf-access" aria-label={`${label} Cloudflare Access`}>
       <p className="cf-state"><strong>{accessLabels[access.status]}</strong>{access.hostnames.length ? ` · ${access.hostnames.join(", ")}` : ""}{access.appId ? ` · application ${access.appId.slice(0, 8)}${access.created ? "" : " (adopted)"}` : ""}</p>
@@ -125,7 +129,13 @@ export default function Deployments({ repository, canManage = false, onNotify }:
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [reload, setReload] = useState(0);
+  const [starting, setStarting] = useState("");
+  const [scrollPending, setScrollPending] = useState(false);
+  const [headMessage, setHeadMessage] = useState<{ sha: string; message: string } | null>(null);
   const keys = useRef(new Map<string, string>());
+  const progressRef = useRef<HTMLDivElement>(null);
+  const [confirm, confirmDialog] = useConfirm();
+  const progress = useDeployProgress(repository.id);
   const path = `/api/repositories/${encodeURIComponent(repository.id)}/deployments`;
 
   useEffect(() => {
@@ -135,6 +145,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
       if (!active) return;
       setState(value);
       if (demoOf(value)) return;
+      publishDeployments(repository.id, value.deployments);
       setDraft((current) => current ?? draftFor(editing, value));
       if (value.deployments.some((item) => ACTIVE.includes(item.status))) timer = window.setTimeout(load, 5000);
     }).catch((failure) => { if (active) setError(failure instanceof Error ? failure.message : "Deployments could not be loaded."); });
@@ -143,26 +154,41 @@ export default function Deployments({ repository, canManage = false, onNotify }:
   }, [path, reload]);
 
   useEffect(() => {
+    if (!repository.headSha) return;
+    let active = true;
+    request<{ commitSha: string; commitMessage?: string }>(`/api/repositories/${encodeURIComponent(repository.id)}/proposal-base`).then((value) => { if (active && value.commitMessage) setHeadMessage({ sha: value.commitSha, message: value.commitMessage }); }).catch(() => {});
+    return () => { active = false; };
+  }, [repository.id, repository.headSha]);
+
+  useEffect(() => {
+    if (!scrollPending || !progressRef.current) return;
+    progressRef.current.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    setScrollPending(false);
+  }, [scrollPending, state, starting]);
+
+  useEffect(() => {
     let active = true;
     setDetectError("");
     request<Detection>(`${path}/detect`).then((value) => { if (active) setDetection(value); }).catch((failure) => { if (active) setDetectError(failure instanceof Error ? failure.message : "The deploy setup could not be detected."); });
     return () => { active = false; };
   }, [path, detectReload]);
 
-  async function perform(name: string, body: Record<string, unknown>, done: string) {
+  async function perform(name: string, body: Record<string, unknown>, done: string, starts?: Environment) {
     const signature = JSON.stringify(body);
     if (!keys.current.has(signature)) keys.current.set(signature, crypto.randomUUID());
     setBusy(name);
     setError("");
+    if (starts) { setStarting(starts); setScrollPending(true); }
     try {
       const result = await request<{ confirmationRequired?: string }>(path, body, keys.current.get(signature));
       keys.current.delete(signature);
       onNotify?.(result?.confirmationRequired ? "Waiting for an Owner to confirm the production deployment." : done);
+      if (starts && !result?.confirmationRequired) setScrollPending(true);
       setReload((value) => value + 1);
       if (name === "apply-detected") setDetectReload((value) => value + 1);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "The deployment request failed.");
-    } finally { setBusy(""); }
+    } finally { setBusy(""); setStarting(""); }
   }
 
   if (!state) return error ? <ErrorNotice message={error} /> : <RouteProgress />;
@@ -179,7 +205,9 @@ export default function Deployments({ repository, canManage = false, onNotify }:
     setDraft({ ...draft, targets });
   };
   const save = () => draft && perform("settings", { action: "settings", environment: editing, enabled: draft.enabled, rollout: draft.rollout, trigger: draft.trigger, mode: draft.mode, targets: draft.targets.map((target) => ({ workerName: target.workerName, configPath: target.configPath.trim(), ...(target.buildCommand?.trim() ? { buildCommand: target.buildCommand.trim() } : {}), d1Migrations: target.d1Migrations, ...(target.watchPaths?.length ? { watchPaths: target.watchPaths } : {}) })) }, `${environmentLabel(editing)} deployment settings saved.`);
-  const confirmProduction = (action: string) => window.confirm(`${action} to production? This changes live traffic.`);
+  const productionAccount = () => { const account = state.environments[PRODUCTION]?.account; return account ? account.accountName ? `${account.accountName} (${account.accountId})` : account.accountId : null; };
+  const messageFor = (sha: string | null | undefined) => sha && headMessage?.sha === sha ? headMessage.message : undefined;
+  const confirmProduction = (action: "deploy" | "promote" | "rollback" | "confirm", commitSha: string | null | undefined, workers: string[], from?: string) => confirm(productionPrompt({ action, commitSha, commitMessage: messageFor(commitSha), workers, account: productionAccount(), from }));
 
   function detectedPanel() {
     if (detectError) return <ErrorNotice message={detectError} />;
@@ -236,6 +264,8 @@ export default function Deployments({ repository, canManage = false, onNotify }:
   function environmentCard(environment: Environment) {
     const view: EnvironmentState = state!.environments[environment] ?? { settings: null, current: null, lastChange: null, pending: null, running: false, canDeploy: false };
     const latest = state!.deployments.find(item => item.environment === environment && ACTIVE.includes(item.status)) ?? state!.deployments.find(item => item.id === view.lastChange?.deploymentId);
+    const featured = !!latest && progress.some((item) => item.deployment.id === latest.id);
+    const deploying = view.running || busy === `${environment}-deploy` || starting === environment;
     const stages = latest?.mode === "upload-only" ? ["Queued", "Build", "Upload", "Uploaded"] : ["Queued", "Build", "Deploy", "Rollout", "Live"];
     const stage = latest ? ({ queued: 0, building: 1, deploying: 2, rolling_out: 3, succeeded: 4, uploaded: 3 } as Partial<Record<Status, number>>)[latest.status] : undefined;
     const settings = view.settings;
@@ -249,12 +279,13 @@ export default function Deployments({ repository, canManage = false, onNotify }:
     return (
       <section key={environment} className="cf-environment" aria-label={`${environmentLabel(environment)} environment`}>
         <h3>{environmentLabel(environment)}</h3>
-        {latest && <div className="operation-deployment"><div className="operation-deployment-heading"><strong>{labels[latest.status]}</strong><span>{latest.commitSha?.slice(0, 12) ?? "Deployment"}</span></div><OperationTrack kind="deploy" active={ACTIVE.includes(latest.status)} step={stage ?? 0} steps={stages.length} failed={latest.status === "failed"} />{stage !== undefined && <ol className="operation-deployment-steps" aria-label="Deployment stages">{stages.map((label, index) => <li key={label} aria-current={index === stage ? "step" : undefined}>{label}</li>)}</ol>}</div>}
+        {latest && featured && <p className="cf-state">{labels[latest.status]} · <Sha sha={latest.commitSha} /> · progress is shown at the top of this page.</p>}
+        {latest && !featured && <div className="operation-deployment"><div className="operation-deployment-heading"><strong>{labels[latest.status]}</strong><span>{latest.commitSha ? <Sha sha={latest.commitSha} /> : "Deployment"}</span></div><OperationTrack kind="deploy" active={ACTIVE.includes(latest.status)} step={stage ?? 0} steps={stages.length} failed={latest.status === "failed"} />{stage !== undefined && <ol className="operation-deployment-steps" aria-label="Deployment stages">{stages.map((label, index) => <li key={label} aria-current={index === stage ? "step" : undefined}>{label}</li>)}</ol>}</div>}
         {!settings ? <p className="cf-muted">Not configured.</p> : (
           <>
             <p className="cf-state">{settings.enabled ? (production ? (settings.trigger === "auto" ? "Deploys automatically after staging (Owner opt-in)" : "Promote or deploy with Owner confirmation") : settings.trigger === "auto" ? "Deploys automatically on land" : "Deploy on land waits for confirmation") : "Manual only"}{settings.mode === "upload-only" ? " · upload versions only" : ""}</p>
             <dl className="cf-environment-facts">
-              <dt>Current commit</dt><dd>{view.current?.commitSha ? <code>{view.current.commitSha.slice(0, 12)}</code> : "—"}{view.current ? ` · ${labels[view.current.status]}` : ""}</dd>
+              <dt>Current commit</dt><dd>{view.current?.commitSha ? <Sha sha={view.current.commitSha} /> : "—"}{view.current ? ` · ${labels[view.current.status]}` : ""}</dd>
               <dt>Workers</dt><dd>{view.current?.workers.length ? <ul className="cf-target-runs">{view.current.workers.map((worker) => <li key={worker.workerName}><strong>{worker.workerName}</strong> · <code>{worker.versionId.slice(0, 8)}</code>{worker.percentage < 100 ? ` · ${worker.percentage}%` : ""}<WorkerUrls urls={worker.urls} /></li>)}</ul> : "—"}</dd>
               <dt>Last change</dt><dd>{view.lastChange ? <>{labels[view.lastChange.status]} · {triggers[view.lastChange.trigger]} · {relativeTime(view.lastChange.updatedAt)}{view.lastChange.error ? ` · ${view.lastChange.error}` : ""}</> : "—"}</dd>
             </dl>
@@ -266,15 +297,17 @@ export default function Deployments({ repository, canManage = false, onNotify }:
               </fieldset>
             )}
             <div className="cf-actions">
-              {view.pending && (!production || view.canConfirm) && <Button variant="primary" size="base" disabled={!!busy || view.running || !view.canDeploy} loading={busy === `${environment}-confirm`} onClick={() => (!production || confirmProduction("Deploy")) && void perform(`${environment}-confirm`, { action: "deploy", deploymentId: view.pending }, "Deployment started.")}>Confirm pending deploy</Button>}
+              {view.pending && (!production || view.canConfirm) && <Button variant="primary" size="base" disabled={!!busy || view.running || !view.canDeploy} loading={busy === `${environment}-confirm`} onClick={async () => { const pending = state!.deployments.find((item) => item.id === view.pending); if (production && !await confirmProduction("confirm", pending?.commitSha, pending?.targets?.map((target) => target.workerName) ?? targets.map((target) => target.workerName))) return; void perform(`${environment}-confirm`, { action: "deploy", deploymentId: view.pending }, "Deployment started.", environment); }}>Confirm pending deploy</Button>}
               {view.pending && production && !view.canConfirm && <span className="cf-muted">Waiting for an Owner to confirm.</span>}
-              {promotions.map((promotable) => <Button key={promotable.from} variant="primary" size="base" disabled={!!busy || view.running || !view.canDeploy} loading={busy === `promote-${promotable.from}`} onClick={() => (!confirmWithOwner || confirmProduction("Promote")) && void perform(`promote-${promotable.from}`, { action: "promote", deploymentId: promotable.deploymentId, ...(confirmWithOwner ? { confirm: true } : {}) }, "Promotion to production started.")}>Promote {promotable.commitSha.slice(0, 12)} from {environmentLabel(promotable.from)}</Button>)}
-              {repository.headSha && <Button variant="secondary" size="base" disabled={!!busy || view.running || !view.canDeploy || !chosen.length} loading={busy === `${environment}-deploy`} onClick={() => (!confirmWithOwner || confirmProduction("Deploy")) && void perform(`${environment}-deploy`, deployBody, "Deployment started.")}>Deploy {repository.defaultBranch} ({repository.headSha.slice(0, 12)}){chosen.length < targets.length ? ` · ${chosen.length} of ${targets.length}` : ""}</Button>}
-              {view.current && <Button variant="secondary" size="base" disabled={!!busy || !view.canDeploy} loading={busy === `${environment}-rollback`} onClick={() => (!production || confirmProduction("Roll back")) && void perform(`${environment}-rollback`, { action: "rollback", environment }, "Rollback started.")}>Roll back</Button>}
+              {promotions.map((promotable) => <Button key={promotable.from} variant="primary" size="base" disabled={!!busy || view.running || !view.canDeploy} loading={busy === `promote-${promotable.from}`} onClick={async () => { if (confirmWithOwner && !await confirmProduction("promote", promotable.commitSha, targets.map((target) => target.workerName), promotable.from)) return; void perform(`promote-${promotable.from}`, { action: "promote", deploymentId: promotable.deploymentId, ...(confirmWithOwner ? { confirm: true } : {}) }, "Promotion to production started.", environment); }}>Promote <span title={promotable.commitSha}>{promotable.commitSha.slice(0, 7)}</span> from {environmentLabel(promotable.from)}</Button>)}
+              {repository.headSha && (deploying
+                ? <Button variant="primary" size="base" className="cf-deploying" disabled loading>Deploying…</Button>
+                : <Button variant="secondary" size="base" disabled={!!busy || !view.canDeploy || !chosen.length} title={repository.headSha} onClick={async () => { if (confirmWithOwner && !await confirmProduction("deploy", repository.headSha, chosen)) return; void perform(`${environment}-deploy`, deployBody, "Deployment started.", environment); }}>Deploy {repository.defaultBranch} ({repository.headSha.slice(0, 7)}){chosen.length < targets.length ? ` · ${chosen.length} of ${targets.length}` : ""}</Button>)}
+              {view.current && <Button variant="secondary" size="base" disabled={!!busy || !view.canDeploy} loading={busy === `${environment}-rollback`} onClick={async () => { if (production && !await confirmProduction("rollback", null, view.current?.workers.map((worker) => worker.workerName) ?? [])) return; void perform(`${environment}-rollback`, { action: "rollback", environment }, "Rollback started.", environment); }}>Roll back</Button>}
             </div>
           </>
         )}
-        {view.access && <AccessProtection key={`${environment}-${view.access.status}-${view.access.updatedAt ?? ""}`} environment={environment} access={view.access} busy={busy} perform={perform} />}
+        {view.access && <AccessProtection key={`${environment}-${view.access.status}-${view.access.updatedAt ?? ""}`} environment={environment} access={view.access} busy={busy} perform={perform} confirm={confirm} />}
       </section>
     );
   }
@@ -283,6 +316,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
     <section className="panel">
       <div className="panel-header"><h2>Deployments</h2></div>
       <div className="panel-body">
+        <DeployProgressPanel ref={progressRef} items={progress} starting={starting} />
         <p>Ship landed commits to this repository’s Workers with its Cloudflare connection. Every <code>env.&lt;name&gt;</code> block in the Wrangler configs is an environment, built as <code>wrangler deploy --env &lt;name&gt;</code> does; production uses the top level. Staging deploys on land, other environments wait for Deploy unless switched to automatic, and production is promoted from a successful deployment with an Owner’s confirmation. Requires the Owner or Deployer role.</p>
         <DeployAccounts repositoryId={repository.id} environments={environmentNames} canManage={canManage} />
         {detectedPanel()}
@@ -321,6 +355,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
             </div>
           </details>
         )}
+        {confirmDialog}
         {state.deployments.length > 0 && (
           <table className="cf-deployments">
             <thead><tr><th>Environment</th><th>Status</th><th>Commit</th><th>Workers</th><th>Traffic</th><th>When</th></tr></thead>
@@ -328,7 +363,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
               <tr key={item.id} title={item.error}>
                 <td>{environmentLabel(item.environment)}</td>
                 <td>{labels[item.status]} · {triggers[item.trigger]}{item.mode === "upload-only" ? " · upload only" : ""}{item.error ? ` · ${item.error}` : ""}</td>
-                <td><code>{item.commitSha?.slice(0, 12) ?? "—"}</code></td>
+                <td><Sha sha={item.commitSha} /></td>
                 <td>
                   {item.targets?.length ? <ul className="cf-target-runs">{item.targets.map((target) => <li key={target.workerName} title={target.notes?.join("\n")}><strong>{target.workerName}</strong> · {targetSummary(target)}<WorkerUrls urls={target.urls} /></li>)}</ul> : !item.skippedTargets?.length ? <>{item.workerName} · <code>{item.versionId?.slice(0, 8) ?? "—"}</code></> : null}
                   {item.skippedTargets?.length ? <ul className="cf-target-runs">{item.skippedTargets.map((target) => <li key={target.workerName} className="cf-muted">{target.workerName} · skipped: {target.reason}</li>)}</ul> : null}
