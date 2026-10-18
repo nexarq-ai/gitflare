@@ -148,6 +148,8 @@ export function normalizeModelMessage(body: unknown, protocol: ModelConnection['
   const texts: string[] = [];
   let output: InputItem[];
   if (protocol === 'responses') {
+    const incomplete = raw.incomplete_details && typeof raw.incomplete_details === 'object' ? (raw.incomplete_details as Record<string, unknown>).reason : undefined;
+    if (raw.status === 'incomplete' && incomplete === 'max_output_tokens') throw new ModelResponseError('incomplete_response', `Model returned an incomplete response (max_tokens: ${ANTHROPIC_EXPLANATION.max_tokens})`, false, { issue: 'max_tokens', stopReason: 'max_output_tokens' });
     if ((raw.status && raw.status !== 'completed') || !Array.isArray(raw.output)) throw new ModelResponseError('incomplete_response', 'Model returned no usable completed response');
     output = raw.output;
     for (const value of output) {
@@ -164,6 +166,7 @@ export function normalizeModelMessage(body: unknown, protocol: ModelConnection['
     if (protocol === 'chat') {
       if (!Array.isArray(raw.choices) || raw.choices.length !== 1) throw new ModelResponseError('invalid_shape', 'Model returned no usable completed response');
       const choice = object(raw.choices[0]);
+      if (choice.finish_reason === 'length') throw new ModelResponseError('incomplete_response', `Model returned no usable completed response (max_tokens: ${ANTHROPIC_EXPLANATION.max_tokens})`, false, { issue: 'max_tokens', stopReason: 'length' });
       if (!['stop', 'tool_calls'].includes(String(choice.finish_reason))) throw new ModelResponseError('incomplete_response', 'Model returned no usable completed response');
       message = object(choice.message);
       if (typeof message.content === 'string') texts.push(message.content);

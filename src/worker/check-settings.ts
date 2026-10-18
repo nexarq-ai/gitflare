@@ -1,4 +1,4 @@
-import type { AutoIncrease, Check, CheckOverride, CheckPlan, CheckSettings, Mission, RepositoryCheckSettings, RunnerSize } from '../shared/types';
+import type { AutoIncrease, Check, CheckOverride, CheckPlan, CheckPolicyOverride, CheckSettings, Mission, RepositoryCheckSettings, RunnerSize } from '../shared/types';
 import { ApiError } from './domain';
 import { autoIncreaseOf, isRunnerSize, MAX_TIMEOUT_SECONDS, RUNNER_SIZES } from './repository-policy';
 
@@ -9,7 +9,8 @@ export const DURATION_SAMPLES = 20;
 export const MIN_DURATION_SAMPLES = 3;
 export const AUTO_INCREASE_ACTOR = 'gitflare:auto-increase';
 export type RetryAdjustment = typeof RETRY_ADJUSTMENTS[number];
-export type CheckSettingsInput = Pick<CheckSettings, 'testTimeoutSeconds' | 'runner' | 'autoIncrease'>;
+export type CheckSettingsInput = Pick<CheckSettings, 'testTimeoutSeconds' | 'runner' | 'autoIncrease' | 'policyOverride'>;
+export const POLICY_OVERRIDE_FIELDS = ['test', 'evidence', 'testTimeoutSeconds', 'runner'] as const;
 export interface LearnedLimits { testTimeoutSeconds?: number; runner?: RunnerSize }
 
 const RETRYABLE_STATUSES: Mission['status'][] = ['failed', 'cancelled', 'needs_review'];
@@ -32,13 +33,44 @@ function autoIncrease(value: unknown): AutoIncrease {
   return { enabled: fields.enabled as boolean, maxTimeoutSeconds: timeoutSeconds(fields.maxTimeoutSeconds, 'The auto-increase time ceiling'), maxRunner: runnerSize(fields.maxRunner) };
 }
 
+function testCommand(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > 500 || /[\u0000-\u001f\u007f]/.test(value)) invalid('The test command must be a single-line command of at most 500 characters.');
+  return (value as string).trim();
+}
+
+export function normalizePolicyOverride(value: unknown): CheckPolicyOverride | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'object' || Array.isArray(value)) return invalid('The gitflare.json override must be an object with test, evidence, testTimeoutSeconds or runner.');
+  const fields = value as Record<string, unknown>;
+  const unknown = Object.keys(fields).find((key) => ![...POLICY_OVERRIDE_FIELDS, 'updatedAt', 'updatedBy'].includes(key));
+  if (unknown) invalid(`Unsupported gitflare.json override "${unknown}". Use test, evidence, testTimeoutSeconds or runner.`);
+  const override: CheckPolicyOverride = {};
+  if (fields.test !== undefined && fields.test !== null) override.test = testCommand(fields.test);
+  if (fields.evidence !== undefined && fields.evidence !== null) {
+    if (fields.evidence !== 'tap' && fields.evidence !== 'exit-code') invalid('Evidence must be "tap" or "exit-code".');
+    override.evidence = fields.evidence as CheckPolicyOverride['evidence'];
+  }
+  if (fields.testTimeoutSeconds !== undefined && fields.testTimeoutSeconds !== null) override.testTimeoutSeconds = timeoutSeconds(fields.testTimeoutSeconds, 'The overriding check time limit');
+  if (fields.runner !== undefined && fields.runner !== null) override.runner = runnerSize(fields.runner);
+  if (!POLICY_OVERRIDE_FIELDS.some((key) => override[key] !== undefined)) return undefined;
+  if (typeof fields.updatedAt === 'string') override.updatedAt = fields.updatedAt.slice(0, 40);
+  if (typeof fields.updatedBy === 'string') override.updatedBy = fields.updatedBy.slice(0, 200);
+  return override;
+}
+
+export function samePolicyOverride(left: CheckPolicyOverride | undefined, right: CheckPolicyOverride | undefined): boolean {
+  return POLICY_OVERRIDE_FIELDS.every((key) => left?.[key] === right?.[key]);
+}
+
 export function normalizeCheckSettings(body: Record<string, unknown>): CheckSettingsInput {
-  const unknown = Object.keys(body).find((key) => !['testTimeoutSeconds', 'runner', 'autoIncrease'].includes(key));
+  const unknown = Object.keys(body).find((key) => !['testTimeoutSeconds', 'runner', 'autoIncrease', 'policyOverride'].includes(key));
   if (unknown) invalid(`Unsupported check setting "${unknown}".`);
   const settings: CheckSettingsInput = {};
   if (body.testTimeoutSeconds !== undefined && body.testTimeoutSeconds !== null) settings.testTimeoutSeconds = timeoutSeconds(body.testTimeoutSeconds, 'The check time limit');
   if (body.runner !== undefined && body.runner !== null) settings.runner = runnerSize(body.runner);
   if (body.autoIncrease !== undefined && body.autoIncrease !== null) settings.autoIncrease = autoIncrease(body.autoIncrease);
+  const policyOverride = normalizePolicyOverride(body.policyOverride);
+  if (policyOverride) settings.policyOverride = policyOverride;
   return settings;
 }
 
@@ -77,7 +109,7 @@ export function withLearnedLimits(current: CheckSettings | undefined | null, lea
 }
 
 function keptSettings(current: CheckSettings | undefined | null): CheckSettingsInput {
-  return { ...(current?.testTimeoutSeconds !== undefined ? { testTimeoutSeconds: current.testTimeoutSeconds } : {}), ...(current?.runner ? { runner: current.runner } : {}), ...(current?.autoIncrease ? { autoIncrease: current.autoIncrease } : {}) };
+  return { ...(current?.testTimeoutSeconds !== undefined ? { testTimeoutSeconds: current.testTimeoutSeconds } : {}), ...(current?.runner ? { runner: current.runner } : {}), ...(current?.autoIncrease ? { autoIncrease: current.autoIncrease } : {}), ...(current?.policyOverride ? { policyOverride: current.policyOverride } : {}) };
 }
 
 export function timedOutCheck(mission: Pick<Mission, 'checks'>): (Check & { timeout: NonNullable<Check['timeout']> }) | undefined {
@@ -110,11 +142,11 @@ export function retryCheckSettings(mission: Pick<Mission, 'checks' | 'status'>, 
   if (!check) throw new ApiError(409, 'CHECK_NOT_TIMED_OUT', 'No check in the latest attempt timed out.');
   const settings = keptSettings(current);
   if (adjustment === 'timeout') {
-    if (check.timeout.timeoutSource === 'gitflare.json') throw new ApiError(409, 'POLICY_FILE_SETS_LIMIT', 'gitflare.json at the base revision sets timeoutSeconds, which takes precedence over repository settings. Change it there, or ask an Owner to override it for this proposal.');
+    if (check.timeout.timeoutSource === 'gitflare.json') throw new ApiError(409, 'POLICY_FILE_SETS_LIMIT', 'gitflare.json at the base revision sets timeoutSeconds, which takes precedence over repository settings. Change it there, or ask an Owner to override it for this proposal or in the repository check settings (gitflare.json override).');
     if (check.timeout.seconds >= MAX_TIMEOUT_SECONDS) throw new ApiError(409, 'LIMIT_AT_MAXIMUM', `The check already used the maximum ${MAX_TIMEOUT_SECONDS} s. Choose a larger runner instead.`);
     return { ...settings, testTimeoutSeconds: check.timeout.seconds < RETRY_TIMEOUT_SECONDS ? RETRY_TIMEOUT_SECONDS : MAX_TIMEOUT_SECONDS };
   }
-  if (check.timeout.runnerSource === 'gitflare.json') throw new ApiError(409, 'POLICY_FILE_SETS_LIMIT', 'gitflare.json at the base revision sets runner, which takes precedence over repository settings. Change it there, or ask an Owner to override it for this proposal.');
+  if (check.timeout.runnerSource === 'gitflare.json') throw new ApiError(409, 'POLICY_FILE_SETS_LIMIT', 'gitflare.json at the base revision sets runner, which takes precedence over repository settings. Change it there, or ask an Owner to override it for this proposal or in the repository check settings (gitflare.json override).');
   const larger = nextRunner(check.timeout.runner);
   if (!larger) throw new ApiError(409, 'LIMIT_AT_MAXIMUM', `The check already ran on the largest runner, ${check.timeout.runner}. Raise the time limit instead.`);
   return { ...settings, runner: larger };

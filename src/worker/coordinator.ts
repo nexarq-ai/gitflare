@@ -59,6 +59,7 @@ export interface PreviewLifetime { lifetimeMs: number; extendMs: number }
 interface PreviewState { claimId: string; epoch: number; candidateSha: string; phase: 'preparing' | 'ready'; expiresAt: number; sandboxName?: string; worker?: WorkerPreviewInfo; readyAt?: number; extendMs?: number; extended?: boolean }
 export interface WorkerPreviewRecord { previewName: string; claimId: string; expiresAt: number; d1DatabaseIds?: string[]; host?: PreviewHost; principal?: Principal }
 export interface PreviewExtension { expiresAt: number; kind: 'worker' | 'container'; sandboxName?: string }
+export type StoppedPreview = { kind: 'worker'; record: WorkerPreviewRecord } | { kind: 'container'; sandboxName: string } | { kind: 'starting' } | { kind: 'none' };
 export const PREVIEW_LEASE_MS = 120_000;
 export const PREVIEW_HEARTBEAT_MS = 30_000;
 export const PREVIEW_READY_MS = 900_000;
@@ -592,6 +593,26 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
+  stopPreview(id: string): StoppedPreview {
+    return this.ctx.storage.transactionSync(() => {
+      const record = this.store.get<WorkerPreviewRecord>(`worker-preview:${id}`);
+      const state = this.store.get<PreviewState>(`preview-state:${id}`);
+      if (record) {
+        this.store.delete(`worker-preview:${id}`);
+        if (state?.worker || state?.claimId === record.claimId) {
+          if (state.phase === 'ready') this.rememberPreview(id, state, state.expiresAt <= Date.now() ? 'expired' : 'retired');
+          this.store.delete(`preview-state:${id}`);
+        }
+        return { kind: 'worker', record };
+      }
+      if (!state) return { kind: 'none' };
+      if (state.phase !== 'ready') return { kind: 'starting' };
+      this.rememberPreview(id, state, state.expiresAt <= Date.now() ? 'expired' : 'retired');
+      this.store.delete(`preview-state:${id}`);
+      return { kind: 'container', sandboxName: state.sandboxName ?? `preview-${id}-${state.claimId}` };
+    });
+  }
+
   private rememberPreview(id: string, state: PreviewState, reason: PreviewEndReason): void {
     this.store.put(`preview-last:${id}`, lastPreview(state, reason, Date.now()) satisfies LastPreview);
   }
@@ -679,6 +700,16 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       if (run) return { missionId: mission.id, ...(run.forkName ? { forkName: run.forkName } : {}) };
     }
     return undefined;
+  }
+
+  missionCandidateShas(prefix: string): string[] {
+    if (!/^[a-f0-9]{7,40}$/.test(prefix)) return [];
+    const matches = new Set<string>();
+    for (const mission of this.store.list<Mission>('mission:')) {
+      for (const sha of [mission.candidateSha, ...mission.runs.map((run) => run.commitSha)]) if (sha?.startsWith(prefix)) matches.add(sha);
+      if (matches.size > 5) break;
+    }
+    return [...matches];
   }
 
   missionRepository(id: string): string | undefined { return this.store.get<string>(`mission-repository:${id}`); }
@@ -857,9 +888,15 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const startFrom = (run: Mission['runs'][number]): AgentRun['startFrom'] => {
         if (reviewing) return { reason: 'review', candidates: (mission.mode === 'race' ? [run] : mission.runs.filter(verified)).map(sourceOf) };
         if (run.collision && reused.length) return { reason: 'collision', files: run.collision.files, candidates: reused.map(sourceOf) };
-        return undefined;
+        if (run.commitSha && run.forkName) return { reason: 'retry', candidates: [sourceOf(run)], ...(run.status !== 'completed' && run.error ? { previousError: failureLine(run.error) } : {}) };
+        return run.startFrom;
       };
       const feedback = reviewing ? [requests.length ? `Reviewer change requests on the previous candidate:\n${requests.map((review) => `- ${review.path ? `${review.path}:${review.line} ` : ''}${review.body}`).join('\n')}` : '', guidance ?? ''].filter(Boolean).join('\n\n').slice(0, REVIEW_GUIDANCE_MAX) : guidance;
+      const guidanceFor = (run: Mission['runs'][number], from: AgentRun['startFrom']): string | undefined => {
+        if (reviewing || !from || from.reason === 'collision' || !run.retryGuidance) return feedback;
+        if (!feedback || run.retryGuidance.includes(feedback)) return run.retryGuidance;
+        return `${run.retryGuidance}\n\n${feedback}`.slice(0, REVIEW_GUIDANCE_MAX);
+      };
       if (mode === 'drop' && !reused.length) throw new ApiError(409, 'NO_COMPLETED_AGENTS', 'No agent has a verified candidate to continue with. Retry the failed agents instead.');
       const repository = this.getRepository(mission.repositoryId);
       const previousEpoch = mission.epoch;
@@ -876,7 +913,8 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
         if (mode === 'drop' || reviewing && !chosen!.includes(run.id)) return { ...fresh(run), status: 'skipped' as const, completedAt: now, skipReason: run.skipReason ?? (reviewing ? `Not sent the review in attempt ${previousEpoch + 1}` : `Excluded in attempt ${previousEpoch + 1} after it ${run.status === 'cancelled' ? 'was cancelled' : 'failed'}${run.error ? `: ${failureLine(run.error)}` : ''}`) };
         const [pinned] = pinMissionModels({ ...mission, runs: [run] }, models).runs;
         const from = startFrom(run);
-        return { ...fresh(pinned!), status: 'queued' as const, ...(feedback ? { retryGuidance: feedback } : {}), ...(from ? { startFrom: from } : {}) };
+        const runGuidance = guidanceFor(run, from);
+        return { ...fresh(pinned!), status: 'queued' as const, ...(runGuidance ? { retryGuidance: runGuidance } : {}), ...(from ? { startFrom: from } : {}) };
       });
       mission.status = 'queued';
       mission.epoch += 1;
@@ -897,13 +935,15 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const moved = previousBase && mission.baseSha !== previousBase ? ` The default branch moved from ${previousBase.slice(0, 12)} to ${(mission.baseSha ?? 'none').slice(0, 12)}, so ${mission.mode === 'race' ? 'reused candidates will be re-run' : 'reused candidates are merged onto the new base and the combined checks re-verify them'}.` : '';
       const reuseNote = reused.length ? ` Reusing ${reused.length} verified candidate${reused.length === 1 ? '' : 's'} from attempt ${previousEpoch} (${names(reused)}) after confirming each commit is still in its fork.` : '';
       const collided = others.filter((run) => run.collision && reused.length);
+      const resumed = reviewing ? [] : others.filter((run) => !(run.collision && reused.length) && ((run.commitSha && run.forkName) || run.startFrom));
+      const resumeNote = resumed.length ? ` ${names(resumed)} resume${resumed.length === 1 ? 's' : ''} from ${resumed.length === 1 ? 'its' : 'their'} previous candidate${resumed.length === 1 ? '' : 's'} or starting point instead of the mission base${resumed.some((run) => run.retryGuidance) ? ', keeping earlier change requests and guidance' : ''}.` : '';
       const rebaseNote = collided.length ? ` ${names(collided)} start${collided.length === 1 ? 's' : ''} from the merged candidates of ${names(reused)} to resolve the collision in ${[...new Set(collided.flatMap((run) => run.collision!.files))].slice(0, 10).join(', ')}.` : '';
       const guidanceNote = guidance ? ` Guidance from ${authorization?.principal.userId ?? 'the requester'}: "${guidance.replace(/\s+/g, ' ').slice(0, 300)}${guidance.length > 300 ? '…' : ''}"` : '';
       this.queueDispatch(mission);
       return this.saveMission(mission, mode === 'review'
         ? `Attempt ${mission.epoch} queued to address ${requests.length} change request${requests.length === 1 ? '' : 's'} with ${names(others)}, starting from the reviewed candidate.${reuseNote}${moved}${guidanceNote}`
         : mode === 'retry'
-          ? others.length ? `Attempt ${mission.epoch} queued to retry ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}).${reuseNote}${rebaseNote}${moved}${guidanceNote}` : `Attempt ${mission.epoch} queued to combine again without rerunning any agent.${reuseNote}${moved}`
+          ? others.length ? `Attempt ${mission.epoch} queued to retry ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}).${reuseNote}${resumeNote}${rebaseNote}${moved}${guidanceNote}` : `Attempt ${mission.epoch} queued to combine again without rerunning any agent.${reuseNote}${moved}`
           : `Attempt ${mission.epoch} queued without ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}), now marked skipped.${reuseNote} Acceptance criteria are unchanged.${moved}`, mode === 'drop' ? 'warning' : 'info');
     }));
     if (started.status === 'queued') this.queueDispatch(started);
@@ -1388,7 +1428,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return this.ctx.storage.transactionSync(() => {
       const slots = liveSlots(this.store, 'preview');
       if (slots.some((slot) => slot.id === missionId)) return false;
-      if (slots.length >= WORKSPACE_PREVIEW_LIMIT) throw capacityError('preview');
+      if (slots.length >= WORKSPACE_PREVIEW_LIMIT) throw capacityError('preview', slots.map((slot) => slot.id));
       this.store.put(slotKey('preview', missionId), { id: missionId, expiresAt } satisfies CapacitySlot);
       return true;
     });

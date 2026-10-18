@@ -48,6 +48,11 @@ export type CloudflareGrantPurpose = 'connect' | 'signin';
 function purposeScopes(env: AppEnv, purpose: CloudflareGrantPurpose): string[] { return purpose==='signin'?signinScopes(env):requestedScopes(env); }
 export function connectPermissionPlan(env: AppEnv, extraScopes: string[] = []): CloudflarePermissionPlan { const scopes=[...new Set([...requestedScopes(env),...extraScopes])]; return {scopes,permissions:describeCloudflareScopes(scopes,accessScopes(env)),docsUrl:CLOUDFLARE_PERMISSIONS_DOCS_PATH}; }
 export const CLOUDFLARE_DEPLOY_SCOPE = 'workers-scripts.edit';
+// Grants stored before scope parsing split only on single spaces; normalise on every read
+export function grantedScopes(value: unknown): string[] {
+  const parts = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  return [...new Set(parts.flatMap((part) => typeof part === 'string' ? part.split(/[\s,]+/) : []).map((scope) => scope.trim()).filter(Boolean))];
+}
 export function cloudflareSigninConfigured(env: AppEnv): boolean { return configured(env); }
 export function requestCookie(request: Request, name: string): string | undefined { return request.headers.get('Cookie')?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${name}=`))?.slice(name.length+1); }
 function requireConfiguration(env: AppEnv) { if (!configured(env)) throw new ApiError(503, 'CLOUDFLARE_NOT_CONFIGURED', 'Configure this installation’s Cloudflare OAuth client before connecting an account.'); }
@@ -152,7 +157,7 @@ async function listResources(env: AppEnv, vault: Vault, path: string): Promise<u
   }
   throw new ApiError(502, 'CLOUDFLARE_CATALOG_LIMIT', 'Cloudflare returned an incomplete resource catalog. Narrow the account scope before retrying.');
 }
-function status(env: AppEnv, vault?: Vault) { return {configured:configured(env),connected:!!vault,permissions:connectPermissionPlan(env),...(vault?{expiresAt:vault.expiresAt,scopes:vault.scopes,account:vault.account}: {})}; }
+function status(env: AppEnv, vault?: Vault) { return {configured:configured(env),connected:!!vault,permissions:connectPermissionPlan(env),...(vault?{expiresAt:vault.expiresAt,scopes:grantedScopes(vault.scopes),account:vault.account}: {})}; }
 function accountsValue(result: unknown): Account[] {
   if (!Array.isArray(result)) throw new ApiError(502,'CLOUDFLARE_INVALID_RESPONSE','Cloudflare did not return an account list.');
   return result.filter(a=>a && typeof a.id==='string' && /^[a-f0-9]{32}$/i.test(a.id) && typeof a.name==='string').map(a=>({id:a.id,name:a.name.slice(0,200)}));
@@ -176,7 +181,7 @@ export async function cloudflareAnalyticsRequest(env:AppEnv,p:Principal,body:{qu
 export async function cloudflareDeployAccess(env: AppEnv, p: Principal, authorization: CloudflareAuthorization, repositoryId?: string): Promise<CloudflareDeployAccess> {
   const {vault,source}=await loadPreferred(env,p,authorization,repositoryId); const account=selectedAccount(vault,source);
   checkAccount(vault,authorization.expectedAccountId);
-  return {accessToken:vault.accessToken,accountId:account.id,...(account.name?{accountName:account.name}:{}),scopes:vault.scopes,source};
+  return {accessToken:vault.accessToken,accountId:account.id,...(account.name?{accountName:account.name}:{}),scopes:grantedScopes(vault.scopes),source};
 }
 export function assertDeployScope(scopes: string[]): void {
   if (!scopes.includes(CLOUDFLARE_DEPLOY_SCOPE)) throw new ApiError(403,'CLOUDFLARE_SCOPE_MISSING',`The Cloudflare connection was not granted ${CLOUDFLARE_DEPLOY_SCOPE} (Workers Scripts Write). An Owner must reconnect Cloudflare after the installation requests that scope.`);
@@ -194,7 +199,7 @@ export async function cloudflareAuthorizationUrl(env:AppEnv,redirectUri:string,s
 }
 export async function exchangeCloudflareCode(env:AppEnv,code:string,redirectUri:string,verifier:string,purpose:CloudflareGrantPurpose='connect',extraScopes:string[]=[]):Promise<Vault> {
   const response=await tokenRequest(env,new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:redirectUri,code_verifier:verifier}));const values=tokenValues(response);
-  return {...values,scopes:typeof response.scope==='string'?response.scope.split(' '):[...new Set([...purposeScopes(env,purpose),...extraScopes])],clientId:env.CLOUDFLARE_CLIENT_ID!};
+  return {...values,scopes:typeof response.scope==='string'?grantedScopes(response.scope):[...new Set([...purposeScopes(env,purpose),...extraScopes])],clientId:env.CLOUDFLARE_CLIENT_ID!};
 }
 export async function cloudflareIdentity(env:AppEnv,vault:Vault):Promise<CloudflareIdentity> {
   let user:unknown;

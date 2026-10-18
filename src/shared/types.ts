@@ -85,7 +85,7 @@ export interface AgentRun {
   dependencyChanges?: ManifestDependencyChanges[];
   retryGuidance?: string;
   collision?: { files: string[]; epoch: number };
-  startFrom?: { reason: 'collision' | 'review'; files?: string[]; candidates: { runId: string; name: string; forkName: string; commitSha: string }[] };
+  startFrom?: { reason: 'collision' | 'review' | 'retry'; files?: string[]; previousError?: string; candidates: { runId: string; name: string; forkName: string; commitSha: string }[] };
 }
 
 export type RunnerSize = 'standard-1' | 'standard-2' | 'standard-3' | 'standard-4';
@@ -104,10 +104,22 @@ export interface AutoIncrease {
   maxRunner: RunnerSize;
 }
 
+export type TestEvidence = 'tap' | 'exit-code';
+
+export interface CheckPolicyOverride {
+  test?: string;
+  evidence?: TestEvidence;
+  testTimeoutSeconds?: number;
+  runner?: RunnerSize;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface CheckSettings {
   testTimeoutSeconds?: number;
   runner?: RunnerSize;
   autoIncrease?: AutoIncrease;
+  policyOverride?: CheckPolicyOverride;
   updatedAt?: string;
   updatedBy?: string;
 }

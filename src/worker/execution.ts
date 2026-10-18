@@ -14,7 +14,7 @@ import { collectAndUploadAssets, type AssetsOptions } from './worker-assets';
 import { migrationDatabases, readMigrationFiles, type D1MigrationSet } from './d1-migrations';
 import { previewD1Migrations } from './preview-d1';
 import type { BuiltTarget } from './deployments';
-import { AGENT_BUDGET_MS, AGENT_CONCURRENCY } from './budgets';
+import { AGENT_BUDGET_MS, AGENT_CONCURRENCY, CLONE_ATTEMPTS, CLONE_CLEANUP_TIMEOUT_MS, CLONE_RETRY_BACKOFF_MS, cloneTimeoutMs } from './budgets';
 import { MAX_MISSION_AGENTS } from '../shared/mission-draft';
 import { DEPENDENCY_FILES, describeInstall, detectPackageManager, hasInstallableDependencies, INSTALL_ATTEMPTS, INSTALL_TIMEOUT_MS, installFailureExcerpt, isTransientInstallFailure, runnerFor, type InstallMode, type InstallPlan } from './package-manager';
 import type { LearnedLimits } from './check-settings';
@@ -141,7 +141,38 @@ export function timeoutNotice(result: CommandResult, limits: CheckLimits | undef
   return `${subject}Timed out${limit}. Raise the check time limit (repository check settings, or timeoutSeconds in gitflare.json, up to 900 s) or choose a larger runner.\n`;
 }
 
-export function checkFromCommand(id: string, name: string, candidateSha: string, result: CommandResult, durationMs: number, baseline?: CommandResult, evidence: RepositoryPolicy['evidence'] = 'tap', limits?: CheckLimits): Check {
+export type ReportFormat = 'tap' | 'node-spec' | 'vitest' | 'jest' | 'mocha';
+export interface TestReport { format: ReportFormat; tests: number; passed: number; failed: number }
+
+const REPORTER_NAMES: Record<ReportFormat, string> = { tap: 'TAP', 'node-spec': 'node:test spec', vitest: 'Vitest', jest: 'Jest', mocha: 'Mocha' };
+const count = (text: string, pattern: RegExp): number | undefined => { const match = pattern.exec(text); return match ? Number(match[1]) : undefined; };
+
+export function testReport(stdout: string, stderr = ''): TestReport | null {
+  const text = `${stdout}\n${stderr}`.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
+  const tapTests = count(text, /^# tests (\d+)$/m);
+  if (tapTests !== undefined) return { format: 'tap', tests: tapTests, passed: count(text, /^# pass (\d+)$/m) ?? 0, failed: count(text, /^# fail (\d+)$/m) ?? 0 };
+  const specTests = count(text, /^\s*ℹ tests (\d+)\s*$/m);
+  if (specTests !== undefined) return { format: 'node-spec', tests: specTests, passed: count(text, /^\s*ℹ pass (\d+)\s*$/m) ?? 0, failed: (count(text, /^\s*ℹ fail (\d+)\s*$/m) ?? 0) + (count(text, /^\s*ℹ cancelled (\d+)\s*$/m) ?? 0) };
+  const vitest = /^\s*Tests\s+(.+?)\s+\((\d+)\)\s*$/m.exec(text);
+  if (vitest) return { format: 'vitest', tests: Number(vitest[2]), passed: count(vitest[1]!, /(\d+) passed/) ?? 0, failed: count(vitest[1]!, /(\d+) failed/) ?? 0 };
+  const jest = /^\s*Tests:\s+(.+?(\d+) total)\s*$/m.exec(text);
+  if (jest) return { format: 'jest', tests: Number(jest[2]), passed: count(jest[1]!, /(\d+) passed/) ?? 0, failed: count(jest[1]!, /(\d+) failed/) ?? 0 };
+  const passing = count(text, /^\s*(\d+) passing\b/m);
+  if (passing !== undefined) { const failed = count(text, /^\s*(\d+) failing\b/m) ?? 0; return { format: 'mocha', tests: passing + failed, passed: passing, failed }; }
+  return null;
+}
+
+type EvidenceContext = CheckLimits & Partial<Pick<RepositoryPolicy, 'evidenceSource' | 'testCommand'>>;
+
+function evidenceSetting(context: EvidenceContext | undefined): string {
+  if (context?.evidenceSource === 'owner') return 'The repository check settings (Owner override of gitflare.json) set "evidence": "tap"';
+  if (context?.evidenceSource === 'gitflare.json') return 'gitflare.json sets "evidence": "tap"';
+  return 'No "evidence" setting is configured, so Gitflare expects TAP';
+}
+
+const EVIDENCE_ADVICE = 'Make the test command print TAP (for node:test add --test-reporter=tap), or set "evidence": "exit-code" in gitflare.json; an Owner can also override evidence and the test command in the repository check settings.';
+
+export function checkFromCommand(id: string, name: string, candidateSha: string, result: CommandResult, durationMs: number, baseline?: CommandResult, evidence: RepositoryPolicy['evidence'] = 'tap', limits?: EvidenceContext): Check {
   const tests = result.stdout.match(/^# tests (\d+)$/m);
   const passed = result.stdout.match(/^# pass (\d+)$/m);
   const hasCompleteEvidence = !!tests && !!passed && Number(tests[1]) > 0 && Number(passed[1]) === Number(tests[1]) && /^# fail 0$/m.test(result.stdout) && /^# cancelled 0$/m.test(result.stdout) && /^# duration_ms [\d.]+$/m.test(result.stdout);
@@ -150,13 +181,29 @@ export function checkFromCommand(id: string, name: string, candidateSha: string,
   const body = (prefix: string) => `${prefix}${commandOutput(result, outputLimit - prefix.length)}`;
   const timeout = (result.timedOut || baseline?.timedOut) && limits ? { timeout: { seconds: Math.round(limits.testTimeoutMs / 1000), runner: limits.runner, timeoutSource: limits.testTimeoutSource, runnerSource: limits.runnerSource } } : {};
   if (evidence === 'exit-code') return { id, name: `${name} (exit code only)`, candidateSha, durationMs, status: result.exitCode === 0 && !result.timedOut && !truncated ? 'passed' : 'failed', output: body(timedOut), ...timeout };
+  const implicit = !limits?.evidenceSource || limits.evidenceSource === 'default';
+  const command = limits?.testCommand ? `\`${limits.testCommand}\`` : 'The test command';
+  if (!tests) {
+    const report = testReport(result.stdout, result.stderr);
+    if (!implicit || !report) {
+      const notice = `${evidenceSetting(limits)}, but ${command} printed no TAP summary ("# tests N", "# pass N")${report ? ` (it printed the ${REPORTER_NAMES[report.format]} reporter)` : ' and no recognised test report'}. ${EVIDENCE_ADVICE}\n`;
+      return { id, name, candidateSha, durationMs, status: 'failed', output: body(`${timedOut}${notice}`), ...timeout };
+    }
+    const base = baseline ? testReport(baseline.stdout, baseline.stderr) : null;
+    const fewer = !!base && base.format === report.format && report.tests < base.tests;
+    const ok = result.exitCode === 0 && !result.timedOut && !truncated && !baseline?.timedOut && report.tests > 0 && report.failed === 0 && report.passed > 0 && !fewer;
+    const notice = `${evidenceSetting(limits)}; ${command} printed the ${REPORTER_NAMES[report.format]} reporter instead (${report.tests} tests, ${report.passed} passed, ${report.failed} failed), so this check used the exit code and that summary.${baseline && !base ? ' The base commit printed no recognised report, so tests were not compared with it.' : ''}${fewer ? ` The candidate reported fewer tests than the base commit (${report.tests} < ${base!.tests}).` : ''} ${EVIDENCE_ADVICE}\n`;
+    return { id, name: `${name} (exit code and ${REPORTER_NAMES[report.format]} summary)`, candidateSha, durationMs, status: ok ? 'passed' : 'failed', output: body(`${timedOut}${notice}`), ...timeout };
+  }
   const baselineCount = baseline?.stdout.match(/^# tests (\d+)$/m);
   const baselineComplete = !baseline || (!!baselineCount && Number(baselineCount[1]) > 0 && /^# duration_ms [\d.]+$/m.test(baseline.stdout) && !`${baseline.stdout}\n${baseline.stderr}`.includes('[output truncated]'));
+  const baselineReport = baseline && !baselineCount ? testReport(baseline.stdout, baseline.stderr) : null;
+  const baselineSkipped = !baselineComplete && implicit && !!baselineReport && baseline!.exitCode === 0 && !baseline!.timedOut;
   const retainedCount = !baselineCount || (!!tests && Number(tests[1]) >= Number(baselineCount[1]));
-  const missing = baseline ? missingBaselineTests(baseline.stdout, result.stdout) : [];
-  const coverageNotice = !baselineComplete ? 'The base test report was incomplete; candidate coverage cannot be verified.\n' : !retainedCount ? 'The candidate reported fewer tests than the base commit.\n' : '';
+  const missing = baseline && baselineCount ? missingBaselineTests(baseline.stdout, result.stdout) : [];
+  const coverageNotice = baselineSkipped ? `The base commit printed the ${REPORTER_NAMES[baselineReport?.format ?? 'tap']} reporter instead of TAP, so the candidate's tests were not compared with it by name. ${EVIDENCE_ADVICE}\n` : !baselineComplete ? `The base test report was incomplete; candidate coverage cannot be verified. ${evidenceSetting(limits)}, and the base commit's run of ${command} did not print a complete TAP report. ${EVIDENCE_ADVICE}\n` : !retainedCount ? 'The candidate reported fewer tests than the base commit.\n' : '';
   const notice = missing.length ? `Tests reported at the base commit did not run and pass on this candidate: ${missing.slice(0, 20).join('; ')}\n` : '';
-  return { id, name, candidateSha, durationMs, status: result.exitCode === 0 && !result.timedOut && hasCompleteEvidence && !truncated && baselineComplete && retainedCount && !missing.length ? 'passed' : 'failed', output: body(`${timedOut}${coverageNotice}${notice}`), ...timeout };
+  return { id, name, candidateSha, durationMs, status: result.exitCode === 0 && !result.timedOut && hasCompleteEvidence && !truncated && (baselineComplete || baselineSkipped) && retainedCount && !missing.length ? 'passed' : 'failed', output: body(`${timedOut}${coverageNotice}${notice}`), ...timeout };
 }
 
 const shellTool = { type: 'function', name: 'shell', description: 'Run a bounded shell command in the isolated repository. Read and edit files, inspect changes, and run available tests. Network access is limited to your task fork.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false }, strict: true };
@@ -188,11 +235,21 @@ export async function runAgentLoop(env: ExecutionEnv, sandbox: SandboxRunner, pr
   ];
   const tools = [shellTool, ...(options.team ? [teamTool] : []), ...(options.workspace ? [installTool, testsTool] : [])];
   let lastToolSucceeded = false;
+  let continuations = 0;
+  let continuing = false;
   for (let turn = 0; turn < maxTurns; turn++) {
     if (!await isActive()) throw new Error('Mission cancelled');
     let message: ModelMessage;
-    try { message = await modelMessageWithRetry(env, model, messages, deadline, isActive, tools, options.onModelCall); }
+    try { message = await modelMessageWithRetry(env, model, messages, deadline, isActive, tools, options.onModelCall, continuing); }
     catch (error) {
+      if (error instanceof ModelResponseError && error.detail.issue === 'max_tokens' && continuations < MAX_OUTPUT_CONTINUATIONS) {
+        continuations++;
+        continuing = true;
+        console.warn(JSON.stringify({ event: 'model_output_continuation', model: model.id, continuation: continuations }));
+        messages.push({ role: 'user', content: OUTPUT_LIMIT_CONTINUATION });
+        turn--;
+        continue;
+      }
       if (!(error instanceof ModelResponseError) || !error.nativeEmptyToolResponse || model.protocol !== 'workers-ai' || !lastToolSucceeded || turn >= maxTurns - 1) throw error;
       if (!await isActive()) throw new Error('Mission cancelled');
       remainingAgentBudget(deadline);
@@ -205,6 +262,7 @@ export async function runAgentLoop(env: ExecutionEnv, sandbox: SandboxRunner, pr
       if (summary.calls.length || !summary.text.trim()) throw new ModelResponseError('invalid_final_summary', 'Model returned no usable tool-free final summary');
       return summary.text.slice(0, 4000);
     }
+    continuing = false;
     if (!await isActive()) throw new Error('Mission cancelled');
     remainingAgentBudget(deadline);
     messages.push(...message.output.map(item => {
@@ -268,12 +326,19 @@ function shellCommand(raw: string): string | null {
 }
 
 const MODEL_ATTEMPTS = 3;
-const MODEL_OUTPUT_TOKENS = 4096;
-export const EXTENDED_OUTPUT_TOKENS = 8192;
+export const OUTPUT_TOKEN_LIMITS: Record<ModelConnection['protocol'], { initial: number; extended: number }> = {
+  anthropic: { initial: 8192, extended: 16_384 },
+  responses: { initial: 8192, extended: 16_384 },
+  chat: { initial: 4096, extended: 8192 },
+  'workers-ai': { initial: 4096, extended: 8192 },
+};
+export const MAX_OUTPUT_CONTINUATIONS = 4;
+export const OUTPUT_LIMIT_CONTINUATION = 'Your previous response reached the output token limit before it finished, so none of it was applied and no tool ran. Continue from where you were in smaller steps: write a large file with several shell commands of at most about 200 lines each (create it, then append with cat >>), and keep each response short.';
 export const MODEL_RETRY_BACKOFF_MS = 1000;
 
-async function modelMessageWithRetry(env: ExecutionEnv, model: ModelConnection, messages: InputItem[], deadline: number, isActive: () => Promise<boolean>, tools: InputItem[], onModelCall?: (usage: ModelUsage | undefined) => void): Promise<ModelMessage> {
-  let maxTokens = MODEL_OUTPUT_TOKENS;
+async function modelMessageWithRetry(env: ExecutionEnv, model: ModelConnection, messages: InputItem[], deadline: number, isActive: () => Promise<boolean>, tools: InputItem[], onModelCall?: (usage: ModelUsage | undefined) => void, startExtended = false): Promise<ModelMessage> {
+  const limits = OUTPUT_TOKEN_LIMITS[model.protocol] ?? OUTPUT_TOKEN_LIMITS.chat;
+  let maxTokens = startExtended ? limits.extended : limits.initial;
   let responseRetried = false;
   for (let attempt = 1; ; attempt++) {
     if (!await isActive()) throw new Error('Mission cancelled');
@@ -283,10 +348,10 @@ async function modelMessageWithRetry(env: ExecutionEnv, model: ModelConnection, 
     catch (error) {
       if (!recorded) onModelCall?.(undefined);
       if (error instanceof ModelResponseError) {
-        const truncated = error.detail.issue === 'max_tokens' && maxTokens < EXTENDED_OUTPUT_TOKENS;
+        const truncated = error.detail.issue === 'max_tokens' && maxTokens < limits.extended;
         if (responseRetried || attempt >= MODEL_ATTEMPTS || !(error.transient || truncated)) throw error;
         responseRetried = true;
-        if (truncated) maxTokens = EXTENDED_OUTPUT_TOKENS;
+        if (truncated) maxTokens = limits.extended;
         console.warn(JSON.stringify({ event: 'model_response_retry', model: model.id, ...error.detail, maxTokens }));
       } else {
         const status = (error as { status?: unknown } | null)?.status;
@@ -311,17 +376,20 @@ async function checked(sandbox: SandboxRunner, argv: string[], cwd = '/workspace
   return result.stdout.trim();
 }
 
-export const CLONE_TIMEOUT_MS = 120_000;
-export const CLONE_ATTEMPTS = 2;
+export { CLONE_ATTEMPTS, CLONE_TIMEOUT_MS, cloneTimeoutMs } from './budgets';
 const TIMEOUT_EXIT_CODES = [124, 137, 143];
-const TRANSIENT_CLONE = /Could not resolve host|Connection (?:reset|refused|timed out)|Operation timed out|early EOF|RPC failed|unexpected disconnect|remote end hung up|Recv failure|SSL_(?:ERROR|read)|TLS connection|returned error: 5\d\d|HTTP\/2 stream/i;
+const TRANSIENT_CLONE = /Could not resolve host|Connection (?:reset|refused|timed out)|Operation timed out|early EOF|RPC failed|unexpected disconnect|remote end hung up|Recv failure|SSL_(?:ERROR|read)|TLS connection|returned error: 5\d\d|HTTP\/2 stream|expected flush after ref listing|protocol error|unexpected EOF|index-pack failed|fetch-pack: invalid/i;
 
 export type CloneRetry = (message: string) => Promise<void>;
+
+function retryPause(attempt: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, CLONE_RETRY_BACKOFF_MS * 2 ** (attempt - 1)));
+}
 
 function gitNetworkFailure(operation: 'clone' | 'fetch', result: CommandResult, attempt: number): { message: string; transient: boolean } {
   const timedOut = !!result.timedOut || TIMEOUT_EXIT_CODES.includes(result.exitCode);
   const detail = (result.stderr.trim() || result.stdout.trim()).split('\n').slice(-6).join('\n').slice(-800);
-  const outcome = timedOut ? `timed out after ${Math.round(CLONE_TIMEOUT_MS / 1000)} s (exit ${result.exitCode})` : `failed (exit ${result.exitCode})`;
+  const outcome = timedOut ? `timed out after ${Math.round(cloneTimeoutMs(attempt) / 1000)} s (exit ${result.exitCode})` : `failed (exit ${result.exitCode})`;
   return { message: `Git ${operation} ${outcome} on attempt ${attempt} of ${CLONE_ATTEMPTS}${detail ? `: ${detail}` : ''}`, transient: timedOut || TRANSIENT_CLONE.test(detail) };
 }
 
@@ -343,18 +411,24 @@ export async function cloneOnFreshRunner(sandbox: SandboxRunner, replace: () => 
   }
 }
 
+export function moveAsideCommand(attempt: number): string[] {
+  return ['/bin/sh', '-c', 'if [ -e /workspace/repo ]; then mv -- /workspace/repo "/workspace/.failed-clone-$1"; fi', 'gitflare-clone-cleanup', String(attempt)];
+}
+
 async function clone(sandbox: SandboxRunner, fork: ArtifactInfo, baseSha: string, onRetry: CloneRetry = async () => {}): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     const started = Date.now();
-    const result = await sandbox.command(['git', 'clone', '--', fork.remote, '/workspace/repo'], '/workspace', CLONE_TIMEOUT_MS);
+    const result = await sandbox.command(['git', 'clone', '--', fork.remote, '/workspace/repo'], '/workspace', cloneTimeoutMs(attempt));
     if (result.exitCode === 0) break;
     const failure = gitNetworkFailure('clone', result, attempt);
     console.warn(JSON.stringify({ event: 'git_clone_failed', attempt, attempts: CLONE_ATTEMPTS, exitCode: result.exitCode, timedOut: !!result.timedOut, transient: failure.transient, durationMs: Date.now() - started }));
     if (!failure.transient || attempt >= CLONE_ATTEMPTS) throw new Error(failure.message);
     await onRetry(`${failure.message}. Retrying the clone in a clean directory`);
-    const cleanup = await sandbox.command(['rm', '-rf', '--', '/workspace/repo'], '/workspace');
-    if (cleanup.exitCode === 137) throw new RunnerKilledError(`Runner was killed while removing the failed clone (exit 137) after ${failure.message.charAt(0).toLowerCase()}${failure.message.slice(1)}`);
-    if (cleanup.exitCode !== 0) throw new Error(`Command failed (${cleanup.exitCode}): rm ${cleanup.stderr.slice(0, 1000)}`);
+    const cleanup = await sandbox.command(moveAsideCommand(attempt), '/workspace', CLONE_CLEANUP_TIMEOUT_MS);
+    const lost = `${failure.message.charAt(0).toLowerCase()}${failure.message.slice(1)}`;
+    if (cleanup.exitCode === 137 || cleanup.timedOut) throw new RunnerKilledError(`Runner was killed while moving the failed clone aside (exit ${cleanup.exitCode}) after ${lost}`);
+    if (cleanup.exitCode !== 0) throw new Error(`Command failed (${cleanup.exitCode}): moving the failed clone aside ${cleanup.stderr.slice(0, 1000)}`);
+    await retryPause(attempt);
   }
   await checked(sandbox, ['git', 'checkout', '--detach', baseSha]);
   await checked(sandbox, ['git', 'config', 'user.name', 'Gitflare']);
@@ -365,11 +439,12 @@ async function clone(sandbox: SandboxRunner, fork: ArtifactInfo, baseSha: string
 async function fetchRef(sandbox: SandboxRunner, remote: string, ref: string, options: string[] = []): Promise<string> {
   for (let attempt = 1; ; attempt++) {
     const started = Date.now();
-    const result = await sandbox.command(['git', 'fetch', ...options, '--', remote, ref], '/workspace/repo', CLONE_TIMEOUT_MS);
+    const result = await sandbox.command(['git', 'fetch', ...options, '--', remote, ref], '/workspace/repo', cloneTimeoutMs(attempt));
     if (result.exitCode === 0) return checked(sandbox, ['git', 'rev-parse', 'FETCH_HEAD']);
     const failure = gitNetworkFailure('fetch', result, attempt);
     console.warn(JSON.stringify({ event: 'git_fetch_failed', attempt, attempts: CLONE_ATTEMPTS, exitCode: result.exitCode, timedOut: !!result.timedOut, transient: failure.transient, durationMs: Date.now() - started }));
     if (!failure.transient || attempt >= CLONE_ATTEMPTS) throw new Error(failure.message);
+    await retryPause(attempt);
   }
 }
 
@@ -551,9 +626,11 @@ export async function mergeStartingCandidates(sandbox: SandboxRunner, startFrom:
     unavailable.push(source.name);
   }
   const names = merged.join(', ');
-  const note = startFrom.reason === 'collision'
+  const note = startFrom.reason === 'retry'
+    ? merged.length ? `HEAD already contains your candidate from the previous attempt.${startFrom.previousError ? ` That attempt failed: ${startFrom.previousError}.` : ''} Keep its work, finish the rest of your assignment and fix what failed; do not start over.` : 'Your previous candidate could not be restored, so redo the assignment.'
+    : startFrom.reason === 'collision'
     ? `Your previous candidate collided with other agents in ${(startFrom.files ?? []).join(', ') || 'shared files'} when the results were combined. ${merged.length ? `HEAD already contains the merged candidates of ${names}; make your change on top of theirs and keep their edits in those files.` : 'Their candidates could not be merged here, so edit those files as little as possible.'}`
-    : `A reviewer requested changes to the previous candidate. ${merged.length ? `HEAD already contains that candidate (from ${names}); change it to address the review in your task and keep the rest.` : 'The previous candidate could not be restored, so redo the assignment and address the review.'}`;
+    : `A reviewer requested changes to the previous candidate. ${merged.length ? `HEAD already contains that candidate (from ${names}); change it to address the review in your task and keep the rest. Files that candidate added, including its tests, are part of this mission and may be edited; only files that existed at the base commit stay protected.` : 'The previous candidate could not be restored, so redo the assignment and address the review.'}`;
   return { reason: startFrom.reason, ...(startFrom.files?.length ? { collidedFiles: startFrom.files } : {}), mergedCandidates: merged, ...(unavailable.length ? { unavailableCandidates: unavailable } : {}), note };
 }
 
@@ -711,11 +788,16 @@ async function verify(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: string,
 }
 
 async function verifyOnce(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: string, fork: ArtifactInfo, sha: string, baseSha: string, policy: RepositoryPolicy, assertAuthority: AuthorityGuard, skillChange?: RepositorySkillChange, isActive: () => Promise<boolean> = async () => true, humanBranch = false): Promise<{ check: Check; changes: FileChange[]; dependencyChanges: ManifestDependencyChanges[] }> {
-  const sandbox = env.SANDBOX.getByName(`${key}-verify`);
+  let sandbox = env.SANDBOX.getByName(`${key}-verify`);
   try {
     await assertAuthority();
     await sandbox.prepare([{ ...fork, write: false }], { runner: policy.runner });
-    await clone(sandbox, fork, baseSha);
+    sandbox = await cloneOnFreshRunner(sandbox, async () => {
+      const fresh = env.SANDBOX.getByName(`${key}-verify-fresh`);
+      await assertAuthority();
+      await fresh.prepare([{ ...fork, write: false }], { runner: policy.runner });
+      return fresh;
+    }, fork, baseSha);
     // Dependencies and baseline come from the base commit, before any candidate code executes in this sandbox
     if (policy.install && !policy.untested) await installDependencies(sandbox, policy.install, assertAuthority, isActive);
     const baseline = policy.evidence === 'tap' && !policy.untested ? await runCheck(sandbox, policy) : undefined;
@@ -799,13 +881,18 @@ export async function applyBranchMerge(sandbox: SandboxRunner, remote: string, c
 }
 
 async function verifyRevert(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: string, fork: ArtifactInfo, sha: string, change: RevertChange, defaultTestCommand: string, assertAuthority: AuthorityGuard, isActive: () => Promise<boolean>, runner: RepositoryPolicy['runner'], settings?: CheckPlan | null): Promise<{ check: Check; changes: FileChange[]; learned?: LearnedLimits }> {
-  const sandbox = env.SANDBOX.getByName(`${key}-verify`);
+  let sandbox = env.SANDBOX.getByName(`${key}-verify`);
   try {
     await assertAuthority();
     // The restored revision's policy is only readable after cloning
     await sandbox.prepare([{ ...fork, write: false }], { runner });
     // The restored revision was itself approved and landed, so its tests define what the revert must keep passing
-    await clone(sandbox, fork, change.previousSha);
+    sandbox = await cloneOnFreshRunner(sandbox, async () => {
+      const fresh = env.SANDBOX.getByName(`${key}-verify-fresh`);
+      await assertAuthority();
+      await fresh.prepare([{ ...fork, write: false }], { runner });
+      return fresh;
+    }, fork, change.previousSha);
     const policy = await loadPolicy(sandbox, change.previousSha, defaultTestCommand, settings);
     if (policy.install && !policy.untested) await installDependencies(sandbox, policy.install, assertAuthority, isActive);
     const baseline = policy.evidence === 'tap' && !policy.untested ? await runCheck(sandbox, policy) : undefined;
@@ -1019,7 +1106,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
         const staged = changed.split('\n').filter(Boolean);
         if (revertChange && staged.some((path) => !revertPaths.includes(path))) throw new Error('Revert changed files outside the landed change');
         if (!revertChange) {
-          const { blocked } = await reviewChanges(sandbox, await changesWithStatus(sandbox, ['--cached']), policy, 'HEAD', '');
+          const { blocked } = await reviewChanges(sandbox, await changesWithStatus(sandbox, ['--cached', baseSha]), policy, baseSha, '');
           if (blocked.length) throw protectedFailure('Agent changed protected files', blocked);
         }
         if (skillChange && (staged.length !== 1 || staged[0] !== skillChange.path)) throw new Error('Skill editor changed files outside the requested skill');
@@ -1144,7 +1231,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     }
   }
   const key = `gf-${mission.id}-${mission.epoch}-integration`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  const sandbox = SANDBOX.getByName(key);
+  let sandbox = SANDBOX.getByName(key);
   try {
     for (const run of included) run.summary = `${run.summary ?? 'Finished'} — integrating and running combined checks`;
     await publish();
@@ -1152,8 +1239,14 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     const fork = await forkRepository(ARTIFACTS, repository.name, key);
     result.integrationForkName = fork.name;
     await assertAuthority();
-    await sandbox.prepare([{ ...fork, write: true }, ...[...forks.values()].map((item) => ({ ...item, write: false }))]);
-    await clone(sandbox, fork, baseSha);
+    const permissions = [{ ...fork, write: true }, ...[...forks.values()].map((item) => ({ ...item, write: false }))];
+    await sandbox.prepare(permissions);
+    sandbox = await cloneOnFreshRunner(sandbox, async () => {
+      const fresh = SANDBOX.getByName(`${key}-fresh`);
+      await assertAuthority();
+      await fresh.prepare(permissions);
+      return fresh;
+    }, fork, baseSha);
     const policy = sharedPolicy ?? await loadPolicy(sandbox, baseSha, input.testCommand, input.checkSettings);
     const keptGenerated = new Set<string>();
     let keptLockfile: string | null = null;

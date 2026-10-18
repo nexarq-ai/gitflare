@@ -7,11 +7,11 @@ import { createArtifactsRepository, repositoryHead } from './artifacts';
 import { assertDependencyApproval } from './dependency-changes';
 import { agentRunIds, ApiError, assertMutationOrigin, findRepositoryByName, isLocalRequest, MISSION_REQUEST_MAX_BYTES, missionInput, publicError, readJson, repositoryName, repositoryPath, repositoryRef, requireIdempotencyKey, requireString, retryGuidance, storageRepositoryName } from './domain';
 import { repositoryLabel } from '../shared/repository-names';
-import { checkSettingsSnapshot, normalizeCheckSettings, retryPlan } from './check-settings';
+import { checkSettingsSnapshot, normalizeCheckSettings, retryPlan, samePolicyOverride } from './check-settings';
 import { handlePreviewSettings } from './preview-settings-api';
 import type { AppEnv } from './env';
 import { executionReadiness } from './execution';
-import { backgroundState, detectRepositorySetup, dispatchBackground, landingWorkflowId, previewWorkflowId, retireWorkerPreview } from './background-work';
+import { backgroundState, detectRepositorySetup, dispatchBackground, landingWorkflowId, previewWorkflowId, retireMissionPreview } from './background-work';
 import { backgroundPrincipal, deploymentsApi, deployWorkflowId, type DeployParams } from './deployments';
 import { deployAccessDeps } from './deploy-access-deps';
 import { repositorySecretsApi } from './repository-secrets';
@@ -176,7 +176,18 @@ async function workspaceName(env: AppEnv, access: { workspace(principal: Princip
 
 type SourceHandle = Awaited<ReturnType<NonNullable<AppEnv['ARTIFACTS']>['get']>>;
 type SourceCommit = Awaited<ReturnType<SourceHandle['log']>>[number];
-interface CandidateSources { find(commitSha: string): Promise<{ missionId: string; forkName?: string } | undefined>; authorize(missionId: string): Promise<void> }
+interface CandidateSources { find(commitSha: string): Promise<{ missionId: string; forkName?: string } | undefined>; matching?(prefix: string): Promise<string[]>; authorize(missionId: string): Promise<void> }
+
+const SHORT_SHA = /^[a-f0-9]{7,39}$/;
+const PREFIX_HISTORY_LIMIT = 1000;
+
+async function resolveShortSha(source: SourceHandle, repository: Repository, prefix: string, candidates?: CandidateSources): Promise<string | null> {
+  const history = await source.log({ ref: repository.defaultBranch, limit: PREFIX_HISTORY_LIMIT }).catch(() => []);
+  const matches = new Set(history.map((commit) => commit.hash).filter((hash) => hash.startsWith(prefix)));
+  for (const sha of await candidates?.matching?.(prefix) ?? []) matches.add(sha);
+  if (matches.size > 1) throw new ApiError(409, 'AMBIGUOUS_REF', `Commit prefix ${prefix} matches ${matches.size} commits (${[...matches].slice(0, 5).map((sha) => sha.slice(0, 12)).join(', ')}). Pass more characters or the full SHA.`);
+  return matches.size ? [...matches][0]! : null;
+}
 
 async function openFork(env: AppEnv, name: string): Promise<SourceHandle | null> {
   try { return await env.ARTIFACTS!.get(name); } catch { return null; }
@@ -188,17 +199,24 @@ async function browseRepository(env: AppEnv, repository: Repository, kind: strin
   const path = repositoryPath(url.searchParams.get('path') ?? '', kind === 'tree');
   using source = await env.ARTIFACTS.get(repository.name);
   const commit = (await source.log({ ref, limit: 1 }))[0];
-  if (commit) return sourceView(source, commit, kind, path, ref);
+  if (commit) return await sourceView(source, commit, kind, path, ref);
+  const resolved = SHORT_SHA.test(ref) ? await resolveShortSha(source, repository, ref, candidates) : null;
+  if (resolved) {
+    const full = new URL(url);
+    full.searchParams.set('ref', resolved);
+    return await browseRepository(env, repository, kind, full, candidates);
+  }
   const fullSha = /^[a-f0-9]{40}$/.test(ref);
   const candidate = fullSha && candidates ? await candidates.find(ref) : undefined;
   if (candidate) {
     await candidates!.authorize(candidate.missionId);
     using fork = candidate.forkName ? await openFork(env, candidate.forkName) : null;
     const held = fork ? (await fork.log({ ref, limit: 1 }).catch(() => []))[0] : undefined;
-    if (fork && held?.hash === ref) return sourceView(fork, held, kind, path, ref, candidate.missionId);
+    if (fork && held?.hash === ref) return await sourceView(fork, held, kind, path, ref, candidate.missionId);
     throw new ApiError(404, 'MISSION_CANDIDATE_UNAVAILABLE', `Commit ${ref.slice(0, 12)} is a candidate of mission ${candidate.missionId}, and the fork that held it can no longer be read. This commit is a mission candidate; use gitflare_inspect_mission view changes (GET /api/missions/${candidate.missionId}) to read its diff.`);
   }
   if (fullSha) throw new ApiError(404, 'REF_NOT_FOUND', `Commit ${ref.slice(0, 12)} is not in this repository or in any of its mission candidates. Pass a branch, tag or a commit from gitflare_inspect_mission.`);
+  if (SHORT_SHA.test(ref)) throw new ApiError(404, 'REF_NOT_FOUND', `No commit starting with ${ref} is in the last ${PREFIX_HISTORY_LIMIT} commits of ${repository.defaultBranch} or among this repository's mission candidates. Pass the full SHA, a branch or a tag.`);
   throw new ApiError(404, 'REF_NOT_FOUND', 'This branch, tag, or commit does not exist. Push an initial commit if the repository is empty.');
 }
 
@@ -501,7 +519,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     }
     if (repositoryMatch[2] === 'skills') return Response.json(await listRepositorySkills(env.ARTIFACTS, repository, url.searchParams.get('ref') ?? undefined));
     const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
-    return browseRepository(env, repository, repositoryMatch[2], url, { find: (commitSha) => coordinator.missionCandidate(commitSha), authorize: (missionId) => access.authorize(principal, 'read', 'repository', repository.id, missionId) });
+    return browseRepository(env, repository, repositoryMatch[2], url, { find: (commitSha) => coordinator.missionCandidate(commitSha), matching: (prefix) => coordinator.missionCandidateShas(prefix), authorize: (missionId) => access.authorize(principal, 'read', 'repository', repository.id, missionId) });
   }
   const branchWrite = request.method === 'POST' ? /^\/api\/repositories\/([a-zA-Z0-9-]+)\/branches(?:\/(delete))?$/.exec(url.pathname) : null;
   if (branchWrite) {
@@ -524,8 +542,14 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     assertMutationOrigin(request);
     const key = requireIdempotencyKey(request), body = await readJson(request, 4096);
     await access.authorize(principal, 'land', 'repository', repository.id);
-    const saved = await coordinator.setCheckSettings(key, normalizeCheckSettings(body), principal.userId);
-    await access.auditRepositoryChange(principal, 'repository.check-settings', repository.id);
+    const input = normalizeCheckSettings(body);
+    const current = await coordinator.getCheckSettings();
+    const overrideChanged = body.policyOverride !== undefined && !samePolicyOverride(input.policyOverride, current?.policyOverride);
+    if (overrideChanged && (principal.role !== 'Owner' || principal.credentialId)) throw new ApiError(403, 'OWNER_REQUIRED', 'Only a workspace Owner can override the check settings of gitflare.json. Leave policyOverride out to keep the current override.');
+    if (overrideChanged && input.policyOverride) input.policyOverride = { ...input.policyOverride, updatedAt: new Date().toISOString(), updatedBy: principal.userId };
+    else if (!overrideChanged && current?.policyOverride) input.policyOverride = current.policyOverride;
+    const saved = await coordinator.setCheckSettings(key, input, principal.userId);
+    await access.auditRepositoryChange(principal, overrideChanged ? 'repository.check-settings.policy-override' : 'repository.check-settings', repository.id);
     return Response.json(checkSettingsSnapshot(repository.id, saved, await coordinator.getCheckDurations()));
   }
   const previewSettingsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/preview-settings$/.exec(url.pathname);
@@ -563,7 +587,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     const draft = await coordinator.createMission(key, { repositoryId: repository.id, expectedBaseSha: current.headSha, title, prompt: description ?? `Merge ${branch} into ${repository.defaultBranch}.`, branchChange: { branch, headSha, targetBranch: repository.defaultBranch, ...(description ? { description } : {}) } }, authorization, models);
     return Response.json(await startWithDurableDispatch(coordinator, `${key.slice(0, 120)}-start`, draft.id, authorization, models), { status: 202 });
   }
-  const match = /^\/api\/missions\/([a-zA-Z0-9-]+)(?:\/(start|cancel|approve|revoke|integrate|preview|preview-extend|attempts|review|select|revert|pull|retry-checks|retry-agents|drop-failed-agents|address-review))?$/.exec(url.pathname);
+  const match = /^\/api\/missions\/([a-zA-Z0-9-]+)(?:\/(start|cancel|approve|revoke|integrate|preview|preview-extend|preview-stop|attempts|review|select|revert|pull|retry-checks|retry-agents|drop-failed-agents|address-review))?$/.exec(url.pathname);
   if (request.method === 'GET' && match && !match[2]) { const {mission,repository} = await findMission(env, match[1], principal.workspaceId); await access.authorize(principal, 'read', 'repository', repository.id, mission.id); return Response.json(mission); }
   if (request.method === 'GET' && match?.[2] === 'attempts') {
     const { repository, mission } = await findMission(env, match[1], principal.workspaceId);
@@ -748,10 +772,10 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
       await coordinator.settleApprovalClears(mission.id, principal);
       return Response.json(reviewed);
     }
-    if (match[2] === 'cancel') { const cancelled = await coordinator.cancelMission(key, mission.id); await retireWorkerPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(cancelled); }
+    if (match[2] === 'cancel') { const cancelled = await coordinator.cancelMission(key, mission.id); await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(cancelled); }
     if (match[2] === 'pull') {
       if (!mission.branchChange) throw new ApiError(409, 'NOT_A_PULL_REQUEST', 'This mission is not a pull request.');
-      if (pullAction === 'close') { const closed = await coordinator.pullRequestAction(key, mission.id, 'close', principal.userId, undefined, principal); await coordinator.settleApprovalClears(mission.id, principal); await retireWorkerPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(closed); }
+      if (pullAction === 'close') { const closed = await coordinator.pullRequestAction(key, mission.id, 'close', principal.userId, undefined, principal); await coordinator.settleApprovalClears(mission.id, principal); await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(closed); }
       await access.authorize(principal, 'contribute', 'repository', repository.id, mission.id);
       if (!env.MISSION_WORKFLOW || !executionReadiness(env, 'skill-edit').ready || !env.ARTIFACTS) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', 'Connect the required services before running pull request checks.');
       await currentRepository(env, repository);
@@ -767,6 +791,13 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
       const selected = await coordinator.selectCandidate(key, mission.id, requireString(body.runId, 'Agent run', 100), body.epoch as number, principal.userId, principal);
       await coordinator.settleApprovalClears(mission.id, principal);
       return Response.json(selected);
+    }
+    if (match[2] === 'preview-stop') {
+      const stopped = await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId);
+      if (stopped === 'starting') throw new ApiError(409, 'PREVIEW_STARTING', 'This preview is still starting. Stop it once it is ready or has failed.');
+      if (stopped === 'none') throw new ApiError(409, 'PREVIEW_NOT_RUNNING', 'This mission has no running preview to stop.');
+      await access.auditRepositoryChange(principal, 'mission.preview.stopped', mission.id);
+      return Response.json(await coordinator.previewStatus(mission.id));
     }
     if (match[2] === 'preview-extend') {
       const extension = await coordinator.extendPreview(mission.id);

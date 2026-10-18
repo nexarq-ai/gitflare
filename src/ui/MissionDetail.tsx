@@ -448,6 +448,20 @@ export default function MissionDetail({
     }
   }
 
+  async function stopPreview() {
+    if (!preview || busy) return;
+    setBusy("preview-stop");
+    setError("");
+    try {
+      await request(`/api/missions/${encodeURIComponent(id)}/preview-stop`, {}, crypto.randomUUID());
+      setPreview(null);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "The preview could not be stopped.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function preparePreview() {
     if (!mission?.candidateSha || busy || previewStarting) return;
     setBusy("preview");
@@ -763,6 +777,11 @@ export default function MissionDetail({
             {permissions.includes("land") && !currentPreview.extended && (
               <small className="candidate-preview-provider">
                 <button className="text-link" disabled={!!busy} onClick={() => void extendPreview()}>Extend once</button> keeps it for one more preview lifetime.
+              </small>
+            )}
+            {permissions.includes("contribute") && (
+              <small className="candidate-preview-provider">
+                <button className="text-link" disabled={!!busy} onClick={() => void stopPreview()}>Stop preview</button> retires it now and frees one of the workspace’s preview slots.
               </small>
             )}
             {currentPreview.worker?.notes.map((note) => <small key={note} className="candidate-preview-provider">{note}</small>)}
