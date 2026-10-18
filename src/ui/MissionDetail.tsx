@@ -54,6 +54,7 @@ type PreviewState = {
   extended: boolean;
   access: PreviewAccess;
   worker?: { deploymentUrl: string | null; notes: string[]; host?: PreviewHost };
+  notes?: string[];
 };
 
 function remaining(until: string, now: number): string {
@@ -480,7 +481,7 @@ export default function MissionDetail({
       ...(result.linkExpiresAt ? { linkExpiresAt: result.linkExpiresAt } : {}),
       extended: !!result.extended,
       access: result.access ?? (result.kind === "worker" ? "link" : "members"),
-      ...(result.kind === "worker" ? { worker: { deploymentUrl: result.deploymentUrl ?? null, notes: result.notes ?? [], ...(result.host ? { host: result.host } : {}) } } : {}),
+      ...(result.kind === "worker" ? { worker: { deploymentUrl: result.deploymentUrl ?? null, notes: result.notes ?? [], ...(result.host ? { host: result.host } : {}) } } : result.notes?.length ? { notes: result.notes } : {}),
     });
   }
 
@@ -859,7 +860,7 @@ export default function MissionDetail({
                 <button className="text-link" disabled={!!busy} onClick={() => void stopPreview()}>Stop preview</button> retires it now and frees one of the workspace’s preview slots.
               </small>
             )}
-            {currentPreview.worker?.notes.map((note) => <small key={note} className="candidate-preview-provider">{note}</small>)}
+            {(currentPreview.worker?.notes ?? currentPreview.notes ?? []).map((note) => <small key={note} className="candidate-preview-provider">{note}</small>)}
           </div>
           <a
             href={currentPreview.previewUrl}

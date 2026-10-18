@@ -135,8 +135,8 @@
     },
     {
       "path": "runner/sandbox.ts",
-      "size": 22441,
-      "sha256": "9b79a680b53895c3edfb33a9e8f0dc2c9e0da1e2c99bd7bb373c1ae254feb947"
+      "size": 25296,
+      "sha256": "f35230acef951b0a9b72820ac29b4448ae8d2a49676607ccdd3baec84be60af2"
     },
     {
       "path": "scripts/deploy-self-hosted.mjs",
@@ -210,8 +210,8 @@
     },
     {
       "path": "src/shared/preview-progress.ts",
-      "size": 1989,
-      "sha256": "768a3833211f4296865e5a8428bcb53f647f14b92d33a38e0e7658bb49da328a"
+      "size": 2032,
+      "sha256": "dcd96d93e09926afdca3252a2205a9c277afdfa42a11f05af69c1a8f15a13fe8"
     },
     {
       "path": "src/shared/pull-requests.ts",
@@ -250,8 +250,8 @@
     },
     {
       "path": "src/ui/AccountPicker.tsx",
-      "size": 7218,
-      "sha256": "05c8626c29073afcee064e08fbea8d6ec33193ac2a66360c365fe442efd9b862"
+      "size": 7567,
+      "sha256": "c7b74ca785fcda533407bf15081a8e806ff7f1e16027fb020fdbddd65010e5d5"
     },
     {
       "path": "src/ui/AccountSettings.tsx",
@@ -610,8 +610,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 66112,
-      "sha256": "c0c5317f303fd13e10420a9361c886668705e15ecab37fe42d7c3f297e698591"
+      "size": 66213,
+      "sha256": "835f56468bb47892c2026ac3b111268745b2d58b5308e6baab04bdb9b5aa4f49"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -685,8 +685,8 @@
     },
     {
       "path": "src/ui/PreviewSettings.tsx",
-      "size": 10589,
-      "sha256": "1ff324267a80ca04517197515e58daa60c205a9183a8a0bf52e7222cb6979260"
+      "size": 9599,
+      "sha256": "6e05a6ba93dc0d1979f8d40abbea28d9b73547c77f19900c3efb8f1f59241727"
     },
     {
       "path": "src/ui/proposal-create.css",
@@ -875,8 +875,8 @@
     },
     {
       "path": "src/worker/background-work.ts",
-      "size": 29236,
-      "sha256": "51e9c1b1736d3e32dcb8305dcca1d18ea487a987b495e6b3a1e83c8035c02d66"
+      "size": 29773,
+      "sha256": "0a3ea5261746988072022d7c0a99afd012810cbf69156d53c1b52b274a56446c"
     },
     {
       "path": "src/worker/branch-protection.ts",
@@ -930,8 +930,8 @@
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 106419,
-      "sha256": "c91a2efa256ec11b1ff93e10ae79758439b852c5210a2a1eee7590d082ad387e"
+      "size": 106738,
+      "sha256": "7bc6907d271b69da49ae5350ae1474bc2c015da33bab0c450d20fa530e47f411"
     },
     {
       "path": "src/worker/d1-migrations.ts",
@@ -1055,8 +1055,8 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 117065,
-      "sha256": "3232817d6c5f2a94709a2d0ee541bd86b00ca5e5d032771fa38cebcd5ea52ecd"
+      "size": 117996,
+      "sha256": "c30991d411dbca87fdd251dadcec21ef50462c1a009f56e8937f0344d5179f5b"
     },
     {
       "path": "src/worker/gateway-routing.ts",
@@ -1105,8 +1105,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 96213,
-      "sha256": "f2405901b212b73f58492798898b625b98a555b5a2ac49e5be60cc902cf32d05"
+      "size": 96269,
+      "sha256": "c394e7efd54f6b7e0d0143ae04a9f81bea296900c420c68774c88110169127a5"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -1200,13 +1200,13 @@
     },
     {
       "path": "src/worker/preview-host.ts",
-      "size": 4390,
-      "sha256": "72a8a89c5464d1d66cbc9373d0d71d96939b3d6c60a29a5d73e9bf5deccc6aaf"
+      "size": 6392,
+      "sha256": "b37e78fcb49baa866220dc3837743a1bca5d3a78c19522e80e25683c9f44ce44"
     },
     {
       "path": "src/worker/preview-plan.ts",
-      "size": 6282,
-      "sha256": "9db3baa7fa9e10dd0546d954c5f5c539c9a3f05dbe1670e9e86fb43141565072"
+      "size": 8389,
+      "sha256": "6bfa054e35ed069d0b5dfaacdc522babc19e7a2357380f89fdd67d12bd4d2b3c"
     },
     {
       "path": "src/worker/preview-settings-api.ts",
@@ -1320,8 +1320,8 @@
     },
     {
       "path": "src/worker/worker-previews.ts",
-      "size": 12879,
-      "sha256": "f65a44efec94299c7c9c13b7ed9ccf03d69af5d6d28d614ef7ebc1e2127e1da6"
+      "size": 13261,
+      "sha256": "43c3fc4af87221e1149cf2b8473312b6ae058228f95dcf38c57251a9ac5b6f46"
     },
     {
       "path": "src/worker/worker-provisioning.ts",

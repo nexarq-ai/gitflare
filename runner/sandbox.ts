@@ -3,6 +3,7 @@ import type { ArtifactsBinding } from '../src/worker/artifacts';
 import { COREPACK_ENV, INSTALL_EXCLUDES, INSTALL_TIMEOUT_MS, installCommand, NPM_REGISTRY, registryHosts, YARN_REGISTRY, type InstallMode, type InstallPlan } from '../src/worker/package-manager';
 import { MAX_TEST_TIMEOUT_MS } from '../src/worker/budgets';
 import { DEFAULT_RUNNER, isRunnerSize, type RunnerSize } from '../src/worker/repository-policy';
+import { detectListeningPort, PREVIEW_PORT } from '../src/worker/preview-plan';
 import { beginUrlImportJob, importJobDependencies, proxyImportSource, resumeUrlImportJob, type ImportSourceProps, type UrlImportEnv, type UrlImportJob } from '../src/worker/url-import';
 
 export interface GitPermission { name: string; remote: string; write: boolean }
@@ -14,8 +15,12 @@ interface RegistryProps { hosts?: string[] }
 
 const ca = '/etc/cloudflare/certs/cloudflare-containers-ca.crt';
 // Vite-based dev and preview servers reject any Host other than localhost
-const PREVIEW_HOST = 'http://localhost:8080';
-const LOCAL_PREVIEW_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::8080)?(\/.*)?$/i;
+const previewHost = (port: number) => `http://localhost:${port}`;
+const LOCAL_PREVIEW_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(\/.*)?$/i;
+const PREVIEW_LOG = '/tmp/gitflare-preview.log';
+const PREVIEW_LOG_LINES = 40;
+const LOG_POLL_MS = 2_000;
+const LOG_READ_MS = 5_000;
 export const SANDBOX_MAX_LIFETIME_MS = 7_200_000;
 export const COMMAND_OUTPUT_CAP = 65_536;
 export const BUNDLE_OUTPUT_CAP = 16 * 1024 * 1024;
@@ -98,6 +103,16 @@ export class OutputTail {
     const text = new TextDecoder().decode(joinChunks(this.#chunks)).replace(/\r\n?/g, '\n').replace(/\n+$/, '');
     return text ? text.split('\n').slice(-count).map((line) => redactSecrets(line).slice(0, 500)) : [];
   }
+}
+
+export function previewLogTail(log: string, count = PREVIEW_LOG_LINES): string[] {
+  const text = log.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+  return text ? text.split('\n').slice(-count).map((line) => redactSecrets(line).slice(0, 500)) : [];
+}
+
+export function previewFailureMessage(reason: string, log: string): string {
+  const lines = previewLogTail(log);
+  return `${reason}${lines.length ? `\nLast ${lines.length} line${lines.length === 1 ? '' : 's'} of dev server output:\n${lines.join('\n')}` : '\nThe dev server produced no output.'}`;
 }
 
 export function deadlineMessage(argv: string[], deadlineMs: number, elapsedMs: number, tail: OutputTail): string {
@@ -317,36 +332,63 @@ export class AgentSandbox extends DurableObject<RunnerEnv> {
     finally { clearTimeout(timer); }
   }
 
+  #previewPort: number | undefined;
+
   async startPreview(command: string | string[] = 'node src/preview.mjs', readinessMs = 15_000): Promise<void> {
     const container = this.ctx.container;
     if (!container?.running) throw new Error('Preview container is not running');
     const controller = new AbortController();
+    const argv = Array.isArray(command) ? command : ['/bin/bash', '-lc', `exec ${command}`];
+    const readLog = async (): Promise<string> => {
+      let bound: ReturnType<typeof setTimeout> | undefined;
+      const read = (async () => {
+        const tail = await container.exec(['tail', '-c', '32768', PREVIEW_LOG], { cwd: '/' });
+        const [output] = await Promise.all([readCappedOutput(tail.stdout, 32_768), tail.exitCode]);
+        return output;
+      })().catch(() => '');
+      try { return await Promise.race([read, new Promise<string>((resolve) => { bound = setTimeout(() => resolve(''), LOG_READ_MS); })]); }
+      finally { clearTimeout(bound); }
+    };
+    const fail = async (reason: string) => new Error(previewFailureMessage(reason, await readLog()));
     let timer: ReturnType<typeof setTimeout> | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        controller.abort();
-        reject(new Error(`Preview did not answer HTTP on port 8080 within ${Math.round(readinessMs / 1000)} seconds`));
-      }, readinessMs);
-    });
+    const timeout = new Promise<'timeout'>((resolve) => { timer = setTimeout(() => { controller.abort(); resolve('timeout'); }, readinessMs); });
+    const seconds = Math.round(readinessMs / 1000);
     try {
       const process = await Promise.race([
-        container.exec(Array.isArray(command) ? command : ['/bin/bash', '-lc', `exec ${command}`], { cwd: '/workspace/repo', env: { ...COREPACK_ENV, COREPACK_ENABLE_NETWORK: '0', PORT: '8080', HOST: '0.0.0.0' }, stdout: 'ignore', stderr: 'ignore' }),
+        container.exec(['/bin/bash', '-c', `exec "$@" > ${PREVIEW_LOG} 2>&1`, 'preview', ...argv], { cwd: '/workspace/repo', env: { ...COREPACK_ENV, COREPACK_ENABLE_NETWORK: '0', PORT: String(PREVIEW_PORT), HOST: '0.0.0.0', BROWSER: 'none', WRANGLER_SEND_METRICS: 'false' }, stdout: 'ignore', stderr: 'ignore' }),
         timeout,
       ]);
-      const exited = process.exitCode.then((code) => { throw new Error(`Preview process exited before readiness (exit ${code})`); });
-      const port = container.getTcpPort(8080);
+      if (process === 'timeout') throw await fail(`Preview process did not start within ${seconds} seconds`);
+      const exited = process.exitCode.then((code) => ({ exited: code }));
+      let detected: number | null = null;
+      const silent = (port: number | null) => fail(`Preview did not answer HTTP on port ${[...new Set([PREVIEW_PORT, port ?? PREVIEW_PORT])].join(' or ')} within ${seconds} seconds`);
+      let polledAt = 0;
       for (;;) {
-        const response = await Promise.race([
-          port.fetch(new Request(`${PREVIEW_HOST}/`, { signal: controller.signal, redirect: 'manual' })).catch(() => null),
-          exited,
-          timeout,
-        ]);
-        if (response) {
-          await Promise.race([response.body?.cancel(), exited, timeout]);
-          if (response.status < 500) return;
+        if (Date.now() - polledAt >= LOG_POLL_MS) {
+          polledAt = Date.now();
+          detected = detectListeningPort(await readLog()) ?? detected;
         }
-        await Promise.race([new Promise((resolve) => { retryTimer = setTimeout(resolve, 250); }), exited, timeout]);
+        for (const port of [...new Set([detected ?? PREVIEW_PORT, PREVIEW_PORT])]) {
+          const response = await Promise.race([
+            container.getTcpPort(port).fetch(new Request(`${previewHost(port)}/`, { signal: controller.signal, redirect: 'manual' })).catch(() => null),
+            exited,
+            timeout,
+          ]);
+          if (response === 'timeout') throw await silent(detected);
+          if (response && 'exited' in response) throw await fail(`Preview process exited before readiness (exit ${response.exited})`);
+          if (response) {
+            await response.body?.cancel();
+            if (response.status < 500) {
+              this.#previewPort = port;
+              await this.ctx.storage.put('preview-port', port);
+              return;
+            }
+          }
+        }
+        const waited = await Promise.race([new Promise<'retry'>((resolve) => { retryTimer = setTimeout(() => resolve('retry'), 250); }), exited, timeout]);
+        if (waited === 'timeout') throw await silent(detected);
+        if (typeof waited === 'object') throw await fail(`Preview process exited before readiness (exit ${waited.exited})`);
       }
     } finally {
       clearTimeout(timer);
@@ -368,7 +410,9 @@ export class AgentSandbox extends DurableObject<RunnerEnv> {
     headers.set('x-forwarded-host', url.host);
     headers.set('x-forwarded-proto', url.protocol.slice(0, -1));
     headers.set('forwarded', `host="${url.host}";proto=${url.protocol.slice(0, -1)}`);
-    const response = await container.getTcpPort(8080).fetch(new Request(`${PREVIEW_HOST}${url.pathname}${url.search}`, { method: request.method, headers, body: request.body, redirect: 'manual' }));
+    this.#previewPort ??= await this.ctx.storage.get<number>('preview-port') ?? PREVIEW_PORT;
+    const port = this.#previewPort;
+    const response = await container.getTcpPort(port).fetch(new Request(`${previewHost(port)}${url.pathname}${url.search}`, { method: request.method, headers, body: request.body, redirect: 'manual' }));
     const location = response.headers.get('location');
     const local = location ? LOCAL_PREVIEW_ORIGIN.exec(location) : null;
     if (!local || response.webSocket) return response;

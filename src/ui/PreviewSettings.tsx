@@ -21,6 +21,8 @@ type Snapshot = DemoMarked & {
 };
 
 const LIFETIME_LABELS: Record<number, string> = { 15: "15 minutes", 60: "1 hour", 240: "4 hours", 1440: "24 hours" };
+const PREVIEW_ACCESS_TIP = "Only the allowed emails or email domains can sign in to Worker Preview URLs.";
+const previewUrlExample = (worker?: string) => `pr-<id>-${worker || "<worker>"}.<subdomain>.workers.dev`;
 const domainsText = (domains: string[]) => domains.join("\n");
 const parseDomains = (text: string) => text.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 
@@ -84,46 +86,40 @@ export default function PreviewSettings({ repositoryId, canManage = false, onNot
     <section className="panel check-settings">
       <div className="panel-header"><h2>Previews</h2></div>
       <div className="panel-body"><PreviewAccountLine repositoryId={repositoryId} canManage={canManage} />
-        <p className="branch-rule-note">
-          {target
-            ? <>Worker previews run as Cloudflare Worker Previews of <code>{target.workerName}</code>{target.accountId ? <> on account <code>{target.accountId}</code> through the {target.connection} Cloudflare connection</> : null}{target.connectionCanPreview ? "." : ", once a Cloudflare connection with workers-scripts.edit can reach it."} Gitflare never creates a Worker for previews; if the Worker does not exist yet, previews use this installation’s previews Worker or a preview container.</>
-            : <>No preview Worker is set. Worker previews use this installation’s previews Worker, or a preview container. Set a deploy target, link a Worker, or name the preview Worker below.</>}
-        </p>
-        <p className="branch-rule-note">Every preview is retired automatically when its lifetime ends: the Worker Preview is deleted, or the container is destroyed, and the workspace preview slot is released. Owners and Maintainers can extend a ready preview once.</p>
+        {target && (
+          <p className="branch-rule-note">
+            Previews of <code>{target.workerName}</code>
+            <InfoTip label="Preview Worker">{target.connectionCanPreview ? "Each preview is a Cloudflare Worker Preview of this Worker. Gitflare creates the Worker with workers.dev and Previews on if it does not exist yet." : "A Cloudflare connection with the Previews permission is needed for Worker Previews of this Worker; until then previews use the installation previews Worker or a preview container."}</InfoTip>
+          </p>
+        )}
         {!canChange && <p className="branch-rule-note">Only Owners can change preview settings.</p>}
         <fieldset className="check-settings-fields" disabled={!canChange || busy}>
           <div className="form-field">
-            <span className="field-label"><label htmlFor="preview-lifetime">Preview lifetime</label><InfoTip label="Preview lifetime">How long a preview stays up after it starts. Shorter saves resources; anyone with the link loses access when it ends.</InfoTip></span>
+            <span className="field-label"><label htmlFor="preview-lifetime">Preview lifetime</label><InfoTip label="Preview lifetime">Max {LIFETIME_LABELS[snapshot.lifetime.maxMinutes] ?? `${snapshot.lifetime.maxMinutes} minutes`} on this installation. Owners/Maintainers can extend once. When it ends the preview is deleted and its slot released.</InfoTip></span>
             <select id="preview-lifetime" value={lifetime} onChange={(event) => setLifetime(Number(event.target.value))}>
               {snapshot.lifetime.choices.map((minutes) => <option key={minutes} value={minutes}>{LIFETIME_LABELS[minutes] ?? `${minutes} minutes`}</option>)}
             </select>
-            <small>This installation allows at most {LIFETIME_LABELS[snapshot.lifetime.maxMinutes] ?? `${snapshot.lifetime.maxMinutes} minutes`}.</small>
           </div>
           <div className="form-field">
-            <span className="field-label"><label htmlFor="preview-target">Preview Worker <span className="proposal-optional">(optional)</span></label><InfoTip label="Preview Worker">The Worker that previews are made of, when the repository has several. Leave empty to use the one Gitflare detects.</InfoTip></span>
+            <span className="field-label"><label htmlFor="preview-target">Preview Worker <span className="proposal-optional">(optional)</span></label><InfoTip label="Preview Worker">For repositories with several Workers. Empty uses the deploy target for the root Wrangler config, or its name.</InfoTip></span>
             <Input id="preview-target" maxLength={63} value={targetWorker} placeholder={target?.workerName ?? "my-worker"} onChange={(event) => setTargetWorker(event.target.value.toLowerCase())} />
-            <small>For repositories with several Workers: the Worker whose Previews host this repository. Empty uses the deploy target for the root Wrangler configuration.</small>
           </div>
         </fieldset>
         <fieldset className="check-settings-fields" disabled={!canChange || busy}>
-          <label className="check-settings-toggle"><input type="radio" name="preview-access" checked={access === "link"} onChange={() => setAccess("link")} />Unguessable link (public to anyone with the link)<InfoTip label="Unguessable link">Anyone who has the link can open the preview. Fine for demos; do not use it for private data.</InfoTip></label>
-          <label className="check-settings-toggle"><input type="radio" name="preview-access" checked={access === "cloudflare-access"} disabled={!accessAvailable && access !== "cloudflare-access"} onChange={() => setAccess("cloudflare-access")} />Cloudflare Access on the connected account</label>
-          {!accessAvailable && <small className="branch-rule-note">{snapshot.access.cloudflareAccess.reason}</small>}
+          <label className="check-settings-toggle"><input type="radio" name="preview-access" checked={access === "link"} onChange={() => setAccess("link")} />Cloudflare preview URL (<code>{previewUrlExample(targetWorker.trim() || target?.workerName)}</code>)<InfoTip label="Cloudflare preview URL">Anyone with the link can open it. {snapshot.access.containerDescription}</InfoTip></label>
+          <label className="check-settings-toggle"><input type="radio" name="preview-access" checked={access === "cloudflare-access"} disabled={!accessAvailable && access !== "cloudflare-access"} onChange={() => setAccess("cloudflare-access")} />{accessAvailable ? "Cloudflare Access" : "Cloudflare Access — not available for workers.dev URLs"}<InfoTip label="Cloudflare Access">{accessAvailable ? PREVIEW_ACCESS_TIP : snapshot.access.cloudflareAccess.reason}</InfoTip></label>
           {access === "cloudflare-access" && (
             <div className="form-field">
-              <span className="field-label"><label htmlFor="preview-domains">Allowed email domains <span className="proposal-optional">(optional, one per line)</span></label><InfoTip label="Allowed email domains">With Cloudflare Access, people whose email ends in these domains can open previews, for example example.com.</InfoTip></span>
+              <span className="field-label"><label htmlFor="preview-domains">Allowed email domains <span className="proposal-optional">(optional)</span></label><InfoTip label="Allowed email domains">One per line, for example example.com. Empty allows every workspace member who can read this repository.</InfoTip></span>
               <textarea id="preview-domains" rows={2} value={domains} placeholder="example.com" onChange={(event) => setDomains(event.target.value)} />
-              <small>Empty allows the email of every workspace member who can read this repository.</small>
             </div>
           )}
         </fieldset>
-        <p className="branch-rule-note">{snapshot.access.description} {snapshot.access.containerDescription}</p>
         <fieldset className="check-settings-fields" disabled={!canChange || busy}>
           <div className="form-field">
-            <span className="field-label"><label htmlFor="preview-email-recipients">Preview email recipients <span className="proposal-optional">(one address per line, at most 50)</span></label><InfoTip label="Preview email recipients">These addresses get an email with the preview link when a preview is ready. Leave empty to send none.</InfoTip></span>
+            <span className="field-label"><label htmlFor="preview-email-recipients">Preview email recipients</label><InfoTip label="Preview email recipients">One per line, max 50. Exact addresses only; empty blocks all preview email. Staging and production are unaffected.</InfoTip></span>
             <textarea id="preview-email-recipients" rows={3} value={recipients} placeholder="person@example.com" onChange={(event) => setRecipients(event.target.value)} />
-            <small>Preview email goes only to these addresses; leave empty to block all preview email. Exact addresses only: Cloudflare cannot restrict send_email to a domain such as @example.com. Staging and production deploys are unaffected.</small>
-            <small>{snapshot.email.blocked ? "Preview email is blocked now: sends from a preview fail." : `Previews may email ${snapshot.email.recipients.length} address${snapshot.email.recipients.length === 1 ? "" : "es"}.`}</small>
+            <small>{snapshot.email.blocked ? "Preview email is blocked." : `Previews may email ${snapshot.email.recipients.length} address${snapshot.email.recipients.length === 1 ? "" : "es"}.`}</small>
           </div>
         </fieldset>
         {error && <div className="error-notice" role="alert">{error}</div>}

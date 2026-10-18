@@ -1,3 +1,5 @@
+export const PREVIEW_FAILURE_MAX = 6_000;
+
 export const PREVIEW_STEPS = ['queued', 'cloning', 'installing', 'building', 'publishing', 'starting'] as const;
 export type PreviewStep = typeof PREVIEW_STEPS[number];
 

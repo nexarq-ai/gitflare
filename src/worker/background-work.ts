@@ -16,7 +16,7 @@ import { cloudflareDeployClient, type CloudflareDeployAccess } from './cloudflar
 import { bindPreviewD1, deletePreviewD1 } from './preview-d1';
 import { cloudflareDeployAccess, cloudflareWorkerDeployer } from './cloudflare';
 import { previewLifetimeMs } from './preview-settings';
-import { previewTarget, resolvePreviewHost, type PreviewTarget, type ProjectWorkers } from './preview-host';
+import { candidateWorkerTarget, previewTarget, resolvePreviewHost, type PreviewTarget, type ProjectWorkers } from './preview-host';
 import { ensurePreviewAccess } from './preview-access';
 import { previewAccessIncludes } from './preview-settings-api';
 import { POLICY_FILE } from './repository-policy';
@@ -299,6 +299,14 @@ async function projectWorkers(env: AppEnv, principal: Principal, repositoryId: s
   } catch { return null; }
 }
 
+async function candidateTarget(env: AppEnv, forkName: string | undefined, sha: string): Promise<PreviewTarget | null> {
+  if (!env.ARTIFACTS || !forkName) return null;
+  try {
+    using source = await env.ARTIFACTS.get(forkName);
+    return await candidateWorkerTarget((path) => readText(source, sha, path));
+  } catch { return null; }
+}
+
 export async function preparePreview(env: AppEnv, params: PreviewParams, step: StepRunner): Promise<void> {
   const { repositoryId, missionId, epoch, candidateSha, claimId, principal } = params;
   const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`);
@@ -321,7 +329,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       const lifetimeMs = previewLifetimeMs(settings, env);
       const lifetime = { lifetimeMs, extendMs: lifetimeMs };
       const { settings: deploy } = await coordinator.deployState();
-      const target = previewTarget(settings, deploy, await projectWorkers(env, principal, repositoryId));
+      const target = previewTarget(settings, deploy, await projectWorkers(env, principal, repositoryId)) ?? await candidateTarget(env, mission.integrationForkName, candidateSha);
       let installationProblem: string | undefined;
       const plan = await resolvePreviewHost(env, settings, target, {
         connection: (wanted: PreviewTarget) => connectionAccess(env, principal, repositoryId, wanted.accountId),
@@ -336,7 +344,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       const alias = previews ? previewAlias(missionId, previews.workerName) : '';
       const previewCall = previews ? previewsCall(previews) : null;
       const prepared = await prepareCandidatePreview(env, {
-        repository, mission, previewAttemptId: claimId, workerPreviews: !!previews || !!installationProblem, ...(plan.configPath ? { configPath: plan.configPath } : {}),
+        repository, mission, previewAttemptId: claimId, workerPreviews: !!previews || !!installationProblem, ...(plan.containerReason ? { workerPreviewsUnavailable: plan.containerReason } : {}), ...(plan.configPath ? { configPath: plan.configPath } : {}),
         assertAuthority: () => access.check(principal, 'read', 'repository', repositoryId, missionId),
         onStep: (step) => coordinator.previewStep(missionId, epoch, candidateSha, claimId, step),
         publishWorker: async (built) => {
@@ -366,7 +374,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
         await catalog.holdPreviewSlot(missionId, expiresAt);
         return { worker: true, expiresAt, lifetimeMs };
       }
-      const expiresAt = await coordinator.previewReady(missionId, epoch, candidateSha, claimId, prepared.sandboxName, lifetime);
+      const expiresAt = await coordinator.previewReady(missionId, epoch, candidateSha, claimId, prepared.sandboxName, lifetime, prepared.notes);
       await env.SANDBOX.getByName(prepared.sandboxName).expireAt(expiresAt);
       await catalog.holdPreviewSlot(missionId, expiresAt);
     } catch (error) {

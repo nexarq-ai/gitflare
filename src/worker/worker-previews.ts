@@ -42,18 +42,18 @@ export function validPreviewAlias(alias: string, workerName: string): boolean {
   return /^[a-z][a-z0-9-]*[a-z0-9]$/.test(alias) && alias.length + 1 + workerName.length <= 63;
 }
 
-async function call<T>(config: WorkerPreviewsConfig, fetcher: Fetcher, path: string, init: { method?: string; json?: unknown; body?: FormData; contentType?: string } = {}): Promise<T> {
+async function call<T>(config: WorkerPreviewsConfig, fetcher: Fetcher, path: string, init: { method?: string; json?: unknown; body?: FormData; contentType?: string; collection?: boolean } = {}): Promise<T> {
   const headers = new Headers({ Authorization: `Bearer ${config.token}` });
   if (init.json !== undefined) headers.set('Content-Type', init.contentType ?? 'application/json');
   let response: Response;
   try {
-    response = await fetcher(new Request(`${API_ORIGIN}/accounts/${config.accountId}/workers/workers/${config.workerName}${path}`, { method: init.method ?? 'GET', headers, body: init.body ?? (init.json === undefined ? undefined : JSON.stringify(init.json)), redirect: 'manual', signal: AbortSignal.timeout(60_000) }));
+    response = await fetcher(new Request(`${API_ORIGIN}/accounts/${config.accountId}/workers/workers${init.collection ? '' : `/${config.workerName}`}${path}`, { method: init.method ?? 'GET', headers, body: init.body ?? (init.json === undefined ? undefined : JSON.stringify(init.json)), redirect: 'manual', signal: AbortSignal.timeout(60_000) }));
   } catch { throw new WorkerPreviewError('PREVIEWS_UNAVAILABLE', 'Cloudflare Worker Previews could not be reached.'); }
   const envelope = await response.json().catch(() => ({})) as Envelope<T>;
   if (!response.ok || envelope.success === false) {
     const codes = (envelope.errors ?? []).map((error) => Number(error.code)).filter(Number.isFinite);
     const detail = (envelope.errors ?? []).map((error) => error.message).filter(Boolean).join('; ').slice(0, 300);
-    if (WORKER_NOT_FOUND.some((code) => codes.includes(code))) throw new WorkerPreviewError('PREVIEWS_WORKER_MISSING', config.connection === 'installation' ? `The previews Worker ${config.workerName} does not exist on account ${config.accountId}. An Owner can choose the installation workspace’s Cloudflare connection again in Settings → Cloudflare, which creates it.` : config.connection ? `Worker ${config.workerName} does not exist on account ${config.accountId}. Deploy it once; Gitflare never creates a Worker for previews.` : `The previews Worker ${config.workerName} does not exist. An Owner can set up the installation credential again in Settings → Cloudflare, which creates it.`, response.status, codes);
+    if (WORKER_NOT_FOUND.some((code) => codes.includes(code))) throw new WorkerPreviewError('PREVIEWS_WORKER_MISSING', config.connection === 'installation' ? `The previews Worker ${config.workerName} does not exist on account ${config.accountId}. An Owner can choose the installation workspace’s Cloudflare connection again in Settings → Cloudflare, which creates it.` : config.connection ? `Worker ${config.workerName} does not exist on account ${config.accountId}. Prepare the preview again so Gitflare creates it, or deploy it once with Wrangler.` : `The previews Worker ${config.workerName} does not exist. An Owner can set up the installation credential again in Settings → Cloudflare, which creates it.`, response.status, codes);
     if (response.status === 401 || response.status === 403) throw new WorkerPreviewError('PREVIEWS_FORBIDDEN', config.connection === 'installation' ? `Cloudflare refused ${init.method ?? 'GET'} /accounts/${config.accountId}/workers/workers/${config.workerName}${path.split('?')[0]} for the installation workspace’s connection with HTTP ${response.status}${detail ? ` (${detail})` : ''}. An installation operator can switch previews to an API token in Settings → Cloudflare → Installation.` : config.connection ? `The ${config.connection} Cloudflare connection was refused for Worker ${config.workerName}${detail ? ` (${detail})` : ''}. Worker Previews may need Workers Admin (workers-scripts.admin); an Owner can add the Previews permission in Settings → Cloudflare.` : 'The previews API token was rejected. It needs Workers Scripts Edit on the previews account. An Owner can replace it in Settings → Cloudflare → Previews and deploys on this installation.', response.status, codes);
     throw new WorkerPreviewError(response.status === 404 || PREVIEW_NOT_FOUND.some((code) => codes.includes(code)) ? 'PREVIEW_NOT_FOUND' : 'PREVIEWS_REJECTED', `Cloudflare rejected the preview request${detail ? `: ${detail}` : '.'}`, response.status, codes);
   }
@@ -72,6 +72,10 @@ export async function probePreviewWorker(config: WorkerPreviewsConfig, fetcher: 
     if (error.code === 'PREVIEWS_FORBIDDEN') return 'forbidden';
     throw error;
   }
+}
+
+export async function createPreviewWorker(config: WorkerPreviewsConfig, fetcher: Fetcher = (request) => fetch(request)): Promise<void> {
+  await call<unknown>(config, fetcher, '', { method: 'POST', collection: true, json: { name: config.workerName, subdomain: { enabled: true, previews_enabled: true } } });
 }
 
 const notFound = (error: unknown) => error instanceof WorkerPreviewError && error.code === 'PREVIEW_NOT_FOUND';
