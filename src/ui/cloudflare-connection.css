@@ -126,7 +126,11 @@
 .cf-repository-links a:hover { border-color: var(--gf-color-border); }
 .cf-repository-links span { font-size: 12px; color: var(--gf-color-text-secondary); }
 @media (max-width: 900px) { .cf-resource-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.cf-account-table td, .cf-account-table th { padding-top: 9px; padding-bottom: 9px; }
+.cf-account-catalog-toolbar { margin-bottom: 16px; }
+.cf-account-catalog-toolbar .cf-resource-search { flex: 0 1 360px; width: 100%; }
+.cf-connection-page .cf-account-table th { padding: 10px 14px; line-height: 1.5; }
+.cf-connection-page .cf-account-table td { padding: 10px 14px; line-height: 1.5; }
+@media (max-width: 600px) { .cf-account-catalog-toolbar .cf-resource-search { flex-basis: auto; } }
 .cf-deployments { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
 .cf-deployments th, .cf-deployments td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--gf-color-border); vertical-align: top; }
 .cf-deployments th { color: var(--gf-color-text-secondary); font-weight: 500; }
