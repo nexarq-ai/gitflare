@@ -616,7 +616,9 @@ export async function mergeStartingCandidates(sandbox: SandboxRunner, startFrom:
     unavailable.push(source.name);
   }
   const names = merged.join(', ');
-  const note = startFrom.reason === 'collision'
+  const note = startFrom.reason === 'retry'
+    ? merged.length ? `HEAD already contains your candidate from the previous attempt.${startFrom.previousError ? ` That attempt failed: ${startFrom.previousError}.` : ''} Keep its work, finish the rest of your assignment and fix what failed; do not start over.` : 'Your previous candidate could not be restored, so redo the assignment.'
+    : startFrom.reason === 'collision'
     ? `Your previous candidate collided with other agents in ${(startFrom.files ?? []).join(', ') || 'shared files'} when the results were combined. ${merged.length ? `HEAD already contains the merged candidates of ${names}; make your change on top of theirs and keep their edits in those files.` : 'Their candidates could not be merged here, so edit those files as little as possible.'}`
     : `A reviewer requested changes to the previous candidate. ${merged.length ? `HEAD already contains that candidate (from ${names}); change it to address the review in your task and keep the rest. Files that candidate added, including its tests, are part of this mission and may be edited; only files that existed at the base commit stay protected.` : 'The previous candidate could not be restored, so redo the assignment and address the review.'}`;
   return { reason: startFrom.reason, ...(startFrom.files?.length ? { collidedFiles: startFrom.files } : {}), mergedCandidates: merged, ...(unavailable.length ? { unavailableCandidates: unavailable } : {}), note };

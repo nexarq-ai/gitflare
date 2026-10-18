@@ -857,9 +857,15 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const startFrom = (run: Mission['runs'][number]): AgentRun['startFrom'] => {
         if (reviewing) return { reason: 'review', candidates: (mission.mode === 'race' ? [run] : mission.runs.filter(verified)).map(sourceOf) };
         if (run.collision && reused.length) return { reason: 'collision', files: run.collision.files, candidates: reused.map(sourceOf) };
-        return undefined;
+        if (run.commitSha && run.forkName) return { reason: 'retry', candidates: [sourceOf(run)], ...(run.status !== 'completed' && run.error ? { previousError: failureLine(run.error) } : {}) };
+        return run.startFrom;
       };
       const feedback = reviewing ? [requests.length ? `Reviewer change requests on the previous candidate:\n${requests.map((review) => `- ${review.path ? `${review.path}:${review.line} ` : ''}${review.body}`).join('\n')}` : '', guidance ?? ''].filter(Boolean).join('\n\n').slice(0, REVIEW_GUIDANCE_MAX) : guidance;
+      const guidanceFor = (run: Mission['runs'][number], from: AgentRun['startFrom']): string | undefined => {
+        if (reviewing || !from || from.reason === 'collision' || !run.retryGuidance) return feedback;
+        if (!feedback || run.retryGuidance.includes(feedback)) return run.retryGuidance;
+        return `${run.retryGuidance}\n\n${feedback}`.slice(0, REVIEW_GUIDANCE_MAX);
+      };
       if (mode === 'drop' && !reused.length) throw new ApiError(409, 'NO_COMPLETED_AGENTS', 'No agent has a verified candidate to continue with. Retry the failed agents instead.');
       const repository = this.getRepository(mission.repositoryId);
       const previousEpoch = mission.epoch;
@@ -876,7 +882,8 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
         if (mode === 'drop' || reviewing && !chosen!.includes(run.id)) return { ...fresh(run), status: 'skipped' as const, completedAt: now, skipReason: run.skipReason ?? (reviewing ? `Not sent the review in attempt ${previousEpoch + 1}` : `Excluded in attempt ${previousEpoch + 1} after it ${run.status === 'cancelled' ? 'was cancelled' : 'failed'}${run.error ? `: ${failureLine(run.error)}` : ''}`) };
         const [pinned] = pinMissionModels({ ...mission, runs: [run] }, models).runs;
         const from = startFrom(run);
-        return { ...fresh(pinned!), status: 'queued' as const, ...(feedback ? { retryGuidance: feedback } : {}), ...(from ? { startFrom: from } : {}) };
+        const runGuidance = guidanceFor(run, from);
+        return { ...fresh(pinned!), status: 'queued' as const, ...(runGuidance ? { retryGuidance: runGuidance } : {}), ...(from ? { startFrom: from } : {}) };
       });
       mission.status = 'queued';
       mission.epoch += 1;
@@ -897,13 +904,15 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const moved = previousBase && mission.baseSha !== previousBase ? ` The default branch moved from ${previousBase.slice(0, 12)} to ${(mission.baseSha ?? 'none').slice(0, 12)}, so ${mission.mode === 'race' ? 'reused candidates will be re-run' : 'reused candidates are merged onto the new base and the combined checks re-verify them'}.` : '';
       const reuseNote = reused.length ? ` Reusing ${reused.length} verified candidate${reused.length === 1 ? '' : 's'} from attempt ${previousEpoch} (${names(reused)}) after confirming each commit is still in its fork.` : '';
       const collided = others.filter((run) => run.collision && reused.length);
+      const resumed = reviewing ? [] : others.filter((run) => !(run.collision && reused.length) && ((run.commitSha && run.forkName) || run.startFrom));
+      const resumeNote = resumed.length ? ` ${names(resumed)} resume${resumed.length === 1 ? 's' : ''} from ${resumed.length === 1 ? 'its' : 'their'} previous candidate${resumed.length === 1 ? '' : 's'} or starting point instead of the mission base${resumed.some((run) => run.retryGuidance) ? ', keeping earlier change requests and guidance' : ''}.` : '';
       const rebaseNote = collided.length ? ` ${names(collided)} start${collided.length === 1 ? 's' : ''} from the merged candidates of ${names(reused)} to resolve the collision in ${[...new Set(collided.flatMap((run) => run.collision!.files))].slice(0, 10).join(', ')}.` : '';
       const guidanceNote = guidance ? ` Guidance from ${authorization?.principal.userId ?? 'the requester'}: "${guidance.replace(/\s+/g, ' ').slice(0, 300)}${guidance.length > 300 ? '…' : ''}"` : '';
       this.queueDispatch(mission);
       return this.saveMission(mission, mode === 'review'
         ? `Attempt ${mission.epoch} queued to address ${requests.length} change request${requests.length === 1 ? '' : 's'} with ${names(others)}, starting from the reviewed candidate.${reuseNote}${moved}${guidanceNote}`
         : mode === 'retry'
-          ? others.length ? `Attempt ${mission.epoch} queued to retry ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}).${reuseNote}${rebaseNote}${moved}${guidanceNote}` : `Attempt ${mission.epoch} queued to combine again without rerunning any agent.${reuseNote}${moved}`
+          ? others.length ? `Attempt ${mission.epoch} queued to retry ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}).${reuseNote}${resumeNote}${rebaseNote}${moved}${guidanceNote}` : `Attempt ${mission.epoch} queued to combine again without rerunning any agent.${reuseNote}${moved}`
           : `Attempt ${mission.epoch} queued without ${others.length} agent${others.length === 1 ? '' : 's'} (${names(others)}), now marked skipped.${reuseNote} Acceptance criteria are unchanged.${moved}`, mode === 'drop' ? 'warning' : 'info');
     }));
     if (started.status === 'queued') this.queueDispatch(started);
