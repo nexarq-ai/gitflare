@@ -68,10 +68,7 @@ export async function resolvePreviewHost(env: AccessScopeEnv, settings: Pick<Pre
       const config: WorkerPreviewsConfig = { accountId: access.accountId, workerName: target.workerName, token: access.accessToken, connection: access.source };
       const hosted = (): PreviewHostPlan => ({ host: { kind: 'connection', source: access.source, accountId: access.accountId, workerName: target.workerName, access: settings.access }, config, ...(target.configPath ? { configPath: target.configPath } : {}), notes });
       const probe = await probePreviewWorker(config, deps.fetcher);
-      if (probe === 'exists') {
-        notes.push(`Worker Preview of ${target.workerName} on account ${access.accountId} through the ${access.source} Cloudflare connection.`);
-        return hosted();
-      }
+      if (probe === 'exists') return hosted();
       if (probe === 'missing') {
         try {
           await createPreviewWorker(config, deps.fetcher);
@@ -90,6 +87,5 @@ export async function resolvePreviewHost(env: AccessScopeEnv, settings: Pick<Pre
   }
   const installation = await deps.installation();
   if (!installation) return { host: null, config: null, notes, containerReason: notes.length ? notes.join(' ') : target ? 'no Cloudflare connection with Worker Previews is available for this repository' : 'no Worker was found to preview' };
-  notes.push(`Worker Preview on the installation previews Worker ${installation.workerName}.`);
   return { host: { kind: 'installation', accountId: installation.accountId, workerName: installation.workerName, access: 'link' }, config: installation, notes };
 }

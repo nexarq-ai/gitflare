@@ -630,8 +630,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 66213,
-      "sha256": "835f56468bb47892c2026ac3b111268745b2d58b5308e6baab04bdb9b5aa4f49"
+      "size": 61591,
+      "sha256": "114367f3fa1ea3fa04d3f7e59d485df3ee2a57b3ac3cb62d3c49842d6da80ebe"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -702,6 +702,16 @@
       "path": "src/ui/policy-pages.css",
       "size": 2861,
       "sha256": "d97ad2f4443dc4c3e83d7517af4db76fa518410eec9a0231a57e07c28caf9f5e"
+    },
+    {
+      "path": "src/ui/preview-panel.css",
+      "size": 3785,
+      "sha256": "f489bea85a203d09491e8da2383fbc33dbd55438a381e13b90f88fdee6ea4a51"
+    },
+    {
+      "path": "src/ui/PreviewPanel.tsx",
+      "size": 8465,
+      "sha256": "67a2c5b5ddab403725fdbec422f47a4167768e519eb1b6c944e22c28cb06cb18"
     },
     {
       "path": "src/ui/PreviewSettings.tsx",
@@ -840,8 +850,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 68999,
-      "sha256": "4ee20691c58e4d0ae71adf678d259cd202d3828b3b4d89c45c0139bd5604c5d6"
+      "size": 68892,
+      "sha256": "0b33b2e403aaec9054c10b125e3bee5b7d3c75009a3ec80ce22e75c662cef2eb"
     },
     {
       "path": "src/ui/ThemeToggle.tsx",
@@ -915,8 +925,8 @@
     },
     {
       "path": "src/worker/capacity.ts",
-      "size": 1706,
-      "sha256": "af4aab4c0277238fa29e37539d4982cbbebd1a1fef1d62bfa8d728467e2aaecb"
+      "size": 1711,
+      "sha256": "4590bee25cf200bd87277f56325dbd206e7ad257c82704be11702a2524648784"
     },
     {
       "path": "src/worker/check-settings.ts",
@@ -1220,8 +1230,8 @@
     },
     {
       "path": "src/worker/preview-host.ts",
-      "size": 6392,
-      "sha256": "b37e78fcb49baa866220dc3837743a1bca5d3a78c19522e80e25683c9f44ce44"
+      "size": 6133,
+      "sha256": "59af396246d4782683ce677297c6aaf187c683da4643efb5de96190423e8c03c"
     },
     {
       "path": "src/worker/preview-plan.ts",
@@ -1335,8 +1345,8 @@
     },
     {
       "path": "src/worker/worker-bundle.ts",
-      "size": 33680,
-      "sha256": "31272a61fc08ca4acb8e626324eec66c0b2929b6dc5dcf9147fe80ea2b65f173"
+      "size": 33524,
+      "sha256": "7f7023c1ccf4e347a224f6fa509a00c2b53cceeb646373f742472845c9a873d5"
     },
     {
       "path": "src/worker/worker-previews.ts",

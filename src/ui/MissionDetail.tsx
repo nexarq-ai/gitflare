@@ -39,61 +39,10 @@ import { navigate as goTo } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
 import { ContextFiles, MarkdownContent } from "./MissionDocuments";
 import { useMissionReplay } from "./DemoReplay";
-import { previewProgressLine, resumePreview, type PreviewProgress, type PreviewStatusLike } from "../shared/preview-progress";
+import { resumePreview, type PreviewProgress, type PreviewStatusLike } from "../shared/preview-progress";
+import { PreviewFailedCard, PreviewReadyCard, PreviewStartingCard, type PreviewAccess, type PreviewHost, type PreviewState } from "./PreviewPanel";
 
-type PreviewHost =
-  | { kind: "connection"; source: "repository" | "workspace"; accountId: string; workerName: string; access: "link" | "cloudflare-access" }
-  | { kind: "installation"; accountId: string; workerName: string; access: "link" };
-type PreviewAccess = "link" | "cloudflare-access" | "members";
 type PreviewResult = { status?: "starting" | "ready"; message?: string; kind?: "worker" | "container"; previewUrl?: string; deploymentUrl?: string | null; notes?: string[]; candidateSha: string; expiresAt?: string; linkExpiresAt?: string; host?: PreviewHost; access?: PreviewAccess; extended?: boolean };
-type PreviewState = {
-  previewUrl: string;
-  candidateSha: string;
-  expiresAt: string;
-  linkExpiresAt?: string;
-  extended: boolean;
-  access: PreviewAccess;
-  worker?: { deploymentUrl: string | null; notes: string[]; host?: PreviewHost };
-  notes?: string[];
-};
-
-function remaining(until: string, now: number): string {
-  const seconds = Math.max(0, Math.round((Date.parse(until) - now) / 1000));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = String(seconds % 60).padStart(2, "0");
-  return hours ? `${hours} h ${String(minutes).padStart(2, "0")} min` : `${minutes}:${rest}`;
-}
-
-function PreviewCountdown({ until }: { until: string }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [until]);
-  return <span className="preview-countdown" aria-live="off">{remaining(until, now)} left</span>;
-}
-
-function PreviewProgressLine({ progress }: { progress: PreviewProgress }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return <strong aria-live="off">{previewProgressLine(progress, now)}</strong>;
-}
-
-function previewHostLabel(host: PreviewHost | undefined): string {
-  if (!host) return "Cloudflare Worker Preview";
-  if (host.kind === "connection") return `Worker Preview of ${host.workerName} on account ${host.accountId} (${host.source} Cloudflare connection)`;
-  return `Worker Preview of the installation previews Worker ${host.workerName} on account ${host.accountId}`;
-}
-
-const PREVIEW_ACCESS_TEXT: Record<PreviewAccess, string> = {
-  link: "Public link: anyone with the link can open it. Search engines are asked not to index it.",
-  "cloudflare-access": "Protected by Cloudflare Access: only allowed workspace members or email domains can sign in.",
-  members: "Members only: the link works for signed-in workspace members and expires with the preview.",
-};
 
 type Props = {
   id: string;
@@ -837,51 +786,9 @@ export default function MissionDetail({
       </div>
       {replay.bar}
       {mission.branchChange && <PullRequestPanel mission={mission} permissions={permissions} onChange={(result) => { revision.current++; setMission(result); onUpdate(); }} />}
-      {currentPreview && (
-        <div className="alert info">
-          <ArrowSquareOutIcon size={17} />
-          <div className="alert-text">
-            <strong>
-              Cloudflare preview ready for{" "}
-              <code>{currentPreview.candidateSha.slice(0, 12)}</code>.
-            </strong>{" "}
-            Retired automatically at{" "}
-            {new Date(currentPreview.expiresAt).toLocaleTimeString()} ({<PreviewCountdown until={currentPreview.expiresAt} />}).
-            <small className="candidate-preview-provider">{currentPreview.worker ? previewHostLabel(currentPreview.worker.host) : "Isolated container on Gitflare’s preview origin"} · {new URL(currentPreview.previewUrl).hostname}</small>
-            <small className="candidate-preview-provider">{PREVIEW_ACCESS_TEXT[currentPreview.access]}{currentPreview.worker?.deploymentUrl && <> <a href={currentPreview.worker.deploymentUrl} target="_blank" rel="noreferrer" className="text-link">This exact deployment</a></>}</small>
-            {currentPreview.linkExpiresAt && currentPreview.linkExpiresAt < currentPreview.expiresAt && <small className="candidate-preview-provider">This link works until {new Date(currentPreview.linkExpiresAt).toLocaleTimeString()}; choose Refresh preview for a new one.</small>}
-            {permissions.includes("land") && !currentPreview.extended && (
-              <small className="candidate-preview-provider">
-                <button className="text-link" disabled={!!busy} onClick={() => void extendPreview()}>Extend once</button> keeps it for one more preview lifetime.
-              </small>
-            )}
-            {permissions.includes("contribute") && (
-              <small className="candidate-preview-provider">
-                <button className="text-link" disabled={!!busy} onClick={() => void stopPreview()}>Stop preview</button> retires it now and frees one of the workspace’s preview slots.
-              </small>
-            )}
-            {(currentPreview.worker?.notes ?? currentPreview.notes ?? []).map((note) => <small key={note} className="candidate-preview-provider">{note}</small>)}
-          </div>
-          <a
-            href={currentPreview.previewUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-link"
-          >
-            Open preview <ArrowSquareOutIcon size={12} />
-          </a>
-        </div>
-      )}
-      {previewProgress && (
-        <div className="alert info" role="status">
-          <InfoIcon size={17} />
-          <div className="alert-text">
-            <PreviewProgressLine progress={previewProgress} />
-            {previewProgress.message && <div>{previewProgress.message}</div>}
-          </div>
-        </div>
-      )}
-      {previewFailure && !previewStarting && <ErrorNotice message={previewFailure} />}
+      {currentPreview && <PreviewReadyCard preview={currentPreview} busy={busy} canExtend={permissions.includes("land")} canStop={permissions.includes("contribute")} onExtend={() => void extendPreview()} onStop={() => void stopPreview()} />}
+      {previewProgress && <PreviewStartingCard progress={previewProgress} />}
+      {previewFailure && !previewStarting && <PreviewFailedCard message={previewFailure} canRetry={canPreview && !replay.active} busy={busy} onRetry={() => void preparePreview()} />}
       {error && <ErrorNotice message={error} />}
       {loadError && <ErrorNotice message={loadError} />}
       {mission.error && mission.error !== error && (

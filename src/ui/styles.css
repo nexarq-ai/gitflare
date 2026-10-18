@@ -991,7 +991,6 @@ a svg {
 .agent-skill-evidence code { overflow-wrap: anywhere; }
 .agent-skill-evidence small { color: var(--gf-color-text-secondary); }
 .agent-skill-warning { color: var(--gf-color-accent); margin: 10px 0 0; }
-.candidate-preview-provider { display: block; margin-top: 5px; font-size: 11px; overflow-wrap: anywhere; }
 .file-tags code {
   border: 1px solid var(--gf-color-border);
   background: var(--gf-color-surface);

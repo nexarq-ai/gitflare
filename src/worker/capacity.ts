@@ -14,7 +14,7 @@ export function capacityError(kind: CapacityKind, holders: string[] = []): ApiEr
   const held = holders.length ? ` They belong to mission${holders.length === 1 ? '' : 's'} ${holders.join(', ')}.` : '';
   return kind === 'mission'
     ? new ApiError(429, 'WORKSPACE_MISSION_LIMIT', `This workspace is already running ${WORKSPACE_MISSION_LIMIT} missions, the most it can run at once (each mission runs up to three agents at a time). Wait for one to finish or cancel it, then start again.`)
-    : new ApiError(429, 'WORKSPACE_PREVIEW_LIMIT', `This workspace already has ${WORKSPACE_PREVIEW_LIMIT} live previews, the most it can keep at once.${held} Stop one (Stop preview on its mission, or gitflare_preview_mission action stop) or wait for it to expire, then try again.`);
+    : new ApiError(429, 'WORKSPACE_PREVIEW_LIMIT', `This workspace already has ${WORKSPACE_PREVIEW_LIMIT} live previews, the most it can keep at once.${held} Stop one (Stop on its mission preview card, or gitflare_preview_mission action stop) or wait for it to expire, then try again.`);
 }
 
 export function liveSlots(store: SqlStore, kind: CapacityKind, now = Date.now()): CapacitySlot[] {
