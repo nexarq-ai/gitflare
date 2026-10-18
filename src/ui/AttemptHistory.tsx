@@ -18,13 +18,15 @@ const reasonLabels: Record<MissionAttempt["reason"], string> = {
   integrated: "Landed in repository",
 };
 
-export default function AttemptHistory({ mission }: { mission: Mission }) {
-  const [attempts, setAttempts] = useState<MissionAttempt[] | null>(null);
+export default function AttemptHistory({ mission, attempts: provided }: { mission: Mission; attempts?: MissionAttempt[] }) {
+  const [fetched, setAttempts] = useState<MissionAttempt[] | null>(null);
+  const attempts = provided ?? fetched;
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
+    if (provided) return;
     let active = true;
     void request<{ attempts: MissionAttempt[] }>(
       `/api/missions/${encodeURIComponent(mission.id)}/attempts`,
@@ -46,7 +48,7 @@ export default function AttemptHistory({ mission }: { mission: Mission }) {
     return () => {
       active = false;
     };
-  }, [mission.id, mission.updatedAt, revision]);
+  }, [mission.id, mission.updatedAt, revision, !!provided]);
 
   const checkpoint = attempts?.find((attempt) => attempt.id === selected);
 

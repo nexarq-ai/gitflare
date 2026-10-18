@@ -38,6 +38,7 @@ import { DependencyApprovalControl, DependencyChangesPanel } from "./DependencyC
 import { navigate as goTo } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
 import { ContextFiles, MarkdownContent } from "./MissionDocuments";
+import { useMissionReplay } from "./DemoReplay";
 
 type PreviewHost =
   | { kind: "connection"; source: "repository" | "workspace"; accountId: string; workerName: string; access: "link" | "cloudflare-access" }
@@ -93,6 +94,7 @@ type Props = {
   workspace: Workspace;
   onBack: () => void;
   onUpdate: () => void;
+  demo?: boolean;
 };
 
 export default function MissionDetail({
@@ -101,13 +103,17 @@ export default function MissionDetail({
   selectedRunId,
   currentUserId,
   onTabChange,
-  permissions,
+  permissions: grantedPermissions,
   workspace,
   onBack,
   onUpdate,
+  demo = false,
 }: Props) {
-  const [mission, setMission] = useState<Mission>();
-  const isActive = !!mission && ["queued", "running", "checking", "integrating"].includes(mission.status);
+  const [loadedMission, setMission] = useState<Mission>();
+  const isActive = !!loadedMission && ["queued", "running", "checking", "integrating"].includes(loadedMission.status);
+  const replay = useMissionReplay(id, demo);
+  const mission = replay.mission ?? loadedMission;
+  const permissions = replay.active ? [] : grantedPermissions;
   const missionActive = useRef(false);
   missionActive.current = isActive;
   const reschedule = useRef(() => {});
@@ -611,6 +617,11 @@ export default function MissionDetail({
           </div>
         </div>
         <div className="heading-actions detail-actions">
+          {replay.available && !replay.active && (
+            <Button variant="secondary" size="base" icon={PlayIcon} onClick={replay.start}>
+              Watch this mission run
+            </Button>
+          )}
           <LinkButton
             variant="secondary"
             size="base"
@@ -620,7 +631,7 @@ export default function MissionDetail({
           >
             Open repository
           </LinkButton>
-          {canPreview && (
+          {canPreview && !replay.active && (
             <Button
               variant="secondary"
               size="base"
@@ -760,6 +771,7 @@ export default function MissionDetail({
           )}
         </div>
       </div>
+      {replay.bar}
       {mission.branchChange && <PullRequestPanel mission={mission} permissions={permissions} onChange={(result) => { revision.current++; setMission(result); onUpdate(); }} />}
       {currentPreview && (
         <div className="alert info">
@@ -1510,7 +1522,7 @@ export default function MissionDetail({
         </section>
       )}
       {tab === "attempts" && (
-        <AttemptHistory key={mission.id} mission={mission} />
+        <AttemptHistory key={mission.id} mission={mission} attempts={replay.attempts} />
       )}
       <Dialog.Root open={confirming !== null} onOpenChange={(open) => { if (!open) setConfirming(null); }}>
         <Dialog size="sm" className="dialog-content confirm-dialog">

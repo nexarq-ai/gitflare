@@ -174,7 +174,8 @@ function ReleaseDetail({ repository, list, release, canLand, onChanged, onNotify
   </>;
 }
 
-export default function Releases({ repository, releaseId, canLand, onNotify }: { repository: Repository; releaseId?: string; canLand: boolean; onNotify: (message: string) => void }) {
+export default function Releases({ repository, releaseId, canLand: mayLand, demo = false, onNotify }: { repository: Repository; releaseId?: string; canLand: boolean; demo?: boolean; onNotify: (message: string) => void }) {
+  const canLand = mayLand && !demo;
   const [list, setList] = useState<ReleaseList | null>(null);
   const [error, setError] = useState("");
   const base = `repository/${repository.id}/releases`;
@@ -187,7 +188,7 @@ export default function Releases({ repository, releaseId, canLand, onNotify }: {
 
   if (error) return <div className="error-notice" role="alert">{error}</div>;
   if (!list) return <RouteProgress />;
-  const permission = canLand ? "" : "Publishing checkpoints requires permission to land changes on the main stream.";
+  const permission = demo ? "Publishing checkpoints is disabled in the shared demo." : canLand ? "" : "Publishing checkpoints requires permission to land changes on the main stream.";
   if (releaseId === "new") return canLand ? <ReleaseForm repository={repository} list={list} onCancel={() => goTo(base)} onDone={(release) => { onNotify(release.draft ? "Draft saved." : `Published ${release.tag}.`); void load(); goTo(`${base}/${release.id}`); }} /> : <div className="error-notice" role="alert">{permission}</div>;
   if (releaseId) {
     const release = list.releases.find((item) => item.id === releaseId);

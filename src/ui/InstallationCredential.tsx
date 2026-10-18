@@ -4,10 +4,12 @@ import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { Input } from "@cloudflare/kumo/components/input";
 import { request } from "./api";
 import { ErrorNotice } from "./components";
+import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
+import type { DemoMarked } from "../shared/demo-features";
 
 type Account = { id: string; name: string };
 type Labelled = { key: string; label: string };
-export type InstallationCredentialStatus = {
+export type InstallationCredentialStatus = DemoMarked & {
   manageable: boolean;
   edition: "hosted" | "self-hosted";
   oauthAvailable: boolean;
@@ -105,6 +107,8 @@ export default function InstallationCredential({ workspace }: { workspace?: Work
   });
 
   if (!status) return error ? <ErrorNotice message={error} /> : null;
+  const demo = demoOf(status);
+  if (demo) return <DemoFeaturePanel demo={demo} examples={status.examples} />;
   const hosted = status.edition === "hosted";
   const heading = hosted ? "Previews and deploys on this installation (operator credential)" : "Previews and deploys on this installation";
   const fallback = "Only used for repositories without their own Cloudflare connection. A repository whose own or workspace connection can reach its Worker previews there instead.";

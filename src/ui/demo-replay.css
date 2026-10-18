@@ -1,0 +1,30 @@
+.demo-replay-card { display: flex; align-items: center; gap: 16px; padding: 18px 20px; margin-bottom: 18px; border: 1px solid var(--gf-color-border); border-left: 3px solid var(--gf-color-accent); border-radius: 8px; background: var(--gf-color-surface-raised); }
+.demo-replay-card > svg { flex-shrink: 0; color: var(--gf-color-accent); }
+.demo-replay-card > div { flex: 1; min-width: 0; }
+.demo-replay-card h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--gf-color-text); }
+.demo-replay-card p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--gf-color-text-secondary); }
+.demo-replay-bar { display: grid; gap: 12px; padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--gf-color-border); border-radius: 8px; background: var(--gf-color-surface-raised); }
+.demo-replay-heading { display: flex; gap: 12px; align-items: flex-start; }
+.demo-replay-heading strong { display: block; font-size: 14px; color: var(--gf-color-text); }
+.demo-replay-heading p { margin: 3px 0 0; font-size: 13px; line-height: 1.45; color: var(--gf-color-text-secondary); }
+.demo-replay-signal { flex-shrink: 0; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--gf-color-text-faint); }
+.demo-replay-signal.live { background: var(--gf-color-accent); box-shadow: 0 0 0 4px var(--gf-color-selection); animation: demo-replay-pulse 1.6s ease-in-out infinite; }
+.demo-replay-progress { height: 4px; overflow: hidden; border-radius: 4px; background: var(--gf-color-border); }
+.demo-replay-progress span { display: block; height: 100%; background: var(--gf-color-accent); transition: width .25s linear; }
+.demo-replay-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.demo-replay-time { min-width: 86px; font-family: var(--gf-font-mono); font-size: 12.5px; color: var(--gf-color-text-secondary); font-variant-numeric: tabular-nums; }
+.demo-replay-speeds { display: inline-flex; overflow: hidden; border: 1px solid var(--gf-color-border); border-radius: 6px; }
+.demo-replay-speeds button { min-width: 40px; min-height: 30px; padding: 0 9px; border: 0; border-right: 1px solid var(--gf-color-border); background: transparent; color: var(--gf-color-text-secondary); font: inherit; font-size: 12.5px; cursor: pointer; }
+.demo-replay-speeds button:last-child { border-right: 0; }
+.demo-replay-speeds button:hover { background: var(--gf-color-surface-hover); color: var(--gf-color-text); }
+.demo-replay-speeds button[aria-pressed="true"] { background: var(--gf-color-accent-bg); color: var(--gf-color-accent); font-weight: 600; }
+.demo-replay-speeds button:focus-visible { outline: 2px solid var(--gf-color-focus); outline-offset: -2px; }
+.demo-replay-latest { margin: 0; overflow: hidden; font-family: var(--gf-font-mono); font-size: 12.5px; line-height: 1.5; color: var(--gf-color-text-tertiary); text-overflow: ellipsis; white-space: nowrap; }
+@keyframes demo-replay-pulse { 50% { box-shadow: 0 0 0 7px transparent; } }
+@media (prefers-reduced-motion: reduce) { .demo-replay-signal.live { animation: none; } .demo-replay-progress span { transition: none; } }
+@media (max-width: 640px) {
+  .demo-replay-card { flex-direction: column; align-items: stretch; }
+  .demo-replay-card > svg { display: none; }
+  .demo-replay-time { min-width: 0; flex-basis: 100%; }
+  .demo-replay-latest { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}

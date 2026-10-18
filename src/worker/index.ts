@@ -50,7 +50,7 @@ import { githubMirrorApi, triggerMirrorSync } from './github-mirror-runtime';
 import { capabilityHash, mintPreviewToken, PREVIEW_CAPABILITY_MS, previewCapabilityStore, previewTarget, relayPreview } from './preview-capability';
 import { withStoreSecrets } from './store-secrets';
 import { DEMO_WRITE_LIMIT, demoGitRestriction, demoMode, demoRestrictionError, demoRouteRestriction } from './demo';
-import { demoVisitor, handleDemoRoute, runDemoReset } from './demo-runtime';
+import { demoDisabledApi, demoVisitor, handleDemoRoute, runDemoReset } from './demo-runtime';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -248,6 +248,20 @@ async function sourceView(source: SourceHandle, commit: SourceCommit, kind: stri
 }
 
 async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
+  if (!demoMode(env)) return apiRoutes(request, env, ctx);
+  return demoDisabledApi(request, env, {
+    next: () => apiRoutes(request, env, ctx),
+    principal: () => authorize(request, env),
+    repository: async (principal, id) => {
+      const repository = await env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)).getRepository(id);
+      if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+      await security(env).authorize(principal, 'read', 'repository', repository.id);
+      return repository;
+    },
+  });
+}
+
+async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const local = env.EDITION !== 'self-hosted' && isLocalRequest(request, env.APP_ENV);
   if (demoMode(env)) {

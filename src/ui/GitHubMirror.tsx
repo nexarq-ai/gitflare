@@ -5,6 +5,8 @@ import { ArrowsClockwiseIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import type { GitHubMirrorSnapshot, MirrorRefStatus } from "../shared/github-mirror";
 import { request } from "./api";
 import { ErrorNotice, relativeTime } from "./components";
+import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
+import type { DemoMarked } from "../shared/demo-features";
 import "./github-mirror.css";
 
 const short = (sha: string | null) => sha ? sha.slice(0, 12) : "none";
@@ -13,7 +15,7 @@ const SYNC_LABELS: Record<string, string> = { idle: "Idle", running: "Syncing", 
 
 export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId: string; onNotify: (message: string) => void }) {
   const path = `/api/repositories/${encodeURIComponent(repositoryId)}/github-mirror`;
-  const [snapshot, setSnapshot] = useState<GitHubMirrorSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<(GitHubMirrorSnapshot & DemoMarked) | null>(null);
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState("");
@@ -24,8 +26,9 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
   const [token, setToken] = useState("");
   const [installation, setInstallation] = useState("");
 
-  const show = useCallback((current: GitHubMirrorSnapshot) => {
+  const show = useCallback((current: GitHubMirrorSnapshot & DemoMarked) => {
     setSnapshot(current);
+    if (demoOf(current)) return;
     setOwner(current.mirror?.owner ?? "");
     setName(current.mirror?.name ?? "");
     setPatterns((current.mirror?.refPatterns ?? current.defaultRefPatterns).join("\n"));
@@ -34,7 +37,7 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
   useEffect(() => {
     let active = true;
     setLoadError("");
-    request<GitHubMirrorSnapshot>(path)
+    request<GitHubMirrorSnapshot & DemoMarked>(path)
       .then((current) => { if (active) show(current); })
       .catch((failure) => { if (active) setLoadError(failure instanceof Error ? failure.message : "The GitHub mirror could not be loaded."); });
     return () => { active = false; };
@@ -62,6 +65,8 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
 
   if (loadError) return <ErrorNotice message={loadError} onRetry={() => setAttempt((value) => value + 1)} />;
   if (!snapshot) return null;
+  const demo = demoOf(snapshot);
+  if (demo) return <DemoFeaturePanel demo={demo} examples={snapshot.examples} />;
   const { canManage, mirror, app } = snapshot;
   const refPatterns = patterns.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 

@@ -3,9 +3,11 @@ import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { request } from "./api";
 import { ErrorNotice } from "./components";
+import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
+import type { DemoMarked } from "../shared/demo-features";
 
 type AccessMode = "link" | "cloudflare-access";
-type Snapshot = {
+type Snapshot = DemoMarked & {
   repositoryId: string;
   canChange: boolean;
   settings: { lifetimeMinutes: number; access: AccessMode; accessEmailDomains: string[]; previewEmailRecipients: string[]; targetWorker?: string; updatedAt?: string };
@@ -36,6 +38,7 @@ export default function PreviewSettings({ repositoryId, onNotify }: { repository
 
   function show(current: Snapshot) {
     setSnapshot(current);
+    if (demoOf(current)) return;
     setLifetime(current.settings.lifetimeMinutes);
     setAccess(current.settings.access);
     setDomains(domainsText(current.settings.accessEmailDomains));
@@ -71,6 +74,8 @@ export default function PreviewSettings({ repositoryId, onNotify }: { repository
 
   if (loadError) return <ErrorNotice message={loadError} onRetry={() => setAttempt((value) => value + 1)} />;
   if (!snapshot) return null;
+  const demo = demoOf(snapshot);
+  if (demo) return <DemoFeaturePanel demo={demo} examples={snapshot.examples} />;
   const { canChange, target } = snapshot;
   const accessAvailable = snapshot.access.cloudflareAccess.available;
   return (
