@@ -94,7 +94,7 @@ export function previewSettingsDeps(env: AppEnv, principal: Principal, repositor
   return {
     store: coordinator,
     connection: async (target) => {
-      try { return await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repositoryId, ...(target?.accountId ? { expectedAccountId: target.accountId } : {}) }, repositoryId); }
+      try { return await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repositoryId, ...(target?.accountId ? { expectedAccountId: target.accountId } : {}) }, repositoryId, 'preview'); }
       catch { return null; }
     },
     project: async () => {

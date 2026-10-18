@@ -501,10 +501,10 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       repository, principal,
       ledger: { state: () => coordinator.deployState(), get: (id) => coordinator.getDeployment(id), saveEnvironment: (environment, settings) => coordinator.saveDeployEnvironment(environment, settings), create: (key, fingerprint, record) => coordinator.createDeployment(key, fingerprint, record), confirm: (id, actorId) => coordinator.confirmDeployment(id, actorId), saveDetected: (environments, detected) => coordinator.saveDetectedDeploySetup(environments, detected) },
       detectSetup: () => detectRepositorySetup(env, principal, repository),
-      connection: async () => {
+      connection: async (environment) => {
         try {
-          const connection = await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repository.id }, repository.id);
-          return { connected: true, accountId: connection.accountId, ...(connection.accountName ? { accountName: connection.accountName } : {}), scopes: connection.scopes, source: connection.source };
+          const connection = await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repository.id }, repository.id, environment);
+          return { connected: true, accountId: connection.accountId, ...(connection.accountName ? { accountName: connection.accountName } : {}), scopes: connection.scopes, source: connection.source, ...(connection.selection ? { selection: connection.selection } : {}) };
         } catch (error) {
           return { connected: false, reason: error instanceof ApiError ? error.detail : 'Connect Cloudflare for this repository or workspace first.' };
         }

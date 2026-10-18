@@ -232,7 +232,7 @@ export interface SecretsApiContext {
   canManage(): Promise<boolean>;
   environments(): Promise<string[]>;
   requirements(): Promise<{ requirements: SecretRequirement[]; errors: string[] }>;
-  connection(): Promise<SecretsConnection>;
+  connection(environment?: string): Promise<SecretsConnection>;
   requestedScopes: string[];
   audit(action: string): Promise<void>;
 }
@@ -329,7 +329,8 @@ export async function repositorySecretsApi(request: Request, context: SecretsApi
   const headers = { 'Cache-Control': 'no-store' };
   if (request.method === 'GET' && url.pathname.endsWith('/secrets/catalog')) {
     await manage(context);
-    const connection = requireConnection(await context.connection(), SECRETS_STORE_READ_SCOPE);
+    const catalogEnvironment = url.searchParams.get('environment');
+    const connection = requireConnection(await context.connection(catalogEnvironment ? environmentInput(catalogEnvironment) : undefined), SECRETS_STORE_READ_SCOPE);
     const storeId = url.searchParams.get('store_id');
     const stores = await listSecretStores(connection.call, connection.accountId);
     const secrets = storeId ? await listStoreSecrets(connection.call, connection.accountId, storeInput(storeId)) : undefined;
@@ -357,7 +358,7 @@ export async function repositorySecretsApi(request: Request, context: SecretsApi
 
   if (action === 'create-store') {
     const name = secretNameInput(body.name);
-    const connection = requireConnection(await context.connection(), SECRETS_STORE_WRITE_SCOPE);
+    const connection = requireConnection(await context.connection(body.environment === undefined ? undefined : environmentInput(body.environment)), SECRETS_STORE_WRITE_SCOPE);
     const store = await createSecretStore(connection.call, connection.accountId, name);
     await context.audit(`repository.secret-store.create.${store.id}`);
     const result = { store };
@@ -388,7 +389,7 @@ export async function repositorySecretsApi(request: Request, context: SecretsApi
 
   if (action === 'validate' || action === 'rotate') {
     if (!existing) throw new ApiError(404, 'SECRET_LINK_NOT_FOUND', `No secret is linked to ${binding} in ${environment}.`);
-    const connection = requireConnection(await context.connection(), action === 'rotate' ? SECRETS_STORE_WRITE_SCOPE : SECRETS_STORE_READ_SCOPE);
+    const connection = requireConnection(await context.connection(environment), action === 'rotate' ? SECRETS_STORE_WRITE_SCOPE : SECRETS_STORE_READ_SCOPE);
     if (connection.accountId !== existing.accountId) throw new ApiError(409, 'SECRET_ACCOUNT_MISMATCH', `${binding} is linked on Cloudflare account ${existing.accountId}, but the ${connection.source} connection is on ${connection.accountId}.`);
     if (action === 'rotate') await rotateStoreSecret(connection.call, connection.accountId, existing.storeId, existing.secretId, value!);
     const checked = validation(await findStoreSecret(connection.call, connection.accountId, existing.storeId, { secretId: existing.secretId }).catch(() => null), now);
@@ -405,10 +406,10 @@ export async function repositorySecretsApi(request: Request, context: SecretsApi
   let connection: Extract<SecretsConnection, { connected: true }>;
   if (action === 'create') {
     const name = secretNameInput(body.secretName);
-    connection = requireConnection(await context.connection(), SECRETS_STORE_WRITE_SCOPE);
+    connection = requireConnection(await context.connection(environment), SECRETS_STORE_WRITE_SCOPE);
     secret = await createStoreSecret(connection.call, connection.accountId, storeId, name, value!, commentInput(body.comment));
   } else {
-    connection = requireConnection(await context.connection(), SECRETS_STORE_READ_SCOPE);
+    connection = requireConnection(await context.connection(environment), SECRETS_STORE_READ_SCOPE);
     const secretId = body.secretId === undefined ? undefined : typeof body.secretId === 'string' && /^[a-f0-9]{32}$/.test(body.secretId) ? body.secretId : (() => { throw new ApiError(400, 'INVALID_SECRET', 'secretId must be a 32-character Secrets Store secret ID.'); })();
     const secretName = secretId ? undefined : secretNameInput(body.secretName);
     const found = await findStoreSecret(connection.call, connection.accountId, storeId, { ...(secretId ? { secretId } : {}), ...(secretName ? { secretName } : {}) });
