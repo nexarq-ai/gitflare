@@ -387,7 +387,7 @@ export function missingPreviewDatabaseNote(binding: string): string {
 }
 
 export type PreviewBaseBindings = Record<string, { type?: string }>;
-export const NO_PREVIEW_CONFIG_NOTE = 'This Worker has no preview base configuration and the app has no previews block, so only vars and its own Durable Objects reach the Preview. Add preview bindings in the Worker’s Previews settings in the Cloudflare dashboard, or a previews block in wrangler.jsonc.';
+export const NO_PREVIEW_CONFIG_NOTE = 'No preview bindings: only vars and Durable Objects reach the Preview. Add a previews block in wrangler.jsonc.';
 
 export const BLOCKED_PREVIEW_EMAIL_ADDRESS = 'preview-email-blocked@gitflare.invalid';
 
