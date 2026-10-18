@@ -2957,6 +2957,11 @@ a svg {
 .confirm-dialog .dialog-description code {
   font-size: 13px;
 }
+.commit-message-field { margin: 4px 0 0; }
+.commit-message-field input, .commit-message-field textarea { width: 100%; }
+.commit-message-field textarea { margin-top: 6px; min-height: 0; resize: vertical; font-family: var(--gf-font-mono); font-size: 12px; line-height: 1.5; }
+.commit-message-tip { display: flex; align-items: center; gap: 6px; }
+.commit-message-tip code { font-size: 12px; }
 .confirm-facts { display: grid; gap: 8px; margin: -8px 0 4px; padding: 12px 14px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-md); background: var(--gf-color-surface-sunken); font-size: 13px; }
 .confirm-facts > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; }
 .confirm-facts dt { color: var(--gf-color-text-secondary); }

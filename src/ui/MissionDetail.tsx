@@ -43,6 +43,8 @@ import { ContextFiles, MarkdownContent } from "./MissionDocuments";
 import { useMissionReplay } from "./DemoReplay";
 import { resumePreview, type PreviewProgress, type PreviewStatusLike } from "../shared/preview-progress";
 import { PreviewFailedCard, PreviewReadyCard, PreviewStartingCard, type PreviewAccess, type PreviewHost, type PreviewState } from "./PreviewPanel";
+import CommitMessageField, { type CommitDraft } from "./CommitMessageField";
+import { commitMessageProblem, normalizeCommitMessage, suggestedCommitMessage } from "../shared/commit-message";
 
 type PreviewResult = { status?: "starting" | "ready"; message?: string; kind?: "worker" | "container"; previewUrl?: string; deploymentUrl?: string | null; notes?: string[]; candidateSha: string; expiresAt?: string; linkExpiresAt?: string; host?: PreviewHost; access?: PreviewAccess; extended?: boolean };
 
@@ -103,6 +105,8 @@ export default function MissionDetail({
   const mutation = useRef<{ signature: string; key: string } | null>(null);
   const revision = useRef(0);
   const [confirming, setConfirming] = useState<"approve" | "integrate" | null>(null);
+  const [commitDraft, setCommitDraft] = useState<CommitDraft>({ subject: "", body: "" });
+  const [suggestedMessage, setSuggestedMessage] = useState("");
   const [dependencyAck, setDependencyAck] = useState({ candidateSha: "", checked: false });
   const pollSequence = useRef(0);
   const [retryModels, setRetryModels] = useState<ModelConnection[] | null>(null);
@@ -161,6 +165,7 @@ export default function MissionDetail({
 
   async function act(
     action: "start" | "retry-agents" | "drop-failed-agents" | "address-review" | "cancel" | "approve" | "integrate" | "revoke",
+    commitMessage?: string,
     retry?: { runId: string; override?: AgentRetryOverride },
   ) {
     if (!mission || busy) return;
@@ -168,7 +173,7 @@ export default function MissionDetail({
     setError("");
     const body =
       action === "approve" || action === "integrate" || action === "revoke"
-        ? { candidateSha: mission.candidateSha, baseSha: mission.baseSha, ...(action === "approve" && mission.dependencyChanges?.length ? { approveDependencies: dependenciesAcknowledged } : {}) }
+        ? { candidateSha: mission.candidateSha, baseSha: mission.baseSha, ...(action === "approve" && mission.dependencyChanges?.length ? { approveDependencies: dependenciesAcknowledged } : {}), ...(commitMessage !== undefined && action !== "revoke" ? { commitMessage } : {}) }
         : action === "retry-agents" && retry ? retryAgentBody(retry.runId, retry.override)
         : {};
     const signature = JSON.stringify({
@@ -198,6 +203,17 @@ export default function MissionDetail({
     } finally {
       setBusy("");
     }
+  }
+
+  const commitMessage = normalizeCommitMessage(commitDraft.subject, commitDraft.body);
+  const commitProblem = confirming ? commitMessageProblem(commitMessage) : null;
+
+  function openConfirm(action: "approve" | "integrate") {
+    if (!mission) return;
+    const suggestion = suggestedCommitMessage(mission);
+    setCommitDraft(suggestion);
+    setSuggestedMessage(normalizeCommitMessage(suggestion.subject, suggestion.body));
+    setConfirming(action);
   }
 
   async function retryChecks(adjustment: "timeout" | "runner") {
@@ -770,7 +786,7 @@ export default function MissionDetail({
                 !permissions.includes("land") ||
                 unresolvedRequests.length > 0
               }
-              onClick={() => mission.status === "integrating" ? void act("integrate") : setConfirming("integrate")}
+              onClick={() => mission.status === "integrating" ? void act("integrate") : openConfirm("integrate")}
             >
               {landing
                 ? "Landing…"
@@ -790,7 +806,7 @@ export default function MissionDetail({
               loading={busy === "approve"}
               disabled={!!busy || !permissions.includes("review") || (dependencyGate && !dependenciesAcknowledged)}
               title={!permissions.includes("review") ? "You need the Reviewer role or higher to approve." : dependencyGate && !dependenciesAcknowledged ? "Tick “I approve these dependency changes” first." : undefined}
-              onClick={() => setConfirming("approve")}
+              onClick={() => openConfirm("approve")}
             >
               Approve candidate
             </Button>
@@ -850,7 +866,7 @@ export default function MissionDetail({
         <div className="alert info">
           <GitMergeIcon size={17} />
           <div className="alert-text">
-            The approved candidate has landed in the repository. Restore creates a
+            The approved candidate has landed in the repository{mission.landedSha && mission.landedSha !== mission.candidateSha ? <> as <code>{mission.landedSha.slice(0, 12)}</code> with the same files</> : null}. Restore creates a
             new revision that undoes it, checked and approved like any change.
           </div>
         </div>
@@ -1118,7 +1134,7 @@ export default function MissionDetail({
                           busy={!!busy}
                           loading={busy === `retry-agent:${run.id}`}
                           models={retryModels}
-                          onRetry={(override) => void act("retry-agents", { runId: run.id, override })}
+                          onRetry={(override) => void act("retry-agents", undefined, { runId: run.id, override })}
                         />
                       )}
                       {run.skills !== undefined && (
@@ -1521,9 +1537,10 @@ export default function MissionDetail({
               ? <>Approve revision <code>{mission.candidateSha?.slice(0, 12)}</code> after {mission.checks.length} passing check{mission.checks.length === 1 ? "" : "s"}. Approval does not change the repository; landing is a separate step.{dependencyGate && <> You also approve the dependency changes listed on the Overview tab.</>}</>
               : <>Land revision <code>{mission.candidateSha?.slice(0, 12)}</code> on <strong>{repository?.defaultBranch ?? "the main stream"}</strong> of <strong>{repository ? repositoryLabel(repository) : "this repository"}</strong>. You can undo it later with Restore.</>}
           </Dialog.Description>
+          {confirming && <CommitMessageField draft={commitDraft} branch={repository?.defaultBranch ?? "the default branch"} problem={commitProblem} onChange={setCommitDraft} />}
           <div className="dialog-actions">
             <Button variant="secondary" size="base" type="button" onClick={() => setConfirming(null)}>Cancel</Button>
-            <Button variant="primary" size="base" type="button" icon={confirming === "approve" ? ShieldCheckIcon : GitMergeIcon} onClick={() => { const action = confirming; setConfirming(null); if (action) void act(action); }}>
+            <Button variant="primary" size="base" type="button" icon={confirming === "approve" ? ShieldCheckIcon : GitMergeIcon} disabled={!!commitProblem} onClick={() => { const action = confirming; setConfirming(null); if (action) void act(action, action === "integrate" || commitMessage !== suggestedMessage ? commitMessage : undefined); }}>
               {confirming === "approve" ? "Approve" : "Land changes"}
             </Button>
           </div>

@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependenciesAcknowledged, assertDependencyApprover } from './dependency-changes';
+import { activeLandingMessage } from '../shared/commit-message';
 import { repositoryLabel } from '../shared/repository-names';
 import { PREVIEW_FAILURE_MAX, type PreviewStep } from '../shared/preview-progress';
 import type { AppEnv } from './env';
@@ -32,7 +33,7 @@ import { applyMirrorChange, type MirrorChange, type MirrorChangeResult, type Sto
 
 interface Receipt<T> { fingerprint: string; result: T }
 export interface MissionSummaryCache { repositoryId: string; summaries: MissionSummary[]; cachedAt: string }
-export interface IntegrationClaim { claimId?: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimedAt?: number; phase?: 'preparing' | 'pushing' }
+export interface IntegrationClaim { claimId?: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimedAt?: number; phase?: 'preparing' | 'pushing'; landedSha?: string }
 const INTEGRATION_PREPARATION_MS = 600_000;
 
 function lastPreview(state: PreviewState, reason: PreviewEndReason, endedAt: number): LastPreview {
@@ -1294,8 +1295,8 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  approveMission(key: string, id: string, candidateSha: string, baseSha: string, actorId = 'workspace-owner', dependencyApprover = false): Mission {
-    return this.mutateMission(key, JSON.stringify(['approve', id, candidateSha, baseSha]), id, () => {
+  approveMission(key: string, id: string, candidateSha: string, baseSha: string, actorId = 'workspace-owner', dependencyApprover = false, commitMessage?: string): Mission {
+    return this.mutateMission(key, JSON.stringify(['approve', id, candidateSha, baseSha, ...(commitMessage === undefined ? [] : [commitMessage])]), id, () => {
       const mission = this.requiredMission(id);
       const repository = this.getRepository(mission.repositoryId);
       assertReviewClear(mission);
@@ -1305,9 +1306,21 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       mission.approvedAt = new Date().toISOString();
       mission.approvedBy = actorId;
       if (mission.dependencyChanges?.length) mission.dependencyApproval = { approvedBy: actorId, approvedAt: mission.approvedAt, candidateSha, baseSha, epoch: mission.epoch };
+      if (commitMessage !== undefined) mission.landingMessage = { message: commitMessage, candidateSha, baseSha, epoch: mission.epoch, setBy: actorId, setAt: mission.approvedAt };
       this.saveMission(mission, `Reviewer ${actorId} approved commit ${candidateSha.slice(0, 12)}. Approval does not merge or deploy this change.`, 'success');
       this.archive(mission, 'approved');
       return mission;
+    });
+  }
+
+  setLandingMessage(id: string, candidateSha: string, baseSha: string, message: string, actorId: string): Mission {
+    return this.ctx.storage.transactionSync(() => {
+      const mission = this.requiredMission(id);
+      if (!['needs_review', 'approved'].includes(mission.status)) throw new ApiError(409, 'LANDING_MESSAGE_LOCKED', 'The commit message can change only before landing starts.');
+      if (mission.candidateSha !== candidateSha || mission.baseSha !== baseSha) throw new ApiError(409, 'STALE_APPROVAL', 'Refresh before setting the commit message for this exact candidate and base.');
+      if (activeLandingMessage(mission) === message) return mission;
+      mission.landingMessage = { message, candidateSha, baseSha, epoch: mission.epoch, setBy: actorId, setAt: new Date().toISOString() };
+      return this.saveMission(mission, `${actorId} set the commit message for landing.`);
     });
   }
 
@@ -1328,9 +1341,9 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  beginIntegration(key: string, id: string, candidateSha: string, baseSha: string): { mission: Mission; claimed: boolean; claimId?: string } {
+  beginIntegration(key: string, id: string, candidateSha: string, baseSha: string, commitMessage?: string, actorId = 'workspace-owner'): { mission: Mission; claimed: boolean; claimId?: string; landedSha?: string } {
     return this.ctx.storage.transactionSync(() => {
-      const fingerprint = JSON.stringify(['integrate', id, candidateSha, baseSha]);
+      const fingerprint = JSON.stringify(['integrate', id, candidateSha, baseSha, ...(commitMessage === undefined ? [] : [commitMessage])]);
       const receipt = this.store.get<Receipt<boolean>>(`request:${key}`);
       if (receipt) assertReplayFingerprint(receipt.fingerprint, fingerprint);
       const mission = this.requiredMission(id);
@@ -1342,11 +1355,12 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const claim = this.store.get<IntegrationClaim>('integration:claim');
       if (claim) {
         if (claim.missionId !== id || claim.epoch !== mission.epoch || claim.candidateSha !== candidateSha) throw new ApiError(409, 'INTEGRATION_BUSY', 'Another integration is in progress for this repository.');
+        if (commitMessage !== undefined && commitMessage !== activeLandingMessage(mission)) throw new ApiError(409, 'LANDING_MESSAGE_LOCKED', 'Landing already started with another commit message. Wait for it to finish.');
         if (!claim.claimId) {
           claim.claimId = crypto.randomUUID();
           this.store.put('integration:claim', claim);
         }
-        return { mission, claimed: false, claimId: claim.claimId };
+        return { mission, claimed: false, claimId: claim.claimId, ...(claim.landedSha ? { landedSha: claim.landedSha } : {}) };
       }
       if (this.getRepository(mission.repositoryId)?.headSha !== baseSha) throw new ApiError(409, 'STALE_APPROVAL', 'The repository changed after approval. Run and review the change again.');
       if (!mission.integrationForkName || !mission.checks.some((check) => check.candidateSha === candidateSha && check.status === 'passed') || mission.checks.some((check) => check.status !== 'passed')) throw new ApiError(409, 'CHECKS_REQUIRED', 'The exact candidate must have passing verification and an integration fork.');
@@ -1355,6 +1369,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       this.store.put(`request:${key}`, { fingerprint, result: true });
       mission.status = 'integrating';
       delete mission.error;
+      if (commitMessage !== undefined) mission.landingMessage = { message: commitMessage, candidateSha, baseSha, epoch: mission.epoch, setBy: actorId, setAt: new Date().toISOString() };
       return { mission: this.saveMission(mission, `Integrating approved commit ${candidateSha.slice(0, 12)} into the default branch.`), claimed: true, claimId };
     });
   }
@@ -1363,15 +1378,16 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return this.ctx.storage.transactionSync(() => {
       const mission = this.requiredMission(id);
       const claim = this.store.get<IntegrationClaim>('integration:claim');
-      if (mission.status === 'integrated' && mission.epoch === epoch && mission.candidateSha === sha) return mission;
-      if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== epoch || claim.candidateSha !== sha || mission.status !== 'integrating') throw new ApiError(409, 'STALE_EXECUTION', 'This integration report does not match the active claim.');
+      if (mission.status === 'integrated' && mission.epoch === epoch && (mission.landedSha ?? mission.candidateSha) === sha) return mission;
+      if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== epoch || (claim.landedSha ?? claim.candidateSha) !== sha || mission.status !== 'integrating') throw new ApiError(409, 'STALE_EXECUTION', 'This integration report does not match the active claim.');
       const repository = this.getRepository(mission.repositoryId);
       if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
       this.saveRepository({ ...repository, headSha: sha, updatedAt: new Date().toISOString() });
       this.store.delete('integration:claim');
       mission.status = 'integrated';
+      mission.landedSha = sha;
       delete mission.error;
-      this.saveMission(mission, `Verified canonical branch at approved commit ${sha.slice(0, 12)}.`, 'success');
+      this.saveMission(mission, sha === claim.candidateSha ? `Verified canonical branch at approved commit ${sha.slice(0, 12)}.` : `Verified canonical branch at commit ${sha.slice(0, 12)}, which carries the approved tree of ${claim.candidateSha.slice(0, 12)} with the chosen commit message.`, 'success');
       this.archive(mission, 'integrated');
       this.recordLinkedIssues(mission, sha);
       return mission;
@@ -1384,13 +1400,15 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     if (reverted?.issueNumber !== undefined) recordIssueOutcome(this.store, reverted.issueNumber, 'open', `Reopened because mission ${reverted.title} was reverted (${sha.slice(0, 7)}).`);
   }
 
-  claimIntegrationPush(id: string, epoch: number, claimId: string): void {
+  claimIntegrationPush(id: string, epoch: number, claimId: string, landedSha?: string): void {
     this.ctx.storage.transactionSync(() => {
       const mission = this.requiredMission(id);
       const claim = this.store.get<IntegrationClaim>('integration:claim');
       if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== epoch || mission.epoch !== epoch || mission.status !== 'integrating' || claim.phase !== 'preparing') throw new ApiError(409, 'STALE_EXECUTION', 'This integration no longer owns a preparation claim.');
       if (claim.claimedAt === undefined || Date.now() - claim.claimedAt >= INTEGRATION_PREPARATION_MS) throw new ApiError(409, 'INTEGRATION_DEADLINE', 'Landing preparation expired before the canonical push.');
+      if (landedSha !== undefined && !/^[a-f0-9]{40}$/.test(landedSha)) throw new ApiError(400, 'INVALID_COMMIT', 'The landing commit must be a full SHA.');
       claim.phase = 'pushing';
+      if (landedSha && landedSha !== claim.candidateSha) claim.landedSha = landedSha;
       this.store.put('integration:claim', claim);
     });
   }

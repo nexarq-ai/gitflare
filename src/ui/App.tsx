@@ -65,7 +65,7 @@ import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLay
 import { workspaceChord } from "./workspace-chord";
 import { accountSection } from "./account-data";
 import { eligibleApprovers, knownCheckNames } from "./approvals";
-import { crossHostTarget, pageHostOrigins } from "./hosts";
+import { crossHostTarget, pageHostOrigins, siteSignedInHint } from "./hosts";
 import AccountMenu from "./AccountMenu";
 
 import ConnectionError from "./ConnectionError";
@@ -478,10 +478,11 @@ function Workspace() {
     setRefreshing(false);
   }
 
+  const publicAuthenticated = authState === "authenticated" || siteSignedInHint();
   if (!isKnownAppRoute(route) && authState === "checking") return <WorkspaceLoader />;
   if (!isKnownAppRoute(route) && authState !== "authenticated") return <NotFoundScreen />;
   if (isPublicDocumentationRoute(route)) return <main className="public-documentation"><Documentation publicMode id={route === "docs" ? "overview" : route.slice(5)} /></main>;
-  if (route === "home" && (!authConfig || (authConfig.edition === "hosted" && !authConfig.setupRequired))) return <Homepage authenticated={authState === "authenticated"} />;
+  if (route === "home" && (!authConfig || (authConfig.edition === "hosted" && !authConfig.setupRequired))) return <Homepage authenticated={publicAuthenticated} />;
   if (!authConfig && !authConfigError) return <WorkspaceLoader />;
   if (!authConfig) return <ConnectionError error={authConfigError} onRetry={() => window.location.reload()} />;
   if (isAccountRoute(route) && !authConfig.setupRequired) return <AccountScreen key={route} route={route} config={authConfig} authenticated={authState === "authenticated"} onChanged={load}/>;

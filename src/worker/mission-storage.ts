@@ -57,7 +57,7 @@ export const needsPacking = (stored: Mission) => someField(stored, large);
 const text = (value: unknown) => typeof value === 'string' ? value.slice(0, SUMMARY_TEXT) : '';
 
 export function summarizeMission(mission: Mission): MissionSummary {
-  const { attachments, authorization: _authorization, skillChange, raceChecks: _raceChecks, raceChanges: _raceChanges, runs, checks, changes, events, reviews, prompt, ...rest } = mission;
+  const { attachments, authorization: _authorization, skillChange, raceChecks: _raceChecks, raceChanges: _raceChanges, landingMessage: _landingMessage, runs, checks, changes, events, reviews, prompt, ...rest } = mission;
   return {
     ...rest,
     prompt: text(prompt),

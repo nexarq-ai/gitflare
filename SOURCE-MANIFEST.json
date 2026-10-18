@@ -164,6 +164,11 @@
       "sha256": "df78193c2817e32f4c83a2d96335a4258a3a4cf28b54895a4ff0edc183c19540"
     },
     {
+      "path": "src/shared/commit-message.ts",
+      "size": 3425,
+      "sha256": "48989bd4f1bfb338c5637f9397e3ea18c581be379564c9d15baac08a0b58132b"
+    },
+    {
       "path": "src/shared/demo-features.ts",
       "size": 5405,
       "sha256": "e990ca40fb06a05796cee9838a5052fcc1a9384578515f981d2efe9ce8a4492e"
@@ -229,9 +234,14 @@
       "sha256": "03e7d6447555c4a48a526ed7812df2b81bbb7f5f2f8f79ee58605c461b6e803b"
     },
     {
+      "path": "src/shared/signed-in-hint.ts",
+      "size": 1608,
+      "sha256": "050ddbf6016f81126ed30519e6e2aa6151c69e87b4061f57db8e3b8c7b7737f4"
+    },
+    {
       "path": "src/shared/types.ts",
-      "size": 15317,
-      "sha256": "061cfe1e19640d21b09c53434b7429aa56c631838a5f49516102ec26bf56505c"
+      "size": 15543,
+      "sha256": "a60ca9f9bbf3da1c79ffc03d793a7653c11d02c9b3693549679d400c80cf3ff9"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -280,8 +290,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 83992,
-      "sha256": "227beef3f933e3651d3af0e3d5c3df86e339c2add8eb2ffa9a679cf3f274f73f"
+      "size": 84083,
+      "sha256": "183514b54fd3a99e188bc0c622310b6a3e14209d259e5a661c4f937f364b0a8c"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -429,6 +439,11 @@
       "sha256": "a77af4dd97ab7be50314197b0c307182ba6b07db407c07e7de867dcf5570dc71"
     },
     {
+      "path": "src/ui/CommitMessageField.tsx",
+      "size": 1170,
+      "sha256": "a1df80391689bbcf04feb1ad6e82a2bb57468724e461bccdab868a29485eca04"
+    },
+    {
       "path": "src/ui/components.tsx",
       "size": 8916,
       "sha256": "13a0586504a274b622953569af4e3e34beaa5bd79d2ac1d1ea8ec3c2b4da2621"
@@ -570,8 +585,8 @@
     },
     {
       "path": "src/ui/hosts.ts",
-      "size": 1511,
-      "sha256": "0c5b20db80dfd1fb7a14ff77de8d88519786cb06ac304bb03a257be8cbf4f9cc"
+      "size": 1801,
+      "sha256": "c84431f68328296c15e4d112ca91d43d18c6a1f2e7dee8c4096b6910d1f46783"
     },
     {
       "path": "src/ui/info-tip.css",
@@ -630,8 +645,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 63238,
-      "sha256": "1706f5f81d2edacbaaf60af2d2f0a5ea051cc254d548ff6fba99a4a44fcff225"
+      "size": 64602,
+      "sha256": "262cbcfcca5adb9b138de1820a8216d135f2d164d806880a143852963e883da9"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -850,8 +865,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 68892,
-      "sha256": "0b33b2e403aaec9054c10b125e3bee5b7d3c75009a3ec80ce22e75c662cef2eb"
+      "size": 69282,
+      "sha256": "3ed1fd9a1b9e9eac7e6b160e77fc162404fe352e517bca4399def179843e6933"
     },
     {
       "path": "src/ui/ThemeToggle.tsx",
@@ -905,8 +920,8 @@
     },
     {
       "path": "src/worker/background-work.ts",
-      "size": 29773,
-      "sha256": "0a3ea5261746988072022d7c0a99afd012810cbf69156d53c1b52b274a56446c"
+      "size": 30207,
+      "sha256": "5470403d37b8a8f760afbbd44671425b103c5d4b69b3800456d1496885399348"
     },
     {
       "path": "src/worker/branch-protection.ts",
@@ -960,8 +975,8 @@
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 109880,
-      "sha256": "e8a3f4ee1897d06dae726446dbae1fb3ace8e1a5de7c2120afc5a76ef81ad202"
+      "size": 112261,
+      "sha256": "1a99c81ba3f6d8c57bfb924895da25543d621f12506e50d98cb73467d2c7ecbf"
     },
     {
       "path": "src/worker/d1-migrations.ts",
@@ -1060,8 +1075,8 @@
     },
     {
       "path": "src/worker/domain.ts",
-      "size": 13036,
-      "sha256": "de6a15138e5e41f0991948ae3850f83e7f0ce42be883d1b7295b02544c396e5e"
+      "size": 13701,
+      "sha256": "3e1406591d0feefce3fb46c78fdb802fdabab322272cb08b466f8eff5040cb00"
     },
     {
       "path": "src/worker/email/index.ts",
@@ -1085,8 +1100,8 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 122835,
-      "sha256": "8c27cc67d0b2851ba4d3d3e0faf28612f8a709f331d910028ebe0c75af689ca8"
+      "size": 124758,
+      "sha256": "c0b736404884b4ec6c6a1414995538ceb383b291f2862e242039e4d11f3c8337"
     },
     {
       "path": "src/worker/gateway-routing.ts",
@@ -1135,8 +1150,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 98222,
-      "sha256": "7019adc14263942d5016e33a65b468eef05a8ce86bd3075589f9a28a889d5091"
+      "size": 98983,
+      "sha256": "0eeae35ac56968c10a5cd94a8008732e1640e895381f76490586341c13f52fe9"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -1155,8 +1170,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 120661,
-      "sha256": "03cecba3a582def6d6011d1aa86936a494de3bc51c7ca1406ceff025453c1be3"
+      "size": 121860,
+      "sha256": "f1c9636e651489b026f5fb9d6ace627ee8e73894133dd1745f59fea246c0cc2a"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -1175,8 +1190,8 @@
     },
     {
       "path": "src/worker/mission-storage.ts",
-      "size": 3954,
-      "sha256": "e097a74886559b52965ed583889fa2eb7771dfb7cebebe5642fa90439c2c84ea"
+      "size": 3987,
+      "sha256": "a84c420967c688e4bad68d3fb8eaa6c4669797caae0aa3f166849b416b8e2e48"
     },
     {
       "path": "src/worker/model-adapter.ts",
@@ -1265,8 +1280,8 @@
     },
     {
       "path": "src/worker/releases.ts",
-      "size": 24001,
-      "sha256": "a36ecd43571f55118f3bd590b92e9981605ebf760674e973e5a7bf61de3e086b"
+      "size": 24074,
+      "sha256": "b39a168acd3858ed6d11073d3887da4a19d19e53e23c7d21d5bec890796ffc7b"
     },
     {
       "path": "src/worker/repository-import.ts",
@@ -1317,6 +1332,11 @@
       "path": "src/worker/session-policy.ts",
       "size": 2170,
       "sha256": "f5d2152aa11e9042cc2b8496fddf4f24cd36acb8a32d200668cf46107aed4006"
+    },
+    {
+      "path": "src/worker/signed-in-hint.ts",
+      "size": 2205,
+      "sha256": "210d9281308f4c85e9a1602a28d8f741185b46efdc059ff18d126b9f69c29c46"
     },
     {
       "path": "src/worker/skill-edit.ts",
