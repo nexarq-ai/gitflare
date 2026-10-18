@@ -41,6 +41,7 @@ import {
 } from "@phosphor-icons/react";
 import type { AccessSnapshot, Repository, Workspace } from "../shared/types";
 import { request, RequestError, selectWorkspace } from "./api";
+import { confirmSession, INITIAL_LOAD_ATTEMPTS, retryDelay, SESSION_CHECK_EVENT, transientFailure } from "./session-health";
 import {
   BranchIllustration,
   EmptyState,
@@ -146,6 +147,10 @@ export default function App() {
   );
 }
 
+function ReconnectingNotice() {
+  return <div className="reconnecting-notice" role="status" aria-live="polite"><span aria-hidden="true" />Reconnecting to Gitflare…</div>;
+}
+
 function Workspace() {
   const [workspace, setWorkspace] = useState<Workspace>(blankWorkspace);
   const [authConfigError, setAuthConfigError] = useState("");
@@ -160,6 +165,9 @@ function Workspace() {
     "checking" | "required" | "configuration" | "unavailable" | "authenticated"
   >("checking");
   const [signingOut, setSigningOut] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const failedLoads = useRef(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [route, setRoute] = useState(
     () => { canonicalizeLegacyHash(); return currentRoute(); },
   );
@@ -179,6 +187,9 @@ function Workspace() {
 
   const clearSession = useCallback(() => {
     loadGeneration.current += 1;
+    failedLoads.current = 0;
+    clearTimeout(retryTimer.current);
+    setReconnecting(false);
     hasWorkspace.current = false;
     selectWorkspace("");
     setPermissions([]);
@@ -209,6 +220,9 @@ function Workspace() {
       setAccount(access);
       setLoaded(true);
       setError("");
+      failedLoads.current = 0;
+      clearTimeout(retryTimer.current);
+      setReconnecting(false);
       setAuthState("authenticated");
       if (["signin", "signup"].includes(currentRoute())) { const next = takeReturnRoute(); goTo(next, true); setRoute(next); }
     } catch (failure) {
@@ -217,9 +231,15 @@ function Workspace() {
         failure instanceof Error
           ? failure.message
           : "The workspace could not be loaded.";
-      setError(message);
-      if (failure instanceof RequestError && failure.status === 401) {
+      const signedOut = failure instanceof RequestError && failure.status === 401 && await confirmSession() === "signed-out";
+      if (generation !== loadGeneration.current) return;
+      if (signedOut) {
         clearSession();
+      } else if (transientFailure(failure) && (hasWorkspace.current || failedLoads.current + 1 < INITIAL_LOAD_ATTEMPTS)) {
+        const attempt = failedLoads.current++;
+        setReconnecting(true);
+        clearTimeout(retryTimer.current);
+        retryTimer.current = setTimeout(() => void load(true), retryDelay(attempt));
       } else if (
         failure instanceof RequestError &&
         failure.code === "AUTH_NOT_CONFIGURED"
@@ -227,8 +247,10 @@ function Workspace() {
         clearSession();
         setError(message);
         setAuthState("configuration");
-      } else if (!hasWorkspace.current) {
-        setAuthState("unavailable");
+      } else {
+        setError(message);
+        setReconnecting(false);
+        if (!hasWorkspace.current) setAuthState("unavailable");
       }
     } finally {
       inFlight.current -= 1;
@@ -249,10 +271,22 @@ function Workspace() {
   }, [authState]);
 
   useEffect(() => {
-    window.addEventListener("gitflare:session-required", clearSession);
-    return () =>
-      window.removeEventListener("gitflare:session-required", clearSession);
-  }, [clearSession]);
+    let active = true;
+    const check = () => {
+      void confirmSession().then((status) => {
+        if (!active) return;
+        if (status === "signed-out") clearSession();
+        else if (status === "unreachable") { setReconnecting(true); void load(true); }
+      });
+    };
+    window.addEventListener(SESSION_CHECK_EVENT, check);
+    return () => {
+      active = false;
+      window.removeEventListener(SESSION_CHECK_EVENT, check);
+    };
+  }, [clearSession, load]);
+
+  useEffect(() => () => clearTimeout(retryTimer.current), []);
 
   useEffect(() => {
     void request<AuthConfig>("/api/auth/config").then(setAuthConfig).catch((failure: unknown) => { setAuthConfigError(failure instanceof Error ? failure.message : "Installation configuration is unavailable."); setAuthState("unavailable"); });
@@ -389,6 +423,8 @@ function Workspace() {
 
   if (authState !== "authenticated" || authConfig.setupRequired) {
     return (
+      <>
+      {reconnecting && authState === "checking" && <ReconnectingNotice />}
       <AuthScreen
         key={route === "signup" ? "signup" : "signin"}
         mode={route === "signup" ? "signup" : "signin"}
@@ -399,6 +435,7 @@ function Workspace() {
         onRetry={load}
         onSignedIn={async () => { setAuthConfig(await request<AuthConfig>("/api/auth/config")); await load(); }}
       />
+      </>
     );
   }
 
@@ -564,6 +601,7 @@ function Workspace() {
           </div>
         </header>
         {routePending && <RouteProgress />}
+        {reconnecting && <ReconnectingNotice />}
         <main className="page-content" id="main-content" tabIndex={-1}>
           {error && (
             <ErrorNotice message={error} onRetry={() => void refresh()} />

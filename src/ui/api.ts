@@ -1,4 +1,5 @@
 import type { ApiError } from "../shared/types";
+import { SESSION_CHECK_EVENT } from "./session-health";
 
 export class RequestError extends Error {
   constructor(
@@ -41,8 +42,8 @@ export async function request<T>(
   });
   const data = (await response.json().catch(() => null)) as T | ApiError | null;
   if (!response.ok) {
-    if (response.status === 401 && !["/api/session", "/api/login"].includes(path))
-      window.dispatchEvent(new Event("gitflare:session-required"));
+    if (response.status === 401 && typeof window !== "undefined" && !["/api/session", "/api/login"].includes(path))
+      window.dispatchEvent(new Event(SESSION_CHECK_EVENT));
     const error =
       data && typeof data === "object" && "error" in data
         ? (data as ApiError).error

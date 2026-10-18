@@ -6,6 +6,7 @@ import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { ArrowsOutIcon, BookOpenIcon, CheckIcon, CopyIcon, ArrowSquareOutIcon, XIcon } from "@phosphor-icons/react";
 import { request } from "./api";
+import { SESSION_CHECK_EVENT } from "./session-health";
 import { ErrorNotice } from "./components";
 import { diagrams, type DocumentationDiagram } from "./doc-diagrams";
 import "./documentation.css";
@@ -117,7 +118,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
     const generation = copyGeneration.current;
     try {
       const response = await fetch(`${publicMode ? "/api/public/docs" : "/api/docs"}/${encodeURIComponent(document.id)}.md`, { credentials: "same-origin" });
-      if (response.status === 401 && !publicMode) window.dispatchEvent(new Event("gitflare:session-required"));
+      if (response.status === 401 && !publicMode) window.dispatchEvent(new Event(SESSION_CHECK_EVENT));
       if (!response.ok) throw new Error("Markdown could not be loaded.");
       const markdown = await response.text();
       if (generation !== copyGeneration.current) return;
