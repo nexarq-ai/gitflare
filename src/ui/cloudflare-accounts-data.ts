@@ -46,3 +46,10 @@ export function accountRows(connected: AccountsOverview["accounts"], reachable: 
   for (const login of reachable) for (const account of login.accounts) if (!rows.has(account.id)) rows.set(account.id, { id: account.id, name: account.name, grantId: login.grantId, added: false });
   return [...rows.values()].sort((a, b) => Number(b.added) - Number(a.added) || a.name.localeCompare(b.name));
 }
+
+export function effectiveAccount(overview: AccountsOverview, repositoryId: string, environment?: string): { id: string; name: string } | null {
+  const selection = overview.repositories[repositoryId] ?? {};
+  const id = (environment ? selection.environments?.[environment] : undefined) ?? selection.accountId ?? overview.defaultAccount?.id;
+  if (!id) return null;
+  return overview.accounts.find(item => item.id === id) ?? (overview.defaultAccount?.id === id ? overview.defaultAccount : null);
+}

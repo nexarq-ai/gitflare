@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import DeployAccounts from "./AccountPicker";
 import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import type { Repository } from "../shared/types";
@@ -112,7 +113,7 @@ function AccessProtection({ environment, access, busy, perform }: { environment:
   );
 }
 
-export default function Deployments({ repository, onNotify }: { repository: Repository; onNotify?: (message: string) => void }) {
+export default function Deployments({ repository, canManage = false, onNotify }: { repository: Repository; canManage?: boolean; onNotify?: (message: string) => void }) {
   const [state, setState] = useState<State | null>(null);
   const [editing, setEditing] = useState<Environment>("staging");
   const [detection, setDetection] = useState<Detection | null>(null);
@@ -283,6 +284,7 @@ export default function Deployments({ repository, onNotify }: { repository: Repo
       <div className="panel-header"><h2>Deployments</h2></div>
       <div className="panel-body">
         <p>Ship landed commits to this repository’s Workers with its Cloudflare connection. Every <code>env.&lt;name&gt;</code> block in the Wrangler configs is an environment, built as <code>wrangler deploy --env &lt;name&gt;</code> does; production uses the top level. Staging deploys on land, other environments wait for Deploy unless switched to automatic, and production is promoted from a successful deployment with an Owner’s confirmation. Requires the Owner or Deployer role.</p>
+        <DeployAccounts repositoryId={repository.id} environments={environmentNames} canManage={canManage} />
         {detectedPanel()}
         <div className="cf-environments">{environmentNames.map(environmentCard)}</div>
         {error && <ErrorNotice message={error} />}
