@@ -235,11 +235,21 @@ export async function runAgentLoop(env: ExecutionEnv, sandbox: SandboxRunner, pr
   ];
   const tools = [shellTool, ...(options.team ? [teamTool] : []), ...(options.workspace ? [installTool, testsTool] : [])];
   let lastToolSucceeded = false;
+  let continuations = 0;
+  let continuing = false;
   for (let turn = 0; turn < maxTurns; turn++) {
     if (!await isActive()) throw new Error('Mission cancelled');
     let message: ModelMessage;
-    try { message = await modelMessageWithRetry(env, model, messages, deadline, isActive, tools, options.onModelCall); }
+    try { message = await modelMessageWithRetry(env, model, messages, deadline, isActive, tools, options.onModelCall, continuing); }
     catch (error) {
+      if (error instanceof ModelResponseError && error.detail.issue === 'max_tokens' && continuations < MAX_OUTPUT_CONTINUATIONS) {
+        continuations++;
+        continuing = true;
+        console.warn(JSON.stringify({ event: 'model_output_continuation', model: model.id, continuation: continuations }));
+        messages.push({ role: 'user', content: OUTPUT_LIMIT_CONTINUATION });
+        turn--;
+        continue;
+      }
       if (!(error instanceof ModelResponseError) || !error.nativeEmptyToolResponse || model.protocol !== 'workers-ai' || !lastToolSucceeded || turn >= maxTurns - 1) throw error;
       if (!await isActive()) throw new Error('Mission cancelled');
       remainingAgentBudget(deadline);
@@ -252,6 +262,7 @@ export async function runAgentLoop(env: ExecutionEnv, sandbox: SandboxRunner, pr
       if (summary.calls.length || !summary.text.trim()) throw new ModelResponseError('invalid_final_summary', 'Model returned no usable tool-free final summary');
       return summary.text.slice(0, 4000);
     }
+    continuing = false;
     if (!await isActive()) throw new Error('Mission cancelled');
     remainingAgentBudget(deadline);
     messages.push(...message.output.map(item => {
@@ -315,12 +326,19 @@ function shellCommand(raw: string): string | null {
 }
 
 const MODEL_ATTEMPTS = 3;
-const MODEL_OUTPUT_TOKENS = 4096;
-export const EXTENDED_OUTPUT_TOKENS = 8192;
+export const OUTPUT_TOKEN_LIMITS: Record<ModelConnection['protocol'], { initial: number; extended: number }> = {
+  anthropic: { initial: 8192, extended: 16_384 },
+  responses: { initial: 8192, extended: 16_384 },
+  chat: { initial: 4096, extended: 8192 },
+  'workers-ai': { initial: 4096, extended: 8192 },
+};
+export const MAX_OUTPUT_CONTINUATIONS = 4;
+export const OUTPUT_LIMIT_CONTINUATION = 'Your previous response reached the output token limit before it finished, so none of it was applied and no tool ran. Continue from where you were in smaller steps: write a large file with several shell commands of at most about 200 lines each (create it, then append with cat >>), and keep each response short.';
 export const MODEL_RETRY_BACKOFF_MS = 1000;
 
-async function modelMessageWithRetry(env: ExecutionEnv, model: ModelConnection, messages: InputItem[], deadline: number, isActive: () => Promise<boolean>, tools: InputItem[], onModelCall?: (usage: ModelUsage | undefined) => void): Promise<ModelMessage> {
-  let maxTokens = MODEL_OUTPUT_TOKENS;
+async function modelMessageWithRetry(env: ExecutionEnv, model: ModelConnection, messages: InputItem[], deadline: number, isActive: () => Promise<boolean>, tools: InputItem[], onModelCall?: (usage: ModelUsage | undefined) => void, startExtended = false): Promise<ModelMessage> {
+  const limits = OUTPUT_TOKEN_LIMITS[model.protocol] ?? OUTPUT_TOKEN_LIMITS.chat;
+  let maxTokens = startExtended ? limits.extended : limits.initial;
   let responseRetried = false;
   for (let attempt = 1; ; attempt++) {
     if (!await isActive()) throw new Error('Mission cancelled');
@@ -330,10 +348,10 @@ async function modelMessageWithRetry(env: ExecutionEnv, model: ModelConnection, 
     catch (error) {
       if (!recorded) onModelCall?.(undefined);
       if (error instanceof ModelResponseError) {
-        const truncated = error.detail.issue === 'max_tokens' && maxTokens < EXTENDED_OUTPUT_TOKENS;
+        const truncated = error.detail.issue === 'max_tokens' && maxTokens < limits.extended;
         if (responseRetried || attempt >= MODEL_ATTEMPTS || !(error.transient || truncated)) throw error;
         responseRetried = true;
-        if (truncated) maxTokens = EXTENDED_OUTPUT_TOKENS;
+        if (truncated) maxTokens = limits.extended;
         console.warn(JSON.stringify({ event: 'model_response_retry', model: model.id, ...error.detail, maxTokens }));
       } else {
         const status = (error as { status?: unknown } | null)?.status;

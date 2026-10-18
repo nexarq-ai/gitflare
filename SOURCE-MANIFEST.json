@@ -865,8 +865,8 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 110184,
-      "sha256": "3370c517caf0b63810911b7934f38aa10e9b62844750dd999daacd386a54e8a6"
+      "size": 111448,
+      "sha256": "1cfa0dde0fcc07be738b3c37216533c0a8063afe6efd42bf389b8dd492949165"
     },
     {
       "path": "src/worker/gateway-routing.ts",
@@ -955,8 +955,8 @@
     },
     {
       "path": "src/worker/model-adapter.ts",
-      "size": 21997,
-      "sha256": "f6aff753f1b5c7d9edfa49bf2909aee56883caf924489dbff3f84485adc8436b"
+      "size": 22696,
+      "sha256": "d9e7f25b54d6da13c0fcdce40a5b95de6862f9dea4c8919cd972306cb5047378"
     },
     {
       "path": "src/worker/model-config.ts",
