@@ -43,7 +43,8 @@ export async function oauthConsent(request: Request, env: AppEnv, authenticate: 
     await oauth.parseAuthRequest(request);
     // SameSite=Strict session cookies are withheld on cross-site navigations; a same-origin reload sends them
     if (request.headers.get('Sec-Fetch-Site') === 'cross-site') return sameSiteHop(request);
-    return page('<h1>Sign in to connect</h1><p>Sign in to Gitflare in another tab, then return here to review the connection.</p><p><a class="button" href="/signin" target="_blank" rel="noopener">Sign in</a></p><p><a href="">Continue after signing in</a></p>');
+    const back = new URL(request.url); const signin = `/signin?return=${encodeURIComponent(back.pathname + back.search)}`;
+    return page(`<h1>Sign in to connect</h1><p>Sign in to Gitflare and you will come straight back here to review the connection.</p><p><a class="button" href="${signin}">Sign in</a></p>`);
   }
   if (principal.credentialId) throw new ApiError(403, 'ACCOUNT_REQUIRED', 'Task credentials cannot authorize personal AI clients.');
   try {
