@@ -62,6 +62,7 @@ import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, 
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLayout";
 import { workspaceChord } from "./workspace-chord";
+import { accountSection } from "./account-data";
 import { crossHostTarget, pageHostOrigins } from "./hosts";
 import AccountMenu from "./AccountMenu";
 
@@ -517,7 +518,7 @@ function Workspace() {
       repository: "Repository",
       activity: "Activity",
       settings: "Settings",
-      account: route === "account/security" ? "Security" : route === "account/clients" ? "AI clients" : "Profile",
+      account: { security: "Security", sessions: "Sessions", clients: "AI clients", profile: "Profile" }[accountSection(route)],
       admin: "Installation",
     }[page] ?? "Overview";
   const missionList = workspace.missions.filter(
@@ -686,7 +687,7 @@ function Workspace() {
                   : route === "settings/audit" ? <AuditLog data={account} repositories={workspace.repositories} workspaceName={workspace.name} />
                   : <GeneralSettings workspace={workspace} data={account} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onLeft={async remaining => { if (remaining[0]) await switchWorkspace(remaining[0].id); else await load(); }} onOpenInstallation={() => navigate("admin")} />}
               </WorkspaceSettingsLayout>
-            ) : route === "admin" ? <InstallationAdmin workspace={workspace} notFound={<NotFoundPanel />} /> : route === "account/clients" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
+            ) : route === "admin" ? <InstallationAdmin workspace={workspace} notFound={<NotFoundPanel />} /> : page === "account" ? <AccountSettings key={route} section={accountSection(route)} config={authConfig} onChanged={load} onSwitchWorkspace={switchWorkspace} onSignOut={() => void signOut()}>{route === "account/clients" && <McpConnections />}</AccountSettings> : page === "mission" ? (
               <MissionDetail
                 key={route.split("/")[1]}
                 id={route.split("/")[1]}

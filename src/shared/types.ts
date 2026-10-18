@@ -309,6 +309,7 @@ export interface RepositoryTree extends CandidateSource { entries: { name: strin
 export interface RepositoryFile extends CandidateSource { path: string; content: string; commitSha: string }
 
 export type AccessSnapshot = Awaited<ReturnType<import('../worker/security').SecurityService['snapshot']>>;
+export type AccountSnapshot = Awaited<ReturnType<import('../worker/security').SecurityService['account']>>;
 export type WorkspaceRole = import('../worker/security').Role;
 
 export interface ProjectResource {

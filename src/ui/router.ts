@@ -117,7 +117,7 @@ export function isPublicDocumentationRoute(route: string): boolean {
 }
 
 export function isKnownAppRoute(route: string): boolean {
-  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "admin", "account/profile", "account/security", "account/clients", "proposals/new", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
+  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "admin", "account/profile", "account/security", "account/sessions", "account/clients", "proposals/new", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
     || /^settings(?:\/(?:people|cloudflare|models|audit))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)

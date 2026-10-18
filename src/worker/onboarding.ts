@@ -4,6 +4,7 @@ import type { AppEnv } from './env';
 import { cloudflareSigninConfigured } from './cloudflare';
 import { handleHostedOnboarding, type AuthenticateRequest } from './hosted-onboarding';
 import { securityClient } from './security';
+import { requestSessionMeta } from './session-meta';
 import { DEMO_RESET_TIME, demoMode } from './demo';
 import { sessionCookie } from './session-policy';
 
@@ -55,7 +56,7 @@ export async function handleOnboarding(request: Request, env: AppEnv, authentica
   await service.rateLimit(`onboarding:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
   const body = await readJson(request);
   if (path === '/api/setup/start') return Response.json(await service.startSetup(body), { headers: { 'Cache-Control': 'no-store' } });
-  if (path === '/api/setup/verify' || path === '/api/mfa/verify') return authenticatedResponse(await service.verifyMfa(body, path === '/api/setup/verify'));
+  if (path === '/api/setup/verify' || path === '/api/mfa/verify') return authenticatedResponse(await service.verifyMfa(body, path === '/api/setup/verify', requestSessionMeta(request)));
   if (path === '/api/invitations/register') {
     if (env.EDITION !== 'self-hosted') throw new ApiError(410, 'EMAIL_SIGNUP_RETIRED', 'New accounts are created with Continue with Cloudflare. Existing accounts can still sign in with email.');
     const result = await service.registerInvitedUser(body);
