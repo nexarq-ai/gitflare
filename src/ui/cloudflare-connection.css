@@ -197,3 +197,14 @@ label.cf-warning { display: flex; align-items: flex-start; gap: 8px; margin-top:
 .cf-chooser-list small { color: var(--gf-color-text-tertiary); font-size: 11px; }
 .cf-chooser-default { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--gf-color-text-secondary); }
 .people-table th { white-space: nowrap; }
+.cf-account-not-added td:first-child strong { color: var(--gf-color-text-secondary); font-weight: 500; }
+
+@media (max-width: 640px) {
+  .cf-accounts-table thead { display: none; }
+  .cf-accounts-table, .cf-accounts-table tbody, .cf-accounts-table tr, .cf-accounts-table td { display: block; width: 100%; }
+  .people-table.cf-accounts-table tr { padding: 12px 16px; border-bottom: 1px solid var(--gf-color-border); }
+  .people-table.cf-accounts-table td { padding: 3px 0; border: 0; }
+  .cf-accounts-table td:empty { display: none; }
+  .cf-accounts-table td[data-label]::before { content: attr(data-label) ": "; color: var(--gf-color-text-tertiary); font-size: 12px; }
+  .cf-accounts-table td.people-actions { text-align: left; padding-top: 8px; }
+}

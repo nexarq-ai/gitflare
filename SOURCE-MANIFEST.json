@@ -385,13 +385,13 @@
     },
     {
       "path": "src/ui/cloudflare-accounts-data.ts",
-      "size": 2533,
-      "sha256": "49c4cab1728e2a3752f0dcbb2300588386844543c185506afcd9f8652c426c84"
+      "size": 3467,
+      "sha256": "1de116541ee2d20f9b469ccb7d8890e45521650e592e000a30523c991e049833"
     },
     {
       "path": "src/ui/cloudflare-connection.css",
-      "size": 20131,
-      "sha256": "c9e2da759b0ab5eadec354e508e4638da58365d8be2dfaa69ea6e7d11d7ead8c"
+      "size": 20880,
+      "sha256": "db68eece9f7b49bb35a2bc8df9e0e8ea168292397868af68db5cde1fc6cee7f9"
     },
     {
       "path": "src/ui/cloudflare-deploy-button.css",
@@ -400,8 +400,8 @@
     },
     {
       "path": "src/ui/CloudflareAccounts.tsx",
-      "size": 19110,
-      "sha256": "458c8b0046b9f64b5e586d42d69c4ce1404bb15f8cfbc4242220529d93dd1a6e"
+      "size": 16457,
+      "sha256": "f19eedb1692831422693cef1af85e08908fdc369e1761c1a7a0a71f4832b8761"
     },
     {
       "path": "src/ui/CloudflareConnection.tsx",
@@ -545,13 +545,13 @@
     },
     {
       "path": "src/ui/info-tip.css",
-      "size": 2216,
-      "sha256": "acdaf9d4cf16ba88871f8431a812c872512d7a593b78f2ee064759b1598a6946"
+      "size": 2217,
+      "sha256": "bd03fefcb5f71483b93b70f6642e513ee3f648cd489a3e126b7cded81d4e8a67"
     },
     {
       "path": "src/ui/InfoTip.tsx",
-      "size": 2195,
-      "sha256": "45c49588d1cfb543d7eeebdf7567269e75d3480df75f48210f8e388e5c02feaa"
+      "size": 3272,
+      "sha256": "79de5257f9c47fba22a8c376c2afde4eb17784c0cde1a3e5136bdc522c91af13"
     },
     {
       "path": "src/ui/InstallationAdmin.tsx",

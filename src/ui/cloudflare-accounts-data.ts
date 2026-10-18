@@ -36,3 +36,13 @@ export function removeRefusal(accountId: string, overview: AccountsOverview | nu
   const first = repositoryLabel(used[0].repository);
   return used.length === 1 ? `${first} deploys to this account. Choose another account for it first.` : `${first} and ${used.length - 1} other ${used.length === 2 ? "repository" : "repositories"} deploy to this account. Choose another account for them first.`;
 }
+
+export type AccountRow = { id: string; name: string; grantId: string | null; added: boolean };
+
+export function accountRows(connected: AccountsOverview["accounts"], reachable: { grantId: string | null; accounts: { id: string; name: string }[] }[], primary: { id: string; name: string } | null): AccountRow[] {
+  const rows = new Map<string, AccountRow>();
+  for (const account of connected) rows.set(account.id, { id: account.id, name: account.name, grantId: account.grantId, added: true });
+  if (primary && !rows.has(primary.id)) rows.set(primary.id, { id: primary.id, name: primary.name, grantId: null, added: true });
+  for (const login of reachable) for (const account of login.accounts) if (!rows.has(account.id)) rows.set(account.id, { id: account.id, name: account.name, grantId: login.grantId, added: false });
+  return [...rows.values()].sort((a, b) => Number(b.added) - Number(a.added) || a.name.localeCompare(b.name));
+}
