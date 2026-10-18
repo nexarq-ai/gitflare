@@ -40,7 +40,7 @@ import { SKILL_REQUEST_MAX_BYTES, validateRepositorySkillChange, verifyRepositor
 import { draftMission, draftRequest, repositorySnapshot } from './mission-draft';
 import { handleIssues } from './issues';
 import { releaseApi } from './releases';
-import { modelConnectionsSnapshot, modelIdentifier, resolveModelConnection, validateModelConnection, verifyModelConnection } from './model-config';
+import { effectiveDefaultModel, modelConnectionsSnapshot, modelIdentifier, resolveModelConnection, validateModelConnection, verifyModelConnection } from './model-config';
 import { aiKeyProvider, aiKeysSnapshot, assertModelAccess, assertWorkspaceAi, createModelAccess, encryptAiGateway, encryptAiKey, ownGatewayInput, providerKey, reserveOperatorUsage, storedOwnGateway, storedProviderKey, verificationModel, verifyProviderKey, type AiCredentials } from './ai-keys';
 import { IMPORT_REQUEST_MAX_BYTES, RepositoryImportFailure, buildImportPack, importFingerprint, inspectRepositoryImport, parseImportArchive, pushRepositoryImport, validateImportInput } from './repository-import';
 import { handleGitRequest, listBranches, type GitHttpDependencies } from './git-http';
@@ -363,7 +363,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId));
   if (request.method === 'GET' && url.pathname === '/api/models') {
     await access.authorizeMetadata(principal);
-    return Response.json(modelConnectionsSnapshot(env, await coordinatorRead('getModelConnections', () => catalog.getModelConnections())));
+    const [models, defaultModel] = await Promise.all([coordinatorRead('getModelConnections', () => catalog.getModelConnections()), catalog.getDefaultModel()]);
+    return Response.json(modelConnectionsSnapshot(env, models, defaultModel));
   }
   if (url.pathname === '/api/settings/ai') {
     if (request.method === 'GET') { await access.authorizeMetadata(principal); return Response.json(await aiSettings(env, catalog)); }
@@ -382,13 +383,14 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     assertMutationOrigin(request);
     await access.authorize(principal, 'manage');
     const key = requireIdempotencyKey(request), body = await readJson(request);
+    if (body.action === 'default') return Response.json(modelConnectionsSnapshot(env, await catalog.setDefaultModel(modelIdentifier(body.modelId)), await catalog.getDefaultModel()));
     if (body.action !== 'remove') await requireAi(env, catalog);
-    if (!['add', 'remove', 'verify'].includes(String(body.action))) throw new ApiError(400, 'INVALID_MODEL_ACTION', 'Choose add, remove or verify.');
+    if (!['add', 'remove', 'verify'].includes(String(body.action))) throw new ApiError(400, 'INVALID_MODEL_ACTION', 'Choose add, remove, verify or default.');
     const model = body.action === 'add' ? validateModelConnection(body.model) : undefined;
     const modelId = model?.id ?? modelIdentifier(body.modelId);
     const fingerprint = JSON.stringify(['model', body.action, model ?? modelId]);
     const receipt = await catalog.getModelRequest(key, fingerprint);
-    if (receipt?.result) return Response.json(modelConnectionsSnapshot(env, receipt.result));
+    if (receipt?.result) return Response.json(modelConnectionsSnapshot(env, receipt.result, await catalog.getDefaultModel()));
     if (receipt) throw new ApiError(409, 'MODEL_REQUEST_PENDING', 'This model verification is running or interrupted. An unconfirmed billed call will not be repeated.');
     if (body.action === 'verify') {
       const configured = resolveModelConnection(await coordinatorRead('getModelConnections', () => catalog.getModelConnections()), modelId);
@@ -397,9 +399,9 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       const credentials = await aiCredentials(catalog);
       assertModelAccess(env, principal.workspaceId, credentials, [configured]);
       const verified = await verifyModelConnection({ ...env, modelAccess: createModelAccess(env, principal.workspaceId, { getAiCredentials: () => aiCredentials(catalog) }) }, configured);
-      return Response.json(modelConnectionsSnapshot(env, await catalog.completeModelVerification(key, fingerprint, verified)));
+      return Response.json(modelConnectionsSnapshot(env, await catalog.completeModelVerification(key, fingerprint, verified), await catalog.getDefaultModel()));
     }
-    return Response.json(modelConnectionsSnapshot(env, await catalog.changeModelConnections(key, fingerprint, body.action as 'add' | 'remove', model ?? modelId)));
+    return Response.json(modelConnectionsSnapshot(env, await catalog.changeModelConnections(key, fingerprint, body.action as 'add' | 'remove', model ?? modelId), await catalog.getDefaultModel()));
   }
   if (request.method === 'GET' && url.pathname === '/api/ai-keys') {
     await access.authorizeMetadata(principal);
@@ -795,7 +797,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     await access.authorize(principal, 'contribute', 'repository', input.repositoryId);
     await currentRepository(env, repository);
     const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${input.repositoryId}`);
-    const mission = await coordinator.createMission(key, input, { principal, workspaceId: principal.workspaceId, creatorId: principal.userId }, await coordinatorRead('getModelConnections', () => catalog.getModelConnections()));
+    const [models, storedDefault] = await Promise.all([coordinatorRead('getModelConnections', () => catalog.getModelConnections()), catalog.getDefaultModel()]);
+    const mission = await coordinator.createMission(key, input, { principal, workspaceId: principal.workspaceId, creatorId: principal.userId }, models, effectiveDefaultModel(models, storedDefault));
     return Response.json(mission, { status: 201 });
   }
   if (match?.[2] === 'retry-checks') {

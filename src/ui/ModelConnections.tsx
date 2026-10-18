@@ -1,69 +1,114 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@cloudflare/kumo/components/button';
+import { Dialog } from '@cloudflare/kumo/components/dialog';
 import { Input } from '@cloudflare/kumo/components/input';
-import { ArrowClockwiseIcon, ArrowLeftIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react';
-import type { ModelConnection, ModelConnectionsSnapshot } from '../shared/types';
+import { CloudIcon, KeyIcon, PlusIcon, TrashIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
+import type { AiKeysSnapshot, ModelConnection, ModelConnectionsSnapshot } from '../shared/types';
 import { request } from './api';
-import './model-connections.css';
-import { RouteProgress } from "./WorkspaceLoader";
-import AiKeys from './AiKeys';
+import { RouteProgress } from './WorkspaceLoader';
+import { OwnGatewayDialog, ProviderKeysDialog } from './AiKeys';
 import DemoFeaturePanel, { demoOf } from './DemoFeaturePanel';
 import type { DemoMarked } from '../shared/demo-features';
+import { inferenceRoute, modelStatus, STATUS_LABELS } from './models-data';
+import './model-connections.css';
 
-const transportLabels = { responses: 'OpenAI Responses', chat: 'Compatible chat', anthropic: 'Anthropic Messages', 'workers-ai': 'Workers AI function calling' };
+type Dialogs = 'keys' | 'gateway' | 'model' | null;
 
 export default function ModelConnections({ canManage }: { canManage: boolean }) {
   const [snapshot, setSnapshot] = useState<(ModelConnectionsSnapshot & DemoMarked) | null>(null);
-  const [busy, setBusy] = useState('load');
+  const [keys, setKeys] = useState<AiKeysSnapshot | null>(null);
+  const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [id, setId] = useState('');
-  const [label, setLabel] = useState('');
-  const [protocol, setProtocol] = useState<'responses' | 'chat' | 'anthropic'>('chat');
-  const [refresh, setRefresh] = useState(0);
+  const [dialog, setDialog] = useState<Dialogs>(null);
 
   useEffect(() => {
     let active = true;
-    setBusy('load'); setError(''); setSnapshot(null);
-    void request<ModelConnectionsSnapshot>('/api/models').then(value => { if (active) setSnapshot(value); }).catch(failure => { if (active) setError(failure instanceof Error ? failure.message : 'Model connections could not be loaded.'); }).finally(() => { if (active) setBusy(''); });
+    void request<ModelConnectionsSnapshot>('/api/models').then(value => { if (active) setSnapshot(value); }).catch(failure => { if (active) setError(failure instanceof Error ? failure.message : 'Models could not be loaded.'); });
+    void request<AiKeysSnapshot>('/api/ai-keys').then(value => { if (active) setKeys(value); }).catch(() => {});
     return () => { active = false; };
-  }, [refresh]);
+  }, []);
 
-  async function action(body: unknown, key: string) {
-    if (!canManage || busy) return;
+  async function action(body: Record<string, unknown>, key: string, done: string) {
+    if (!canManage || busy) return false;
     setBusy(key); setError(''); setNotice('');
     try {
       const result = await request<ModelConnectionsSnapshot>('/api/models/action', body);
       setSnapshot(result);
-      if (key.startsWith('verify:')) {
-        const model = result.models.find(value => value.id === key.slice(7));
-        setNotice(model?.verification?.detail ?? 'Connection check completed.');
-      } else setNotice('Model connections saved.');
+      setNotice(body.action === 'verify' ? result.models.find(model => model.id === body.modelId)?.verification?.detail ?? done : done);
       return true;
-    } catch (failure) { setError(failure instanceof Error ? failure.message : 'The model action could not be completed.'); }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'The change could not be saved.'); return false; }
     finally { setBusy(''); }
-    return false;
   }
 
-  async function addGateway(event: FormEvent) {
-    event.preventDefault();
-    if (await action({ action: 'add', model: { id: id.trim(), label: label.trim(), source: 'gateway', protocol } }, 'add')) { setId(''); setLabel(''); }
-  }
-
-  return <section className="model-connections">
-    <a className="header-back" href="/settings"><ArrowLeftIcon size={13} />Settings</a>
-    <div className="page-heading"><div><h1>AI models</h1><p>Choose the models your workspace can assign to coding agents.</p></div><Button variant="secondary" size="base" icon={ArrowClockwiseIcon} disabled={!!busy} onClick={() => setRefresh(value => value + 1)}>Refresh</Button></div>
+  const demo = demoOf(snapshot);
+  const route = inferenceRoute(keys);
+  return <>
+    <div className="page-heading"><div><h1>AI models</h1><p>The models your agents can use. New missions start with the default.</p></div></div>
     {error && <div className="error-notice" role="alert">{error}</div>}
     {notice && <p className="models-notice" role="status">{notice}</p>}
-    {busy === 'load' && <RouteProgress />}
-    <AiKeys canManage={canManage} />
-    {snapshot && demoOf(snapshot) ? <DemoFeaturePanel demo={demoOf(snapshot)} examples={snapshot.examples} /> : snapshot && <>
-      <section className="panel"><div className="panel-header"><h2>Connection</h2><span>{snapshot.gateway.configured ? 'Configured' : 'Setup required'}</span></div><div className="panel-body models-connection"><dl><div><dt>AI Gateway</dt><dd>{snapshot.gateway.id ?? 'Not configured'}</dd></div><div><dt>Workers AI binding</dt><dd>{snapshot.workersAI.enabled ? 'Enabled' : 'Not enabled'}</dd></div></dl><p>All inference runs through AI Gateway: this deployment’s gateway, or your own if you connect one above. Workspace AI keys are sent as the provider credential on each gateway request; without one, operator-funded workspaces use the gateway’s stored default BYOK key. Unified Billing fallback is blocked. Workers AI uses the deployment account’s billing.</p><p>Model discovery is manual. Adding an identifier records your configuration; verification sends one small inference request. A successful check confirms text inference, while coding and tool use need a real Mission run.</p></div></section>
-      <section className="panel"><div className="panel-header"><h2>Available models</h2><span>{snapshot.models.length} configured</span></div><div className="models-list">{snapshot.models.length ? snapshot.models.map(model => <div className="models-item" key={model.id}><div className="models-identity"><strong>{model.label}</strong><code>{model.id}</code><span>{model.source === 'workers-ai' ? 'Cloudflare hosted' : 'AI Gateway'} · {transportLabels[model.protocol]}</span>{model.verification ? <p className={model.verification.status === 'failed' ? 'models-failed' : ''}>{model.verification.status === 'verified' ? 'Inference verified' : 'Verification failed'} · {new Date(model.verification.checkedAt).toLocaleString()}</p> : <p>Configured · Inference not yet verified</p>}</div>{canManage && <div className="models-actions"><Button variant="secondary" size="base" disabled={!!busy || !snapshot.gateway.configured} loading={busy === `verify:${model.id}`} onClick={() => void action({ action: 'verify', modelId: model.id }, `verify:${model.id}`)}>Verify</Button><Button variant="ghost" size="base" icon={TrashIcon} disabled={!!busy} aria-label={`Remove ${model.label}`} onClick={() => void action({ action: 'remove', modelId: model.id }, `remove:${model.id}`)}>Remove</Button></div>}</div>) : <p className="panel-body">No models are enabled. A workspace owner can add a model below.</p>}</div></section>
-      {!canManage ? <p>Workspace owners manage model connections. You can select enabled models when creating a proposal.</p> : <>
-        <section className="panel"><div className="panel-header"><h2>Add an AI Gateway model</h2></div><form className="panel-body models-form" onSubmit={event => void addGateway(event)}><p>Add a model configured in your Gateway. Compatible chat requires the provider to accept the chat and tool schema. OpenAI Responses supports OpenAI model identifiers. Claude models use Anthropic Messages. Native Gemini transport is not implemented.</p><div className="form-field"><label htmlFor="model-label">Display name</label><Input id="model-label" value={label} required maxLength={80} disabled={!!busy} placeholder="My coding model" onChange={event => setLabel(event.target.value)} /></div><div className="form-field"><label htmlFor="model-id">Model identifier</label><Input id="model-id" value={id} required maxLength={200} disabled={!!busy} placeholder="provider/model" onChange={event => setId(event.target.value)} /><small>Use the exact provider/model identifier. URLs and API keys are not accepted.</small></div><div className="form-field"><label htmlFor="model-transport">Transport</label><select id="model-transport" value={protocol} disabled={!!busy} onChange={event => setProtocol(event.target.value as 'responses' | 'chat' | 'anthropic')}><option value="chat">Compatible chat</option><option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option></select></div><div><Button type="submit" variant="primary" size="base" icon={PlusIcon} disabled={!!busy || !snapshot.gateway.configured} loading={busy === 'add'}>Add model</Button></div></form></section>
-        <section className="panel"><div className="panel-header"><h2>Connect Workers AI</h2></div><div className="panel-body"><p>Enable a Cloudflare-hosted model with documented function calling. Workers AI inference and billing must be available for this deployment’s account.</p>{snapshot.workersAICatalog.map((model: ModelConnection) => <div className="models-workers-option" key={model.id}><div><strong>{model.label}</strong><code>{model.id}</code><a href="https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/" target="_blank" rel="noreferrer">Model documentation</a></div><Button variant="secondary" size="base" disabled={!!busy || !snapshot.gateway.configured || !snapshot.workersAI.enabled || snapshot.models.some(entry => entry.id === model.id)} onClick={() => void action({ action: 'add', model }, `add:${model.id}`)}>{snapshot.models.some(entry => entry.id === model.id) ? 'Enabled' : 'Enable model'}</Button></div>)}</div></section>
-      </>}
+    {!snapshot ? !error && <RouteProgress /> : demo ? <DemoFeaturePanel demo={demo} examples={snapshot.examples} /> : <>
+      {route && <p className={`models-route models-route-${route.tone}`}>{route.tone === 'warn' ? <WarningCircleIcon size={16} aria-hidden="true" /> : <CloudIcon size={16} aria-hidden="true" />}{route.text}</p>}
+      <section className="panel">
+        <div className="panel-header"><h2>Models</h2><span className="number-tag">{snapshot.models.length}</span></div>
+        {snapshot.models.length ? <fieldset className="models-choices" disabled={!canManage || !!busy}>
+          <legend className="sr-only">Default for missions</legend>
+          {snapshot.models.map(model => <ModelRow key={model.id} model={model} status={modelStatus(model, keys, snapshot)} isDefault={snapshot.defaultModel === model.id} canManage={canManage} busy={busy}
+            onDefault={() => void action({ action: 'default', modelId: model.id }, `default:${model.id}`, `${model.label} is the default for new missions.`)}
+            onVerify={() => void action({ action: 'verify', modelId: model.id }, `verify:${model.id}`, 'Check finished.')}
+            onRemove={() => void action({ action: 'remove', modelId: model.id }, `remove:${model.id}`, `${model.label} removed.`)} />)}
+        </fieldset> : <div className="panel-body"><p className="people-muted">No models are available. {canManage ? 'Add one below.' : 'Ask an Owner to add one.'}</p></div>}
+        <div className="panel-body"><p className="people-muted">Each agent keeps the model it started with. {canManage ? 'Choosing a default changes only new missions.' : 'Owners choose the models and the default.'}</p></div>
+      </section>
+      {canManage && <div className="models-more">
+        {keys && <Button variant="secondary" size="base" icon={KeyIcon} onClick={() => setDialog('keys')}>{keys.keys.length ? `Provider keys (${keys.keys.length})` : 'Add a provider key'}</Button>}
+        {keys && <Button variant="secondary" size="base" icon={CloudIcon} onClick={() => setDialog('gateway')}>{keys.gateway ? 'Your AI Gateway' : 'Use your own AI Gateway'}</Button>}
+        <Button variant="secondary" size="base" icon={PlusIcon} onClick={() => setDialog('model')}>Add another model</Button>
+      </div>}
+      {keys && <ProviderKeysDialog open={dialog === 'keys'} snapshot={keys} onClose={() => setDialog(null)} onChanged={setKeys} />}
+      {keys && <OwnGatewayDialog open={dialog === 'gateway'} snapshot={keys} onClose={() => setDialog(null)} onChanged={setKeys} />}
+      <AddModelDialog open={dialog === 'model'} snapshot={snapshot} onClose={() => setDialog(null)} onAdd={async (model, key) => { const ok = await action({ action: 'add', model }, key, `${model.label} added.`); if (ok) setDialog(null); return ok; }} busy={busy} error={error} />
     </>}
-  </section>;
+  </>;
+}
+
+function ModelRow({ model, status, isDefault, canManage, busy, onDefault, onVerify, onRemove }: { model: ModelConnection; status: ReturnType<typeof modelStatus>; isDefault: boolean; canManage: boolean; busy: string; onDefault: () => void; onVerify: () => void; onRemove: () => void }) {
+  return <div className="models-choice">
+    {canManage ? <input type="radio" name="default-model" id={`default-${model.id}`} checked={isDefault} onChange={onDefault} aria-describedby={`status-${model.id}`} /> : <span className="models-radio-placeholder" aria-hidden="true" />}
+    <label htmlFor={`default-${model.id}`} className="models-choice-name"><strong>{model.label}</strong>{isDefault && <span className="people-tag">Default for missions</span>}<small>{model.source === 'workers-ai' ? 'Workers AI' : model.id}</small></label>
+    <span id={`status-${model.id}`} className={`models-status models-status-${status}`}>{STATUS_LABELS[status]}</span>
+    {canManage && <span className="models-row-actions">
+      {(status === 'unverified' || status === 'failed') && <Button variant="ghost" size="sm" loading={busy === `verify:${model.id}`} disabled={!!busy} onClick={onVerify}>Verify</Button>}
+      {!isDefault && <Button variant="ghost" size="sm" shape="square" icon={TrashIcon} aria-label={`Remove ${model.label}`} loading={busy === `remove:${model.id}`} disabled={!!busy} onClick={onRemove} />}
+    </span>}
+  </div>;
+}
+
+function AddModelDialog({ open, snapshot, busy, error, onClose, onAdd }: { open: boolean; snapshot: ModelConnectionsSnapshot; busy: string; error: string; onClose: () => void; onAdd: (model: ModelConnection, key: string) => Promise<boolean> }) {
+  const [kind, setKind] = useState<'gateway' | 'workers-ai'>('gateway');
+  const [label, setLabel] = useState('');
+  const [id, setId] = useState('');
+  const [protocol, setProtocol] = useState<'responses' | 'chat' | 'anthropic'>('chat');
+  useEffect(() => { if (open) { setLabel(''); setId(''); setKind('gateway'); } }, [open]);
+  useEffect(() => { if (id.startsWith('anthropic/')) setProtocol('anthropic'); else if (id.startsWith('openai/')) setProtocol('responses'); }, [id]);
+  const workers = snapshot.workersAI.enabled ? snapshot.workersAICatalog.filter(model => !snapshot.models.some(entry => entry.id === model.id)) : [];
+  async function submit(event: FormEvent) { event.preventDefault(); await onAdd({ id: id.trim(), label: label.trim(), source: 'gateway', protocol }, 'add'); }
+  return <Dialog.Root open={open} onOpenChange={value => { if (!value && !busy) onClose(); }}>
+    <Dialog size="lg" className="dialog-content">
+      <div className="dialog-title-row"><Dialog.Title className="dialog-title">Add another model</Dialog.Title><Button variant="ghost" size="base" shape="square" icon={XIcon} aria-label="Close dialog" disabled={!!busy} onClick={onClose} /></div>
+      <Dialog.Description className="dialog-description">Add a model your AI Gateway can reach{workers.length ? ', or a Cloudflare-hosted Workers AI model' : ''}.</Dialog.Description>
+      {workers.length > 0 && <div className="models-kind" role="radiogroup" aria-label="Model source">
+        <label><input type="radio" name="model-kind" checked={kind === 'gateway'} onChange={() => setKind('gateway')} />Through AI Gateway</label>
+        <label><input type="radio" name="model-kind" checked={kind === 'workers-ai'} onChange={() => setKind('workers-ai')} />Workers AI</label>
+      </div>}
+      {kind === 'workers-ai' ? <ul className="models-dialog-list">{workers.map(model => <li key={model.id}><div><strong>{model.label}</strong><small>{model.id}</small></div><Button variant="secondary" size="sm" loading={busy === `add:${model.id}`} disabled={!!busy} onClick={() => void onAdd(model, `add:${model.id}`)}>Add</Button></li>)}</ul>
+        : <form onSubmit={event => void submit(event)}>
+          <div className="form-field"><label htmlFor="model-label">Name</label><Input id="model-label" aria-label="Name" value={label} required maxLength={80} placeholder="My coding model" onChange={event => setLabel(event.target.value)} /></div>
+          <div className="form-field"><label htmlFor="model-id">Model identifier</label><Input id="model-id" aria-label="Model identifier" value={id} required maxLength={200} placeholder="provider/model" onChange={event => setId(event.target.value)} /><small>As your AI Gateway names it, for example mistral/codestral-latest.</small></div>
+          <div className="form-field"><label htmlFor="model-transport">API format</label><select id="model-transport" value={protocol} onChange={event => setProtocol(event.target.value as 'responses' | 'chat' | 'anthropic')}><option value="chat">Chat completions (most providers)</option><option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option></select></div>
+          {error && <div className="form-error" role="alert">{error}</div>}
+          <div className="dialog-actions"><Button variant="secondary" size="base" type="button" disabled={!!busy} onClick={onClose}>Cancel</Button><Button variant="primary" size="base" type="submit" loading={busy === 'add'} disabled={!id.trim() || !label.trim()}>Add model</Button></div>
+        </form>}
+    </Dialog>
+  </Dialog.Root>;
 }
