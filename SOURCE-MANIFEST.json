@@ -90,13 +90,13 @@
     },
     {
       "path": "public/boot-loader.css",
-      "size": 73995,
-      "sha256": "4081b5efe2d4443afc25ae6a1adb6a0773f666dd9fe0b0567cb93fdbb69aef74"
+      "size": 74218,
+      "sha256": "927eef80b978b5c6781dd6667e407f0de3e365ee88455ef25135a9497b99a2dc"
     },
     {
       "path": "public/boot-loader.js",
-      "size": 3269,
-      "sha256": "f41a8c019f2ee342358e69b0359a559584cf42e0d08c1c56323959f7fdb6e364"
+      "size": 4193,
+      "sha256": "953a38f59e8491cc23b9a052b563e7619d10f03dc7d52ec1ea70f3b03eb7145c"
     },
     {
       "path": "public/favicon.svg",
@@ -475,8 +475,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 53325,
-      "sha256": "852a8fccf198ad101b4c661986912fd4302bcb6acbcb3540f8618aff26651769"
+      "size": 53915,
+      "sha256": "26817208737c701777e43c068ae9eef11d86aeaf48609afa2ef2177a7f74a68c"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -600,8 +600,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 63464,
-      "sha256": "ea4780e8b6e1169983bc42970e298bc8fef7b05ca34507558b71bd296e191410"
+      "size": 63686,
+      "sha256": "fd29d67e798207e651215c2560da10f6d22285608c228443529f27495a3430c9"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -920,8 +920,8 @@
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 105503,
-      "sha256": "033ce94a05ca03628e1dfe6381d41fa90dd9799e92dcd63422712c64f37d29b8"
+      "size": 105538,
+      "sha256": "46e43b51f8fc2dc6e7a252db52e9cc6f738c7cd5ebaefadcc625927990631f87"
     },
     {
       "path": "src/worker/d1-migrations.ts",

@@ -764,6 +764,7 @@ export default function MissionDetail({
               icon={ShieldCheckIcon}
               loading={busy === "approve"}
               disabled={!!busy || !permissions.includes("review") || (dependencyGate && !dependenciesAcknowledged)}
+              title={!permissions.includes("review") ? "You need the Reviewer role or higher to approve." : dependencyGate && !dependenciesAcknowledged ? "Tick “I approve these dependency changes” first." : undefined}
               onClick={() => setConfirming("approve")}
             >
               Approve candidate

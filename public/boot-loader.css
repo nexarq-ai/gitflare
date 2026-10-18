@@ -34,6 +34,14 @@ main.workspace-loading-screen {
   -webkit-font-smoothing: antialiased;
 }
 
+html[data-gf-theme='light'] main.workspace-loading-screen {
+  --workspace-loader-bg: #ffffff;
+  --workspace-loader-text: #18212f;
+  --workspace-loader-muted: #4d596b;
+  --workspace-loader-border: rgba(24, 33, 47, .12);
+}
+
+
 :root[data-theme="light"] .workspace-loading-screen {
   --workspace-loader-bg: var(--gf-color-bg, #fff);
   --workspace-loader-text: var(--gf-color-text, #18212f);
