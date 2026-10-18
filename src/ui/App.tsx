@@ -450,7 +450,7 @@ function Workspace() {
   ];
 
   return (
-    <div className="app-shell">
+    <>{authConfig.demo && <DemoBanner resetsDaily={authConfig.demo.resetsDaily} />}<div className={authConfig.demo ? "app-shell app-shell-demo" : "app-shell"}>
       <a
         className="skip-link"
         href="#main-content"
@@ -561,7 +561,6 @@ function Workspace() {
         </header>
         {routePending && <RouteProgress />}
         <main className="page-content" id="main-content" tabIndex={-1}>
-          {authConfig.demo && <DemoBanner resetsDaily={authConfig.demo.resetsDaily} />}
           {error && (
             <ErrorNotice message={error} onRetry={() => void refresh()} />
           )}
@@ -1159,7 +1158,7 @@ function Workspace() {
           </button>
         </div>
       )}
-    </div>
+    </div></>
   );
 }
 
