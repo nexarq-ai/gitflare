@@ -942,25 +942,12 @@ export default function MissionDetail({
           </div>
         </section>
       )}
-      <div className="repository-work-meta">
-        <span>
-          Base{" "}
-          <code title={mission.baseSha ?? undefined}>
-            {mission.baseSha?.slice(0, 12) || "Assigned at start"}
-          </code>
-        </span>
-        <span>
-          Candidate{" "}
-          <code title={mission.candidateSha ?? undefined}>
-            {mission.candidateSha || "No candidate yet"}
-          </code>
-        </span>
-        <span>Attempt {mission.epoch}</span>
-        <span>
-          {mission.runs.length}{" "}
-          {mission.skillChange ? "trusted skill edit" : `${mission.epoch === 0 ? "planned" : "isolated"} agent ${mission.runs.length === 1 ? "task" : "tasks"}`}
-        </span>
-      </div>
+      <dl className="mission-meta">
+        <div><dt>Base</dt><dd>{mission.baseSha ? <code title={mission.baseSha}>{mission.baseSha.slice(0, 7)}</code> : "Set at start"}</dd></div>
+        <div><dt>Candidate</dt><dd>{mission.candidateSha ? <code title={mission.candidateSha}>{mission.candidateSha.slice(0, 7)}</code> : "None yet"}</dd></div>
+        {mission.epoch > 0 && <div><dt>Attempt</dt><dd>{mission.epoch}</dd></div>}
+        <div><dt>{mission.skillChange ? "Skill edit" : "Agents"}</dt><dd>{mission.skillChange ? "Trusted" : `${mission.runs.length} ${mission.epoch === 0 ? "planned" : "isolated"}`}</dd></div>
+      </dl>
       <div className="page-tabs">
         <Tabs
           variant="underline"
