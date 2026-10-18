@@ -265,7 +265,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     if (action === 'credential-create') { const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)); if (!await catalog.getRepository(String(body.repositoryId))) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'Select a repository in this workspace.'); }
     const result = await access.action(principal, action, body);
     if (action === 'session-revoke' && typeof body.id === 'string') await revokeClientGrants(env, url.origin, application, authorize, principal.userId, body.id);
-    if (action === 'invite' && result && typeof result === 'object' && 'token' in result && typeof result.token === 'string') { const delivery = await deliverInvitation(env, { email: String(body.email), token: result.token, workspaceName: await workspaceName(env, access, principal), origin: url.origin }); return Response.json({ ...result, delivery }); }
+    if (action === 'invite' && result && typeof result === 'object' && 'token' in result && typeof result.token === 'string') { const delivery = await deliverInvitation(env, { email: String(body.email), token: result.token, workspaceName: await workspaceName(env, access, principal), origin: url.origin, role: typeof body.role === 'string' ? body.role : undefined }); return Response.json({ ...result, delivery }); }
     return Response.json(result);
   }
   if (request.method === 'GET' && url.pathname === '/api/docs') return Response.json({ items: listDocs() });
