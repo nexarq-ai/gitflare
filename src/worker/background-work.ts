@@ -257,7 +257,7 @@ export async function deployLandedWorker(env: AppEnv, params: DeployParams, step
     changedPaths: async (repository, record) => {
       if (!env.ARTIFACTS || !record.baseSha || !record.commitSha) return null;
       using source = await env.ARTIFACTS.get(repository.name);
-      return changedPaths(source, record.baseSha, record.commitSha);
+      return await changedPaths(source, record.baseSha, record.commitSha);
     },
     mappedWorkers: async (principal, repositoryId) => {
       const { mapping } = await access.projectStore(principal, repositoryId, 'get') as ProjectSnapshot;

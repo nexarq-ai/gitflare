@@ -188,14 +188,14 @@ async function browseRepository(env: AppEnv, repository: Repository, kind: strin
   const path = repositoryPath(url.searchParams.get('path') ?? '', kind === 'tree');
   using source = await env.ARTIFACTS.get(repository.name);
   const commit = (await source.log({ ref, limit: 1 }))[0];
-  if (commit) return sourceView(source, commit, kind, path, ref);
+  if (commit) return await sourceView(source, commit, kind, path, ref);
   const fullSha = /^[a-f0-9]{40}$/.test(ref);
   const candidate = fullSha && candidates ? await candidates.find(ref) : undefined;
   if (candidate) {
     await candidates!.authorize(candidate.missionId);
     using fork = candidate.forkName ? await openFork(env, candidate.forkName) : null;
     const held = fork ? (await fork.log({ ref, limit: 1 }).catch(() => []))[0] : undefined;
-    if (fork && held?.hash === ref) return sourceView(fork, held, kind, path, ref, candidate.missionId);
+    if (fork && held?.hash === ref) return await sourceView(fork, held, kind, path, ref, candidate.missionId);
     throw new ApiError(404, 'MISSION_CANDIDATE_UNAVAILABLE', `Commit ${ref.slice(0, 12)} is a candidate of mission ${candidate.missionId}, and the fork that held it can no longer be read. This commit is a mission candidate; use gitflare_inspect_mission view changes (GET /api/missions/${candidate.missionId}) to read its diff.`);
   }
   if (fullSha) throw new ApiError(404, 'REF_NOT_FOUND', `Commit ${ref.slice(0, 12)} is not in this repository or in any of its mission candidates. Pass a branch, tag or a commit from gitflare_inspect_mission.`);

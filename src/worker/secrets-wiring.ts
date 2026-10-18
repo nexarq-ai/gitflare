@@ -35,7 +35,7 @@ async function headRequirements(env: AppEnv, repository: Repository, settings: D
   const head = await repositoryHead(env.ARTIFACTS, repository.name, repository.defaultBranch);
   if (!head) return { requirements: [], errors: [] };
   using source = await env.ARTIFACTS.get(repository.name);
-  return repositorySecretRequirements(targets, async (path) => {
+  return await repositorySecretRequirements(targets, async (path) => {
     const file = await source.readFile({ ref: head, path });
     return !file || file.size > DETECT_FILE_MAX_BYTES ? null : file.text();
   });

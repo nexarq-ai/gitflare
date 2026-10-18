@@ -705,8 +705,8 @@
     },
     {
       "path": "src/worker/background-work.ts",
-      "size": 27915,
-      "sha256": "801207418fafdc75f0b9af6d350c7ffb4a17b0a4e58f5b7af3a3b9894581252c"
+      "size": 27921,
+      "sha256": "7f6da855d3bc5b96652d5dba703dd43242d4d7b6519012ad7347946c7dee5d22"
     },
     {
       "path": "src/worker/branch-protection.ts",
@@ -915,8 +915,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 88913,
-      "sha256": "3133f843edbbcc62d49dcd58d12f90e20c4018200d91fc4bd39c7683663c40ff"
+      "size": 88925,
+      "sha256": "c82581ca000ec4747c5d7045c8b40b75207d1256768ed04a318bb82e6c4a6759"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -1075,8 +1075,8 @@
     },
     {
       "path": "src/worker/secrets-wiring.ts",
-      "size": 5020,
-      "sha256": "38910371e573ea26fd3b5c2f4c07320a30b632a14a44287c80de698a5449de76"
+      "size": 5026,
+      "sha256": "df0b964975820fd2e3393eb16e4185000465b14f65ef7a64c2b4be0968eb427a"
     },
     {
       "path": "src/worker/security.ts",
