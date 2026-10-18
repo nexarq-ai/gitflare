@@ -14,7 +14,7 @@ Gitflare reads your identity once, then revokes the token at Cloudflare. It is n
 
 ## Connecting an account
 
-An Owner connects an account in **Settings → Cloudflare**, or for one repository in its **Cloudflare** tab. Before Gitflare sends you to Cloudflare, it lists each permission it will request and why. The list comes from the same configuration as the authorization request, so it always matches what Cloudflare shows. MCP clients get the same list from `gitflare_cloudflare_connection` with `status` or `connect`.
+An Owner connects an account in **Settings → Cloudflare**, or for one repository in its **Cloudflare** tab. Before Gitflare sends you to Cloudflare, it lists each permission it will request and why. The list comes from the same configuration as the authorization request, so it always matches what Cloudflare shows. MCP clients get the same list from `gitflare_cloudflare_connection` `status` or `gitflare_manage_cloudflare_connection` `connect`.
 
 Every installation requests these:
 
