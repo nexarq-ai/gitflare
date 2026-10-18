@@ -23,13 +23,13 @@ export function accessScopeState(env: AccessScopeEnv, granted: string[] | null):
   return { requested: scopes.length > 0, granted: scopes.length > 0 && !!granted && missing.length === 0, scopes, missing };
 }
 
-export function assertAccessScope(env: AccessScopeEnv, granted: string[] | null): void {
+export function assertAccessScope(env: AccessScopeEnv, granted: string[] | null, unchanged = 'Preview access'): void {
   const state = accessScopeState(env, granted);
   if (state.granted) return;
   const detail = !state.requested
     ? 'This installation does not request a Cloudflare Access scope (CLOUDFLARE_ACCESS_SCOPES is not set).'
     : !granted ? 'Connect Cloudflare for this repository or workspace first.' : `The Cloudflare connection was not granted ${state.missing.join(', ')}; an Owner must reconnect Cloudflare.`;
-  throw new ApiError(409, 'CLOUDFLARE_ACCESS_SCOPE_MISSING', `${ACCESS_SCOPE_MISSING_MESSAGE}. ${detail} Preview access stays unchanged.`);
+  throw new ApiError(409, 'CLOUDFLARE_ACCESS_SCOPE_MISSING', `${ACCESS_SCOPE_MISSING_MESSAGE}. ${detail} ${unchanged} stays unchanged.`);
 }
 
 export function previewAccessDomain(workerName: string, subdomain: string): string {

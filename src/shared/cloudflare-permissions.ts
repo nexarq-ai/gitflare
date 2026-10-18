@@ -27,7 +27,7 @@ export const CLOUDFLARE_PERMISSIONS: Readonly<Record<string, Entry>> = {
   'secrets-store.write': { name: 'Secrets Store Write', group: 'Secrets', reason: 'Create or rotate a secret you enter and bind linked secrets to your deployed Workers.' },
 };
 
-const ACCESS_ENTRY: Entry = { name: 'Access: Apps and Policies Edit', group: 'Preview access', reason: 'Put Cloudflare Access in front of Worker previews when a repository chooses it.' };
+const ACCESS_ENTRY: Entry = { name: 'Access: Apps and Policies Edit', group: 'Preview access', reason: 'Put Cloudflare Access in front of Worker previews and deploy environments when an Owner chooses it.' };
 
 export function describeCloudflareScopes(scopes: string[], accessScopes: string[] = []): CloudflarePermission[] {
   return [...new Set(scopes)].map(scope => ({ scope, ...(CLOUDFLARE_PERMISSIONS[scope] ?? (accessScopes.includes(scope) ? ACCESS_ENTRY : { name: scope, group: 'Other', reason: 'Requested by this installation’s configuration. Ask its operator what it is used for.' })) }));

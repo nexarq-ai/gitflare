@@ -6,6 +6,7 @@ import { repositoryLabel } from '../shared/repository-names';
 import type { AppEnv } from './env';
 import type { ExecutionResult } from './execution';
 import { SqlStore } from './store';
+import { assertDemoMode, DemoControlBook, type DemoControlState, type DemoCurrent } from './demo';
 import { SecretLinkBook, type SecretLink, type SecretReceipt } from './repository-secrets';
 import { securityClient, type Principal } from './security';
 import { needsPacking, packMission, summarizeMission, unpackMission, type BlobStore } from './mission-storage';
@@ -20,6 +21,7 @@ import { capacityError, catalogName, liveSlots, MISSION_SLOT_GRACE_MS, slotKey, 
 import { missionStepTimeoutMs } from './budgets';
 import { AUTO_INCREASE_ACTOR, checkDurations, checkPlan, DURATION_SAMPLES, normalizeCheckSettings, withLearnedLimits, type CheckSettingsInput, type LearnedLimits } from './check-settings';
 import type { SavedDetection } from './deploy-detect';
+import { DeployAccessBook, type DeployAccessRecord, type DeployAccessResult } from './deploy-access';
 import { DeploymentLedger, type DeployEnvironment, type DeployEnvironmentSettings, type DeploymentRecord, type DeploymentStatus, type DeploySettings, type DeployState } from './deployments';
 import type { AiCredentials, OperatorModelGrant, OperatorUsageKind, StoredAiGateway, StoredAiKey } from './ai-keys';
 import type { PreviewD1Database } from './worker-bundle';
@@ -100,12 +102,31 @@ export async function startWithDurableDispatch(coordinator: { startMissionWithDi
 }
 
 export class GitflareCoordinator extends DurableObject<AppEnv> {
-  private readonly store: SqlStore;
+  private store: SqlStore;
 
   constructor(ctx: DurableObjectState, env: AppEnv) {
     super(ctx, env);
     this.store = new SqlStore(ctx.storage.sql);
   }
+
+  demoImport(records: [string, unknown][]): number {
+    assertDemoMode(this.env);
+    this.ctx.storage.transactionSync(() => { for (const [key, value] of records) this.store.put(key, value); });
+    return records.length;
+  }
+
+  async demoWipe(): Promise<void> {
+    assertDemoMode(this.env);
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.store = new SqlStore(this.ctx.storage.sql);
+  }
+
+  demoControl(): DemoControlState { assertDemoMode(this.env); return new DemoControlBook(this.store).state(); }
+  demoClaimReset(now: number): { generation: number; previous: DemoCurrent | null } { assertDemoMode(this.env); return this.ctx.storage.transactionSync(() => new DemoControlBook(this.store).claim(now)); }
+  demoFinishReset(current: DemoCurrent): number[] { assertDemoMode(this.env); return this.ctx.storage.transactionSync(() => new DemoControlBook(this.store).finish(current)); }
+  demoFailReset(generation: number): void { assertDemoMode(this.env); this.ctx.storage.transactionSync(() => new DemoControlBook(this.store).fail(generation)); }
+  demoCleaned(generations: number[]): void { assertDemoMode(this.env); this.ctx.storage.transactionSync(() => new DemoControlBook(this.store).cleaned(generations)); }
 
   async setAuthorization(id: string, authorization: NonNullable<Mission['authorization']>): Promise<void> {
     this.ctx.storage.transactionSync(() => { const mission = this.getMission(id); if (!mission) throw new ApiError(404, 'MISSION_NOT_FOUND', 'This Stream could not be found.'); if (mission.authorization) return; if (['queued', 'running', 'checking', 'integrating', 'integrated'].includes(mission.status)) throw new ApiError(409, 'AUTHORITY_LOCKED', 'An active Stream cannot change its execution authority.'); mission.authorization = authorization; this.saveMission(mission); });
@@ -1421,5 +1442,18 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
 
   updateDeployment(id: string, expected: DeploymentStatus[], patch: Partial<DeploymentRecord>): DeploymentRecord | null {
     return this.ctx.storage.transactionSync(() => new DeploymentLedger(this.store).update(id, expected, patch));
+  }
+
+  deployAccess(): DeployAccessRecord[] { return new DeployAccessBook(this.store).list(); }
+
+  deployAccessReceipt(key: string, fingerprint: string): DeployAccessResult | null {
+    const receipt = this.store.get<Receipt<DeployAccessResult>>(`request:${key}`);
+    if (!receipt) return null;
+    assertReplayFingerprint(receipt.fingerprint, fingerprint);
+    return receipt.result;
+  }
+
+  saveDeployAccess(key: string, fingerprint: string, environment: DeployEnvironment, record: DeployAccessRecord | null, result: DeployAccessResult): DeployAccessResult {
+    return this.mutate(key, fingerprint, () => { new DeployAccessBook(this.store).save(environment, record); return result; });
   }
 }

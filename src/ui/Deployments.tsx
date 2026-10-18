@@ -25,7 +25,9 @@ interface EnvironmentState {
   canDeploy: boolean;
   deployBlockedReason?: string;
   canConfirm?: boolean;
+  access?: AccessView;
 }
+interface AccessView { status: "protected" | "unprotected" | "error"; reason?: string; appId?: string; hostnames: string[]; includes: { emails: string[]; domains: string[]; groupId?: string } | null; created: boolean; canChange: boolean; updatedAt?: string }
 interface State { environmentOrder?: Environment[]; environments: Record<Environment, EnvironmentState>; deployments: Deployment[]; workers: { id: string; name: string; environment: string }[] }
 interface DetectedResource { type: "d1" | "r2" | "queue"; name: string; status?: "exists" | "create" | "missing" | "unknown"; needsScope?: string }
 interface DetectedTarget { workerName: string; configPath: string; buildCommand?: string; buildReasons: string[]; d1Migrations: boolean; watchPaths: string[]; dependsOn: string[]; resources: DetectedResource[]; customDomains: string[]; routes: string[]; workersDev: boolean; exists?: boolean | null; urls?: string[] }
@@ -70,6 +72,41 @@ function draftFor(environment: Environment, state: State): Settings | null {
 function WorkerUrls({ urls }: { urls?: string[] }) {
   if (!urls?.length) return null;
   return <>{urls.map((url) => <span key={url}> · <a href={url} target="_blank" rel="noreferrer">{url.replace(/^https:\/\//, "")}</a></span>)}</>;
+}
+
+const accessLabels: Record<AccessView["status"], string> = { protected: "Protected by Cloudflare Access", unprotected: "Unprotected", error: "Access error" };
+const listInput = (value: string) => value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
+
+function AccessProtection({ environment, access, busy, perform }: { environment: Environment; access: AccessView; busy: string; perform: (name: string, body: Record<string, unknown>, done: string) => Promise<void> }) {
+  const [emails, setEmails] = useState(access.includes?.emails.join("\n") ?? "");
+  const [domains, setDomains] = useState(access.includes?.domains.join("\n") ?? "");
+  const [groupId, setGroupId] = useState(access.includes?.groupId ?? "");
+  const on = access.status !== "unprotected";
+  const label = environmentLabel(environment);
+  const empty = !listInput(emails).length && !listInput(domains).length && !groupId.trim();
+  const submit = () => perform(`${environment}-access`, { action: "access", environment, enabled: true, emails: listInput(emails), domains: listInput(domains), ...(groupId.trim() ? { groupId: groupId.trim() } : {}) }, `${label} is behind Cloudflare Access.`);
+  const remove = () => window.confirm(`Remove Cloudflare Access from ${label}? Its URLs become public again.`) && perform(`${environment}-access-remove`, { action: "access", environment, enabled: false }, `Cloudflare Access protection removed from ${label}.`);
+  return (
+    <div className="cf-access" aria-label={`${label} Cloudflare Access`}>
+      <p className="cf-state"><strong>{accessLabels[access.status]}</strong>{access.hostnames.length ? ` · ${access.hostnames.join(", ")}` : ""}{access.appId ? ` · application ${access.appId.slice(0, 8)}${access.created ? "" : " (adopted)"}` : ""}</p>
+      {access.status === "error" && access.reason && <ErrorNotice message={access.reason} />}
+      {access.canChange ? (
+        <details className="cf-environment-settings">
+          <summary>{on ? "Change Cloudflare Access" : "Protect with Cloudflare Access"}</summary>
+          <div className="cf-form-row">
+            <label>Allowed emails (one per line)<textarea rows={3} value={emails} placeholder="alex@example.com" onChange={(event) => setEmails(event.target.value)} /></label>
+            <label>Allowed email domains<textarea rows={2} value={domains} placeholder="example.com" onChange={(event) => setDomains(event.target.value)} /></label>
+            <label>Access group id (optional)<input value={groupId} placeholder="Existing Zero Trust group" onChange={(event) => setGroupId(event.target.value)} /></label>
+          </div>
+          <div className="cf-actions">
+            <Button variant="primary" size="base" disabled={!!busy || empty} loading={busy === `${environment}-access`} onClick={() => void submit()}>{on ? "Update protection" : "Protect"}</Button>
+            {on && <Button variant="secondary" size="base" disabled={!!busy} loading={busy === `${environment}-access-remove`} onClick={() => void remove()}>Remove protection</Button>}
+            {empty && <span className="cf-muted">Add at least one email, domain or group.</span>}
+          </div>
+        </details>
+      ) : <p className="cf-muted">Only an Owner can change Cloudflare Access protection.</p>}
+    </div>
+  );
 }
 
 export default function Deployments({ repository, onNotify }: { repository: Repository; onNotify?: (message: string) => void }) {
@@ -230,6 +267,7 @@ export default function Deployments({ repository, onNotify }: { repository: Repo
             </div>
           </>
         )}
+        {view.access && <AccessProtection key={`${environment}-${view.access.status}-${view.access.updatedAt ?? ""}`} environment={environment} access={view.access} busy={busy} perform={perform} />}
       </section>
     );
   }

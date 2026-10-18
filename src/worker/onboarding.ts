@@ -4,6 +4,7 @@ import type { AppEnv } from './env';
 import { cloudflareSigninConfigured } from './cloudflare';
 import { handleHostedOnboarding, type AuthenticateRequest } from './hosted-onboarding';
 import { securityClient } from './security';
+import { DEMO_RESET_TIME, demoMode } from './demo';
 
 function authenticatedResponse(result: { token: string; user: unknown; workspaceId: string; recoveryCodes?: string[] }): Response {
   const { token, ...body } = result;
@@ -45,7 +46,7 @@ async function handleAccountEmail(request: Request, env: AppEnv, authenticate: A
 }
 export async function handleOnboarding(request: Request, env: AppEnv, authenticate: AuthenticateRequest, ctx?: ExecutionContext): Promise<Response | null> {
   const path = new URL(request.url).pathname; const service = securityClient(env);
-  if (path === '/api/auth/config' && request.method === 'GET') return Response.json({ ...await service.authConfig(), passwordReset: emailConfigured(env), emailVerification: env.EDITION !== 'self-hosted' && emailConfigured(env), cloudflareSignin: env.EDITION !== 'self-hosted' && cloudflareSigninConfigured(env) }, noStore);
+  if (path === '/api/auth/config' && request.method === 'GET') return Response.json({ ...await service.authConfig(), passwordReset: emailConfigured(env), emailVerification: env.EDITION !== 'self-hosted' && emailConfigured(env), cloudflareSignin: env.EDITION !== 'self-hosted' && cloudflareSigninConfigured(env), ...(demoMode(env) ? { demo: { resetsDaily: DEMO_RESET_TIME } } : {}) }, noStore);
   const account = await handleAccountEmail(request, env, authenticate, ctx);
   if (account) return account;
   if (request.method !== 'POST' || !['/api/setup/start', '/api/setup/verify', '/api/mfa/verify', '/api/mfa/enroll', '/api/users/create', '/api/invitations/register'].includes(path)) return handleHostedOnboarding(request, env, authenticate);

@@ -1,0 +1,19 @@
+.github-mirror .panel-header h2 { display: flex; align-items: center; gap: 8px; }
+.github-mirror-wide { grid-column: 1 / -1; }
+.github-mirror-wide textarea { width: 100%; font-family: var(--gf-font-mono, ui-monospace, monospace); font-size: 13px; }
+.github-mirror-heading { margin: 18px 0 6px; font-size: 14px; font-weight: 600; }
+.github-mirror-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
+.github-mirror-table { display: grid; gap: 0; margin: 8px 0 14px; border: 1px solid var(--gf-color-border); border-radius: 6px; overflow: hidden; font-size: 13px; }
+.github-mirror-row { display: grid; grid-template-columns: minmax(120px, 2fr) 90px minmax(100px, 1fr) minmax(100px, 1fr) 110px; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--gf-color-border); min-width: 0; }
+.github-mirror-row:first-child { border-top: 0; }
+.github-mirror-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.github-mirror-head { background: var(--gf-color-surface); font-weight: 600; color: var(--gf-color-text-secondary); }
+.github-mirror-detail, .github-mirror-resolve { grid-column: 1 / -1; }
+.github-mirror-detail { color: var(--gf-color-text-secondary); white-space: normal; }
+.github-mirror-resolve { display: flex; flex-wrap: wrap; gap: 8px; white-space: normal !important; overflow: visible !important; }
+.github-mirror-synced { color: var(--gf-color-success, #1a7f37); }
+.github-mirror-diverged, .github-mirror-failed { color: var(--gf-color-danger, #cf222e); font-weight: 600; }
+@media (max-width: 640px) {
+  .github-mirror-row { grid-template-columns: 1fr 1fr; }
+  .github-mirror-head { display: none; }
+}

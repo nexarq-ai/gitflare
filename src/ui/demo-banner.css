@@ -1,0 +1,4 @@
+.demo-banner { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin: 0 0 20px; padding: 12px 16px; border: 1px solid var(--gf-color-border); border-radius: 12px; background: var(--gf-color-surface-raised); font-size: 14px; line-height: 1.45; }
+.demo-banner strong { font-weight: 600; }
+.demo-banner span { flex: 1 1 320px; }
+.demo-banner a { font-weight: 600; white-space: nowrap; }
