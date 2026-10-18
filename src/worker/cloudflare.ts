@@ -250,7 +250,7 @@ async function callback(request:Request,env:AppEnv):Promise<Response> {
   const destination=record.repositoryId?`/repository/${encodeURIComponent(record.repositoryId)}/cloudflare`:'/settings/cloudflare';
   return new Response(null,{status:303,headers:{Location:`${url.origin}${destination}`,'Set-Cookie':`${CLOUDFLARE_CONNECT_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
 }
-async function resourceCatalog(env:AppEnv,vault:Vault,source:CloudflareConnectionSource) {
+async function resourceCatalog(env:AppEnv,vault:Vault,source:CloudflareConnectionSource,includeGitflare=false) {
   const account=selectedAccount(vault,source);
   const kinds = [ ['workers', '/workers/scripts'], ['durableObjects', '/workers/durable_objects/namespaces'], ['databases', '/d1/database'], ['containers', '/containers/applications'], ['workflows', '/workflows'] ] as const;
   const results = await Promise.allSettled(kinds.map(([, path]) => listResources(env, vault, path)));
@@ -269,12 +269,18 @@ async function resourceCatalog(env:AppEnv,vault:Vault,source:CloudflareConnectio
     });
   });
   const installation = !!env.PREVIEWS_ACCOUNT_ID && env.PREVIEWS_ACCOUNT_ID === account.id;
+  let gitflareHidden = 0;
   if (installation) {
     const infrastructure = gitflareInfrastructure(env.GITFLARE_PRIMARY_WORKER, env.PREVIEWS_WORKER_NAME);
     const types: Record<string, CatalogItem['type']> = { workers: 'worker', durableObjects: 'durable_object', databases: 'd1', containers: 'container', workflows: 'workflow' };
-    for (const [kind, items] of Object.entries(catalogs)) catalogs[kind] = items.map(item => isGitflareResource({ ...item, type: types[kind]! }, infrastructure) ? { ...item, gitflare: true } : item);
+    for (const [kind, items] of Object.entries(catalogs)) catalogs[kind] = items.flatMap(item => {
+      if (!isGitflareResource({ ...item, type: types[kind]! }, infrastructure)) return [item];
+      if (includeGitflare) return [{ ...item, gitflare: true as const }];
+      gitflareHidden++;
+      return [];
+    });
   }
-  return { account, ...catalogs, availability, installation };
+  return { account, ...catalogs, availability, installation, gitflareHidden };
 }
 async function disconnect(env:AppEnv,p:Principal,repositoryId?:string) {
   const removed=await service(env).connectionStore(p,'delete',repositoryScope(repositoryId)) as CloudflareConnection|null;
@@ -303,7 +309,7 @@ async function dispatchRepository(env:AppEnv,p:Principal,action:string,body:Reco
   if(action==='disconnect') return disconnect(env,p,repositoryId);
   if(action==='accounts') {const {vault}=await load(env,p,undefined,repositoryId);return {accounts:accountsValue(await api(env,vault,'/accounts'))};}
   if(action==='select-account') return {source:'repository',...await selectAccount(env,p,body,repositoryId)};
-  if(action==='resources') {const {vault,source}=await loadPreferred(env,p,undefined,repositoryId);return {source,...await resourceCatalog(env,vault,source)};}
+  if(action==='resources') {const {vault,source}=await loadPreferred(env,p,undefined,repositoryId);return {source,...await resourceCatalog(env,vault,source,body.includeGitflare===true)};}
   throw new ApiError(404,'NOT_FOUND','This Cloudflare connection operation is unavailable.');
 }
 export async function dispatchCloudflare(env:AppEnv,p:Principal,action:string,body:Record<string,unknown>={},origin='',repositoryId?:string):Promise<unknown> {
@@ -315,7 +321,7 @@ export async function dispatchCloudflare(env:AppEnv,p:Principal,action:string,bo
   if(action==='select-account') return selectAccount(env,p,body);
   const {vault}=await load(env,p);
   if(action==='accounts') return {accounts:accountsValue(await api(env,vault,'/accounts'))};
-  if(action==='resources') return resourceCatalog(env,vault,'workspace');
+  if(action==='resources') return resourceCatalog(env,vault,'workspace',body.includeGitflare===true);
   throw new ApiError(404,'NOT_FOUND','This Cloudflare connection operation is unavailable.');
 }
 async function connectionResponse(request:Request,env:AppEnv,p:Principal,action:string,repositoryId?:string):Promise<Response> {
@@ -327,7 +333,8 @@ async function connectionResponse(request:Request,env:AppEnv,p:Principal,action:
     return Response.json(await dispatchCloudflare(env,p,action,body,origin,repositoryId),{headers:{'Cache-Control':'no-store'}});
   }
   if(request.method!=='GET'||!['status','accounts','resources'].includes(action))throw new ApiError(405,'METHOD_NOT_ALLOWED','Use a supported Cloudflare connection action.');
-  return Response.json(await dispatchCloudflare(env,p,action,{},origin,repositoryId),{headers:{'Cache-Control':'no-store'}});
+  const includeGitflare=new URL(request.url).searchParams.get('includeGitflare')==='true';
+  return Response.json(await dispatchCloudflare(env,p,action,includeGitflare?{includeGitflare}:{},origin,repositoryId),{headers:{'Cache-Control':'no-store'}});
 }
 export async function handleCloudflare(request:Request,env:AppEnv,authenticate:(request:Request,env:AppEnv)=>Promise<Principal>):Promise<Response|null> {
   const url=new URL(request.url);const path=url.pathname;if(!path.startsWith('/api/cloudflare'))return null;

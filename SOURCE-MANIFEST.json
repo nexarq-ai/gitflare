@@ -360,8 +360,8 @@
     },
     {
       "path": "src/ui/CloudflareConnection.tsx",
-      "size": 43130,
-      "sha256": "259df059238978629d3084ecd99fc3a2e70d0991c743f23fbc09df62ea283176"
+      "size": 43499,
+      "sha256": "2fd5688cb2c2c3b8bb8019033cf52855f944b68715ab7c30297788d3b50f2819"
     },
     {
       "path": "src/ui/CloudflareConnectPrompt.tsx",
@@ -750,8 +750,8 @@
     },
     {
       "path": "src/worker/cloudflare.ts",
-      "size": 35431,
-      "sha256": "ac65b54a06a645aa3606ad34c115abbef89e73dbcf2aa4ac0bd5b6ed05902ed4"
+      "size": 35793,
+      "sha256": "85e39fab15b6d5c27b8df5171dde6a8d629cf5319d232a4c1e2b7fb7a8fdff3a"
     },
     {
       "path": "src/worker/config-text.ts",
@@ -930,8 +930,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 108113,
-      "sha256": "3c79ef0b3de49c9b3764731fc178b52d16f9af4b358173134bec8b232ae2163d"
+      "size": 108522,
+      "sha256": "e430aa2509db530df2ab84967ff255f746506c37ee6c7a8dfb2dbd2d228640c2"
     },
     {
       "path": "src/worker/mfa.ts",
