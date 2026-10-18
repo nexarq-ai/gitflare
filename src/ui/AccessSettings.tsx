@@ -24,9 +24,9 @@ function string(value: unknown) { return typeof value === "string" ? value : val
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="access-field"><span>{label}</span>{children}</label>; }
 function RoleSelect({ name = "role", defaultValue = "Contributor" }: { name?: string; defaultValue?: string }) { return <select name={name} defaultValue={defaultValue}>{roles.filter(role => role !== "Owner").map(role => <option key={role}>{role}</option>)}</select>; }
 
-export default function AccessSettings({ repositories, onWorkspaceChanged, selfHosted = false }: { repositories: Repository[]; onWorkspaceChanged: () => Promise<void>; selfHosted?: boolean }) {
+export default function AccessSettings({ repositories, onWorkspaceChanged, selfHosted = false, initialTab = tabs[0].name }: { repositories: Repository[]; onWorkspaceChanged: () => Promise<void>; selfHosted?: boolean; initialTab?: string }) {
   const [data, setData] = useState<Access | null>(null);
-  const [tab, setTab] = useState(tabs[0].name);
+  const [tab, setTab] = useState(initialTab);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");

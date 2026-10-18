@@ -204,6 +204,11 @@
       "sha256": "670475f0ea57cd7333fa9b61dd3727c3f9236721d83b21c04e8728091b020a4f"
     },
     {
+      "path": "src/shared/models.ts",
+      "size": 60,
+      "sha256": "1bc06683c74e69ad1576ebef8e05fee7c99c8c9be7dd4d194d7030f29917fadb"
+    },
+    {
       "path": "src/shared/pull-requests.ts",
       "size": 449,
       "sha256": "b8674ae92674df9998b49e5eb66a4448aebbaffe5c4d87ed63acd74dfedbc0d0"
@@ -225,8 +230,8 @@
     },
     {
       "path": "src/ui/AccessSettings.tsx",
-      "size": 22211,
-      "sha256": "bd3e948273cb57d0c567bc058ce81649c4f4e70e7c2a6e6ed3bf4d249dc71250"
+      "size": 22257,
+      "sha256": "9a684af1d23fc578843383919b120dfec722a24e5ad94c4ff12407241e56f850"
     },
     {
       "path": "src/ui/account-settings.css",
@@ -235,8 +240,8 @@
     },
     {
       "path": "src/ui/AccountMenu.tsx",
-      "size": 4454,
-      "sha256": "598a3f84ace1d70f7af3111ee1a0c52b82f2f5d5b9ef1b1972b9fafbbe14b7b5"
+      "size": 4613,
+      "sha256": "75cf3982c09a6f9841e4062e88f9d3961f1318f46183cd7825ebabdceb893c85"
     },
     {
       "path": "src/ui/AccountSettings.tsx",
@@ -260,13 +265,13 @@
     },
     {
       "path": "src/ui/api.ts",
-      "size": 2167,
-      "sha256": "5059680ef046913c8c89e68b9d41d3533ab27dbd301070de7744716f466ea232"
+      "size": 2565,
+      "sha256": "187c89fcf4e5ef465324001a0ef4e17245f2ed9395a6a53da8582900ddaa63cd"
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 81037,
-      "sha256": "d24bcc97a3c076efad26c241de379964c35f9749eee6f91412279b13d078c3b4"
+      "size": 81798,
+      "sha256": "54513271af8f86e9f83bb338eb641fbb6ce983bb7bca95729a410ebf33f3aa9b"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -345,8 +350,8 @@
     },
     {
       "path": "src/ui/BranchProtection.tsx",
-      "size": 17739,
-      "sha256": "5350574ad3cfb28c6f3d8cd1c0bc5746555680c405edba61db7f38c676c27b20"
+      "size": 17500,
+      "sha256": "4a7c3dd6f5cb3dbef91eb0458680eb060c0d0b3f4c93241212135875f0322dae"
     },
     {
       "path": "src/ui/BrandMark.tsx",
@@ -487,6 +492,11 @@
       "path": "src/ui/DocumentationIllustration.tsx",
       "size": 24250,
       "sha256": "dc8b0354caf07dd16d96af2f0b89b621fafc3754a9aef01170e13d5bd2cc863c"
+    },
+    {
+      "path": "src/ui/GeneralSettings.tsx",
+      "size": 2433,
+      "sha256": "91e620bbd935be0089581866fa8df18e4810827e4d3d34e239b483c89b1f7bf7"
     },
     {
       "path": "src/ui/GitAccess.tsx",
@@ -635,8 +645,8 @@
     },
     {
       "path": "src/ui/QuickSearch.tsx",
-      "size": 5208,
-      "sha256": "e9564a72446210fd796a02f54b103b3859a285bae26defc90148ab59bac7f9b9"
+      "size": 6132,
+      "sha256": "6cfc752146e9082218ab591e4cad9ad30ead059e934cd8c4e00f11a55dd696a3"
     },
     {
       "path": "src/ui/releases.css",
@@ -690,8 +700,8 @@
     },
     {
       "path": "src/ui/router.ts",
-      "size": 7023,
-      "sha256": "f3a234196fe60bd43b722742f272c92fcd0a8c800bea1fc5d03e0dd58a907cd8"
+      "size": 7998,
+      "sha256": "70bdff95d2ee17d089855da1653cfec19d90658de94fac38b438b7ecf1b63233"
     },
     {
       "path": "src/ui/secret-settings.css",
@@ -714,6 +724,11 @@
       "sha256": "82d26bf89ad0190cdbbf32e239aeaff8fb95855bad1d04c8e20b6bae3e03ee0b"
     },
     {
+      "path": "src/ui/SettingsLayout.tsx",
+      "size": 1594,
+      "sha256": "ceab71ac2f5deeeb0b130493f11ae47641c4971e70322dd1fb41264ad58fdff2"
+    },
+    {
       "path": "src/ui/styles.css",
       "size": 75897,
       "sha256": "ab63942619253a7d4e27fd5fec4ed40d4357153e89ba0d22c8f6ddd5f429386b"
@@ -724,14 +739,29 @@
       "sha256": "a297f768881f65866adc9cb058b6bb550d578869ac2a694db47727a0e9b958c0"
     },
     {
+      "path": "src/ui/workspace-chord.ts",
+      "size": 1255,
+      "sha256": "247736324208c4ba2b3ec7df6d61d3490badbdeeca419d608b7c412ed8df05d4"
+    },
+    {
       "path": "src/ui/workspace-polish.css",
       "size": 5361,
       "sha256": "10468217c255c382db884e4d527cfcdfdee7d42c2ce182305b3f58aabb5569eb"
     },
     {
+      "path": "src/ui/workspace-switcher.css",
+      "size": 4484,
+      "sha256": "64b5c984b6a4572e9f0243d357fe2077e0bfef6fe52abb4697ac016cd63f75cb"
+    },
+    {
       "path": "src/ui/WorkspaceLoader.tsx",
       "size": 2785,
       "sha256": "837ba7c3e912ea0e62c7e601a5bdab09c337e3b44a61acece318dc26b88fb78b"
+    },
+    {
+      "path": "src/ui/WorkspaceSwitcher.tsx",
+      "size": 11295,
+      "sha256": "518dd3a77625fc1f90f60b908eeadbeae229bea6903ef761b0691d10f8d7f8d8"
     },
     {
       "path": "src/worker/agent-rules.ts",

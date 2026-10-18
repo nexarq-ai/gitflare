@@ -24,7 +24,6 @@ import {
   CheckCircleIcon,
   CloudIcon,
   CopyIcon,
-  CubeIcon,
   FolderSimpleIcon,
   GearSixIcon,
   GitBranchIcon,
@@ -32,15 +31,13 @@ import {
   HouseIcon,
   InfoIcon,
   ListIcon,
-  LockKeyIcon,
   MagnifyingGlassIcon,
   PlusIcon,
-  RobotIcon,
   ShieldCheckIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import type { AccessSnapshot, Repository, Workspace } from "../shared/types";
-import { request, RequestError, selectWorkspace } from "./api";
+import { request, RequestError, rememberedWorkspace, rememberWorkspace, selectedWorkspace, selectWorkspace } from "./api";
 import { confirmSession, INITIAL_LOAD_ATTEMPTS, retryDelay, SESSION_CHECK_EVENT, transientFailure } from "./session-health";
 import {
   BranchIllustration,
@@ -60,19 +57,21 @@ import { DemoReplayCard } from "./DemoReplay";
 import DemoFeaturePanel from "./DemoFeaturePanel";
 import { showOwnerTokenNotice } from "./owner-token-notice";
 import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
-import AiSettingsPanel from "./AiSettingsPanel";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
-import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, isPublicProductRoute, SIGNED_IN_PRODUCT_ROUTES } from "./router";
+import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, isPublicProductRoute, SIGNED_IN_PRODUCT_ROUTES, keepsRouteAcrossWorkspaces } from "./router";
+import WorkspaceSwitcher from "./WorkspaceSwitcher";
+import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLayout";
+import { workspaceChord } from "./workspace-chord";
 import { crossHostTarget, pageHostOrigins } from "./hosts";
 import AccountMenu from "./AccountMenu";
 
 import ConnectionError from "./ConnectionError";
 import "./policy-pages.css";
-import { InstallationCredentialPrompt } from "./InstallationCredential";
 import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
 import { BrandMark } from "./BrandMark";
 
 const AccountSettings = lazy(() => import("./AccountSettings"));
+const GeneralSettings = lazy(() => import("./GeneralSettings"));
 const loadMissionDetail = () => import("./MissionDetail");
 const MissionDetail = lazy(loadMissionDetail);
 const loadRepositoryBrowser = () => import("./RepositoryBrowser");
@@ -106,6 +105,8 @@ const loadPullRequestCreate = () => import("./PullRequestCreate");
 const PullRequestCreate = lazy(loadPullRequestCreate);
 const loadBranchProtection = () => import("./BranchProtection");
 const BranchProtection = lazy(loadBranchProtection);
+const PreviewSettings = lazy(() => import("./PreviewSettings"));
+const GitHubMirror = lazy(() => import("./GitHubMirror"));
 const loadSecretSettings = () => import("./SecretSettings");
 const SecretSettings = lazy(loadSecretSettings);
 const loadGitAccess = () => import("./GitAccess");
@@ -175,6 +176,8 @@ function Workspace() {
   const [modal, setModal] = useState<Modal>(null);
   const [sidebar, setSidebar] = useState(false);
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const located = useRef(new Set<string>());
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [toast, setToast] = useState("");
@@ -206,13 +209,20 @@ function Workspace() {
   }, []);
 
   const inFlight = useRef(0);
-  const load = useCallback(async (background: unknown = false) => {
+  const load = useCallback(async (background: unknown = false): Promise<void> => {
     if (background === true && inFlight.current > 0) return;
+    let restore = false;
     const generation = background === true ? loadGeneration.current : ++loadGeneration.current;
     inFlight.current += 1;
     try {
       const [data, access] = await Promise.all([request<Workspace>("/api/workspace"), request<AccessSnapshot>("/api/access")]);
       if (generation !== loadGeneration.current) return;
+      const remembered = selectedWorkspace() ? null : rememberedWorkspace(access.user.id);
+      if (remembered && remembered !== access.workspace?.id && access.workspaces.some(item => item.id === remembered)) {
+        selectWorkspace(remembered);
+        restore = true;
+        return;
+      }
       hasWorkspace.current = true;
       setWorkspace(data);
       setPermissions(access.permissions);
@@ -254,6 +264,7 @@ function Workspace() {
       }
     } finally {
       inFlight.current -= 1;
+      if (restore) void load();
     }
   }, [clearSession]);
 
@@ -366,6 +377,44 @@ function Workspace() {
     return () => window.removeEventListener("keydown", shortcut);
   }, [loaded, modal]);
 
+  useEffect(() => {
+    if (!loaded) return;
+    return workspaceChord(() => {
+      if (modal || quickSearchOpen) return;
+      if (window.matchMedia("(max-width: 760px)").matches) setSidebar(true);
+      setSwitcherOpen(true);
+    });
+  }, [loaded, modal, quickSearchOpen]);
+
+  useEffect(() => {
+    if (authState === "authenticated" && route === "connect") { goTo("account/clients", true); setRoute("account/clients"); }
+  }, [authState, route]);
+
+  const missingRepository = loaded && route.startsWith("repository/") && !workspace.repositories.some(repo => repo.id === route.split("/")[1]) ? route.split("/")[1] : "";
+  useEffect(() => {
+    if (!missingRepository || located.current.has(missingRepository)) return;
+    located.current.add(missingRepository);
+    void request<{ workspaces: { id: string }[] }>(`/api/workspaces/locate?repository=${encodeURIComponent(missingRepository)}`)
+      .then(result => { const target = result.workspaces.find(item => item.id !== account?.workspace?.id)?.id; if (target) void switchWorkspace(target, false); })
+      .catch(() => {});
+  }, [missingRepository]);
+
+  async function switchWorkspace(id: string, resetRoute = true) {
+    const target = account?.workspaces.find(item => item.id === id);
+    try { await request("/api/workspaces/switch", { workspaceId: id }); }
+    catch (failure) {
+      notify(failure instanceof RequestError && [403, 404].includes(failure.status) ? "You no longer belong to that workspace." : failure instanceof Error ? failure.message : "The workspace could not be opened.");
+      await load();
+      return;
+    }
+    selectWorkspace(id);
+    if (currentUserId) rememberWorkspace(currentUserId, id);
+    setSwitcherOpen(false);
+    if (resetRoute && !keepsRouteAcrossWorkspaces(route)) navigate("overview");
+    await load();
+    notify(`Switched to ${target?.name ?? "the workspace"}.`);
+  }
+
   function notify(message: string) {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -456,8 +505,8 @@ function Workspace() {
       repository: "Repository",
       activity: "Activity",
       settings: "Settings",
-      account: route === "account/security" ? "Security" : "Profile",
-      connect: "Connect AI clients",
+      account: route === "account/security" ? "Security" : route === "account/clients" ? "AI clients" : "Profile",
+      admin: "Installation",
     }[page] ?? "Overview";
   const missionList = workspace.missions.filter(
     (mission) =>
@@ -475,9 +524,7 @@ function Workspace() {
   const reviewCount = workspace.missions.filter(
     (mission) => mission.status === "needs_review",
   ).length;
-  const connectedCount = workspace.integrations.filter(
-    (item) => item.ready,
-  ).length;
+  const hasAccountSession = authConfig.edition !== "self-hosted" && !!account && "email" in account.user;
   const navigation = [
     { id: "overview", label: "Overview", icon: HouseIcon },
     { id: "repositories", label: "Repositories", icon: FolderSimpleIcon },
@@ -522,6 +569,20 @@ function Workspace() {
           <BrandMark size={32} />
           <span className="beta-tag">alpha</span>
         </a>
+        <WorkspaceSwitcher
+          workspaces={account?.workspaces.map(item => ({ id: item.id, name: item.name, role: item.role, repositoryScoped: item.repositoryScoped })) ?? []}
+          currentId={account?.workspace?.id ?? ""}
+          currentName={workspace.name}
+          role={account?.role ?? ""}
+          menu={authConfig.edition !== "self-hosted" && !!account}
+          canCreate={hasAccountSession}
+          canJoin={hasAccountSession}
+          open={switcherOpen}
+          onOpenChange={setSwitcherOpen}
+          onSwitch={id => switchWorkspace(id)}
+          onCreated={async created => { await switchWorkspace(created.id); }}
+          onJoined={async id => { await switchWorkspace(id); }}
+        />
         <button
           className="quick-search-trigger"
           onClick={() => setQuickSearchOpen(true)}
@@ -532,7 +593,6 @@ function Workspace() {
           <span>Quick search…</span>
           <kbd>⌘K</kbd>
         </button>
-        <div className="nav-label workspace-section">{workspace.name}</div>
         <nav className="side-nav">
           {navigation.map((item) => (
             <button
@@ -552,18 +612,16 @@ function Workspace() {
         <nav className="side-nav">
           <button
             className={`nav-item ${page === "settings" ? "active" : ""}`}
+            aria-current={page === "settings" ? "page" : undefined}
             onClick={() => navigate("settings")}
           >
             <GearSixIcon size={17} />
             Settings
           </button>
-          <button className={`nav-item ai-only ${route === "settings/models" ? "active" : ""}`} aria-current={route === "settings/models" ? "page" : undefined} onClick={() => navigate("settings/models")}><RobotIcon size={17} />AI models</button>
-          <button className={`nav-item ${route === "settings/cloudflare" ? "active" : ""}`} aria-current={route === "settings/cloudflare" ? "page" : undefined} onClick={() => navigate("settings/cloudflare")}><CloudIcon size={17} />Cloudflare</button>
           <button className={`nav-item ${page === "docs" ? "active" : ""}`} onClick={() => navigate("docs/overview")} aria-current={page === "docs" ? "page" : undefined}>
             <BookOpenIcon size={17} />
             Documentation
           </button>
-          <button className={`nav-item ai-only ${page === "connect" ? "active" : ""}`} onClick={() => navigate("connect")}><RobotIcon size={17}/>Connect AI clients</button>
           <button className="nav-item" onClick={() => setModal("learn")}>
             <BookOpenIcon size={17} />
             How Gitflare works
@@ -607,7 +665,15 @@ function Workspace() {
             <ErrorNotice message={error} onRetry={() => void refresh()} />
           )}
           <Suspense fallback={<RouteProgress />}>
-            {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify("Mission draft created."); }} /> : route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} /> : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} /> : page === "connect" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
+            {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify("Mission draft created."); }} /> : page === "settings" ? (
+              <WorkspaceSettingsLayout route={route}>
+                {route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} />
+                  : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} />
+                  : route === "settings/people" ? <AccessSettings key="people" selfHosted={authConfig.edition === "self-hosted"} repositories={workspace.repositories} onWorkspaceChanged={load} />
+                  : route === "settings/audit" ? <AccessSettings key="audit" initialTab="Audit" selfHosted={authConfig.edition === "self-hosted"} repositories={workspace.repositories} onWorkspaceChanged={load} />
+                  : <GeneralSettings workspace={workspace} canManage={permissions.includes("manage")} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onOpenCloudflare={() => navigate("settings/cloudflare")} />}
+              </WorkspaceSettingsLayout>
+            ) : route === "admin" ? <NotFoundPanel /> : route === "account/clients" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
               <MissionDetail
                 key={route.split("/")[1]}
                 id={route.split("/")[1]}
@@ -1090,69 +1156,6 @@ function Workspace() {
                     onOpen={(id) => navigate(`mission/${id}`)}
                   />
                 )}
-                {page === "settings" && (
-                  <div className="workspace-settings">
-                    <div className="page-heading"><div><h1>Workspace settings</h1><p>Manage the services, people, and permissions behind your work.</p></div></div>
-                    {authConfig.edition === "self-hosted" && permissions.includes("manage") && <InstallationCredentialPrompt onOpen={() => navigate("settings/cloudflare")} />}
-                    <div className="settings-overview-grid"><section className="panel settings-cloudflare"><div className="settings-cloudflare-heading"><img src={cloudflareIcon} alt="" /><div><h2>Cloudflare account and resources</h2><p>Connect your account and manage the services used by your repositories.</p></div></div><Button variant="secondary" size="base" onClick={() => navigate("settings/cloudflare")}>Manage Cloudflare</Button></section>
-                    <section className="panel settings-cloudflare ai-only"><div className="settings-cloudflare-heading"><RobotIcon size={27} /><div><h2>AI models</h2><p>Choose available Workers AI models and manage provider connections.</p></div></div><Button variant="secondary" size="base" onClick={() => navigate("settings/models")}>Manage AI models</Button></section></div>
-                    <AiSettingsPanel settings={workspace.ai} canManage={permissions.includes("manage")} onChanged={load} />
-                    <AccessSettings selfHosted={authConfig.edition === "self-hosted"} repositories={workspace.repositories} onWorkspaceChanged={load} />
-
-                    <section className="panel">
-                      <div className="panel-header">
-                        <h2>Workspace connections</h2>
-                        <span className="number-tag">
-                          {connectedCount} of {workspace.integrations.length}{" "}
-                          configured
-                        </span>
-                      </div>
-                      {workspace.integrations.map((item) => (
-                        <div className="readiness-row" key={item.id}>
-                          <div className="service-icon">
-                            {item.id === "artifacts" ? (
-                              <GitBranchIcon size={19} />
-                            ) : item.id === "sandbox" ? (
-                              <CubeIcon size={19} />
-                            ) : item.id === "model" ? (
-                              <RobotIcon size={19} />
-                            ) : (
-                              <LockKeyIcon size={19} />
-                            )}
-                          </div>
-                          <div>
-                            <h3>{item.name}</h3>
-                            <p>{item.detail}</p>
-                          </div>
-                          <Status status={item.ready ? "ready" : "blocked"} />
-                        </div>
-                      ))}
-                      <div className="notice-inline">
-                        Connections are configured in your deployment. Refresh
-                        this page after changing them.
-                      </div>
-                    </section>
-                    <div className="info-card" style={{ maxWidth: 650 }}>
-                      <h3>
-                        <InfoIcon size={16} />
-                        About this workspace
-                      </h3>
-                      <p>
-                        {workspace.mode === "local"
-                          ? "This is a local development workspace. Repository records and mission drafts are saved locally. Git hosting and agent execution require connected services."
-                          : "Your account permissions determine what you can access and change. Agent execution is limited to authorized repositories and the services configured for this deployment."}
-                      </p>
-                      <a
-                        href="https://developers.cloudflare.com/artifacts/get-started/"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Artifacts setup guide
-                        <ArrowUpRightIcon size={12} />
-                      </a>
-                    </div>
-                  </div>
-                )}
               </>
             )}
             <footer className="bottom-note">
@@ -1172,8 +1175,11 @@ function Workspace() {
       <QuickSearch
         open={quickSearchOpen}
         workspace={workspace}
+        workspaces={authConfig.edition === "self-hosted" ? [] : account?.workspaces.map(item => ({ id: item.id, name: item.name, role: item.role })) ?? []}
+        currentWorkspaceId={account?.workspace?.id ?? ""}
         onClose={() => setQuickSearchOpen(false)}
         onNavigate={navigate}
+        onSwitchWorkspace={hasAccountSession ? id => void switchWorkspace(id) : undefined}
       />
       <CreationDialog
         modal={modal}
@@ -1206,6 +1212,85 @@ function Workspace() {
       )}
     </div></>
   );
+}
+
+function NotFoundPanel() {
+  return <section className="panel"><EmptyState icon={<InfoIcon size={25} />} title="This page could not be found." description="The link may have changed, or your account cannot open it." action={<a className="text-link" href="/overview">Go to overview</a>} /></section>;
+}
+
+function RepositoryDetailsPanel({ repository, onNotify }: { repository: Repository; onNotify: (message: string) => void }) {
+  return (
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Repository details</h2>
+              <Status
+                status={
+                  repository.provider === "artifacts" ? "connected" : "local"
+                }
+              />
+            </div>
+            <div className="panel-body">
+              <div className="summary-grid" style={{ marginTop: 0 }}>
+                <div>
+                  <span>Default stream</span>
+                  <strong>
+                    <code>{repository.defaultBranch}</code>
+                  </strong>
+                </div>
+                <div>
+                  <span>Current revision</span>
+                  <strong>
+                    <code>
+                      {repository.headSha?.slice(0, 12) ?? "No revision yet"}
+                    </code>
+                  </strong>
+                </div>
+                <div>
+                  <span>Git storage</span>
+                  <strong>
+                    {repository.provider === "artifacts"
+                      ? "Cloudflare Artifacts"
+                      : "Local workspace record"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Created</span>
+                  <strong>
+                    {new Date(repository.createdAt).toLocaleDateString()}
+                  </strong>
+                </div>
+              </div>
+              {repository.remote && (
+                <div className="clipboard-row">
+                  <code>git clone {quoteGitArgument(repository.remote)}</code>
+                  <Button
+                    variant="ghost"
+                    size="base"
+                    shape="square"
+                    aria-label="Copy clone command"
+                    icon={CopyIcon}
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(`git clone ${quoteGitArgument(repository.remote ?? "")}`)
+                        .then(() => onNotify("Clone command copied."))
+                        .catch(() =>
+                          onNotify("Copy is unavailable in this browser."),
+                        );
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+  );
+}
+
+function RepositoryGeneral({ repository, onNotify }: { repository: Repository; onNotify: (message: string) => void }) {
+  return <>
+    <div className="page-heading"><div><h1>General</h1><p>Details, clone address and GitHub mirror for {repositoryLabel(repository)}.</p></div></div>
+    <RepositoryDetailsPanel repository={repository} onNotify={onNotify} />
+    <GitHubMirror key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
+  </>;
 }
 
 function ActivityView({
@@ -1348,78 +1433,21 @@ function RepositoryDetail({
             { value: "checks", label: `Checks (${missions.reduce((count, mission) => count + mission.checks.length, 0)})` },
             { value: "skills", label: "Skills", ai: true },
             { value: "releases", label: "Checkpoints" },
-            { value: "cloudflare", label: "Cloudflare" },
-            { value: "settings/branches", label: "Streams" },
-            { value: "settings/secrets", label: "Secrets" },
-            { value: "overview", label: "Overview" },
-          ].map((item) => <button key={item.value} className={"ai" in item && item.ai ? "ai-only" : undefined} aria-current={tab === item.value || `${tab}/${subroute}` === item.value || (tab === "proposals" && item.value === "pulls") ? "page" : undefined} onClick={() => onTabChange(item.value)}>{item.label}</button>)}
+            { value: "settings", label: "Settings" },
+          ].map((item) => <button key={item.value} className={"ai" in item && item.ai ? "ai-only" : undefined} aria-current={tab === item.value || (tab === "proposals" && item.value === "pulls") ? "page" : undefined} onClick={() => onTabChange(item.value)}>{item.label}</button>)}
       </nav>
-      {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} /> : tab === "settings" && subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} onNotify={onNotify} /> : tab === "settings" && subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} /> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "cloudflare" ? <><CloudflareConnection canManage={canManage} repository={repository} repositoryId={repository.id} /><Deployments key={repository.id} repository={repository} onNotify={onNotify} /></> : tab === "code" ? (
+      {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} /> : tab === "settings" ? <RepositorySettingsLayout repositoryId={repository.id} page={subroute}>
+        {subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} onNotify={onNotify} />
+          : subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
+          : subroute === "deploys" ? <Deployments key={repository.id} repository={repository} onNotify={onNotify} />
+          : subroute === "previews" ? <PreviewSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
+          : subroute === "cloudflare" ? <CloudflareConnection key={repository.id} canManage={canManage} repository={repository} repositoryId={repository.id} />
+          : <RepositoryGeneral repository={repository} onNotify={onNotify} />}
+      </RepositorySettingsLayout> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "code" ? (
         <><RepositoryImportOnboarding key={repository.id} repository={repository} canManage={canManage} onImport={onImport} onRefresh={onRefresh} /><RepositoryBrowser key={repository.id} repository={repository} />{repository.provider === "artifacts" && <GitAccess key={`git-${repository.id}`} repository={repository} onNotify={onNotify} />}</>
       ) : tab === "overview" ? (
         <>
-          <section className="panel">
-            <div className="panel-header">
-              <h2>Repository details</h2>
-              <Status
-                status={
-                  repository.provider === "artifacts" ? "connected" : "local"
-                }
-              />
-            </div>
-            <div className="panel-body">
-              <div className="summary-grid" style={{ marginTop: 0 }}>
-                <div>
-                  <span>Default stream</span>
-                  <strong>
-                    <code>{repository.defaultBranch}</code>
-                  </strong>
-                </div>
-                <div>
-                  <span>Current revision</span>
-                  <strong>
-                    <code>
-                      {repository.headSha?.slice(0, 12) ?? "No revision yet"}
-                    </code>
-                  </strong>
-                </div>
-                <div>
-                  <span>Git storage</span>
-                  <strong>
-                    {repository.provider === "artifacts"
-                      ? "Cloudflare Artifacts"
-                      : "Local workspace record"}
-                  </strong>
-                </div>
-                <div>
-                  <span>Created</span>
-                  <strong>
-                    {new Date(repository.createdAt).toLocaleDateString()}
-                  </strong>
-                </div>
-              </div>
-              {repository.remote && (
-                <div className="clipboard-row">
-                  <code>git clone {quoteGitArgument(repository.remote)}</code>
-                  <Button
-                    variant="ghost"
-                    size="base"
-                    shape="square"
-                    aria-label="Copy clone command"
-                    icon={CopyIcon}
-                    onClick={() => {
-                      void navigator.clipboard
-                        .writeText(`git clone ${quoteGitArgument(repository.remote ?? "")}`)
-                        .then(() => onNotify("Clone command copied."))
-                        .catch(() =>
-                          onNotify("Copy is unavailable in this browser."),
-                        );
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          </section>
+          <RepositoryDetailsPanel repository={repository} onNotify={onNotify} />
           {repository.provider === "local" && (
             <div className="alert info" style={{ marginTop: 20 }}>
               <InfoIcon size={17} />

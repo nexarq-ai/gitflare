@@ -4,29 +4,43 @@ import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { Input } from "@cloudflare/kumo/components/input";
 import {
   ArrowRightIcon,
+  ArrowsLeftRightIcon,
   FolderSimpleIcon,
   GitBranchIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import type { Workspace } from "../shared/types";
+import type { WorkspaceEntry } from "./WorkspaceSwitcher";
+
+export function workspaceSwitchEntries(workspaces: WorkspaceEntry[], currentId: string) {
+  return workspaces.filter(item => item.id !== currentId).map(item => ({ id: `workspace:${item.id}`, workspaceId: item.id, title: `Switch to ${item.name}`, detail: item.role ?? "", category: "Workspace" }));
+}
 
 export default function QuickSearch({
   open,
   workspace,
+  workspaces = [],
+  currentWorkspaceId = "",
   onClose,
   onNavigate,
+  onSwitchWorkspace,
 }: {
   open: boolean;
   workspace: Workspace;
+  workspaces?: WorkspaceEntry[];
+  currentWorkspaceId?: string;
   onClose: () => void;
   onNavigate: (route: string) => void;
+  onSwitchWorkspace?: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const listId = useId();
   const results = useMemo(() => {
     const term = query.trim().toLowerCase();
+    const switches = onSwitchWorkspace ? workspaceSwitchEntries(workspaces, currentWorkspaceId).map(item => ({ ...item, icon: ArrowsLeftRightIcon })) : [];
     return [
+      ...switches,
       ...workspace.repositories.map((repository) => ({
         id: `repository/${repository.id}`,
         title: repositoryLabel(repository),
@@ -49,7 +63,7 @@ export default function QuickSearch({
         `${result.title} ${result.detail}`.toLowerCase().includes(term),
       )
       .slice(0, 12);
-  }, [query, workspace]);
+  }, [query, workspace, workspaces, currentWorkspaceId, onSwitchWorkspace]);
 
   useEffect(() => {
     if (open) {
@@ -69,9 +83,11 @@ export default function QuickSearch({
   }, [selected, open, listId]);
 
   function choose(index: number) {
-    if (!results[index]) return;
-    onNavigate(results[index].id);
+    const result = results[index];
+    if (!result) return;
     onClose();
+    if ("workspaceId" in result && typeof result.workspaceId === "string") onSwitchWorkspace?.(result.workspaceId);
+    else onNavigate(result.id);
   }
 
   return (
