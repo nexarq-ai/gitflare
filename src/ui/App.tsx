@@ -87,8 +87,10 @@ const loadMcpConnections = () => import("./McpConnections");
 const McpConnections = lazy(loadMcpConnections);
 const loadHomepage = () => import("./SelfHostedHome");
 const Homepage = lazy(loadHomepage);
-const loadAccessSettings = () => import("./AccessSettings");
-const AccessSettings = lazy(loadAccessSettings);
+const loadPeopleSettings = () => import("./PeopleSettings");
+const PeopleSettings = lazy(loadPeopleSettings);
+const AuditLog = lazy(() => import("./AuditLog"));
+const RepositoryAccess = lazy(() => import("./RepositoryAccess"));
 const loadRepositoryWork = () => import("./RepositoryWork");
 const RepositoryWork = lazy(loadRepositoryWork);
 const loadProposalCreate = () => import("./ProposalCreate");
@@ -111,7 +113,7 @@ const loadSecretSettings = () => import("./SecretSettings");
 const SecretSettings = lazy(loadSecretSettings);
 const loadGitAccess = () => import("./GitAccess");
 const GitAccess = lazy(loadGitAccess);
-const workspacePages = [loadMissionDetail, loadRepositoryBrowser, loadDocumentation, loadRepositorySkills, loadCloudflareConnection, loadMcpConnections, loadAccessSettings, loadRepositoryWork, loadProposalCreate, loadModelConnections, loadIssues, loadReleases, loadPullRequests, loadPullRequestCreate, loadBranchProtection, loadSecretSettings, loadGitAccess];
+const workspacePages = [loadMissionDetail, loadRepositoryBrowser, loadDocumentation, loadRepositorySkills, loadCloudflareConnection, loadMcpConnections, loadPeopleSettings, loadRepositoryWork, loadProposalCreate, loadModelConnections, loadIssues, loadReleases, loadPullRequests, loadPullRequestCreate, loadBranchProtection, loadSecretSettings, loadGitAccess];
 // Start the homepage chunk alongside the main bundle instead of after it
 if (currentRoute() === "home") void loadHomepage();
 
@@ -669,9 +671,10 @@ function Workspace() {
               <WorkspaceSettingsLayout route={route}>
                 {route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} />
                   : route === "settings/cloudflare" ? <CloudflareConnection canManage={permissions.includes("manage")} repositories={workspace.repositories} />
-                  : route === "settings/people" ? <AccessSettings key="people" selfHosted={authConfig.edition === "self-hosted"} repositories={workspace.repositories} onWorkspaceChanged={load} />
-                  : route === "settings/audit" ? <AccessSettings key="audit" initialTab="Audit" selfHosted={authConfig.edition === "self-hosted"} repositories={workspace.repositories} onWorkspaceChanged={load} />
-                  : <GeneralSettings workspace={workspace} canManage={permissions.includes("manage")} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onOpenCloudflare={() => navigate("settings/cloudflare")} />}
+                  : !account ? <RouteProgress />
+                  : route === "settings/people" ? <PeopleSettings data={account} repositories={workspace.repositories} workspaceName={workspace.name} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} />
+                  : route === "settings/audit" ? <AuditLog data={account} repositories={workspace.repositories} workspaceName={workspace.name} />
+                  : <GeneralSettings workspace={workspace} data={account} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onLeft={async remaining => { if (remaining[0]) await switchWorkspace(remaining[0].id); else await load(); }} onOpenInstallation={() => navigate("settings/cloudflare")} />}
               </WorkspaceSettingsLayout>
             ) : route === "admin" ? <NotFoundPanel /> : route === "account/clients" ? <McpConnections /> : page === "account" ? <AccountSettings section={route === "account/security" ? "security" : "profile"} config={authConfig} onChanged={load} /> : page === "mission" ? (
               <MissionDetail
@@ -709,6 +712,8 @@ function Workspace() {
                 onNotify={notify}
                 canContribute={permissions.includes("contribute")}
                 canExecute={permissions.includes("execute")}
+                access={account}
+                onAccessChanged={load}
               />
             ) : (
               <>
@@ -1362,6 +1367,8 @@ function RepositoryDetail({
   releaseId,
   canLand,
   demo = false,
+  access,
+  onAccessChanged,
 }: {
   repository?: Repository;
   workspace: Workspace;
@@ -1381,6 +1388,8 @@ function RepositoryDetail({
   releaseId?: string;
   canLand: boolean;
   demo?: boolean;
+  access: AccessSnapshot | null;
+  onAccessChanged: () => Promise<void>;
 }) {
   if (!repository)
     return (
@@ -1442,6 +1451,7 @@ function RepositoryDetail({
           : subroute === "deploys" ? <Deployments key={repository.id} repository={repository} onNotify={onNotify} />
           : subroute === "previews" ? <PreviewSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
           : subroute === "cloudflare" ? <CloudflareConnection key={repository.id} canManage={canManage} repository={repository} repositoryId={repository.id} />
+          : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <RouteProgress />
           : <RepositoryGeneral repository={repository} onNotify={onNotify} />}
       </RepositorySettingsLayout> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "code" ? (
         <><RepositoryImportOnboarding key={repository.id} repository={repository} canManage={canManage} onImport={onImport} onRefresh={onRefresh} /><RepositoryBrowser key={repository.id} repository={repository} />{repository.provider === "artifacts" && <GitAccess key={`git-${repository.id}`} repository={repository} onNotify={onNotify} />}</>

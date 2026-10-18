@@ -141,6 +141,7 @@ export const REPOSITORY_SETTINGS_PAGES = [
   { path: "previews", label: "Previews" },
   { path: "secrets", label: "Secrets" },
   { path: "cloudflare", label: "Resources" },
+  { path: "access", label: "Access" },
 ] as const;
 
 export function keepsRouteAcrossWorkspaces(route: string): boolean {
