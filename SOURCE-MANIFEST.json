@@ -210,8 +210,8 @@
     },
     {
       "path": "src/ui/AccessSettings.tsx",
-      "size": 21868,
-      "sha256": "2086164acfe43fa1fc0185912e84d27a25711e9e24bfa3f7ae0d7a710f21bc82"
+      "size": 21954,
+      "sha256": "35ab680e2a9d20dee6e8910d57c936fbaa14fc87d2b496c74eb6ca33ee497e5a"
     },
     {
       "path": "src/ui/account-settings.css",
@@ -565,8 +565,8 @@
     },
     {
       "path": "src/ui/ProposalCreate.tsx",
-      "size": 29250,
-      "sha256": "26187b70bd40185345bc5e48d6bbe525e0fefda25541bf00cf31722027095189"
+      "size": 29324,
+      "sha256": "eecbcdd27f26392d88aeda7e1e317960cfa87047f1f0690b120edadb89623f62"
     },
     {
       "path": "src/ui/public-install.css",
@@ -630,8 +630,8 @@
     },
     {
       "path": "src/ui/RepositoryImport.tsx",
-      "size": 20372,
-      "sha256": "f7acbc6bbbe7f4af61278cf36c9dc8caadbda8b4a3793b7e4980550af9168f94"
+      "size": 20396,
+      "sha256": "dc43b93643ba4be33fe6f6027097a0f7c8711a5e5e0edcc4b42518003fc77422"
     },
     {
       "path": "src/ui/RepositorySkills.tsx",
