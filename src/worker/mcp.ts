@@ -28,14 +28,14 @@ export const mcpToolNames = [
   'gitflare_model_connections', 'gitflare_manage_model_connection', 'gitflare_ai_keys', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway',
   'gitflare_proposal_base', 'gitflare_repository_import_status', 'gitflare_import_repository_archive',
   'gitflare_list_releases', 'gitflare_read_release', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_release_notes',
-  'gitflare_create_repository', 'gitflare_connect_repository', 'gitflare_import_repository_url', 'gitflare_list_missions',
+  'gitflare_create_repository', 'gitflare_connect_repository', 'gitflare_import_repository_url', 'gitflare_url_import_status', 'gitflare_list_missions',
   'gitflare_inspect_mission', 'gitflare_draft_mission', 'gitflare_create_mission', 'gitflare_start_mission', 'gitflare_cancel_mission',
   'gitflare_review_mission', 'gitflare_revert_mission', 'gitflare_select_candidate', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval',
-  'gitflare_preview_mission', 'gitflare_mission_history', 'gitflare_workspace_status',
-  'gitflare_list_docs', 'gitflare_read_doc', 'gitflare_public_source', 'gitflare_ai_settings', 'gitflare_access_status', 'gitflare_manage_access', 'gitflare_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_deployments', 'gitflare_deploy', 'gitflare_secrets', 'gitflare_manage_secret',
+  'gitflare_preview_mission', 'gitflare_preview_status', 'gitflare_mission_history', 'gitflare_workspace_status',
+  'gitflare_list_docs', 'gitflare_read_doc', 'gitflare_public_source', 'gitflare_ai_settings', 'gitflare_set_ai_features', 'gitflare_access_status', 'gitflare_manage_access', 'gitflare_cloudflare_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_manage_cloudflare_project', 'gitflare_deployments', 'gitflare_detect_deploy_setup', 'gitflare_deploy', 'gitflare_secrets', 'gitflare_manage_secret',
   'gitflare_list_issues', 'gitflare_read_issue', 'gitflare_create_issue', 'gitflare_comment_issue', 'gitflare_update_issue',
-  'gitflare_list_branches', 'gitflare_create_branch', 'gitflare_delete_branch', 'gitflare_create_pull_request', 'gitflare_update_pull_request', 'gitflare_branch_protection',
-  'gitflare_check_settings', 'gitflare_retry_checks', 'gitflare_preview_settings',
+  'gitflare_list_branches', 'gitflare_create_branch', 'gitflare_delete_branch', 'gitflare_create_pull_request', 'gitflare_update_pull_request', 'gitflare_branch_protection', 'gitflare_set_branch_protection',
+  'gitflare_check_settings', 'gitflare_set_check_settings', 'gitflare_retry_checks', 'gitflare_preview_settings', 'gitflare_set_preview_settings',
   'gitflare_github_mirror', 'gitflare_manage_github_mirror',
 ] as const;
 
@@ -54,18 +54,12 @@ const destructive = { ...mutation, destructiveHint: true };
 const external = { ...mutation, openWorldHint: true };
 const commit = z.string().regex(/^[a-f0-9]{40}$/).describe('Exact 40-character commit SHA observed in current evidence.');
 const evidenceInput = { view: z.enum(['summary', 'context', 'runs', 'changes', 'checks', 'events', 'reviews']).default('summary').describe('Evidence to return.'), offset, limit: z.number().int().min(1).max(20).default(5).describe('Items per page.'), detail_offset: offset.describe('Start character within each long text field.'), detail_limit: z.number().int().min(1).max(8000).default(3000).describe('Characters per long text field.') };
-const LAND_TOOLS = new Set(['gitflare_check_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
-const ADMIN_TOOLS = new Set(['gitflare_manage_secret', 'gitflare_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_ai_settings', 'gitflare_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror']);
+const LAND_TOOLS = new Set(['gitflare_set_check_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
+const ADMIN_TOOLS = new Set(['gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror']);
 
 export function requiredAccess(name: string, annotations: { readOnlyHint?: boolean } | undefined, input: Record<string, unknown>): AccessLevel {
   if (annotations?.readOnlyHint) return 'read';
-  if (name === 'gitflare_ai_settings' && input.enabled === undefined) return 'read';
-  if ((name === 'gitflare_branch_protection' || name === 'gitflare_check_settings' || name === 'gitflare_preview_settings') && input.action !== 'set') return 'read';
   if (name === 'gitflare_preview_mission' && input.action === 'extend') return 'land';
-  if (name === 'gitflare_cloudflare_connection' && ['status', 'accounts', 'resources', 'installation-credential'].includes(String(input.action))) return 'read';
-  if (name === 'gitflare_cloudflare_project' && ['get', 'usage'].includes(String(input.action))) return 'read';
-  if (name === 'gitflare_import_repository_url' && input.action === 'status') return 'read';
-  if (name === 'gitflare_deploy' && input.action === 'detect') return 'read';
   return LAND_TOOLS.has(name) ? 'land' : ADMIN_TOOLS.has(name) ? 'admin' : 'write';
 }
 
@@ -180,34 +174,43 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     }
     return response.json() as Promise<T>;
   }
+  const cloudflareRepository = repositoryId.optional().describe('Act on this repository’s own Cloudflare connection instead of the workspace connection.');
+  const cloudflareBase = (repository?: string) => repository ? `/api/repositories/${encodeURIComponent(repository)}/cloudflare/connection` : '/api/cloudflare';
   server.registerTool('gitflare_cloudflare_connection', {
-    title: 'Connect and manage Cloudflare', description: 'Workspace (or repository_id) Cloudflare connection: status, accounts, resources, select-account, disconnect; connect returns a browser URL and lists requested permissions with reasons. installation-*: previews fallback status, use or remove this workspace’s connection, remove a pasted token; setup returns a browser URL. Credentials are never returned. Reads need read access; changes need Owner and admin.',
-    inputSchema: z.object({ action: z.enum(['status', 'connect', 'accounts', 'resources', 'select-account', 'disconnect', 'installation-credential', 'installation-credential-setup', 'installation-credential-remove', 'installation-connection-use', 'installation-connection-remove']), accountId: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('Cloudflare account ID for select-account or installation-connection-use.'), workerName: z.string().regex(/^[a-z0-9][a-z0-9-]{0,52}$/).optional().describe('Previews Worker name for installation-connection-use; defaults to the installation’s configured name.'), repository_id: repositoryId.optional().describe('Act on this repository’s own Cloudflare connection instead of the workspace connection.') }).strict(), annotations: { ...external, destructiveHint: true },
+    title: 'Read the Cloudflare connection', description: 'Read the workspace (or repository_id) Cloudflare connection: status, the accounts it can reach, or its resources. installation-credential reads the self-hosted previews fallback status. Credentials are never returned. Read-only.',
+    inputSchema: z.object({ action: z.enum(['status', 'accounts', 'resources', 'installation-credential']).default('status'), repository_id: cloudflareRepository }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => {
+    if (input.action === 'installation-credential') return call<Record<string, unknown>>('/api/cloudflare/installation-credential');
+    const base = cloudflareBase(input.repository_id);
+    return call<Record<string, unknown>>(input.action === 'status' && input.repository_id ? base : `${base}/${input.action}`);
+  }));
+  server.registerTool('gitflare_manage_cloudflare_connection', {
+    title: 'Connect or change the Cloudflare connection', description: 'Change the workspace (or repository_id) Cloudflare connection. connect returns a browser URL and the requested permissions with reasons; select-account and disconnect change it. installation-credential-setup returns a browser URL for the token; -remove deletes a pasted token; installation-connection-use or -remove sets the previews fallback. Needs the Owner role and admin access.',
+    inputSchema: z.object({ action: z.enum(['connect', 'select-account', 'disconnect', 'installation-credential-setup', 'installation-credential-remove', 'installation-connection-use', 'installation-connection-remove']), accountId: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('Cloudflare account ID for select-account, disconnect or installation-connection-use.'), workerName: z.string().regex(/^[a-z0-9][a-z0-9-]{0,52}$/).optional().describe('Previews Worker name for installation-connection-use; defaults to the installation’s configured name.'), repository_id: cloudflareRepository }).strict(), annotations: { ...external, destructiveHint: true },
   }, (input) => guarded(async () => {
     if (input.action === 'installation-connection-use') return call<Record<string, unknown>>('/api/cloudflare/installation-credential/connection', { ...(input.accountId ? { accountId: input.accountId } : {}), ...(input.workerName ? { workerName: input.workerName } : {}) });
     if (input.action === 'installation-connection-remove') return call<Record<string, unknown>>('/api/cloudflare/installation-credential/connection-remove', {});
-    if (input.action.startsWith('installation-credential')) {
-      if (input.action === 'installation-credential') return call<Record<string, unknown>>('/api/cloudflare/installation-credential');
-      if (input.action === 'installation-credential-remove') return call<Record<string, unknown>>('/api/cloudflare/installation-credential/remove', {});
+    if (input.action === 'installation-credential-remove') return call<Record<string, unknown>>('/api/cloudflare/installation-credential/remove', {});
+    if (input.action === 'installation-credential-setup') {
       const status = await call<Record<string, unknown>>('/api/cloudflare/installation-credential');
       return { browserStartUrl: `${origin}/settings/cloudflare`, browserEntryRequired: true, manageable: status.manageable, state: status.state };
     }
-    const base = input.repository_id ? `/api/repositories/${encodeURIComponent(input.repository_id)}/cloudflare/connection` : '/api/cloudflare';
+    const base = cloudflareBase(input.repository_id);
     if (input.action === 'connect') {
       const status = await call<{ permissions?: { docsUrl?: string } }>(base);
       const permissions = status.permissions ? { ...status.permissions, ...(status.permissions.docsUrl ? { docsUrl: `${origin}${status.permissions.docsUrl}` } : {}) } : undefined;
       return { browserStartUrl: input.repository_id ? `${origin}/repository/${encodeURIComponent(input.repository_id)}/cloudflare` : `${origin}/settings/cloudflare`, browserAuthorizationRequired: true, ...(permissions ? { permissions } : {}) };
     }
-    const path = input.action === 'status' && input.repository_id ? base : `${base}/${input.action}`;
-    return call<Record<string, unknown>>(path, ['select-account','disconnect'].includes(input.action) ? { accountId: input.accountId } : undefined);
+    return call<Record<string, unknown>>(`${base}/${input.action}`, { accountId: input.accountId });
   }));
   server.registerTool('gitflare_cloudflare_project', {
-    title: 'Manage project Cloudflare resources', description: 'Read or map a repository’s Cloudflare resources (Workers, D1, Durable Objects, Containers, Workflows) and usage, or plan and apply a pinned D1 SQL migration. migration-execute changes database data and schema and is never retried after an uncertain result. get and usage need read access; other actions need the Owner role and admin access.',
-    inputSchema: z.object({ repositoryId: repositoryId, action: z.enum(['get','map','usage','migration-plan','migration-execute']).describe('get and usage read; map replaces the resource mapping; migration-plan pins a SQL file; migration-execute applies a plan.'), resources: z.array(z.object({ type: z.enum(['worker','d1','durable_object','container','workflow']), id: z.string().min(1).max(128), name: z.string().max(200), environment: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/) }).strict()).max(100).optional(), databaseId: z.string().uuid().optional(), workerName: z.string().max(64).optional(), d1DatabaseId: z.string().max(36).optional(), durableObjectNamespaceId: z.string().max(36).optional(), commitSha: commit.optional(), path: z.string().max(500).optional(), planId: z.string().uuid().optional().describe('Plan ID from migration-plan.'), checksum: z.string().regex(/^[a-f0-9]{64}$/).optional().describe('Exact plan checksum from migration-plan.') }).strict(), annotations: { ...external, destructiveHint: true },
-  }, ({repositoryId, action, ...fields}) => guarded(async () => {
-    const path = `/api/repositories/${repositoryId}/cloudflare`;
-    return call<Record<string, unknown>>(action === 'get' ? path : action === 'usage' ? `${path}/usage` : `${path}/action`, ['get','usage'].includes(action) ? undefined : { action, ...Object.fromEntries(Object.entries(fields).filter(([,value]) => value !== undefined)) });
-  }));
+    title: 'Read project Cloudflare resources', description: 'Read a repository’s mapped Cloudflare resources (Workers, D1, Durable Objects, Containers, Workflows) with action get, or their usage with action usage. Read-only.',
+    inputSchema: z.object({ repositoryId: repositoryId, action: z.enum(['get', 'usage']).default('get') }).strict(), annotations: readOnly,
+  }, ({ repositoryId, action }) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${repositoryId}/cloudflare${action === 'usage' ? '/usage' : ''}`)));
+  server.registerTool('gitflare_manage_cloudflare_project', {
+    title: 'Map resources or run a D1 migration', description: 'Replace a repository’s Cloudflare resource mapping (map), pin a D1 SQL migration file at a commit (migration-plan), or apply a pinned plan (migration-execute). migration-execute changes database data and schema and is never retried after an uncertain result. Needs the Owner role and admin access.',
+    inputSchema: z.object({ repositoryId: repositoryId, action: z.enum(['map', 'migration-plan', 'migration-execute']).describe('map replaces the resource mapping; migration-plan pins a SQL file; migration-execute applies a plan.'), resources: z.array(z.object({ type: z.enum(['worker','d1','durable_object','container','workflow']), id: z.string().min(1).max(128), name: z.string().max(200), environment: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/) }).strict()).max(100).optional(), databaseId: z.string().uuid().optional(), workerName: z.string().max(64).optional(), d1DatabaseId: z.string().max(36).optional(), durableObjectNamespaceId: z.string().max(36).optional(), commitSha: commit.optional(), path: z.string().max(500).optional(), planId: z.string().uuid().optional().describe('Plan ID from migration-plan.'), checksum: z.string().regex(/^[a-f0-9]{64}$/).optional().describe('Exact plan checksum from migration-plan.') }).strict(), annotations: { ...external, destructiveHint: true },
+  }, ({ repositoryId, action, ...fields }) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${repositoryId}/cloudflare/action`, { action, ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) })));
   server.registerTool('gitflare_deployments', {
     title: 'Read repository deployments', description: 'Read a repository’s deploy settings per environment (production, staging and any other Wrangler env), each environment’s current commit, live Worker versions, pending and promotable deployments, the Workers linked to it, and the deployment history (environment, commit SHA, Worker versions, rollout percentage, status, actor, time, errors). canDeploy and canConfirm report what you may do. Read-only.',
     inputSchema: z.object({ repository_id: repositoryId, deployment_id: z.string().max(80).optional().describe('Return only this deployment.') }).strict(), annotations: readOnly,
@@ -218,13 +221,15 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     if (!deployment) throw new ApiError(404, 'DEPLOYMENT_NOT_FOUND', 'This deployment could not be found.');
     return { deployment };
   }));
+  server.registerTool('gitflare_detect_deploy_setup', {
+    title: 'Detect the deploy setup', description: 'Read the deploy setup Gitflare finds in a repository’s Wrangler configs: environments, Workers, build commands, D1 migrations and warnings, with a fingerprint to pass to gitflare_deploy apply_detected. Saves nothing. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/deployments/detect`)));
   server.registerTool('gitflare_deploy', {
-    title: 'Deploy a landed commit to Cloudflare', description: 'Deploy landed commits to production (top level) or any Wrangler env (staging, qa…). detect reads the setup found in the Wrangler configs (Read-only); apply_detected saves it and links its Workers; settings configures one environment; deploy builds the head or confirms a pending deployment; promote sends a successful deployment to production; rollback restores one. Needs land access.',
-    inputSchema: z.object({ repository_id: repositoryId, action: z.enum(['detect', 'apply_detected', 'settings', 'deploy', 'promote', 'rollback']), environment: z.string().regex(ENVIRONMENT_NAME).optional().describe('production or a Wrangler env name such as staging or qa. Required for settings; for deploy and rollback when several environments are configured; for promote the destination (default production); for apply_detected only that environment.'), from: z.string().regex(ENVIRONMENT_NAME).optional().describe('For promote: promote the latest successful deployment of this environment.'), fingerprint: z.string().max(64).optional().describe('For apply_detected: the fingerprint detect returned, so only the reviewed setup is saved.'), acknowledge_warnings: z.array(z.string().max(400)).max(50).optional().describe('For apply_detected: warning ids from detect an Owner acknowledges before non-production environments are enabled.'), commit_sha: commit.optional().describe('For deploy: the current default-branch head.'), deployment_id: z.string().max(80).optional().describe('For deploy: a deployment awaiting confirmation. For promote: the deployment to promote (default: the latest successful non-production one).'), confirm: z.boolean().optional().describe('For production deploy and promote: an Owner confirms now instead of leaving it waiting for confirmation.'), enabled: z.boolean().optional().describe('For settings: deploy on land.'), worker_name: z.string().max(63).optional().describe('For settings without targets: a Worker linked to this repository, built from the root Wrangler config with its existing bindings kept.'), targets: z.union([z.literal('all'), z.array(z.string().max(63)).min(1).max(5), z.array(z.object({ worker_name: z.string().max(63).describe('The Worker Wrangler resolves for this environment, e.g. prahari-api-staging.'), config_path: z.string().max(300).describe('Repository-relative Wrangler config, e.g. apps/api/wrangler.jsonc.'), build_command: z.string().max(500).optional().describe('Runs at the repository root (with CLOUDFLARE_ENV set outside production) before Wrangler reads the config, e.g. pnpm --filter @app/web build.'), d1_migrations: z.boolean().optional().describe('Apply pending migrations_dir files through the D1 API before deploying.'), watch_paths: z.array(z.string().max(201)).max(20).optional().describe('Globs (prefix ! to exclude); on land the target deploys only when the landed change touches a match. Empty: always.') }).strict()).min(1).max(5)]).optional().describe('For settings: target objects, deployed in order. For deploy: "all" (default) or the Worker names to deploy, e.g. ["prahari-web"].'), mode: z.enum(['deploy', 'upload-only']).optional().describe('For settings: upload-only uploads versions without deploying them.'), rollout: z.enum(['immediate', 'gradual']).optional(), trigger: z.enum(['manual', 'auto']).optional().describe('For settings: deploy after landing automatically or wait (production auto: Owner only).'), confirmation: z.enum(['manual', 'auto']).optional().describe('Earlier name for trigger.'), idempotency_key: requestKey.optional().describe('Required for every action except detect. Reuse the same key and payload only to retry the same action.') }).strict(), annotations: { ...destructive, openWorldHint: true, idempotentHint: false },
+    title: 'Deploy a landed commit to Cloudflare', description: 'Deploy landed commits to production (top level) or any Wrangler env (staging, qa…). apply_detected saves the setup from gitflare_detect_deploy_setup and links its Workers; settings configures one environment; deploy builds the head or confirms a pending deployment; promote sends a successful deployment to production; rollback restores one. Needs land access.',
+    inputSchema: z.object({ repository_id: repositoryId, action: z.enum(['apply_detected', 'settings', 'deploy', 'promote', 'rollback']), environment: z.string().regex(ENVIRONMENT_NAME).optional().describe('production or a Wrangler env name such as staging or qa. Required for settings; for deploy and rollback when several environments are configured; for promote the destination (default production); for apply_detected only that environment.'), from: z.string().regex(ENVIRONMENT_NAME).optional().describe('For promote: promote the latest successful deployment of this environment.'), fingerprint: z.string().max(64).optional().describe('For apply_detected: the fingerprint gitflare_detect_deploy_setup returned, so only the reviewed setup is saved.'), acknowledge_warnings: z.array(z.string().max(400)).max(50).optional().describe('For apply_detected: warning ids from gitflare_detect_deploy_setup an Owner acknowledges before non-production environments are enabled.'), commit_sha: commit.optional().describe('For deploy: the current default-branch head.'), deployment_id: z.string().max(80).optional().describe('For deploy: a deployment awaiting confirmation. For promote: the deployment to promote (default: the latest successful non-production one).'), confirm: z.boolean().optional().describe('For production deploy and promote: an Owner confirms now instead of leaving it waiting for confirmation.'), enabled: z.boolean().optional().describe('For settings: deploy on land.'), worker_name: z.string().max(63).optional().describe('For settings without targets: a Worker linked to this repository, built from the root Wrangler config with its existing bindings kept.'), targets: z.union([z.literal('all'), z.array(z.string().max(63)).min(1).max(5), z.array(z.object({ worker_name: z.string().max(63).describe('The Worker Wrangler resolves for this environment, e.g. prahari-api-staging.'), config_path: z.string().max(300).describe('Repository-relative Wrangler config, e.g. apps/api/wrangler.jsonc.'), build_command: z.string().max(500).optional().describe('Runs at the repository root (with CLOUDFLARE_ENV set outside production) before Wrangler reads the config, e.g. pnpm --filter @app/web build.'), d1_migrations: z.boolean().optional().describe('Apply pending migrations_dir files through the D1 API before deploying.'), watch_paths: z.array(z.string().max(201)).max(20).optional().describe('Globs (prefix ! to exclude); on land the target deploys only when the landed change touches a match. Empty: always.') }).strict()).min(1).max(5)]).optional().describe('For settings: target objects, deployed in order. For deploy: "all" (default) or the Worker names to deploy, e.g. ["prahari-web"].'), mode: z.enum(['deploy', 'upload-only']).optional().describe('For settings: upload-only uploads versions without deploying them.'), rollout: z.enum(['immediate', 'gradual']).optional(), trigger: z.enum(['manual', 'auto']).optional().describe('For settings: deploy after landing automatically or wait (production auto: Owner only).'), confirmation: z.enum(['manual', 'auto']).optional().describe('Earlier name for trigger.'), idempotency_key: requestKey }).strict(), annotations: { ...destructive, openWorldHint: true, idempotentHint: false },
   }, (input) => guarded(async () => {
     const path = `/api/repositories/${input.repository_id}/deployments`;
-    if (input.action === 'detect') return call<Record<string, unknown>>(`${path}/detect`);
-    if (!input.idempotency_key) throw new ApiError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Send idempotency_key for this action.');
     const environment = input.environment ? { environment: input.environment } : {};
     const body = input.action === 'apply_detected'
       ? { action: 'apply_detected', ...environment, fingerprint: input.fingerprint, ...(input.acknowledge_warnings ? { acknowledge: input.acknowledge_warnings } : {}) }
@@ -253,10 +258,42 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     title: 'Read workspace access', description: 'Read your identity, role, memberships, teams, invitations, task credentials, sessions, protection rules and the audit events your role may see. Read-only.',
     inputSchema: z.object({}).strict(), annotations: readOnly,
   }, () => guarded(async () => call<Record<string, unknown>>('/api/access')));
+  const memberRole = z.enum(['Viewer', 'Contributor', 'Reviewer', 'Maintainer', 'Deployer']).describe('Workspace role. Owner is assigned only with transfer.');
+  const accessId = z.string().min(1).max(200);
+  const userId = accessId.describe('Member user ID from gitflare_access_status.');
+  const accessAction = <A extends string, S extends z.ZodRawShape>(action: A, shape: S, description: string) => z.object({ action: z.literal(action), ...shape }).strict().describe(description);
+  const ACCESS_BROWSER: Record<string, { path: string; reason: string }> = {
+    'accept-invite': { path: '/settings', reason: 'Paste the invitation capability under Settings → Access → Join another workspace.' },
+    'user-create': { path: '/settings', reason: 'Set the new user’s password under Settings → Access → Create a user.' },
+    'mfa-enroll': { path: '/account/security', reason: 'Scan the authenticator code under Account → Security.' },
+  };
   server.registerTool('gitflare_manage_access', {
-    title: 'Manage workspace access', description: 'Run a workspace access action: invite, membership, transfer, teams, grants, task credentials, protection, session create or revoke, invitation acceptance, MFA enrollment or a verification email. Most actions need the Owner role; session and invitation actions apply to your own account. Can remove members and revoke credentials. Returned tokens are secrets shown once. Needs admin access.',
-    inputSchema: z.object({ action: z.enum(['invite', 'invite-revoke', 'accept-invite', 'membership', 'transfer', 'team-create', 'team-member', 'grant', 'grant-revoke', 'credential-create', 'credential-revoke', 'protection', 'session-create', 'session-revoke', 'user-create', 'agent-claim', 'mfa-enroll', 'email-verification-resend']), parameters: z.record(z.string(), z.unknown()).default({}).describe('Fields for the action, as the Settings UI sends them (for example email and role for invite, id for session-revoke).') }).strict(), annotations: { ...destructive, idempotentHint: false },
-  }, (input) => guarded(async () => call<Record<string, unknown>>(input.action === 'email-verification-resend' ? '/api/auth/resend-verification' : `/api/access/${input.action}`, input.parameters)));
+    title: 'Manage workspace access', description: 'Change workspace access with operation.action: invitations, member roles and repository scope, ownership transfer, teams, resource grants, task credentials, landing protection, your own sessions, an agent-account claim or a verification email. Can remove members and revoke credentials. accept-invite, user-create and mfa-enroll return a browser URL. Tokens returned are shown once. Mostly Owner only; admin access.',
+    inputSchema: z.object({ operation: z.discriminatedUnion('action', [
+      accessAction('invite', { email: z.string().email().max(254), role: memberRole }, 'Invite someone by email. Returns an invitation capability shown once.'),
+      accessAction('invite-revoke', { id: accessId.describe('Invitation ID.') }, 'Withdraw a pending invitation.'),
+      accessAction('accept-invite', {}, 'Returns a browser URL; the invitation capability is entered there.'),
+      accessAction('membership', { userId, role: memberRole.nullable().optional().describe('New role, or null to remove the member and revoke their sessions, credentials and grants.'), repositoryIds: z.array(accessId).max(100).nullable().optional().describe('Restrict the member to these repositories; null restores access to all.') }, 'Change a member’s role or repository scope, or remove them.'),
+      accessAction('transfer', { userId }, 'Transfer workspace ownership; you become a Maintainer. Needs a sign-in within five minutes.'),
+      accessAction('team-create', { name: z.string().min(1).max(100) }, 'Create a team.'),
+      accessAction('team-member', { teamId: accessId.describe('Team ID.'), userId, remove: z.boolean().optional().describe('true removes the member from the team.') }, 'Add a member to a team or remove them.'),
+      accessAction('grant', { subjectType: z.enum(['user', 'team']), subjectId: accessId, resourceType: z.enum(['repository', 'stream', 'environment', 'secret', 'database']), resourceId: accessId, actions: z.array(z.enum(['read', 'contribute', 'execute', 'review', 'land', 'deploy', 'migrate'])).min(1).max(7) }, 'Grant a user or team actions on one resource.'),
+      accessAction('grant-revoke', { id: accessId.describe('Grant ID.') }, 'Revoke a resource grant.'),
+      accessAction('credential-create', { name: z.string().min(1).max(100), repositoryId: accessId.describe('Repository the credential is bound to.'), missionId: accessId.optional().describe('Limit the credential to one mission.'), actions: z.array(z.enum(['read', 'contribute', 'execute'])).min(1).max(3), expiresInSeconds: z.number().int().min(1).max(86400), maxRequests: z.number().int().min(1).max(1000), maxExecutions: z.number().int().min(1).max(10) }, 'Issue a bounded task credential for a coding agent. Returns its token once.'),
+      accessAction('credential-revoke', { id: accessId.describe('Credential ID.') }, 'Revoke a task credential.'),
+      accessAction('protection', { requiredApprovals: z.number().int().min(1).max(10), requiredChecks: z.array(z.string().min(1).max(100)).max(20), preventSelfApproval: z.boolean() }, 'Replace the workspace landing protection.'),
+      accessAction('session-create', {}, 'Create a personal MCP session token for your account. Needs a recent sign-in.'),
+      accessAction('session-revoke', { id: accessId.describe('Session ID.') }, 'Revoke one of your sessions and the client grants derived from it.'),
+      accessAction('user-create', {}, 'Self-hosted: returns a browser URL; the password is set there.'),
+      accessAction('agent-claim', { claimToken: z.string().min(1).max(128).describe('Claim token the agent account received at sign-up.') }, 'Hosted: claim an agent-created workspace as its Owner.'),
+      accessAction('mfa-enroll', {}, 'Returns a browser URL; the authenticator secret is shown there.'),
+      accessAction('email-verification-resend', {}, 'Send your account a new verification email.'),
+    ]).describe('The access action and its fields.') }).strict(), annotations: { ...destructive, idempotentHint: false },
+  }, ({ operation: { action, ...parameters } }) => guarded(async () => {
+    const browser = ACCESS_BROWSER[action];
+    if (browser) return { browserStartUrl: `${origin}${browser.path}`, browserEntryRequired: true, reason: browser.reason };
+    return call<Record<string, unknown>>(action === 'email-verification-resend' ? '/api/auth/resend-verification' : `/api/access/${action}`, parameters);
+  }));
   server.registerTool('gitflare_list_docs', {
     title: 'List Gitflare documentation', description: 'List Gitflare documentation pages; set public to list only the public guides. Planning pages describe intent, not shipped features. Read-only.',
     inputSchema: z.object({ public: z.boolean().default(false).describe('List only the public guides.') }).strict(), annotations: readOnly,
@@ -337,16 +374,19 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     inputSchema: z.object({}).strict(), annotations: readOnly,
   }, () => guarded(async () => call<Record<string, unknown>>('/api/ai-keys')));
   server.registerTool('gitflare_manage_ai_key', {
-    title: 'Add, test or remove a workspace AI key', description: 'Add a provider API key for this workspace, test a stored key, or remove it. Add and test make one small billed call through AI Gateway before saving; the key is stored encrypted, never returned, and never reaches sandboxes. Needs the Owner role and admin access.',
-    inputSchema: z.object({ action: z.enum(['add', 'test', 'remove']), provider: aiProvider, api_key: z.string().min(8).max(512).optional(), model_id: z.string().min(1).max(200).optional(), idempotency_key: requestKey }).strict(), annotations: { ...destructive, openWorldHint: true },
+    title: 'Add, test or remove a workspace AI key', description: 'Test a stored provider key with one small billed call through AI Gateway, or remove it. add returns a browser URL where the Owner pastes the key; keys are never sent through MCP, never returned and never reach sandboxes. Needs the Owner role and admin access.',
+    inputSchema: z.object({ action: z.enum(['add', 'test', 'remove']), provider: aiProvider, model_id: z.string().min(1).max(200).optional().describe('Model used by test.'), idempotency_key: requestKey }).strict(), annotations: { ...destructive, openWorldHint: true },
   }, input => guarded(async () => {
-    if (input.action === 'add' && !input.api_key) throw new ApiError(400, 'INVALID_AI_KEY', 'Provide api_key to add a provider key.');
-    return call<Record<string, unknown>>('/api/ai-keys/action', { action: input.action, provider: input.provider, ...(input.action === 'add' ? { key: input.api_key } : {}), ...(input.model_id ? { modelId: input.model_id } : {}) }, input.idempotency_key);
+    if (input.action === 'add') return { browserStartUrl: `${origin}/settings/models`, browserEntryRequired: true, provider: input.provider };
+    return call<Record<string, unknown>>('/api/ai-keys/action', { action: input.action, provider: input.provider, ...(input.model_id ? { modelId: input.model_id } : {}) }, input.idempotency_key);
   }));
   server.registerTool('gitflare_manage_ai_gateway', {
-    title: 'Use your own AI Gateway', description: 'Route this workspace\'s model calls through an AI Gateway in your own Cloudflare account (account ID, gateway ID, optional gateway authentication value), or clear it. Workspace keys are sent through it; otherwise its stored provider keys are used. The authentication value is stored encrypted and never returned. Needs the Owner role and admin access.',
-    inputSchema: z.object({ action: z.enum(['set', 'clear']), account_id: z.string().regex(/^[a-f0-9]{32}$/).optional(), gateway_id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/).optional(), gateway_auth: z.string().min(20).max(256).optional(), idempotency_key: requestKey }).strict(), annotations: { ...destructive, openWorldHint: true },
-  }, input => guarded(async () => call<Record<string, unknown>>('/api/ai-gateway', input.action === 'clear' ? { action: 'clear' } : { action: 'set', accountId: input.account_id, gatewayId: input.gateway_id, ...(input.gateway_auth ? { token: input.gateway_auth } : {}) }, input.idempotency_key)));
+    title: 'Use your own AI Gateway', description: 'Route this workspace\'s model calls through an AI Gateway in your own Cloudflare account (account ID and gateway ID), or clear it. set replaces the stored gateway, including any authentication value. authenticate returns a browser URL where the Owner enters the gateway authentication value; it is never sent through MCP. Needs the Owner role and admin access.',
+    inputSchema: z.object({ action: z.enum(['set', 'clear', 'authenticate']), account_id: z.string().regex(/^[a-f0-9]{32}$/).optional().describe('Required for set.'), gateway_id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/).optional().describe('Required for set.'), idempotency_key: requestKey }).strict(), annotations: { ...destructive, openWorldHint: true },
+  }, input => guarded(async () => {
+    if (input.action === 'authenticate') return { browserStartUrl: `${origin}/settings/models`, browserEntryRequired: true };
+    return call<Record<string, unknown>>('/api/ai-gateway', input.action === 'clear' ? { action: 'clear' } : { action: 'set', accountId: input.account_id, gatewayId: input.gateway_id }, input.idempotency_key);
+  }));
   server.registerTool('gitflare_repository_import_status', {
     title: 'Inspect first code import readiness', description: 'Check whether a repository can take a first code import: returns its head and whether it is empty or holds only the untouched bootstrap commit. Read-only.',
     inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
@@ -364,19 +404,19 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     inputSchema: z.object(repositoryInput).strict(), annotations: mutation,
   }, ({ idempotency_key, ...input }) => guarded(async () => ({ repository: await call<Repository>('/api/repositories/connect', input, idempotency_key) })));
   server.registerTool('gitflare_import_repository_url', {
-    title: 'Import a repository from a Git URL', description: `Create a repository and import every branch and tag with full history from an HTTPS Git URL (GitHub, GitLab, Bitbucket, others). Private sources take token (+ username); it is never stored. Runs in the background: use status, then retry after a failure. Up to ${URL_IMPORT_LIMITS.packBytes / 1024 / 1024} MiB; no SSH or LFS. Needs Manage permission; start and retry need land access.`,
-    inputSchema: z.object({ action: z.enum(['start', 'status', 'retry']).default('start'), url: z.string().min(1).max(2048).optional(), name: z.string().min(1).max(64).optional(), description: z.string().max(500).optional(), token: z.string().min(1).max(1024).optional(), username: z.string().min(1).max(100).optional(), repository_id: identifier.optional(), idempotency_key: requestKey.optional() }).strict(), annotations: { ...mutation, idempotentHint: false, openWorldHint: true },
-  }, ({ action, repository_id, idempotency_key, url, name, description, token, username }) => guarded(async () => {
-    const credential = { ...(token ? { token } : {}), ...(username ? { username } : {}) };
-    if (action === 'status' || action === 'retry') {
-      if (!repository_id) throw new ApiError(400, 'INVALID_INPUT', 'Provide repository_id.');
-      if (action === 'status') return call<Record<string, unknown>>(`/api/repositories/${repository_id}/import-url`);
-      if (!idempotency_key) throw new ApiError(400, 'INVALID_INPUT', 'Provide idempotency_key.');
-      return { repository: await call<Repository>(`/api/repositories/${repository_id}/import-url/retry`, credential, idempotency_key) };
-    }
-    if (!url || !idempotency_key) throw new ApiError(400, 'INVALID_INPUT', 'Provide url and idempotency_key.');
-    return { repository: await call<Repository>('/api/repositories/import-url', { url, ...(name ? { name } : {}), ...(description ? { description } : {}), ...credential }, idempotency_key) };
+    title: 'Import a repository from a Git URL', description: `Create a repository and import every branch and tag with full history from a public HTTPS Git URL (GitHub, GitLab, Bitbucket, others), or retry a failed import. Runs in the background; follow it with gitflare_url_import_status. A source that needs a token returns a browser URL where the Owner enters it. Up to ${URL_IMPORT_LIMITS.packBytes / 1024 / 1024} MiB; no SSH or LFS. Needs Manage permission and land access.`,
+    inputSchema: z.object({ action: z.enum(['start', 'retry']).default('start'), url: z.string().min(1).max(2048).optional().describe('Required for start.'), name: z.string().min(1).max(64).optional(), description: z.string().max(500).optional(), repository_id: identifier.optional().describe('Required for retry.'), requires_credentials: z.boolean().optional().describe('true when the source is private; returns a browser URL instead of importing.'), idempotency_key: requestKey }).strict(), annotations: { ...mutation, idempotentHint: false, openWorldHint: true },
+  }, ({ action, repository_id, idempotency_key, url, name, description, requires_credentials }) => guarded(async () => {
+    if (action === 'retry' && !repository_id) throw new ApiError(400, 'INVALID_INPUT', 'Provide repository_id.');
+    if (action === 'start' && !url) throw new ApiError(400, 'INVALID_INPUT', 'Provide url.');
+    if (requires_credentials) return { browserStartUrl: action === 'retry' ? `${origin}/repository/${encodeURIComponent(repository_id!)}/import` : `${origin}/repositories`, browserEntryRequired: true };
+    if (action === 'retry') return { repository: await call<Repository>(`/api/repositories/${repository_id}/import-url/retry`, {}, idempotency_key) };
+    return { repository: await call<Repository>('/api/repositories/import-url', { url, ...(name ? { name } : {}), ...(description ? { description } : {}) }, idempotency_key) };
   }));
+  server.registerTool('gitflare_url_import_status', {
+    title: 'Read Git URL import progress', description: 'Read the background import state of a repository created from a Git URL, including any failure to retry. Read-only.',
+    inputSchema: z.object({ repository_id: identifier }).strict(), annotations: readOnly,
+  }, ({ repository_id }) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${repository_id}/import-url`)));
   server.registerTool('gitflare_list_missions', {
     title: 'List repository missions', description: 'List missions with status, base and candidate SHAs and update time, optionally filtered by repository or status. Use gitflare_inspect_mission for evidence. Read-only.',
     inputSchema: z.object({ repository_id: repositoryId.optional(), status: z.enum(['draft', 'queued', 'running', 'checking', 'needs_review', 'approved', 'integrating', 'integrated', 'failed', 'cancelled']).optional().describe('Only missions in this status.'), offset, limit: pageLimit }).strict(), annotations: readOnly,
@@ -397,9 +437,13 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
   }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/proposal-base`)));
   server.registerTool('gitflare_ai_settings', {
-    title: 'Read or change AI features', description: 'Read whether AI features are on, or pass enabled to turn them on or off. Off blocks missions, drafting and model settings; Git, reviews and landing keep working. Reading needs read access; changing needs the Owner role and admin access.',
-    inputSchema: z.object({ enabled: z.boolean().optional().describe('Omit to read; true or false to change.'), idempotency_key: requestKey.optional() }).strict(), annotations: destructive,
-  }, (input) => guarded(async () => input.enabled === undefined ? call<Record<string, unknown>>('/api/settings/ai') : call<Record<string, unknown>>('/api/settings/ai', { enabled: input.enabled }, input.idempotency_key ?? crypto.randomUUID())));
+    title: 'Read AI feature settings', description: 'Read whether AI features are on for this workspace. Off blocks missions, drafting and model settings; Git, reviews and landing keep working. Read-only.',
+    inputSchema: z.object({}).strict(), annotations: readOnly,
+  }, () => guarded(async () => call<Record<string, unknown>>('/api/settings/ai')));
+  server.registerTool('gitflare_set_ai_features', {
+    title: 'Turn AI features on or off', description: 'Turn AI features on or off for this workspace. Off blocks missions, drafting and model settings; Git, reviews and landing keep working. Needs the Owner role and admin access.',
+    inputSchema: z.object({ enabled: z.boolean(), idempotency_key: requestKey }).strict(), annotations: destructive,
+  }, (input) => guarded(async () => call<Record<string, unknown>>('/api/settings/ai', { enabled: input.enabled }, input.idempotency_key)));
   const releaseFields = { name: z.string().min(1).max(120).optional(), notes: z.string().max(RELEASE_NOTES_MAX).optional(), prerelease: z.boolean().optional(), tag: z.string().min(1).max(100).optional(), target_sha: commit.optional() };
   server.registerTool('gitflare_list_releases', {
     title: 'List repository releases', description: 'List releases (checkpoints) newest first with tag, target commit, draft and pre-release state, plus recent default-branch commits you can target. Read-only.',
@@ -471,17 +515,13 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     }, (input) => guarded(async () => missionSummary(await withMcpFieldNames(call<Mission>(`/api/missions/${input.mission_id}/${action}`, { candidateSha: input.candidate_sha, baseSha: input.base_sha }, input.idempotency_key)))));
   }
   server.registerTool('gitflare_preview_mission', {
-    title: 'Open a checked candidate preview', description: 'Preview the current passing candidate in the background; status reads progress, host, access, expiresAt or the failure. Worker projects become a Cloudflare Worker Preview of the repository’s own Worker (access link: public to anyone with the link). Others run in a members-only container. Previews retire after the repository lifetime (default 15 min); extend adds one lifetime once (Owner or Maintainer, land access).',
-    inputSchema: z.object({ mission_id: missionId, action: z.enum(['start', 'status', 'extend']).default('start'), idempotency_key: requestKey.optional() }).strict(), annotations: { ...mutation, idempotentHint: false },
-  }, (input) => guarded(async () => {
-    if (input.action === 'status') return call<Record<string, unknown>>(`/api/missions/${input.mission_id}/preview`);
-    if (input.action === 'extend') {
-      if (!input.idempotency_key) throw new ApiError(400, 'INVALID_INPUT', 'Extending a preview requires an idempotency_key.');
-      return call<Record<string, unknown>>(`/api/missions/${input.mission_id}/preview-extend`, {}, input.idempotency_key);
-    }
-    if (!input.idempotency_key) throw new ApiError(400, 'INVALID_INPUT', 'Starting a preview requires an idempotency_key.');
-    return call<Record<string, unknown>>(`/api/missions/${input.mission_id}/preview`, {}, input.idempotency_key);
-  }));
+    title: 'Open a checked candidate preview', description: 'Start a preview of the current passing candidate in the background (start), or extend a running one by one lifetime once (extend: Owner or Maintainer, land access). Worker projects become a Cloudflare Worker Preview of the repository’s own Worker (access link: public to anyone with the link); others run in a members-only container. Previews retire after the repository lifetime (default 15 min).',
+    inputSchema: z.object({ mission_id: missionId, action: z.enum(['start', 'extend']).default('start'), idempotency_key: requestKey }).strict(), annotations: { ...mutation, idempotentHint: false },
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/missions/${input.mission_id}/${input.action === 'extend' ? 'preview-extend' : 'preview'}`, {}, input.idempotency_key)));
+  server.registerTool('gitflare_preview_status', {
+    title: 'Read candidate preview status', description: 'Read a mission’s candidate preview: progress, host, access mode, expiresAt or the failure. Read-only.',
+    inputSchema: z.object({ mission_id: missionId }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/missions/${input.mission_id}/preview`)));
   server.registerTool('gitflare_mission_history', {
     title: 'Read immutable mission history', description: 'List a mission’s immutable attempt snapshots (approvals, revocations, retries, checks, landing), or open one by snapshot_id with the same views as gitflare_inspect_mission. Read-only.',
     inputSchema: z.object({ mission_id: missionId, snapshot_id: identifier.optional().describe('Snapshot ID from the list; omit to list snapshots.'), ...evidenceInput }).strict(), annotations: readOnly,
@@ -515,32 +555,30 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     inputSchema: z.object({ mission_id: missionId, action: z.enum(['update', 'close', 'reopen']), idempotency_key: requestKey }).strict(), annotations: destructive,
   }, input => guarded(async () => missionSummary(await call<Mission>(`/api/missions/${input.mission_id}/pull`, { action: input.action }, input.idempotency_key))));
   server.registerTool('gitflare_branch_protection', {
-    title: 'Read or set branch protection', description: 'Read branch protection rules, or replace them all with action set. Rules set required approvals, required check names, self-approval and who may land; the default branch is always protected. Reading needs read access; set needs the Owner role and admin access.',
-    inputSchema: z.object({ repository_id: repositoryId, action: z.enum(['read', 'set']).default('read'), rules: z.array(z.object({ pattern: z.string().min(1).max(200), requirePullRequest: z.boolean().default(true), requiredApprovals: z.number().int().min(0).max(6).default(1), requiredCheckNames: z.array(z.string().min(1).max(200)).max(20).default([]), preventSelfApproval: z.boolean().default(false), restrictLanders: z.array(z.enum(['Maintainer', 'Owner'])).max(2).default([]) }).strict()).max(20).optional().describe('Complete rule set for set; replaces all existing rules.'), idempotency_key: requestKey.optional().describe('Required for set.') }).strict(), annotations: destructive,
-  }, input => guarded(async () => {
-    const path = `/api/repositories/${input.repository_id}/branch-protection`;
-    if (input.action === 'read') return call<Record<string, unknown>>(path);
-    if (!input.rules || !input.idempotency_key) throw new ApiError(400, 'INVALID_INPUT', 'Setting branch protection requires rules and an idempotency key.');
-    return call<Record<string, unknown>>(path, { rules: input.rules }, input.idempotency_key);
-  }));
+    title: 'Read branch protection', description: 'Read a repository’s branch protection rules: required approvals, required check names, self-approval and who may land. The default branch is always protected. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
+  }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/branch-protection`)));
+  server.registerTool('gitflare_set_branch_protection', {
+    title: 'Replace branch protection rules', description: 'Replace all branch protection rules of a repository. Rules set required approvals, required check names, self-approval and who may land; the default branch stays protected. Needs the Owner role and admin access.',
+    inputSchema: z.object({ repository_id: repositoryId, rules: z.array(z.object({ pattern: z.string().min(1).max(200), requirePullRequest: z.boolean().default(true), requiredApprovals: z.number().int().min(0).max(6).default(1), requiredCheckNames: z.array(z.string().min(1).max(200)).max(20).default([]), preventSelfApproval: z.boolean().default(false), restrictLanders: z.array(z.enum(['Maintainer', 'Owner'])).max(2).default([]) }).strict()).max(20).describe('Complete rule set; replaces all existing rules.'), idempotency_key: requestKey }).strict(), annotations: destructive,
+  }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/branch-protection`, { rules: input.rules }, input.idempotency_key)));
+  const runnerSize = z.enum(['standard-1', 'standard-2', 'standard-3', 'standard-4']);
   server.registerTool('gitflare_check_settings', {
-    title: 'Read or set check time limit and runner size', description: 'Read check settings, learned durations and the auto-increase ceiling, or replace them with action set. Settings apply to new attempts; omitted fields use defaults. gitflare.json at the base wins. Larger runners cost more per second. Reading needs read access; set needs the Owner or Maintainer role and land access.',
-    inputSchema: z.object({ repository_id: repositoryId, action: z.enum(['read', 'set']).default('read'), test_timeout_seconds: z.number().int().min(60).max(900).optional().describe('Check time limit in seconds.'), runner: z.enum(['standard-1', 'standard-2', 'standard-3', 'standard-4']).optional().describe('Container size: standard-1 1/2 vCPU 4 GiB, standard-2 1 vCPU 6 GiB, standard-3 2 vCPU 8 GiB, standard-4 4 vCPU 12 GiB.'), auto_increase: z.object({ enabled: z.boolean(), max_timeout_seconds: z.number().int().min(60).max(900), max_runner: z.enum(['standard-1', 'standard-2', 'standard-3', 'standard-4']) }).strict().optional().describe('Retry a timed-out check once with double time and the next runner, up to these limits. Default: enabled, 900 s, standard-3.'), idempotency_key: requestKey.optional() }).strict(), annotations: destructive,
-  }, input => guarded(async () => {
-    const path = `/api/repositories/${input.repository_id}/check-settings`;
-    if (input.action === 'read') return call<Record<string, unknown>>(path);
-    if (!input.idempotency_key) throw new ApiError(400, 'INVALID_INPUT', 'Setting check settings requires an idempotency key.');
-    return call<Record<string, unknown>>(path, { testTimeoutSeconds: input.test_timeout_seconds ?? null, runner: input.runner ?? null, autoIncrease: input.auto_increase ? { enabled: input.auto_increase.enabled, maxTimeoutSeconds: input.auto_increase.max_timeout_seconds, maxRunner: input.auto_increase.max_runner } : null }, input.idempotency_key);
-  }));
+    title: 'Read check time limit and runner size', description: 'Read a repository’s check time limit, runner size, learned check durations and the auto-increase ceiling. gitflare.json at the base wins over these settings. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
+  }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/check-settings`)));
+  server.registerTool('gitflare_set_check_settings', {
+    title: 'Set check time limit and runner size', description: 'Replace a repository’s check settings. They apply to new attempts; omitted fields return to defaults. gitflare.json at the base wins. Larger runners cost more per second. Needs the Owner or Maintainer role and land access.',
+    inputSchema: z.object({ repository_id: repositoryId, test_timeout_seconds: z.number().int().min(60).max(900).optional().describe('Check time limit in seconds.'), runner: runnerSize.optional().describe('Container size: standard-1 1/2 vCPU 4 GiB, standard-2 1 vCPU 6 GiB, standard-3 2 vCPU 8 GiB, standard-4 4 vCPU 12 GiB.'), auto_increase: z.object({ enabled: z.boolean(), max_timeout_seconds: z.number().int().min(60).max(900), max_runner: runnerSize }).strict().optional().describe('Retry a timed-out check once with double time and the next runner, up to these limits. Default: enabled, 900 s, standard-3.'), idempotency_key: requestKey }).strict(), annotations: destructive,
+  }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/check-settings`, { testTimeoutSeconds: input.test_timeout_seconds ?? null, runner: input.runner ?? null, autoIncrease: input.auto_increase ? { enabled: input.auto_increase.enabled, maxTimeoutSeconds: input.auto_increase.max_timeout_seconds, maxRunner: input.auto_increase.max_runner } : null }, input.idempotency_key)));
   server.registerTool('gitflare_preview_settings', {
-    title: 'Read or set preview lifetime and access', description: 'Read preview settings, or change them with action set (audited). Lifetime 15-1440 minutes, capped by the installation. access link: public to anyone with the link; cloudflare-access: Cloudflare Access on the preview Worker’s preview hostnames. preview_email_recipients: the only addresses preview email may reach; empty blocks it. Reading needs read access; set needs the Owner role and admin access.',
-    inputSchema: z.object({ repository_id: repositoryId, action: z.enum(['read', 'set']).default('read'), lifetime_minutes: z.union([z.literal(15), z.literal(60), z.literal(240), z.literal(1440)]).optional(), access: z.enum(['link', 'cloudflare-access']).optional(), access_email_domains: z.array(z.string().min(1).max(253)).max(20).optional().describe('Email domains allowed through Cloudflare Access instead of member emails; empty list uses member emails.'), target_worker: z.string().max(63).optional().describe('Worker name whose Previews host this repository; empty string clears it.'), preview_email_recipients: z.array(z.string().min(3).max(254)).max(50).optional().describe('Exact email addresses previews may send to (domains are not supported by send_email); empty list blocks all preview email.'), idempotency_key: requestKey.optional().describe('Required for set.') }).strict(), annotations: { ...destructive, openWorldHint: true },
-  }, input => guarded(async () => {
-    const path = `/api/repositories/${input.repository_id}/preview-settings`;
-    if (input.action === 'read') return call<Record<string, unknown>>(path);
-    if (!input.idempotency_key) throw new ApiError(400, 'INVALID_INPUT', 'Setting preview settings requires an idempotency key.');
-    return call<Record<string, unknown>>(path, { ...(input.lifetime_minutes !== undefined ? { lifetimeMinutes: input.lifetime_minutes } : {}), ...(input.access ? { access: input.access } : {}), ...(input.access_email_domains ? { accessEmailDomains: input.access_email_domains } : {}), ...(input.target_worker !== undefined ? { targetWorker: input.target_worker } : {}), ...(input.preview_email_recipients ? { previewEmailRecipients: input.preview_email_recipients } : {}) }, input.idempotency_key);
-  }));
+    title: 'Read preview lifetime and access', description: 'Read a repository’s preview settings: lifetime, access mode (link or cloudflare-access), allowed Access email domains, target Worker and preview email recipients. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
+  }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/preview-settings`)));
+  server.registerTool('gitflare_set_preview_settings', {
+    title: 'Set preview lifetime and access', description: 'Change a repository’s preview settings (audited). Lifetime 15-1440 minutes, capped by the installation. access link: public to anyone with the link; cloudflare-access: Cloudflare Access on the preview Worker’s preview hostnames. preview_email_recipients: the only addresses preview email may reach; empty blocks it. Needs the Owner role and admin access.',
+    inputSchema: z.object({ repository_id: repositoryId, lifetime_minutes: z.union([z.literal(15), z.literal(60), z.literal(240), z.literal(1440)]).optional(), access: z.enum(['link', 'cloudflare-access']).optional(), access_email_domains: z.array(z.string().min(1).max(253)).max(20).optional().describe('Email domains allowed through Cloudflare Access instead of member emails; empty list uses member emails.'), target_worker: z.string().max(63).optional().describe('Worker name whose Previews host this repository; empty string clears it.'), preview_email_recipients: z.array(z.string().min(3).max(254)).max(50).optional().describe('Exact email addresses previews may send to (domains are not supported by send_email); empty list blocks all preview email.'), idempotency_key: requestKey }).strict(), annotations: { ...destructive, openWorldHint: true },
+  }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/preview-settings`, { ...(input.lifetime_minutes !== undefined ? { lifetimeMinutes: input.lifetime_minutes } : {}), ...(input.access ? { access: input.access } : {}), ...(input.access_email_domains ? { accessEmailDomains: input.access_email_domains } : {}), ...(input.target_worker !== undefined ? { targetWorker: input.target_worker } : {}), ...(input.preview_email_recipients ? { previewEmailRecipients: input.preview_email_recipients } : {}) }, input.idempotency_key)));
   server.registerTool('gitflare_retry_checks', {
     title: 'Retry a timed-out check with more time or a larger runner', description: 'After a check timed out, raise the repository check time limit to 10 minutes (15 if it had 10) with adjustment timeout, or use the next larger runner with adjustment runner, then start a new attempt (proposals update from their stream). A gitflare.json value can be overridden only by an Owner, for this proposal, audited. Uses billed compute. Needs the Owner or Maintainer role and land access.',
     inputSchema: z.object({ mission_id: missionId, adjustment: z.enum(['timeout', 'runner']).describe('timeout: more time; runner: next larger runner.'), idempotency_key: requestKey }).strict(), annotations: { ...external, destructiveHint: true },
