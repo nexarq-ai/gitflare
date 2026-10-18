@@ -510,8 +510,8 @@
     },
     {
       "path": "src/ui/ProposalCreate.tsx",
-      "size": 28650,
-      "sha256": "bcfab96de24eb2ee1fceae0931058605aed87f15ae9c273956ccfdccedf85ac4"
+      "size": 29250,
+      "sha256": "26187b70bd40185345bc5e48d6bbe525e0fefda25541bf00cf31722027095189"
     },
     {
       "path": "src/ui/public-install.css",
