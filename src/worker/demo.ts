@@ -105,6 +105,7 @@ const DISABLED_ROUTES: [RegExp, DemoFeatureId, DemoDisabledRoute['mode'], string
   [/^\/api\/workspace$/, 'ai-features', 'merge', 'ai'],
   [/^\/api\/access$/, 'people', 'merge'],
   [/^\/api\/mcp$/, 'mcp-clients', 'merge'],
+  [/^\/api\/workspaces$/, 'workspace-creation', 'merge'],
 ];
 
 export function demoDisabledRoute(method: string, pathname: string): DemoDisabledRoute | null {

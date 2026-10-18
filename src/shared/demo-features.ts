@@ -2,7 +2,7 @@ export const DEMO_INSTALL_URL = 'https://gitflare.io/docs/install';
 
 export type DemoFeatureId =
   | 'secrets' | 'github-mirror' | 'cloudflare' | 'cloudflare-resources' | 'deployments' | 'previews' | 'checks'
-  | 'ai-models' | 'ai-keys' | 'ai-features' | 'people' | 'installation-credential' | 'mcp-clients' | 'repository-creation' | 'account-security';
+  | 'ai-models' | 'ai-keys' | 'ai-features' | 'people' | 'installation-credential' | 'mcp-clients' | 'repository-creation' | 'account-security' | 'workspace-creation';
 
 export interface DemoFeature { name: string; summary: string; reason: string; docs: string }
 
@@ -20,6 +20,7 @@ export const DEMO_FEATURES: Record<DemoFeatureId, DemoFeature> = {
   people: { name: 'People and invitations', summary: 'Invites teammates, assigns roles and repository access, and issues bounded agent credentials.', reason: 'The demo cannot send email or change accounts and access.', docs: '/docs/admin' },
   'installation-credential': { name: 'Worker previews credential', summary: 'Gives this installation one Cloudflare credential so proposals of Worker apps get live previews and isolated D1 databases.', reason: 'The demo has no Cloudflare account to run previews in.', docs: '/docs/install' },
   'mcp-clients': { name: 'AI client connections', summary: 'Authorizes Claude, Codex, Cursor and other MCP clients to use the same workspace actions and permissions as the UI.', reason: 'Connecting clients to the shared demo workspace is turned off.', docs: '/docs/mcp' },
+  'workspace-creation': { name: 'Workspaces', summary: 'Creates separate workspaces with their own repositories, people and Cloudflare account, and switches between them.', reason: 'The demo is one shared workspace that resets nightly.', docs: '/docs/admin' },
   'account-security': { name: 'Account security', summary: 'Manages your password, two-factor authentication and the browser and AI client sessions signed in to your account.', reason: 'Demo visitors share one credential-free account, so there is nothing to secure or revoke.', docs: '/docs/admin' },
   'repository-creation': { name: 'Repository creation', summary: 'Creates an isolated Git repository, imports one from a URL or connects an existing Artifacts repository.', reason: 'The shared demo keeps a fixed set of sample repositories.', docs: '/docs/repositories' },
 };

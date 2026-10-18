@@ -165,8 +165,8 @@
     },
     {
       "path": "src/shared/demo-features.ts",
-      "size": 5121,
-      "sha256": "534891a854fb3662da74ddb873980529f416d6c7d357f6cb9f2bf32b7d17c73b"
+      "size": 5405,
+      "sha256": "e990ca40fb06a05796cee9838a5052fcc1a9384578515f981d2efe9ce8a4492e"
     },
     {
       "path": "src/shared/demo-replay.ts",
@@ -177,6 +177,11 @@
       "path": "src/shared/diff.ts",
       "size": 6735,
       "sha256": "1b875dc6d42046e4fc1d3ddd38a75e53325858e523a858b66f5ccc7628d07eb0"
+    },
+    {
+      "path": "src/shared/gitflare-infrastructure.ts",
+      "size": 2304,
+      "sha256": "ccfd7ac5af5ccc97fc37a24bbe43aba1efac60c8243b4a8351ffdebb2de309b7"
     },
     {
       "path": "src/shared/github-mirror.ts",
@@ -845,8 +850,8 @@
     },
     {
       "path": "src/worker/demo.ts",
-      "size": 13765,
-      "sha256": "712dd986039bce70badf8343dc67726aa925e57b408fa7d726832488a52e8269"
+      "size": 13823,
+      "sha256": "ed6c06fd57412a35632efb080d6c9e423c71f0c794b642115e6fd680b8558eea"
     },
     {
       "path": "src/worker/dependency-changes.ts",
