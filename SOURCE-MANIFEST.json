@@ -90,13 +90,13 @@
     },
     {
       "path": "public/boot-loader.css",
-      "size": 44126,
-      "sha256": "1cf008f8957e7a3b4eb88337e7db635f1ec87258e07e10593e5aba3c2fbebe02"
+      "size": 73995,
+      "sha256": "4081b5efe2d4443afc25ae6a1adb6a0773f666dd9fe0b0567cb93fdbb69aef74"
     },
     {
       "path": "public/boot-loader.js",
-      "size": 2417,
-      "sha256": "8ad431f0f009fe9866c03a4a929b4624b9015c46b3ec42b896f3b9e4994d0739"
+      "size": 3269,
+      "sha256": "f41a8c019f2ee342358e69b0359a559584cf42e0d08c1c56323959f7fdb6e364"
     },
     {
       "path": "public/favicon.svg",
@@ -235,8 +235,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 78162,
-      "sha256": "0b52ac3abc60f70ce3f86450b2b0371e2cffff6f6354eeb8a4b128be2472cd7e"
+      "size": 78119,
+      "sha256": "a3875530469e805e68efad1a43abe49e5da705e4a9ed403ca63c45d3b8018c85"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -330,13 +330,13 @@
     },
     {
       "path": "src/ui/cloudflare-connection.css",
-      "size": 17368,
-      "sha256": "5f9b1b6fac60a769750e9b6a330754ad0606261cb80c0c6cf33dd717f0fe70b3"
+      "size": 17683,
+      "sha256": "f3f55d5e002989d5c21fd110a6fa4c3d18de0d3729d20a3541d490c03f6393fc"
     },
     {
       "path": "src/ui/CloudflareConnection.tsx",
-      "size": 43025,
-      "sha256": "786ff9e1eeee531cdc4388b6c92a70a99b51f02423b202bf389ef2ceda2e49d9"
+      "size": 43052,
+      "sha256": "76d34ead539511f7027d71d8f601d950b8b6e4dfbf6e16c63e38e562a85780ef"
     },
     {
       "path": "src/ui/CloudflareConnectPrompt.tsx",
@@ -370,8 +370,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 122439,
-      "sha256": "6759f80950744c70cabdf564ad283186943d8b5f2050d7cfdf5c4dde4944627b"
+      "size": 52392,
+      "sha256": "35ef90c6e8ad9e5bf96959cd3594774c6c4b4ca2bd950ff19ce94701ecc06f81"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -395,23 +395,23 @@
     },
     {
       "path": "src/ui/documentation-diagrams.css",
-      "size": 17586,
-      "sha256": "5cd7c95dbbfa6e94f0d6e5593e1ac29d78c745a622df29e238ce2228e36e520e"
+      "size": 23549,
+      "sha256": "2be8dff1983c94706560c1236645c7a6068cafe3f33b39dc7bf3a6830bca112c"
     },
     {
       "path": "src/ui/documentation.css",
-      "size": 27555,
-      "sha256": "080350a94e22f86cabee7d79446fac4b9432f37e0c7679a13da78c1e3fd87b21"
+      "size": 29977,
+      "sha256": "915f18de7a3199768856a8db82d028696b998fabddc5c1308a3005d235f20763"
     },
     {
       "path": "src/ui/Documentation.tsx",
-      "size": 20424,
-      "sha256": "ed76e515b5d5cc538708c0351ecaa599befd9abff2ecdf8f4f0ce61346751b61"
+      "size": 20205,
+      "sha256": "d8a9c7c718f7ccd2ff81cd8d5c97e933558ff68a76ed4b549154f983e6e52549"
     },
     {
       "path": "src/ui/DocumentationIllustration.tsx",
-      "size": 9592,
-      "sha256": "0a57b362822c6512eac56fd9cbe34ae40c0ae70113bac9cab87c2cd26439b3b7"
+      "size": 24250,
+      "sha256": "dc8b0354caf07dd16d96af2f0b89b621fafc3754a9aef01170e13d5bd2cc863c"
     },
     {
       "path": "src/ui/GitAccess.tsx",
@@ -440,8 +440,8 @@
     },
     {
       "path": "src/ui/main.tsx",
-      "size": 833,
-      "sha256": "95d62cbac9aea8c88762234f923aefe519899817e73ccbc397ba8ceebae25072"
+      "size": 999,
+      "sha256": "b9fe3d32b824d1b3c71415a11fd2abfe8990b8623e89d54006b30f25cff54807"
     },
     {
       "path": "src/ui/McpConnections.tsx",
@@ -570,8 +570,8 @@
     },
     {
       "path": "src/ui/RepositoryBrowser.tsx",
-      "size": 12376,
-      "sha256": "6acd38800da717c32dae13071a0b8ab81fad2071dccd78cf0bcff824df1f0f27"
+      "size": 12521,
+      "sha256": "b462e2e99a30527bc5bbe02d7efc85fa336de5fc88816fde04e0dc349d882637"
     },
     {
       "path": "src/ui/RepositoryImport.tsx",
@@ -615,8 +615,8 @@
     },
     {
       "path": "src/ui/WorkspaceLoader.tsx",
-      "size": 2658,
-      "sha256": "92ceeb0bda1ab658153bd6468a87a7fa389d5e68edc051a372a2495c02ca949f"
+      "size": 2785,
+      "sha256": "837ba7c3e912ea0e62c7e601a5bdab09c337e3b44a61acece318dc26b88fb78b"
     },
     {
       "path": "src/worker/agent-rules.ts",
@@ -845,8 +845,8 @@
     },
     {
       "path": "src/worker/oauth.ts",
-      "size": 13281,
-      "sha256": "34a406a1f172553129ed1d1d6858714ea2f5d8c67b915dea95bf0a943f315b99"
+      "size": 16290,
+      "sha256": "5232c5163541eb7218281b427c7cdfd26c9452fa6470457e725c685088639f8f"
     },
     {
       "path": "src/worker/onboarding.ts",

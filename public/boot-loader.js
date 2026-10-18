@@ -57,11 +57,38 @@ class GitflareLoadingSignal extends HTMLElement {
 
 if (!customElements.get("gitflare-loading-signal")) customElements.define("gitflare-loading-signal", GitflareLoadingSignal);
 
-if (location.pathname !== "/") {
+{
   let theme;
   try { theme = localStorage.getItem("gitflare-theme"); } catch {}
-  document.documentElement.dataset.theme = theme === "light" || theme === "dark" ? theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  document.documentElement.dataset.theme = location.pathname === "/" ? "dark" : theme === "light" || theme === "dark" ? theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   const template = document.getElementById("boot-loader");
   const root = document.getElementById("root");
-  if (template && root) root.append(template.content.cloneNode(true));
+  if (template && root) {
+    root.append(template.content.cloneNode(true));
+    if (location.pathname === "/") {
+      root.querySelector("h1").textContent = "Loading Gitflare";
+      root.querySelector(".workspace-loading-status p").textContent = "Preparing the page.";
+    }
+  }
 }
+
+window.gitflareFontsReady = new Promise(resolve => {
+  let settled = false;
+  let timeout;
+  const finish = ready => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    document.documentElement.dataset.criticalFonts = ready ? "ready" : "fallback";
+    resolve();
+  };
+  timeout = setTimeout(() => finish(false), 2000);
+  if (!document.fonts) {
+    finish(false);
+    return;
+  }
+  Promise.all([
+    document.fonts.load('400 16px "Instrument Sans"'),
+    document.fonts.load('italic 400 16px "Instrument Serif"'),
+  ]).then(faces => finish(faces.every(loaded => loaded.length > 0)), () => finish(false));
+});

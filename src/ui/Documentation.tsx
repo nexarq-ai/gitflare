@@ -1,3 +1,4 @@
+import CloudflareDeployButton, { isGitflareDeployUrl } from "./CloudflareDeployButton";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -9,7 +10,7 @@ import { ErrorNotice } from "./components";
 import { diagrams, type DocumentationDiagram } from "./doc-diagrams";
 import "./documentation.css";
 import { grammarFor, tokenize } from "./diff-highlight";
-import { DocumentationIllustration } from "./DocumentationIllustration";
+import { DocumentationIllustration, DocumentationSystemDiagram } from "./DocumentationIllustration";
 import { navigate as goTo } from "./router";
 import { appOrigin } from "./hosts";
 import { RouteProgress } from "./WorkspaceLoader";
@@ -51,6 +52,12 @@ function DocumentationCode({ children }: { children: ReactNode }) {
   return <div className="documentation-code-block"><div className="documentation-code-toolbar"><span>{language || "Code"}</span><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(code); setStatus("Copied"); } catch { setStatus("Copy unavailable"); } }} aria-label="Copy code"><CopyIcon size={13} />{status}</button></div><pre tabIndex={0}><code>{code.split("\n").map((line, lineIndex, lines) => <span key={lineIndex}>{tokenize(line, grammar).map((token, index) => token.kind ? <span className={`docs-token-${token.kind}`} key={index}>{token.text}</span> : token.text)}{lineIndex < lines.length - 1 ? "\n" : ""}</span>)}</code></pre><span className="documentation-code-status" role="status">{status === "Copy" ? "" : status === "Copied" ? "Code copied to clipboard." : "Copy unavailable. Select the code to copy it."}</span></div>;
 }
 
+function DocumentationFigure({ id, expanded = false }: { id: string; expanded?: boolean }) {
+  if (id === "flow") return <DocumentationIllustration kind="revision" />;
+  if (id === "mcp-connection") return <DocumentationIllustration kind="mcp" />;
+  return <DocumentationSystemDiagram id={id} expanded={expanded} />;
+}
+
 export default function Documentation({ id, publicMode = false }: { id: string; publicMode?: boolean }) {
   const isIndex = /^\/docs\/?$/.test(window.location.pathname);
   const [items, setItems] = useState<DocumentItem[]>([]);
@@ -60,7 +67,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
   const [retry, setRetry] = useState(0);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const copyGeneration = useRef(0);
-  const [expandedDiagram, setExpandedDiagram] = useState<(DocumentationDiagram & { alt: string }) | null>(null);
+  const [expandedDiagram, setExpandedDiagram] = useState<(DocumentationDiagram & { alt: string; key: string }) | null>(null);
   const [activeHeading, setActiveHeading] = useState("");
   const [guideQuery, setGuideQuery] = useState("");
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 760px)").matches);
@@ -165,7 +172,6 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
 
   return (
     <div className={`documentation-page wiki-page ${isIndex ? "documentation-index" : ""}`}>
-      {!publicMode && <div className="documentation-library-heading"><BookOpenIcon size={20} /><span>Gitflare documentation</span></div>}
       {error && <ErrorNotice message={error} onRetry={() => setRetry((value) => value + 1)} />}
       <div className="documentation-layout">
         <div className="documentation-mobile-selector"><label htmlFor="documentation-guide">Guide</label><select id="documentation-guide" value={isIndex ? "" : id} disabled={!items.length} onChange={(event) => { goTo(`docs/${event.target.value}`); }}>{isIndex && <option value="">Browse all guides</option>}{!items.length && <option value={id}>Loading library…</option>}{items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></div>
@@ -194,13 +200,13 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
               h2: ({ children }) => <h2 id={headingId(plainText(children))} tabIndex={-1}>{children}</h2>,
               h3: ({ children }) => <h3 id={headingId(plainText(children))} tabIndex={-1}>{children}</h3>,
               img: ({ src, alt }) => {
-                if (src === "gitflare-diagram:flow") return <DocumentationIllustration key={`${id}:revision`} kind="revision" />;
-                if (src === "gitflare-diagram:mcp-connection") return <DocumentationIllustration key={`${id}:mcp`} kind="mcp" />;
                 if (src === "https://deploy.workers.cloudflare.com/button") return <img src={src} width={200} height={32} alt={alt || "Deploy to Cloudflare"} loading="lazy" />;
                 const diagram = src && Object.hasOwn(diagrams, src) ? diagrams[src] : undefined;
-                return diagram ? <span className="documentation-diagram" role="figure" aria-label={diagram.title}><span className="documentation-diagram-scroll" tabIndex={0} role="region" aria-label={`${diagram.title}, scroll to see the full diagram`}><img src={diagram.src} alt={alt || diagram.caption} loading="lazy" /></span><span className="documentation-diagram-caption">{diagram.caption}</span><span className="documentation-diagram-tools"><span className="documentation-diagram-hint">Scroll horizontally to see the full diagram.</span><button type="button" data-diagram-key={`${id}:${src}`} onClick={() => { diagramTrigger.current = `${id}:${src}`; setExpandedDiagram({ ...diagram, alt: alt || diagram.caption }); }} aria-label={`Expand diagram: ${diagram.title}`}><ArrowsOutIcon size={15} />Expand diagram</button></span></span> : <span className="documentation-image-label">{alt ? `Image: ${alt}` : "Image reference"}</span>;
+                const diagramId = src?.replace("gitflare-diagram:", "") ?? "";
+                return diagram ? <div className="documentation-diagram"><DocumentationFigure id={diagramId} /><div className="documentation-diagram-tools"><button type="button" data-diagram-key={`${id}:${src}`} onClick={() => { diagramTrigger.current = `${id}:${src}`; setExpandedDiagram({ ...diagram, key: diagramId, alt: alt || diagram.caption }); }} aria-label={`Expand diagram: ${diagram.title}`}><ArrowsOutIcon size={15} />Expand diagram</button></div></div> : <span className="documentation-image-label">{alt ? `Image: ${alt}` : "Image reference"}</span>;
               },
               a: ({ href, children }) => {
+                if (isGitflareDeployUrl(href)) return <CloudflareDeployButton />;
                 if (href?.startsWith("#")) return <button className="documentation-inline-link" onClick={() => scrollToHeading(href.slice(1))}>{children}</button>;
                 if (href && /^https?:\/\//i.test(href)) return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
                 const [path, anchor] = (href ?? "").split("#");
@@ -224,8 +230,8 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
         <Dialog size="xl" className="documentation-diagram-dialog">
           <div className="documentation-diagram-dialog-heading"><Dialog.Title>{expandedDiagram?.title ?? "Diagram"}</Dialog.Title><Button variant="ghost" size="base" shape="square" icon={XIcon} aria-label="Close diagram" onClick={() => setExpandedDiagram(null)} /></div>
           <Dialog.Description className="documentation-diagram-dialog-description">{expandedDiagram?.caption}</Dialog.Description>
-          <div className="documentation-diagram-expanded" tabIndex={0} role="region" aria-label="Expanded diagram, scroll horizontally if needed">{expandedDiagram && <img src={expandedDiagram.src} alt={expandedDiagram.alt} />}</div>
-          <p className="documentation-diagram-dialog-hint">Scroll to explore the diagram. Press Escape to close.</p>
+          <div className="documentation-diagram-expanded" tabIndex={0} role="region" aria-label={expandedDiagram?.title}>{expandedDiagram && <DocumentationFigure id={expandedDiagram.key} expanded />}</div>
+          <p className="documentation-diagram-dialog-hint">Press Escape to close.</p>
         </Dialog>
       </Dialog.Root>
     </div>

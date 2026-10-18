@@ -1,3 +1,4 @@
+import CloudflareDeployButton, { isGitflareDeployUrl } from "./CloudflareDeployButton";
 import { repositoryLabel } from "../shared/repository-names";
 import { Fragment, useEffect, useState } from "react";
 import Markdown from "react-markdown";
@@ -309,7 +310,7 @@ export default function RepositoryBrowser({
         const language = /language-([\w+-]+)/.exec(className ?? "")?.[1];
         const extension = language ? ({ javascript: "js", typescript: "ts", shell: "sh", python: "py" } as Record<string, string>)[language] ?? language : "";
         return <code>{language ? <SourceTokens content={String(children)} path={`code.${extension}`}/> : children}</code>;
-      }, img: ({ alt }) => <span>{alt || "Image"}</span>, a: ({ href, children }) => href && /^https?:\/\//i.test(href) ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span> }}>{readme.content}</Markdown></div></section>}
+      }, img: ({ alt }) => <span>{alt || "Image"}</span>, a: ({ href, children }) => isGitflareDeployUrl(href) ? <CloudflareDeployButton /> : href && /^https?:\/\//i.test(href) ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span> }}>{readme.content}</Markdown></div></section>}
     </div>
   );
 }
