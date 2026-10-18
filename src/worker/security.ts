@@ -973,12 +973,12 @@ export class WorkspaceStore {
       }
       if (p.role !== 'Owner') fail();
       const member = (userId: unknown) => { const found = typeof userId === 'string' ? data.member.get(userId) : undefined; if (!found) throw new ApiError(404, 'MEMBER_NOT_FOUND', 'Select an existing workspace member.'); return found; };
-      if (action === 'invite-revoke') { const invitation = data.invitation.get(String(body.id)); if (!invitation || invitation.workspaceId !== workspaceId) fail(); invitation.accepted = true; return { ok: true }; }
+      if (action === 'invite-revoke') { const invitation = data.invitation.get(String(body.id)); if (!invitation || invitation.workspaceId !== workspaceId) fail(); invitation.accepted = true; change.audit.at(-1)!.resourceId = invitation.id; return { ok: true }; }
       if (action === 'invite-resend') {
         const invitation = data.invitation.get(String(body.id));
         if (!invitation || invitation.workspaceId !== workspaceId) throw new ApiError(404, 'INVITATION_NOT_FOUND', 'Select a pending invitation in this workspace.');
         if (invitation.accepted) throw new ApiError(409, 'INVITATION_NOT_PENDING', 'This invitation was accepted or withdrawn. Send a new invitation instead.');
-        invitation.hash = hash; invitation.expiresAt = Date.now() + INVITATION_MS;
+        invitation.hash = hash; invitation.expiresAt = Date.now() + INVITATION_MS; change.audit.at(-1)!.resourceId = invitation.id;
         return { token: raw, invitation: publicValue(invitation) };
       }
       if (action === 'workspace-rename') {
@@ -1448,6 +1448,7 @@ export class SecurityService {
       await this.identity().removeHint(p.userId, p.workspaceId);
       return { ...result as object, workspaces: remaining };
     }
+    if (action === 'invite' && !p.credentialId && !await this.identity().rateLimit(`invite:${p.userId}`, 50, 3_600_000)) throw new ApiError(429, 'RATE_LIMITED', 'You sent 50 invitations in the last hour. Try again later.');
     if (action === 'invite-resend' && !await this.identity().rateLimit(`invite-resend:${p.workspaceId}:${String(body.id).slice(0, 200)}`, 5, 86_400_000)) throw new ApiError(429, 'RATE_LIMITED', 'This invitation was sent several times today. Try again tomorrow.');
     if (action === 'membership' && body.role === null) {
       const targetId = typeof body.userId === 'string' ? body.userId : '';

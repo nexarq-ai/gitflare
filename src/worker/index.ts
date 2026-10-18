@@ -310,7 +310,8 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     if (action === 'invite') { delete body.repositoryName; delete body.ownerName; }
     if (action === 'workspace-rename' && principal.workspaceId === 'legacy' && env.WORKSPACE_NAME) throw new ApiError(409, 'WORKSPACE_NAME_FIXED', 'This installation sets the workspace name with WORKSPACE_NAME. Change it there.');
     if (action === 'invite' && body.scope === 'repository') { const repository = await env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)).getRepository(String(body.repositoryId ?? '')); if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'Select a repository in this workspace.'); body.repositoryName = repository.name; }
-    if (action === 'invite' && body.scope === 'organization') body.ownerName = (await access.snapshot(principal)).user.name;
+    const inviterName = (action === 'invite' || action === 'invite-resend') && !principal.bootstrap ? (await access.snapshot(principal)).user.name : undefined;
+    if (action === 'invite' && body.scope === 'organization') body.ownerName = inviterName;
     if (action === 'accept-invite') return Response.json(await access.acceptInvite(principal, requireString(body.token, 'Invitation token', 128)));
     if (action === 'membership' && body.repositoryIds !== undefined) { if (!Array.isArray(body.repositoryIds)) throw new ApiError(400, 'INVALID_SCOPE', 'Provide repository IDs.'); const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)); for (const id of body.repositoryIds) if (typeof id !== 'string' || !await catalog.getRepository(id)) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'Every scoped repository must belong to this workspace.'); }
     if (action === 'credential-create') { const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)); if (!await catalog.getRepository(String(body.repositoryId))) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'Select a repository in this workspace.'); }
@@ -319,7 +320,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     if ((action === 'invite' || action === 'invite-resend') && result && typeof result === 'object' && 'token' in result && typeof result.token === 'string' && 'invitation' in result) {
       const invitation = result.invitation as { email: string; role?: string; scope?: InvitationScope };
       const scope = invitation.scope?.kind === 'organization' ? { kind: 'organization' as const, ownerName: invitation.scope.ownerName ?? '' } : invitation.scope?.kind === 'repository' ? { kind: 'repository' as const, repositoryName: invitation.scope.repositoryName ?? '' } : { kind: 'workspace' as const };
-      const delivery = await deliverInvitation(env, { email: invitation.email, token: result.token, workspaceName: await workspaceName(env, access, principal), origin: url.origin, role: invitation.role, scope });
+      const delivery = await deliverInvitation(env, { email: invitation.email, token: result.token, workspaceName: await workspaceName(env, access, principal), origin: url.origin, role: invitation.role, scope, inviterName });
       return Response.json({ ...result, delivery });
     }
     return Response.json(result);
