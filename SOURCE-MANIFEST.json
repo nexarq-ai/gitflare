@@ -200,8 +200,8 @@
     },
     {
       "path": "src/shared/mission-draft.ts",
-      "size": 2733,
-      "sha256": "670475f0ea57cd7333fa9b61dd3727c3f9236721d83b21c04e8728091b020a4f"
+      "size": 4938,
+      "sha256": "29bf4ead0f97670e278aca8f4e7ecb617dae6c07c1550ffe8752ffd9edc1be2e"
     },
     {
       "path": "src/shared/models.ts",
@@ -225,8 +225,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 14026,
-      "sha256": "299aaafe3f6f13196b0596ceb85e90a494e51d47e7cde9b2218575f1d6556545"
+      "size": 14090,
+      "sha256": "937c8d01fbf4c8d9c3fad58489be4c0ed085c73ab61ac29a51753010179440bd"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -270,8 +270,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 83435,
-      "sha256": "498be23d6f02d8086d3ee4e754f6ea0cfc80ec5a5e7b8cd66e31ed7a8bee749a"
+      "size": 83486,
+      "sha256": "cb57f0919f6e25bbf78800c038054c3e5360fa408f549be2ac7f31e6fa92d371"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -680,13 +680,13 @@
     },
     {
       "path": "src/ui/proposal-create.css",
-      "size": 7762,
-      "sha256": "f547de24422103cdae5893b2ae313cf0edc65eb454ecac7c3fb4474871562a6f"
+      "size": 14822,
+      "sha256": "ab4b845e09d3e05f7072197a9cbc0735323fb3c50bf41372f7b60966f195a37f"
     },
     {
       "path": "src/ui/ProposalCreate.tsx",
-      "size": 29383,
-      "sha256": "27b1b9777a22965f9f65d5cd0590d35a4bc69bd5d76812350722f788bfacf69a"
+      "size": 40706,
+      "sha256": "65b4e97d18a23643842f24edfc0d443c23f500a999b7eb77688c03422af9deaa"
     },
     {
       "path": "src/ui/public-install.css",
@@ -880,8 +880,8 @@
     },
     {
       "path": "src/worker/budgets.ts",
-      "size": 3030,
-      "sha256": "fa058dde405623010d1434b2b5dcad17252d78bb70f8bad96678f1083bbc6ecc"
+      "size": 3239,
+      "sha256": "4c315e16c8406c07fd75721a64c5fd5b48c7ea5ac3552f7336ced7bff32413d6"
     },
     {
       "path": "src/worker/capacity.ts",
@@ -920,8 +920,8 @@
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 105099,
-      "sha256": "f1ebc32e9ed2c40ff31d94dcc0537219994458570ba43850e77ef674d5643f01"
+      "size": 105503,
+      "sha256": "033ce94a05ca03628e1dfe6381d41fa90dd9799e92dcd63422712c64f37d29b8"
     },
     {
       "path": "src/worker/d1-migrations.ts",
@@ -1020,8 +1020,8 @@
     },
     {
       "path": "src/worker/domain.ts",
-      "size": 11399,
-      "sha256": "5a39dedb87798adaa00eb09093f582b49345082541e6618c242420731889b5bf"
+      "size": 12012,
+      "sha256": "ba94674c97e87de9238359cafb20a10cdf15019f8872b95fd8f9702ef2a7961e"
     },
     {
       "path": "src/worker/email/index.ts",
@@ -1045,8 +1045,8 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 113440,
-      "sha256": "9b507aa5a753572bce541474ed1b81e58ff6ad95fabf924bbdf9ab7502190f13"
+      "size": 116681,
+      "sha256": "386cca9c57715ced392f65b5423a030640e5e5b7176d423b74a8fb7bb6fa970c"
     },
     {
       "path": "src/worker/gateway-routing.ts",
@@ -1095,8 +1095,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 96073,
-      "sha256": "48ebc612f48ee9285bfe2915002241db6b215712735068604755fd0dc5124327"
+      "size": 96443,
+      "sha256": "70aca7e82a77d3a6f2221b1c104463f76cb2a90e63756aadf79258f4a65b69b9"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -1115,8 +1115,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 113404,
-      "sha256": "564fcd84e6a2e5f2a0fb6f7d894ec6ffefafc0e421224c0a6c443dc965679312"
+      "size": 114710,
+      "sha256": "258f3b39ca14b6a95738b6beaf2d96094e593f2681bf6f0e816e4916b4d9bc3d"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -1130,8 +1130,8 @@
     },
     {
       "path": "src/worker/mission-draft.ts",
-      "size": 11212,
-      "sha256": "a47fcb005eee73ea917d87646de021fd82192154d18073cc1e5566311dfabdc8"
+      "size": 22345,
+      "sha256": "dad5064be53bd5007b1282ead8213f2489aa99c94cf0757d4482af8c7b70811d"
     },
     {
       "path": "src/worker/mission-storage.ts",

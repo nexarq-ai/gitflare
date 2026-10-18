@@ -85,7 +85,8 @@ export interface AgentRun {
   dependencyChanges?: ManifestDependencyChanges[];
   retryGuidance?: string;
   collision?: { files: string[]; epoch: number };
-  startFrom?: { reason: 'collision' | 'review' | 'retry'; files?: string[]; previousError?: string; candidates: { runId: string; name: string; forkName: string; commitSha: string }[] };
+  coordinator?: boolean;
+  startFrom?: { reason: 'collision' | 'review' | 'retry' | 'coordinator'; files?: string[]; previousError?: string; candidates: { runId: string; name: string; forkName: string; commitSha: string }[] };
 }
 
 export type RunnerSize = 'standard-1' | 'standard-2' | 'standard-3' | 'standard-4';
@@ -286,7 +287,7 @@ export interface WorkspaceCloudflare { connected: boolean; accounts: WorkspaceCl
 
 export interface AiSettings { enabled: boolean; locked: boolean }
 
-export interface AgentTask { name: string; role: string; task: string; model?: string }
+export interface AgentTask { name: string; role: string; task: string; model?: string; coordinator?: boolean }
 export interface RevertChange { missionId: string; title: string; landedSha: string; previousSha: string }
 export interface BranchChange { branch: string; headSha: string; targetBranch: string; description?: string; closedAt?: string; closedBy?: string }
 export type PullRequestState = 'open' | 'needs_review' | 'approved' | 'landed' | 'closed';

@@ -617,15 +617,29 @@ async function startingCandidates(artifacts: ArtifactsBinding, startFrom: StartF
 
 export async function mergeStartingCandidates(sandbox: SandboxRunner, startFrom: StartFrom, sources: StartingSource[]): Promise<Record<string, unknown>> {
   const merged: string[] = [];
+  const conflicted: string[] = [];
   const unavailable = startFrom.candidates.filter((candidate) => !sources.some((source) => source.runId === candidate.runId)).map((candidate) => candidate.name);
   for (const source of sources) {
     const fetched = await fetchRef(sandbox, source.info.remote, 'refs/heads/gitflare-candidate').catch(() => null);
-    const result = fetched === source.commitSha ? await sandbox.command(['git', '-c', 'core.hooksPath=/dev/null', 'merge', '--no-edit', '-m', `Start from the candidate of ${source.name.replace(/[\r\n]+/g, ' ')}`, fetched], '/workspace/repo') : { exitCode: 1, stdout: '', stderr: '' };
+    const message = `${startFrom.reason === 'coordinator' ? 'Integrate' : 'Start from'} the candidate of ${source.name.replace(/[\r\n]+/g, ' ')}`;
+    const result = fetched === source.commitSha ? await sandbox.command(['git', '-c', 'core.hooksPath=/dev/null', 'merge', '--no-edit', '-m', message, fetched], '/workspace/repo') : { exitCode: 1, stdout: '', stderr: '' };
     if (result.exitCode === 0) { merged.push(source.name); continue; }
+    const paths = fetched === source.commitSha && startFrom.reason === 'coordinator' ? await conflictedPaths(sandbox) : [];
+    if (paths.length) {
+      await checked(sandbox, ['git', '-c', 'core.hooksPath=/dev/null', 'add', '-A']);
+      await checked(sandbox, ['git', '-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '-m', `${message} (conflicts left for the coordinator)`]);
+      merged.push(source.name);
+      conflicted.push(...paths.filter((path) => !conflicted.includes(path)));
+      continue;
+    }
     await sandbox.command(['git', 'merge', '--abort'], '/workspace/repo');
     unavailable.push(source.name);
   }
   const names = merged.join(', ');
+  if (startFrom.reason === 'coordinator') {
+    const note = `${merged.length ? `HEAD already contains the merged candidates of ${names}.` : 'None of the other candidates could be merged here.'}${conflicted.length ? ` These files still contain Git conflict markers that you must resolve: ${conflicted.slice(0, 50).join(', ')}.` : ''}${unavailable.length ? ` Not merged: ${unavailable.join(', ')}.` : ''} Integrate the parts, run the full test suite and fix what fails. Do not add new features.`;
+    return { reason: 'coordinator', mergedCandidates: merged, ...(conflicted.length ? { conflictedFiles: conflicted.slice(0, 50) } : {}), ...(unavailable.length ? { unavailableCandidates: unavailable } : {}), note };
+  }
   const note = startFrom.reason === 'retry'
     ? merged.length ? `HEAD already contains your candidate from the previous attempt.${startFrom.previousError ? ` That attempt failed: ${startFrom.previousError}.` : ''} Keep its work, finish the rest of your assignment and fix what failed; do not start over.` : 'Your previous candidate could not be restored, so redo the assignment.'
     : startFrom.reason === 'collision'
@@ -1102,7 +1116,8 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
       if (!branchChange) {
         await checked(sandbox, ['git', '-c', 'core.hooksPath=/dev/null', 'add', '-A']);
         const changed = await checked(sandbox, ['git', 'diff', '--no-renames', '--cached', '--name-only']);
-        if (!changed) throw new Error('Agent finished without changing any files');
+        const integratedOnly = !changed && !!run.coordinator && startFrom?.reason === 'coordinator' && await checked(sandbox, ['git', 'rev-parse', 'HEAD']) !== baseSha;
+        if (!changed && !integratedOnly) throw new Error('Agent finished without changing any files');
         const staged = changed.split('\n').filter(Boolean);
         if (revertChange && staged.some((path) => !revertPaths.includes(path))) throw new Error('Revert changed files outside the landed change');
         if (!revertChange) {
@@ -1110,7 +1125,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
           if (blocked.length) throw protectedFailure('Agent changed protected files', blocked);
         }
         if (skillChange && (staged.length !== 1 || staged[0] !== skillChange.path)) throw new Error('Skill editor changed files outside the requested skill');
-        await checked(sandbox, ['git', '-c', 'core.hooksPath=/dev/null', 'commit', '-m', revertChange ? `Revert "${revertChange.title.replace(/[\r\n]+/g, ' ')}"\n\nThis reverts ${revertChange.previousSha}..${revertChange.landedSha}.` : agentCommitMessage(mission, run)]);
+        if (!integratedOnly) await checked(sandbox, ['git', '-c', 'core.hooksPath=/dev/null', 'commit', '-m', revertChange ? `Revert "${revertChange.title.replace(/[\r\n]+/g, ' ')}"\n\nThis reverts ${revertChange.previousSha}..${revertChange.landedSha}.` : agentCommitMessage(mission, run)]);
       }
       let sha = await checked(sandbox, ['git', 'rev-parse', 'HEAD']);
       if (!validGitSha(sha)) throw new Error('Runner returned an invalid commit');
@@ -1182,9 +1197,15 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
       await publish();
     }
   };
+  const coordinatorRun = !trusted && !race ? result.runs.find((run) => run.coordinator && run.status !== 'skipped') : undefined;
+  const coordinated = !!coordinatorRun && result.runs.some((run) => run !== coordinatorRun && run.status !== 'skipped');
+  const launch = (run: AgentRun) => {
+    if (coordinated && run.coordinator) run.startFrom = { reason: 'coordinator', candidates: result.runs.filter((part) => !part.coordinator && part.status === 'completed' && part.commitSha && part.forkName).map((part) => ({ runId: part.id, name: part.name, forkName: part.forkName!, commitSha: part.commitSha! })) };
+    return runAgent(run);
+  };
   const jobs = result.runs.map((run, index) => async () => {
     if (run.status === 'skipped') return;
-    if (!carried.has(run.id)) return runAgent(run);
+    if (!carried.has(run.id)) return launch(run);
     if (!await active()) throw new Error('Mission cancelled');
     const reused = await reuseCandidate(run);
     if (typeof reused !== 'string') {
@@ -1197,7 +1218,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     }
     result.checks = result.checks.filter((check) => check.runId !== run.id);
     result.changes = result.changes.filter((change) => !change.runIds.includes(run.id));
-    const rerun: AgentRun = { id: run.id, name: run.name, role: run.role, task: run.task, assignment: run.assignment, model: run.model, modelConfig: run.modelConfig, status: 'queued', changedFiles: [], summary: reused };
+    const rerun: AgentRun = { id: run.id, name: run.name, role: run.role, task: run.task, assignment: run.assignment, model: run.model, modelConfig: run.modelConfig, status: 'queued', changedFiles: [], summary: reused, ...(run.coordinator ? { coordinator: true } : {}) };
     result.runs[index] = rerun;
     await publish();
     try { pin(rerun); }
@@ -1206,14 +1227,27 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
       await publish();
       return;
     }
-    return runAgent(rerun);
+    return launch(rerun);
   });
-  const settled = trusted ? await Promise.allSettled(jobs.map(job => job())) : await runConcurrent(jobs);
+  const coordinatorIndex = coordinated ? result.runs.indexOf(coordinatorRun!) : -1;
+  const settled = trusted ? await Promise.allSettled(jobs.map(job => job())) : await runConcurrent(jobs.filter((_, index) => index !== coordinatorIndex));
+  if (coordinated) {
+    const parts = result.runs.filter((run, index) => index !== coordinatorIndex && run.status !== 'skipped');
+    const target = result.runs[coordinatorIndex]!;
+    const partsPassed = !settled.some((entry) => entry.status === 'rejected') && parts.every((run) => run.status === 'completed');
+    if (partsPassed) {
+      try { settled.push({ status: 'fulfilled', value: await jobs[coordinatorIndex]!() }); }
+      catch (reason) { settled.push({ status: 'rejected', reason }); }
+    } else if (!carried.has(target.id)) {
+      Object.assign(target, { status: 'failed', completedAt: new Date().toISOString(), error: 'Not started: the coordinator runs only after every other agent has a passing candidate' });
+      await publish();
+    }
+  }
   if (race) {
     if (!result.runs.some((run) => run.status === 'completed')) result.error = 'No agent produced a passing candidate.';
     return result;
   }
-  const included = result.runs.filter((run) => run.status !== 'skipped');
+  const included = result.runs.filter((run) => run.status !== 'skipped').sort((a, b) => Number(!!b.coordinator && coordinated) - Number(!!a.coordinator && coordinated));
   if (settled.some((entry) => entry.status === 'rejected') || !included.length || included.some((run) => run.status !== 'completed')) {
     result.error = 'One or more agents failed; no integration candidate was approved.';
     return result;
