@@ -18,7 +18,9 @@ interface Member { userId: string; workspaceId: string; role: Role; repositoryId
 interface Session { id: string; userId: string; workspaceId: string; hash: string; expiresAt: number; authenticatedAt?: number; revoked?: boolean; client?: string }
 type PublicSession = Omit<Session, 'hash'>;
 interface WorkspaceRecord { id: string; name: string; bootstrapDisabled?: boolean; agentPending?: boolean }
-interface Invitation { id: string; workspaceId: string; email: string; role: Role; hash: string; expiresAt: number; accepted?: boolean }
+export type InvitationScope = { kind: 'organization'; ownerId: string; ownerName?: string } | { kind: 'repository'; repositoryId: string; repositoryName?: string };
+interface Invitation { id: string; workspaceId: string; email: string; role: Role; hash: string; expiresAt: number; accepted?: boolean; scope?: InvitationScope }
+export interface OrganizationMember { userId: string; role: Role; addedAt: string; addedBy: string }
 interface Team { id: string; workspaceId: string; name: string; userIds: string[] }
 interface Grant { id: string; workspaceId: string; subjectType: 'user' | 'team'; subjectId: string; resourceType: string; resourceId: string; actions: Action[] }
 interface Credential { id: string; workspaceId: string; userId: string; name: string; hash: string; repositoryId: string; missionId?: string; actions: Action[]; expiresAt: number; maxRequests: number; maxExecutions: number; requests: number; executions: number; revoked?: boolean; scope?: 'workspace-read' }
@@ -136,7 +138,7 @@ const GONE = Symbol('gone');
 type Writes = Map<string, unknown>;
 const enc = encodeURIComponent;
 const key = {
-  user: (id: string) => `id:user:${enc(id)}`, email: (email: string) => `id:email:${enc(email)}`, cloudflare: (id: string) => `id:cf:${enc(id)}`, hints: (userId: string) => `id:hint:${enc(userId)}`,
+  user: (id: string) => `id:user:${enc(id)}`, email: (email: string) => `id:email:${enc(email)}`, cloudflare: (id: string) => `id:cf:${enc(id)}`, hints: (userId: string) => `id:hint:${enc(userId)}`, organization: (ownerId: string) => `id:org:${enc(ownerId)}`,
   mfa: (userId: string) => `id:mfa:${enc(userId)}`, challenge: (id: string) => `id:chal:${enc(id)}`, userChallenges: (userId: string) => `id:uchal:${enc(userId)}`, emailToken: (id: string) => `id:etok:${enc(id)}`, userEmailTokens: (userId: string) => `id:uetok:${enc(userId)}`,
   failures: (id: string) => `id:fail:${enc(id)}`, limit: (id: string) => `id:limit:${enc(id)}`, installation: (id: string) => `id:install:${enc(id)}`, machine: (id: string) => `id:machine:${enc(id)}`, machineClaim: (hash: string) => `id:mclaim:${enc(hash)}`,
   signin: (id: string) => `id:cfsignin:${enc(id)}`, link: (id: string) => `id:cflink:${enc(id)}`, linkEmail: (email: string) => `id:cflinkemail:${enc(email)}`,
@@ -277,6 +279,9 @@ export class IdentityStore {
   hints(userId: string) { return this.read(unit => this.hintList(unit, userId)); }
   addHint(userId: string, workspaceId: string) { return this.write(unit => this.addHintTo(unit, userId, workspaceId)); }
   removeHint(userId: string, workspaceId: string) { return this.write(async unit => { const hints = await this.hintList(unit, userId); if (hints.includes(workspaceId)) unit.put(key.hints(userId), hints.filter(id => id !== workspaceId)); }); }
+  organizationMembers(ownerId: string) { return this.read(async unit => await unit.get<OrganizationMember[]>(key.organization(ownerId)) ?? []); }
+  setOrganizationMember(ownerId: string, member: OrganizationMember) { return this.write(async unit => { const members = (await unit.get<OrganizationMember[]>(key.organization(ownerId)) ?? []).filter(item => item.userId !== member.userId); if (members.length >= 500) fail('ORGANIZATION_LIMIT', 'Remove someone before inviting more people to all workspaces.'); unit.put(key.organization(ownerId), [...members, member]); }); }
+  removeOrganizationMember(ownerId: string, userId: string) { return this.write(async unit => { const members = await unit.get<OrganizationMember[]>(key.organization(ownerId)) ?? []; if (!members.some(item => item.userId === userId)) return false; const rest = members.filter(item => item.userId !== userId); if (rest.length) unit.put(key.organization(ownerId), rest); else unit.delete(key.organization(ownerId)); return true; }); }
   mfaEnabled(userId: string) { return this.read(async unit => !!(await unit.get<MfaRecord>(key.mfa(userId)))?.enabled); }
   installationCredential(operation: 'get' | 'put' | 'delete', value?: InstallationCredentialRecord) {
     if (operation === 'get') return this.read(async unit => await unit.get<InstallationCredentialRecord>(key.installationCredential) ?? null);
@@ -808,7 +813,7 @@ export class WorkspaceStore {
   async membership(userId: string, bootstrap = false) {
     await this.load(); if (!this.initialized) return null;
     const now = Date.now();
-    return this.guarded(() => ({ workspace: this.data.member.has(userId) || bootstrap && this.workspaceId === 'legacy' ? this.record() ?? null : null, sessions: [...this.data.session.values()].filter(s => s.userId === userId && s.expiresAt > now).map(publicValue) }));
+    return this.guarded(() => ({ workspace: this.data.member.has(userId) || bootstrap && this.workspaceId === 'legacy' ? this.record() ?? null : null, role: this.data.member.get(userId)?.role ?? (bootstrap && this.workspaceId === 'legacy' ? 'Owner' as Role : null), repositoryScoped: !!this.data.member.get(userId)?.repositoryIds, sessions: [...this.data.session.values()].filter(s => s.userId === userId && s.expiresAt > now).map(publicValue) }));
   }
   async bootstrapAllowed(): Promise<Principal> { await this.load(); if (this.record()?.bootstrapDisabled) fail('BOOTSTRAP_DISABLED', 'The legacy owner key was retired by ownership transfer.'); return { userId: 'bootstrap-owner', workspaceId: 'legacy', role: 'Owner', bootstrap: true }; }
   async createSession(input: { userId: string; hash: string; expiresAt?: number; authenticatedAt?: number; revision?: number; bootstrap?: boolean }): Promise<PublicSession> {
@@ -871,15 +876,20 @@ export class WorkspaceStore {
   private findInvite(hash: string) {
     const invite = [...this.data.invitation.values()].find(i => i.hash === hash && !i.accepted && i.expiresAt > Date.now());
     if (!invite) throw new ApiError(410, 'INVITATION_EXPIRED', 'This invitation is invalid, expired, or already used.');
-    return { email: invite.email, role: invite.role, workspaceId: invite.workspaceId };
+    return { email: invite.email, role: invite.role, workspaceId: invite.workspaceId, workspaceName: this.record()?.name, ...(invite.scope ? { scope: invite.scope } : {}) };
   }
   async acceptInvite(hash: string, userId: string, email: string, mode: 'member' | 'new' | 'cloudflare'): Promise<boolean> {
     return this.change(change => {
       const invite = [...this.data.invitation.values()].find(i => i.hash === hash && !i.accepted && i.expiresAt > Date.now());
       if (!invite) throw new ApiError(410, 'INVITATION_EXPIRED', 'This invitation is invalid, expired, or already used.');
       if (invite.email !== email) fail('INVITATION_IDENTITY', 'This invitation was issued for a different account email.');
-      if (this.data.member.has(userId)) { if (mode === 'cloudflare') return false; throw new ApiError(409, 'ALREADY_MEMBER', 'You already belong to this workspace.'); }
-      this.data.member.set(userId, { userId, workspaceId: this.workspaceId, role: invite.role }); invite.accepted = true;
+      const scope = invite.scope?.kind === 'repository' ? invite.scope : undefined;
+      const existing = this.data.member.get(userId);
+      if (existing && scope && existing.repositoryIds) { existing.repositoryIds = [...new Set([...existing.repositoryIds, scope.repositoryId])]; invite.accepted = true; change.audit.push({ actorId: userId, action: 'access:accept-invite', resourceId: scope.repositoryId }); return true; }
+      if (existing && invite.scope?.kind === 'organization') { invite.accepted = true; return true; }
+      if (existing) { if (mode === 'cloudflare') return false; throw new ApiError(409, 'ALREADY_MEMBER', 'You already belong to this workspace.'); }
+      this.data.member.set(userId, { userId, workspaceId: this.workspaceId, role: invite.role, ...(scope ? { repositoryIds: [scope.repositoryId] } : {}) }); invite.accepted = true;
+      if (scope) change.audit.push({ actorId: userId, action: 'access:repository-member', resourceId: scope.repositoryId });
       if (mode === 'cloudflare') change.audit.push({ actorId: userId, action: 'access:accept-invite' });
       return true;
     });
@@ -890,6 +900,15 @@ export class WorkspaceStore {
       this.validate(p, context); if (p.credentialId || p.role !== 'Owner') fail();
       this.data.member.set(userId, { userId, workspaceId: this.workspaceId, role: assignedRole });
       change.audit.push({ actorId: p.userId, action: 'access:user-create', resourceId: userId });
+    });
+  }
+  async organizationJoin(ownerId: string, userId: string, assignedRole: Role): Promise<boolean> {
+    await this.load(); if (!this.initialized) return false;
+    return this.change(change => {
+      if (this.data.member.get(ownerId)?.role !== 'Owner' || this.data.member.has(userId) || assignedRole === 'Owner') return false;
+      this.data.member.set(userId, { userId, workspaceId: this.workspaceId, role: assignedRole });
+      change.audit.push({ actorId: ownerId, action: 'access:organization-member-added', resourceId: userId });
+      return true;
     });
   }
   async superAdmin(userId: string, grant: boolean): Promise<'granted' | 'demoted' | 'removed' | null> {
@@ -939,7 +958,15 @@ export class WorkspaceStore {
       if (p.role !== 'Owner') fail();
       const member = (userId: unknown) => { const found = typeof userId === 'string' ? data.member.get(userId) : undefined; if (!found) throw new ApiError(404, 'MEMBER_NOT_FOUND', 'Select an existing workspace member.'); return found; };
       if (action === 'invite-revoke') { const invitation = data.invitation.get(String(body.id)); if (!invitation || invitation.workspaceId !== workspaceId) fail(); invitation.accepted = true; return { ok: true }; }
-      if (action === 'invite') { const invitation: Invitation = { id: crypto.randomUUID(), workspaceId, email: requireString(body.email, 'Email', 254).toLowerCase(), role: role(body.role), hash, expiresAt: Date.now() + 86400000 }; if (invitation.role === 'Owner') fail('TRANSFER_REQUIRED', 'Use ownership transfer to assign the Owner role.'); data.invitation.set(invitation.id, invitation); return { token: raw, invitation: publicValue(invitation) }; }
+      if (action === 'invite') {
+        const scope = invitationScope(p, body);
+        const invitation: Invitation = { id: crypto.randomUUID(), workspaceId, email: requireString(body.email, 'Email', 254).toLowerCase(), role: role(body.role), hash, expiresAt: Date.now() + 86400000, ...(scope ? { scope } : {}) };
+        if (invitation.role === 'Owner') fail('TRANSFER_REQUIRED', 'Use ownership transfer to assign the Owner role.');
+        if (scope?.kind === 'repository' && invitation.role === 'Deployer') throw new ApiError(400, 'INVALID_SCOPE', 'Deployers act on environments, not one repository. Invite them to the workspace instead.');
+        data.invitation.set(invitation.id, invitation);
+        change.audit.push({ actorId: p.userId, action: `access:invite:${scope?.kind ?? 'workspace'}`, resourceId: scope?.kind === 'repository' ? scope.repositoryId : invitation.id });
+        return { token: raw, invitation: publicValue(invitation) };
+      }
       if (action === 'membership') {
         const target = member(body.userId); if (target.role === 'Owner' || body.role === 'Owner') fail('TRANSFER_REQUIRED');
         if (body.role === null) {
@@ -1113,12 +1140,19 @@ export class WorkspaceStore {
     if (valid.length < required) fail('APPROVALS_REQUIRED', 'This revision needs additional current approvals.');
   }
 }
+function invitationScope(p: Principal, body: Record<string, unknown>): InvitationScope | undefined {
+  const kind = body.scope ?? 'workspace';
+  if (kind === 'workspace') return undefined;
+  if (kind === 'repository') return { kind, repositoryId: requireString(body.repositoryId, 'Repository', 200), ...(typeof body.repositoryName === 'string' ? { repositoryName: body.repositoryName.slice(0, 100) } : {}) };
+  if (kind === 'organization') { if (p.bootstrap) fail('ACCOUNT_REQUIRED', 'Sign in with an account to invite people to all your workspaces.'); return { kind, ownerId: p.userId, ...(typeof body.ownerName === 'string' ? { ownerName: body.ownerName.slice(0, 100) } : {}) }; }
+  throw new ApiError(400, 'INVALID_SCOPE', 'Choose all workspaces, this workspace, or one repository.');
+}
 function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !value.length || value.some(v => !ROLE_ACTIONS.Owner.includes(v))) throw new ApiError(400, 'INVALID_ACTIONS', 'Select valid resource actions.'); return [...new Set(value)] as Action[]; }
 
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
-const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall']);
-const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
+const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall']);
+const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
     get: (_target, op) => typeof op !== 'string' || op === 'then' ? undefined : async (...args: unknown[]) => {
@@ -1287,17 +1321,77 @@ export class SecurityService {
     const [users, hints] = await Promise.all([this.identity().users(ids), p.bootstrap ? Promise.resolve([] as string[]) : this.identity().hints(p.userId)]);
     const workspaceIds = p.bootstrap ? ['legacy'] : [...new Set([...hints, p.workspaceId])];
     const memberships = (await Promise.all(workspaceIds.map(id => this.shard(id).membership(p.userId, !!p.bootstrap).catch(() => null)))).filter((item): item is NonNullable<typeof item> => !!item);
+    const organization = p.role === 'Owner' && !p.bootstrap && !p.credentialId ? await this.identity().organizationMembers(p.userId) : [];
+    const organizationUsers = organization.length ? await this.identity().users(organization.map(item => item.userId)) : {};
     return {
       user: users[p.userId] ?? { id: p.userId, name: 'Legacy owner', emailVerified: false }, workspace: part.workspace, role: p.role, permissions: ROLE_ACTIONS[p.role],
       members: part.members.map(m => ({ ...m, user: users[m.userId] ?? null })), teams: part.teams, invitations: part.invitations, grants: part.grants, credentials: part.credentials,
       sessions: memberships.flatMap(item => item.sessions), protection: part.protection, audit: part.audit,
-      workspaces: memberships.flatMap(item => item.workspace ? [item.workspace] : []),
+      workspaces: memberships.flatMap(item => item.workspace ? [{ ...item.workspace, role: item.role, repositoryScoped: item.repositoryScoped }] : []),
+      organization: { members: organization.map(item => ({ ...item, user: organizationUsers[item.userId] ?? null })) },
     };
+  }
+  async workspaces(p: Principal) {
+    await this.shard(p.workspaceId).validatePrincipal(p);
+    const ids = p.bootstrap ? ['legacy'] : [...new Set([p.workspaceId, ...await this.identity().hints(p.userId)])];
+    const memberships = await Promise.all(ids.map(id => this.shard(id).membership(p.userId, !!p.bootstrap).catch(() => null)));
+    return memberships.flatMap(item => item?.workspace && item.role ? [{ id: item.workspace.id, name: item.workspace.name, role: item.role, repositoryScoped: item.repositoryScoped, current: item.workspace.id === p.workspaceId }] : []);
+  }
+  async switchWorkspace(p: Principal, workspaceId: string) {
+    if (p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to switch workspaces.');
+    if (typeof workspaceId !== 'string' || !workspaceId || workspaceId.length > 100) throw new ApiError(400, 'INVALID_WORKSPACE', 'Choose a workspace.');
+    await this.shard(p.workspaceId).validatePrincipal(p, { account: true });
+    const target = await this.shard(workspaceId).sessionPrincipal(p.userId, p.sessionId);
+    await this.shard(workspaceId).validatePrincipal(target, { account: true });
+    await this.shard(workspaceId).audit([{ actorId: p.userId, action: 'workspace:switch', resourceId: p.workspaceId }]);
+    const workspace = await this.shard(workspaceId).workspace(target);
+    return { workspace, role: target.role };
+  }
+  async createWorkspace(p: Principal, body: Record<string, unknown>) {
+    if (this.options.EDITION === 'self-hosted') fail('HOSTED_ONLY', 'This installation has one workspace.');
+    if (p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to create a workspace.');
+    await this.shard(p.workspaceId).validatePrincipal(p, { account: true });
+    const name = requireString(body.name, 'Workspace name', 100);
+    if (!await this.identity().rateLimit(`workspace-create:${p.userId}`, 10, 86_400_000)) throw new ApiError(429, 'RATE_LIMITED', 'You created many workspaces today. Try again tomorrow.');
+    const workspaceId = crypto.randomUUID();
+    const organization = await this.identity().organizationMembers(p.userId);
+    const accounts = organization.length ? await this.identity().users(organization.map(item => item.userId)) : {};
+    const joined = organization.filter(item => item.userId !== p.userId && accounts[item.userId] && item.role !== 'Owner');
+    await this.shard(workspaceId).initWorkspace({ record: { id: workspaceId, name }, members: [{ userId: p.userId, workspaceId, role: 'Owner' }, ...joined.map(item => ({ userId: item.userId, workspaceId, role: item.role }))], audit: [{ actorId: p.userId, action: 'workspace:create' }, ...joined.map(item => ({ actorId: p.userId, action: 'access:organization-member-added', resourceId: item.userId }))] });
+    for (const userId of [p.userId, ...joined.map(item => item.userId)]) await this.identity().addHint(userId, workspaceId);
+    await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: 'workspace:create', resourceId: workspaceId }]);
+    return { workspace: { id: workspaceId, name }, members: joined.length + 1 };
+  }
+  private async inviteAccepted(invite: { scope?: InvitationScope; role: Role; workspaceId: string }, userId: string) {
+    if (invite.scope?.kind !== 'organization') return;
+    const ownerId = invite.scope.ownerId;
+    await this.identity().setOrganizationMember(ownerId, { userId, role: invite.role, addedAt: new Date().toISOString(), addedBy: ownerId });
+    for (const workspaceId of await this.identity().hints(ownerId)) {
+      if (workspaceId === invite.workspaceId) continue;
+      if (await this.shard(workspaceId).organizationJoin(ownerId, userId, invite.role).catch(() => false)) await this.identity().addHint(userId, workspaceId);
+    }
+  }
+  private async removeFromOrganization(p: Principal, body: Record<string, unknown>) {
+    if (p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED');
+    await this.shard(p.workspaceId).validatePrincipal(p, { owner: true });
+    const userId = requireString(body.userId, 'Member', 200);
+    if (userId === p.userId) fail();
+    await this.identity().removeOrganizationMember(p.userId, userId);
+    let removed = 0;
+    for (const workspaceId of [...new Set([p.workspaceId, ...await this.identity().hints(p.userId)])]) {
+      const owner = workspaceId === p.workspaceId ? p : await this.shard(workspaceId).sessionPrincipal(p.userId, p.sessionId).catch(() => null);
+      if (owner?.role !== 'Owner' || !await this.shard(workspaceId).isMember(userId)) continue;
+      try { await this.action(owner, 'membership', { userId, role: null }); removed++; } catch (error) { if (!(error instanceof ApiError) || error.code !== 'TRANSFER_REQUIRED' && error.code !== 'FORBIDDEN') throw error; }
+    }
+    await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: 'access:organization-member-removed', resourceId: userId }]);
+    return { ok: true, removed };
   }
   async action(p: Principal, action: string, body: Record<string, unknown>) {
     if (action === 'user-create') return this.createInstallationUser(p, body);
     if (action === 'agent-claim') return this.claimMachine(p, body);
     if (action === 'mfa-enroll') return this.enrollMfa(p);
+    if (action === 'organization-remove') return this.removeFromOrganization(p, body);
+    if (action === 'invite' && body.scope === 'organization' && (p.bootstrap || p.credentialId || !p.sessionId)) fail('ACCOUNT_REQUIRED', 'Sign in with an account to invite people to all your workspaces.');
     const raw = action === 'session-create' || action === 'credential-create' ? mintToken(p.workspaceId) : token(); const hash = await hashToken(raw);
     if (action === 'session-revoke') {
       const id = String(body.id); const home = await this.sessionHome(id);
@@ -1422,6 +1516,7 @@ export class SecurityService {
     if (!await this.identity().createUser({ user, workspaceId, ...(hosted ? { emailToken: { id: verificationHash, userId, email: input.email, kind: 'verify' as const, expiresAt: Date.now() + VERIFY_TOKEN_MS } } : {}) })) throw new ApiError(409, 'ACCOUNT_EXISTS', 'This email is already registered. Sign in instead.');
     try { await this.shard(workspaceId).acceptInvite(invitationHash, userId, input.email, 'new'); }
     catch (error) { await this.identity().deleteUser(userId); throw error; }
+    await this.inviteAccepted(invite, userId);
     if (!hosted) return this.beginMfa(userId);
     return { ...await this.issueSession(user, workspaceId), verificationToken };
   }
@@ -1470,6 +1565,7 @@ export class SecurityService {
     if (!user || user.email !== invite.email) fail('INVITATION_IDENTITY', 'This invitation was issued for a different account email.');
     await this.identity().addHint(p.userId, workspaceId);
     await this.shard(workspaceId).acceptInvite(hash, p.userId, user.email, 'member');
+    await this.inviteAccepted(invite, p.userId);
     return { ok: true, workspaceId };
   }
   clearApprovals(p: Principal, missionId: string) { return this.shard(p.workspaceId).clearApprovals(p, missionId); }
@@ -1484,7 +1580,7 @@ export class SecurityService {
   assertLand(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule) { return this.shard(p.workspaceId).assertLand(p, missionId, candidateSha, baseSha, epoch, repositoryId, rule); }
 }
 
-const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
+const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'workspaces', 'switchWorkspace', 'createWorkspace', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
 export type SecurityEnv = { GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity> } & { [K in keyof SecurityOptions]?: unknown };
 // While a deployment still runs a global instance without the shard protocol, its original methods serve the call
 export function securityClient(env: SecurityEnv): SecurityService {
@@ -1554,6 +1650,9 @@ export class GitflareSecurity extends DurableObject<AppEnv> {
   checkMany(p: Principal, action: Action, resources: { resourceType: string; resourceId: string; missionId?: string }[]) { return this.service.checkMany(p, action, resources); }
   workspace(p: Principal) { return this.service.workspace(p); }
   snapshot(p: Principal) { return this.service.snapshot(p); }
+  workspaces(p: Principal) { return this.service.workspaces(p); }
+  switchWorkspace(p: Principal, workspaceId: string) { return this.service.switchWorkspace(p, workspaceId); }
+  createWorkspace(p: Principal, body: Record<string, unknown>) { return this.service.createWorkspace(p, body); }
   action(p: Principal, action: string, body: Record<string, unknown>) { return this.service.action(p, action, body); }
   acceptInvite(p: Principal, value: string) { return this.service.acceptInvite(p, value); }
   clearApprovals(p: Principal, missionId: string) { return this.service.clearApprovals(p, missionId); }

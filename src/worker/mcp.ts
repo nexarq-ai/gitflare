@@ -33,7 +33,7 @@ export const mcpToolNames = [
   'gitflare_inspect_mission', 'gitflare_draft_mission', 'gitflare_create_mission', 'gitflare_start_mission', 'gitflare_cancel_mission',
   'gitflare_review_mission', 'gitflare_revert_mission', 'gitflare_select_candidate', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval',
   'gitflare_preview_mission', 'gitflare_preview_status', 'gitflare_mission_history', 'gitflare_workspace_status',
-  'gitflare_list_docs', 'gitflare_read_doc', 'gitflare_public_source', 'gitflare_ai_settings', 'gitflare_set_ai_features', 'gitflare_access_status', 'gitflare_manage_access', 'gitflare_cloudflare_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_manage_cloudflare_project', 'gitflare_deployments', 'gitflare_detect_deploy_setup', 'gitflare_deploy', 'gitflare_secrets', 'gitflare_manage_secret',
+  'gitflare_list_docs', 'gitflare_read_doc', 'gitflare_public_source', 'gitflare_ai_settings', 'gitflare_set_ai_features', 'gitflare_access_status', 'gitflare_list_workspaces', 'gitflare_manage_access', 'gitflare_cloudflare_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_manage_cloudflare_project', 'gitflare_deployments', 'gitflare_detect_deploy_setup', 'gitflare_deploy', 'gitflare_secrets', 'gitflare_manage_secret',
   'gitflare_list_issues', 'gitflare_read_issue', 'gitflare_create_issue', 'gitflare_comment_issue', 'gitflare_update_issue',
   'gitflare_list_branches', 'gitflare_create_branch', 'gitflare_delete_branch', 'gitflare_create_pull_request', 'gitflare_update_pull_request', 'gitflare_branch_protection', 'gitflare_set_branch_protection',
   'gitflare_check_settings', 'gitflare_set_check_settings', 'gitflare_retry_checks', 'gitflare_preview_settings', 'gitflare_set_preview_settings',
@@ -280,19 +280,25 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     title: 'Read workspace access', description: 'Read your identity, role, memberships, teams, invitations, task credentials, sessions, protection rules and the audit events your role may see. Read-only.',
     inputSchema: z.object({}).strict(), annotations: readOnly,
   }, () => guarded(async () => call<Record<string, unknown>>('/api/access')));
+  server.registerTool('gitflare_list_workspaces', {
+    title: 'List my workspaces', description: 'List every workspace your account belongs to with your role, whether you see only some repositories, and which one this connection uses. This connection stays bound to the workspace you approved; switching is a browser session action. Read-only.',
+    inputSchema: z.object({}).strict(), annotations: readOnly,
+  }, () => guarded(async () => call<Record<string, unknown>>('/api/workspaces')));
   const memberRole = z.enum(['Viewer', 'Contributor', 'Reviewer', 'Maintainer', 'Deployer']).describe('Workspace role. Owner is assigned only with transfer.');
   const accessId = z.string().min(1).max(200);
   const userId = accessId.describe('Member user ID from gitflare_access_status.');
   const accessAction = <A extends string, S extends z.ZodRawShape>(action: A, shape: S, description: string) => z.object({ action: z.literal(action), ...shape }).strict().describe(description);
   const ACCESS_BROWSER: Record<string, { path: string; reason: string }> = {
-    'accept-invite': { path: '/settings', reason: 'Paste the invitation capability under Settings → Access → Join another workspace.' },
-    'user-create': { path: '/settings', reason: 'Set the new user’s password under Settings → Access → Create a user.' },
+    'accept-invite': { path: '/settings', reason: 'Paste the invitation capability under Settings → Access → People & teams → Join another workspace.' },
+    'user-create': { path: '/settings', reason: 'Set the new user’s password under Settings → Access → People & teams → Create a user.' },
     'mfa-enroll': { path: '/account/security', reason: 'Scan the authenticator code under Account → Security.' },
   };
   server.registerTool('gitflare_manage_access', {
-    title: 'Manage workspace access', description: 'Change workspace access with operation.action: invitations, member roles and repository scope, ownership transfer, teams, resource grants, task credentials, landing protection, your own sessions, an agent-account claim or a verification email. Can remove members and revoke credentials. accept-invite, user-create and mfa-enroll return a browser URL. Tokens returned are shown once. Mostly Owner only; admin access.',
+    title: 'Manage workspace access', description: 'Change access with operation.action: invitations to a workspace, a repository or all your workspaces, roles and repository scope, ownership transfer, teams, grants, task credentials, landing protection, sessions, new workspaces, agent claims, verification email. Can remove members and revoke credentials. accept-invite, user-create and mfa-enroll return a browser URL. Tokens show once. Mostly Owner only; admin access.',
     inputSchema: z.object({ operation: z.discriminatedUnion('action', [
-      accessAction('invite', { email: z.string().email().max(254), role: memberRole }, 'Invite someone by email. Returns an invitation capability shown once.'),
+      accessAction('invite', { email: z.string().email().max(254), role: memberRole, scope: z.enum(['workspace', 'repository', 'organization']).optional().describe('workspace (default): this workspace. repository: only repositoryId. organization: every workspace you own now and later.'), repositoryId: accessId.optional().describe('For repository scope: the only repository they will see.') }, 'Invite someone by email. Returns an invitation capability shown once.'),
+      accessAction('organization-remove', { userId }, 'Stop adding someone to your future workspaces and remove them from every workspace you own.'),
+      accessAction('workspace-create', { name: z.string().min(1).max(100) }, 'Create a workspace you own. People invited to all your workspaces join it.'),
       accessAction('invite-revoke', { id: accessId.describe('Invitation ID.') }, 'Withdraw a pending invitation.'),
       accessAction('accept-invite', {}, 'Returns a browser URL; the invitation capability is entered there.'),
       accessAction('membership', { userId, role: memberRole.nullable().optional().describe('New role, or null to remove the member and revoke their sessions, credentials and grants.'), repositoryIds: z.array(accessId).max(100).nullable().optional().describe('Restrict the member to these repositories; null restores access to all.') }, 'Change a member’s role or repository scope, or remove them.'),
@@ -314,7 +320,7 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
   }, ({ operation: { action, ...parameters } }) => guarded(async () => {
     const browser = ACCESS_BROWSER[action];
     if (browser) return { browserStartUrl: `${origin}${browser.path}`, browserEntryRequired: true, reason: browser.reason };
-    return call<Record<string, unknown>>(action === 'email-verification-resend' ? '/api/auth/resend-verification' : `/api/access/${action}`, parameters);
+    return call<Record<string, unknown>>(action === 'email-verification-resend' ? '/api/auth/resend-verification' : action === 'workspace-create' ? '/api/workspaces/create' : `/api/access/${action}`, parameters);
   }));
   server.registerTool('gitflare_list_docs', {
     title: 'List Gitflare documentation', description: 'List Gitflare documentation pages; set public to list only the public guides. Planning pages describe intent, not shipped features. Read-only.',

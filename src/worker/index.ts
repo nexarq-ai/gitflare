@@ -285,14 +285,29 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     const [snapshot, name] = await Promise.all([access.snapshot(principal), workspaceName(env, access, principal)]);
     return Response.json({ ...snapshot, workspace: snapshot.workspace ? { ...snapshot.workspace, name } : snapshot.workspace, workspaces: snapshot.workspaces.map((workspace) => workspace.id === principal.workspaceId ? { ...workspace, name } : workspace) });
   }
+  if (url.pathname === '/api/workspaces' && request.method === 'GET') {
+    const [items, name] = await Promise.all([access.workspaces(principal), workspaceName(env, access, principal)]);
+    return Response.json({ workspaces: items.map(item => item.current ? { ...item, name } : item) });
+  }
+  if (url.pathname === '/api/workspaces/switch' && request.method === 'POST') {
+    assertMutationOrigin(request); const body = await readJson(request);
+    return Response.json(await access.switchWorkspace(principal, requireString(body.workspaceId, 'Workspace', 100)));
+  }
+  if (url.pathname === '/api/workspaces/create' && request.method === 'POST') {
+    assertMutationOrigin(request); const body = await readJson(request);
+    return Response.json(await access.createWorkspace(principal, body));
+  }
   if (url.pathname.startsWith('/api/access/') && request.method === 'POST') {
     assertMutationOrigin(request); const body = await readJson(request); const action = url.pathname.slice('/api/access/'.length);
+    if (action === 'invite') { delete body.repositoryName; delete body.ownerName; }
+    if (action === 'invite' && body.scope === 'repository') { const repository = await env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)).getRepository(String(body.repositoryId ?? '')); if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'Select a repository in this workspace.'); body.repositoryName = repository.name; }
+    if (action === 'invite' && body.scope === 'organization') body.ownerName = (await access.snapshot(principal)).user.name;
     if (action === 'accept-invite') return Response.json(await access.acceptInvite(principal, requireString(body.token, 'Invitation token', 128)));
     if (action === 'membership' && body.repositoryIds !== undefined) { if (!Array.isArray(body.repositoryIds)) throw new ApiError(400, 'INVALID_SCOPE', 'Provide repository IDs.'); const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)); for (const id of body.repositoryIds) if (typeof id !== 'string' || !await catalog.getRepository(id)) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'Every scoped repository must belong to this workspace.'); }
     if (action === 'credential-create') { const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)); if (!await catalog.getRepository(String(body.repositoryId))) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'Select a repository in this workspace.'); }
     const result = await access.action(principal, action, body);
     if (action === 'session-revoke' && typeof body.id === 'string') await revokeClientGrants(env, url.origin, application, authorize, principal.userId, body.id);
-    if (action === 'invite' && result && typeof result === 'object' && 'token' in result && typeof result.token === 'string') { const delivery = await deliverInvitation(env, { email: String(body.email), token: result.token, workspaceName: await workspaceName(env, access, principal), origin: url.origin, role: typeof body.role === 'string' ? body.role : undefined }); return Response.json({ ...result, delivery }); }
+    if (action === 'invite' && result && typeof result === 'object' && 'token' in result && typeof result.token === 'string') { const delivery = await deliverInvitation(env, { email: String(body.email), token: result.token, workspaceName: await workspaceName(env, access, principal), origin: url.origin, role: typeof body.role === 'string' ? body.role : undefined, scope: body.scope === 'organization' ? { kind: 'organization', ownerName: String(body.ownerName ?? '') } : body.scope === 'repository' ? { kind: 'repository', repositoryName: String(body.repositoryName ?? '') } : { kind: 'workspace' } }); return Response.json({ ...result, delivery }); }
     return Response.json(result);
   }
   if (request.method === 'GET' && url.pathname === '/api/docs') return Response.json({ items: listDocs() });
