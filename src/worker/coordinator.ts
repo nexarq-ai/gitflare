@@ -91,7 +91,7 @@ export function integrationPendingMessage(candidateSha: string): string {
 
 export const INTEGRATION_UNCONFIRMED_MESSAGE = 'Landing could not confirm whether the default branch moved to the approved commit, so other proposals in this repository cannot land until it is resolved. Choose Land again to recheck the default branch; it never pushes twice. If the branch does not show the approved commit, ask a workspace Owner to inspect it before landing anything else.';
 
-export const PREVIEW_STARTING_MESSAGE = 'Building the preview from this exact revision: clone, install and build, then publish it as a Cloudflare Worker Preview (or start it in a preview container for apps that are not Workers). This usually takes about a minute. If a step fails, the preview stops and says why.';
+export const PREVIEW_STARTING_MESSAGE = 'Gitflare is building a preview of this exact revision. It clones the code, installs dependencies and builds it, then publishes it: Cloudflare Workers become a Worker Preview, and other apps run in an isolated preview container. This usually takes about a minute; if a step fails, you see which one and why.';
 
 export async function startWithDurableDispatch(coordinator: { startMissionWithDispatch(key: string, id: string, authorization?: NonNullable<Mission['authorization']>, models?: ModelConnection[]): Promise<Mission> }, key: string, id: string, authorization?: NonNullable<Mission['authorization']>, models?: ModelConnection[]): Promise<Mission> {
   try {
