@@ -229,11 +229,6 @@
       "sha256": "33fc5cf4decac233e11bd97d8550b590f5a846c8c122652f5aa6ae7eaa79228e"
     },
     {
-      "path": "src/ui/AccessSettings.tsx",
-      "size": 22257,
-      "sha256": "9a684af1d23fc578843383919b120dfec722a24e5ad94c4ff12407241e56f850"
-    },
-    {
       "path": "src/ui/account-settings.css",
       "size": 5935,
       "sha256": "69ad0cea69afaee88f6d3e0ec58ae559d24cc16b351c97b3688ebbbab0b6ab43"
@@ -270,8 +265,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 81798,
-      "sha256": "54513271af8f86e9f83bb338eb641fbb6ce983bb7bca95729a410ebf33f3aa9b"
+      "size": 82400,
+      "sha256": "198a663c016465def529df438e7c38e5e043e3d3a089ed3ae2be92ee548abaf0"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -332,6 +327,11 @@
       "path": "src/ui/AttemptHistory.tsx",
       "size": 9290,
       "sha256": "b35932386fdb537704cc2a365cfff6295dc561d7750d9ab4724c0d50070c32fc"
+    },
+    {
+      "path": "src/ui/AuditLog.tsx",
+      "size": 2243,
+      "sha256": "18ea11558ccbf2913349562e206195f5ec838f4ef4bf7efb4b18c0d0a968cb4b"
     },
     {
       "path": "src/ui/auth-loading.css",
@@ -495,8 +495,8 @@
     },
     {
       "path": "src/ui/GeneralSettings.tsx",
-      "size": 2433,
-      "sha256": "91e620bbd935be0089581866fa8df18e4810827e4d3d34e239b483c89b1f7bf7"
+      "size": 10095,
+      "sha256": "6705bd925b218a7889703ba213b4901279b7c25544103975d21349b651f27552"
     },
     {
       "path": "src/ui/GitAccess.tsx",
@@ -525,8 +525,13 @@
     },
     {
       "path": "src/ui/InvitationScreen.tsx",
-      "size": 2567,
-      "sha256": "a21b83386d2e2ed6e7826c9bfdb46caff7d2a3d4907cbd8ad157caeb06f796b6"
+      "size": 3134,
+      "sha256": "ea3e8ac271f35ec48d6fb603d5eff5f76410c4b6abda42b4c4fe9d6b3514a238"
+    },
+    {
+      "path": "src/ui/InviteDialog.tsx",
+      "size": 8118,
+      "sha256": "d4ddb6aa79b44f29821264547954c091607f213009da2f2b360eef3b64664a29"
     },
     {
       "path": "src/ui/issues.css",
@@ -604,6 +609,21 @@
       "sha256": "af66460f6806acfe53f3ed531a1fb2b18d57697ba8b7c33e8a7068ea65e125ab"
     },
     {
+      "path": "src/ui/people-data.ts",
+      "size": 6699,
+      "sha256": "23df21799e2cba69d47920cf590ecc752e294bc9b0e2079c9ce17c5299d6b1b8"
+    },
+    {
+      "path": "src/ui/people-settings.css",
+      "size": 10017,
+      "sha256": "f92e528cd2cdf9876531a7bac8dce6876b69d8b1be72fbd54b0b2ba2056b155e"
+    },
+    {
+      "path": "src/ui/PeopleSettings.tsx",
+      "size": 17737,
+      "sha256": "14557e8519edf2af19c90a94c3e8d7a1f44476a71ce4b975539d4d4948d5cf3c"
+    },
+    {
       "path": "src/ui/policy-pages.css",
       "size": 2861,
       "sha256": "d97ad2f4443dc4c3e83d7517af4db76fa518410eec9a0231a57e07c28caf9f5e"
@@ -649,6 +669,11 @@
       "sha256": "6cfc752146e9082218ab591e4cad9ad30ead059e934cd8c4e00f11a55dd696a3"
     },
     {
+      "path": "src/ui/reauth.ts",
+      "size": 533,
+      "sha256": "a4a4631d596141e009377debab5e90ca5faec0ac43a0dd08ced2ad98aec7cd80"
+    },
+    {
       "path": "src/ui/releases.css",
       "size": 3659,
       "sha256": "a4cb1acd36abc811f929a8d62cd6ea3863bdeb3daad0772f20b8bb93c08364e5"
@@ -679,6 +704,16 @@
       "sha256": "c52d38f28540dbdf739f87f60938c55ceef98fad0d3eee75b33de5054f3be4dd"
     },
     {
+      "path": "src/ui/RepositoryAccess.tsx",
+      "size": 4200,
+      "sha256": "65f0a7c55aa8b0c9b7fed745f092c40e9a3d9856c60c7ef27a44bddff5b69be1"
+    },
+    {
+      "path": "src/ui/RepositoryAccessPopover.tsx",
+      "size": 4343,
+      "sha256": "f11414b7e877e3d8d313f286b875d75cab5f2ec58e7a008e6e4cc159815914cc"
+    },
+    {
       "path": "src/ui/RepositoryBrowser.tsx",
       "size": 12521,
       "sha256": "b462e2e99a30527bc5bbe02d7efc85fa336de5fc88816fde04e0dc349d882637"
@@ -700,8 +735,8 @@
     },
     {
       "path": "src/ui/router.ts",
-      "size": 7998,
-      "sha256": "70bdff95d2ee17d089855da1653cfec19d90658de94fac38b438b7ecf1b63233"
+      "size": 8037,
+      "sha256": "7fb70edfc64ada3ff022fb1cd7855fb1346572f5543c2781400c15f60d265447"
     },
     {
       "path": "src/ui/secret-settings.css",
@@ -730,8 +765,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 75897,
-      "sha256": "ab63942619253a7d4e27fd5fec4ed40d4357153e89ba0d22c8f6ddd5f429386b"
+      "size": 68398,
+      "sha256": "7bc74bcfec6976bbebc006985c9011ce0a47178936c4f769232065bd229eeb96"
     },
     {
       "path": "src/ui/ThemeToggle.tsx",

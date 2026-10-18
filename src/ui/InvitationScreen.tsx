@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
 import { GitBranchIcon } from "@phosphor-icons/react";
 import AuthScreen, { type AuthConfig } from "./AuthScreen";
-import { request, selectWorkspace } from "./api";
+import { request, RequestError, selectWorkspace } from "./api";
 import { navigate as goTo } from "./router";
 import { useDarkOnlySurface } from "./ThemeToggle";
 import { BrandMark } from "./BrandMark";
@@ -17,8 +17,15 @@ export default function InvitationScreen({route,config,state,error,onRetry,onSig
   async function accept() {
     setBusy(true); setFailure(""); onFlowChange(true);
     try { const result = await request<{workspaceId:string}>("/api/access/accept-invite",{token}); selectWorkspace(result.workspaceId); goTo("overview"); await onSignedIn(); }
-    catch (caught) { setFailure(caught instanceof Error ? caught.message : "The invitation could not be accepted."); }
+    catch (caught) { setFailure(invitationFailure(caught)); }
     finally { setBusy(false); onFlowChange(false); }
   }
-  return <main className="auth-screen"><div className="auth-content"><a className="auth-brand" href="/overview"><BrandMark size={32}/></a><section className="auth-card"><h1>Join the invited workspace</h1><p className="auth-description">Accept with your current account. Its email must match the invitation. The invitation expires after 24 hours and can only be used once.</p>{failure && <p className="form-error" role="alert">{failure}</p>}<Button variant="primary" loading={busy} onClick={() => void accept()}>Accept invitation</Button><p><a href="/overview">Return to your workspace</a></p></section></div></main>;
+  return <main className="auth-screen"><div className="auth-content"><a className="auth-brand" href="/overview"><BrandMark size={32}/></a><section className="auth-card"><h1>Join the invited workspace</h1><p className="auth-description">Accept with the account the invitation was sent to. The link works once and expires 24 hours after it was sent.</p>{failure && <p className="form-error" role="alert">{failure}</p>}<Button variant="primary" loading={busy} onClick={() => void accept()}>Accept invitation</Button><p><a href="/overview">Return to your workspace</a></p></section></div></main>;
+}
+
+export function invitationFailure(caught: unknown): string {
+  if (caught instanceof RequestError && caught.code === "INVITATION_IDENTITY") return "This invitation is for a different email address. Sign out and sign in with that account.";
+  if (caught instanceof RequestError && caught.code === "INVITATION_EXPIRED") return "This invitation has expired or was already used. Ask the workspace Owner for a new one.";
+  if (caught instanceof RequestError && caught.code === "ALREADY_MEMBER") return "You already belong to this workspace.";
+  return caught instanceof Error ? caught.message : "The invitation could not be accepted.";
 }
