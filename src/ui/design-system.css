@@ -444,3 +444,4 @@ button[style*='--color-kumo-danger'], a[style*='--color-kumo-danger'] {
 .gf-brand-name { font-family: var(--gf-font-sans); font-weight: 600; font-style: normal; letter-spacing: -.02em; color: var(--gf-color-text); }
 .gf-brand-name em { font-family: var(--gf-font-serif); font-style: italic; font-weight: 400; letter-spacing: 0; color: var(--gf-color-accent); }
 a:has(> .gf-brand-name), a:has(> .gf-brand-name):hover, a:has(> .gf-brand-name):focus-visible { text-decoration: none; color: inherit; }
+.command-input :is(input, input:focus, input:focus-visible) { outline: none; box-shadow: none; border-color: transparent; background: transparent; }
