@@ -2958,6 +2958,12 @@ a svg {
 .confirm-dialog .dialog-description code {
   font-size: 13px;
 }
+.confirm-facts { display: grid; gap: 8px; margin: -8px 0 4px; padding: 12px 14px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-md); background: var(--gf-color-surface-sunken); font-size: 13px; }
+.confirm-facts > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; }
+.confirm-facts dt { color: var(--gf-color-text-secondary); }
+.confirm-facts dd { margin: 0; color: var(--gf-color-text); overflow-wrap: anywhere; }
+.confirm-facts code { font-size: 12px; }
+@media (max-width: 640px) { .confirm-facts > div { grid-template-columns: 1fr; gap: 2px; } }
 .is-hidden { visibility: hidden; }
 .git-term {
   margin-left: 8px;
