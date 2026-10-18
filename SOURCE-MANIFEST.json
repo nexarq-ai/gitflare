@@ -30,8 +30,8 @@
     },
     {
       "path": "docs/public/agents.md",
-      "size": 8764,
-      "sha256": "68feb44cb4f35502a17b66f70a2c15d6d5c40fad8eb6e98436e4ce0a8ffd0ca5"
+      "size": 8794,
+      "sha256": "c2ae38fc6a9b7d16cbb160de1cc8e1d92f70590831174d0d2d0fb19fc63c2176"
     },
     {
       "path": "docs/public/cloudflare-permissions.md",
@@ -45,8 +45,8 @@
     },
     {
       "path": "docs/public/install.md",
-      "size": 7087,
-      "sha256": "d471aff5f379917892e7d107a7eaac870b2209a0de9ab19b9f2895c2ca8892f0"
+      "size": 7117,
+      "sha256": "2441fb8d4e97d5116759f6759369454f8cb73210180af25a9157a50f6748f800"
     },
     {
       "path": "docs/public/mcp.md",
@@ -55,8 +55,8 @@
     },
     {
       "path": "docs/public/overview.md",
-      "size": 6635,
-      "sha256": "596d850e34957b04ba31e5a85926f27f4ffb8a259e38d893bd08a6157875c1b9"
+      "size": 6665,
+      "sha256": "68243257d78a4700ca415a91228b05435989172644ab2b7a54a8cc8b0f04f8e7"
     },
     {
       "path": "docs/public/repositories.md",
@@ -286,7 +286,7 @@
     {
       "path": "src/ui/assets/docs/architecture.svg",
       "size": 2643,
-      "sha256": "ef46448f971b35c9b9753f902753a2aa04c9d21740268bb741bf9646b7b8a454"
+      "sha256": "320a37461f7e2092f04436ff9f276c2d6178476db03c2357b77c49c72eff92b0"
     },
     {
       "path": "src/ui/assets/docs/execution-lifecycle.svg",
@@ -610,8 +610,8 @@
     },
     {
       "path": "src/ui/ProposalCreate.tsx",
-      "size": 29324,
-      "sha256": "eecbcdd27f26392d88aeda7e1e317960cfa87047f1f0690b120edadb89623f62"
+      "size": 29328,
+      "sha256": "5bfcd283b7dab9395d98e70a81f6f78b82fc3b0c18f3a1a1e848ef9f6a2e3768"
     },
     {
       "path": "src/ui/public-install.css",
@@ -850,8 +850,8 @@
     },
     {
       "path": "src/worker/demo-seed.ts",
-      "size": 36169,
-      "sha256": "3ec6173fee85c9a90aa517dfa2a646fa25148ccf5a66717071228bea8d83fdbe"
+      "size": 36213,
+      "sha256": "9e56636581f6a94ec3965b4c687c40851deb28024f8a95d839ae7e028d105a15"
     },
     {
       "path": "src/worker/demo.ts",
@@ -1030,8 +1030,8 @@
     },
     {
       "path": "src/worker/model-config.ts",
-      "size": 6342,
-      "sha256": "8c18ea02147c6bd6c1e5ce460d9b33945da5dddce82fb1a356310ccaec3ca58b"
+      "size": 6358,
+      "sha256": "8ae972a62ba1bcab8613f8ad8f4e7cc5cd23f358f06382343eae6ed10eff323e"
     },
     {
       "path": "src/worker/model-relay.ts",
