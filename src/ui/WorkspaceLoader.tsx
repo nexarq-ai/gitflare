@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { useRouteMotion } from "./OperationMotion";
 import "./auth-loading.css";
 
-export default function WorkspaceLoader() {
+export default function WorkspaceLoader({ publicPage = false }: { publicPage?: boolean }) {
   return (
     <main className="workspace-loading-screen" aria-busy="true">
       <svg className="workspace-loading-scaffold" viewBox="0 0 880 440" fill="none" aria-hidden="true">
@@ -30,8 +30,8 @@ export default function WorkspaceLoader() {
             </svg>,
           )}
           <div className="workspace-loading-brand" aria-hidden="true">gitflare</div>
-          <h1>Loading workspace</h1>
-          <p>Gathering your repositories and workspace.</p>
+          <h1>{publicPage ? "Loading Gitflare" : "Loading workspace"}</h1>
+          <p>{publicPage ? "Preparing the page." : "Gathering your repositories and workspace."}</p>
         </div>
       </div>
     </main>

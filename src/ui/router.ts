@@ -102,13 +102,18 @@ export const PUBLIC_DOC_IDS = ["overview", "install", "admin", "cloudflare-permi
 export const POLICY_ROUTES = ["terms", "privacy", "acceptable-use", "cookies", "security", "support"];
 export const PUBLIC_PRODUCT_ROUTES = ["product", "ai-clients", "open-source", "repositories", "connectors", "connect"];
 export const SIGNED_IN_PRODUCT_ROUTES = ["repositories", "connect"];
+const USE_CASE_ROUTE = /^use-cases(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
+
+export function isPublicProductRoute(route: string): boolean {
+  return PUBLIC_PRODUCT_ROUTES.includes(route) || USE_CASE_ROUTE.test(route);
+}
 
 export function isPublicDocumentationRoute(route: string): boolean {
   return route === "docs" || PUBLIC_DOC_IDS.some(id => route === `docs/${id}`);
 }
 
 export function isKnownAppRoute(route: string): boolean {
-  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "access", "account/profile", "account/security", "proposals/new", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route)
+  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "access", "account/profile", "account/security", "proposals/new", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
     || /^settings(?:\/(?:models|cloudflare))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
@@ -118,5 +123,5 @@ export function isKnownAppRoute(route: string): boolean {
 }
 
 export function isSiteRoute(route: string): boolean {
-  return ["home", "deploy", ...POLICY_ROUTES, ...PUBLIC_PRODUCT_ROUTES].includes(route) || !!publicSourceLocation(route) || /^docs(?:\/|$)/.test(route) || !isKnownAppRoute(route);
+  return ["home", "deploy", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route) || !!publicSourceLocation(route) || /^docs(?:\/|$)/.test(route) || !isKnownAppRoute(route);
 }

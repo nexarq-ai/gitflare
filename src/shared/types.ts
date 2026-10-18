@@ -257,6 +257,7 @@ export interface IntegrationStatus {
 }
 
 export interface Workspace {
+  id?: string;
   name: string;
   mode: 'local' | 'connected';
   repositories: Repository[];

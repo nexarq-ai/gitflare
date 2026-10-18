@@ -21,8 +21,16 @@ import { currentRoute } from "./router";
 
 initializeTheme(isPublicRoute(currentRoute()));
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+declare global {
+  interface Window {
+    gitflareFontsReady?: Promise<void>;
+  }
+}
+
+void (window.gitflareFontsReady ?? Promise.resolve()).then(() => {
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+});

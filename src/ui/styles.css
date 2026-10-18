@@ -42,7 +42,7 @@ a {
   color: var(--gf-color-info);
   text-decoration: none;
 }
-a:not([class]):hover {
+:where(p, li, td, dd, blockquote) a:not([class]):hover {
   text-decoration: underline;
 }
 button:focus-visible,

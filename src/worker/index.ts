@@ -381,7 +381,7 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     const visible = repositories.filter((_, index) => allowed[index]);
     const visibleIds = new Set(visible.map(repository => repository.id));
     const missions = summaries.filter((mission, index) => allowed[repositories.length + index] && visibleIds.has(mission.repositoryId));
-    const workspace: Workspace = { name, mode: local ? 'local' : 'connected', repositories: visible.map(repository => ({ ...repository, displayName: repositoryLabel(repository) })), missions: missions.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), integrations: integrations(env, local), ai };
+    const workspace: Workspace = { id: principal.workspaceId, name, mode: local ? 'local' : 'connected', repositories: visible.map(repository => ({ ...repository, displayName: repositoryLabel(repository) })), missions: missions.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), integrations: integrations(env, local), ai };
     console.log(JSON.stringify({ event: 'workspace_timing', repositories: repositories.length, missions: summaries.length, staleRepositories: stale, catalogMs, summariesMs, accessMs: Date.now() - started - catalogMs - summariesMs, totalMs: Date.now() - started }));
     return Response.json(workspace);
   }
@@ -896,9 +896,9 @@ const application = {
     const publicGit = await publicGitResponse(request, env);
     if (publicGit) return publicGit;
     if (path === '/oauth/authorize') return oauthConsent(request, env, authorize);
-    if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     const publicPage = publicPageResponse(request, env);
     if (publicPage) return publicPage;
+    if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
     if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env);

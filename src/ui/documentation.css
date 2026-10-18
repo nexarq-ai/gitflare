@@ -105,8 +105,8 @@
 }
 @media(max-width:440px) { .public-docs-nav > div { width: 100%; justify-content: flex-end; } .public-docs-nav > div a:last-child { padding: 5px 9px; } }
 
-.gfp-main > .public-documentation { padding-top: 130px; }
-@media (max-width: 760px) { .gfp-main > .public-documentation { padding-top: 110px; } }
+.gfp-main > .public-documentation { padding-top: 32px; }
+@media (max-width: 760px) { .gfp-main > .public-documentation { padding-top: 28px; } }
 
 .wiki-page { max-width: 1376px; }
 .wiki-page .documentation-layout { grid-template-columns: 204px minmax(0, 780px) 168px; gap: 42px; }
@@ -250,3 +250,34 @@
 .wiki-page .documentation-diagram-tools button { background: #161a20; border-color: #414854; color: #d8dfe8; }
 .wiki-page .documentation-diagram-tools button:hover { border-color: #aa754b; color: #ffbd88; }
 .documentation-diagram-expanded { background: #0b0d10; border-color: #3d352d; }
+
+.wiki-page .documentation-navigation { display: block; align-self: start; height: auto; padding-top: 0; }
+.wiki-page .documentation-navigation section { display: block; margin: 0 0 22px; }
+.wiki-page .documentation-navigation h2 { margin: 0 0 8px 9px; }
+.wiki-page .documentation-guide-search { margin-bottom: 24px; }
+.wiki-page .documentation-navigation a.documentation-nav-title { margin-bottom: 18px; }
+.wiki-page .documentation-diagram { margin: 28px 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.wiki-page .documentation-diagram > .docs-artifact { margin: 0; }
+.wiki-page .documentation-diagram-tools { margin: 10px 0 0; }
+.wiki-page .documentation-diagram-tools button { background: transparent; border-color: var(--gf-color-border); color: var(--gf-color-text-secondary); padding: 7px 11px; }
+.documentation-diagram-dialog { top: 16px; margin-block: 0; display: flex; flex-direction: column; width: min(1040px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); padding: 22px; gap: 12px; overflow: hidden; }
+.documentation-diagram-dialog-heading { flex: none; font-size: 18px; }
+.documentation-diagram-dialog-description { flex: none; margin: 0; font-size: 13px; }
+.documentation-diagram-expanded { min-height: 0; flex: 0 1 auto; overflow: auto; overscroll-behavior: contain; padding: 0; border: 0; background: transparent; }
+.documentation-diagram-expanded .docs-artifact { margin: 0; }
+.documentation-diagram-dialog-hint { margin: 0; flex: none; }
+.documentation-diagram img, .documentation-diagram-expanded img { background: transparent; min-width: 0; max-width: 100%; }
+@media (min-width: 761px) {
+  .wiki-page .documentation-layout { grid-template-rows: auto; }
+  .wiki-page .documentation-navigation, .wiki-page .documentation-article, .wiki-page .documentation-toc { grid-row: 1; }
+}
+@media (max-width: 1320px) and (min-width: 761px) {
+  .wiki-page .documentation-navigation { grid-column: 1; }
+  .wiki-page .documentation-article { grid-column: 2; }
+}
+@media (max-width: 760px) {
+  .wiki-page .documentation-navigation { display: none; }
+  .documentation-diagram-dialog { top: 10px; width: calc(100vw - 20px); max-width: calc(100vw - 20px); max-height: calc(100dvh - 20px); padding: 14px; gap: 10px; }
+  .documentation-diagram-dialog-heading { font-size: 16px; }
+  .documentation-diagram-dialog-description { font-size: 12px; }
+}
