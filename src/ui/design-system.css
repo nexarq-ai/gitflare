@@ -123,6 +123,10 @@
 html[data-gf-theme='dark'] { color-scheme: dark; }
 html[data-gf-theme='light'] {
   color-scheme: light;
+  --gf-color-primary: #18212f;
+  --gf-color-primary-hover: #2b3648;
+  --gf-color-primary-text: #ffffff;
+  --gf-color-primary-border: #18212f;
   --gf-color-bg: #ffffff;
   --gf-color-surface: #f7f8fa;
   --gf-color-surface-raised: #ffffff;
