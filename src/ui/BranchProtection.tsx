@@ -47,6 +47,7 @@ export default function BranchProtection({ repository, canManage, onNotify }: { 
   const mutation = useRef<{ signature: string; key: string } | null>(null);
   const [canContribute, setCanContribute] = useState(false);
   const [canLand, setCanLand] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [draft, setDraft] = useState<{ name: string; source: "branch" | "commit"; branch: string; sha: string } | null>(null);
   const [deleting, setDeleting] = useState<BranchInfo | null>(null);
   const [branchBusy, setBranchBusy] = useState(false);
@@ -57,7 +58,7 @@ export default function BranchProtection({ repository, canManage, onNotify }: { 
 
   useEffect(() => {
     let active = true;
-    request<AccessSnapshot>("/api/access").then(access => { if (active) { setCanContribute(access.permissions.includes("contribute")); setCanLand(access.permissions.includes("land")); } }).catch(() => {});
+    request<AccessSnapshot>("/api/access").then(access => { if (active) { setCanContribute(access.permissions.includes("contribute")); setCanLand(access.permissions.includes("land")); setIsOwner(access.role === "Owner"); } }).catch(() => {});
     return () => { active = false; };
   }, []);
 
@@ -188,7 +189,7 @@ export default function BranchProtection({ repository, canManage, onNotify }: { 
           {canManage && <div className="branch-rule-footer">{protection.updatedAt && <small>Last saved {relativeTime(protection.updatedAt)}{protection.updatedBy ? ` by ${protection.updatedBy}` : ""}</small>}<Button variant="primary" size="base" loading={busy} disabled={busy || invalid} onClick={() => void save()}>Save rules</Button></div>}
         </div>
       </section>
-      <CheckSettings repositoryId={repository.id} canChange={canLand} onNotify={onNotify} />
+      <CheckSettings repositoryId={repository.id} canChange={canLand} isOwner={isOwner} onNotify={onNotify} />
       <PreviewSettings repositoryId={repository.id} onNotify={onNotify} />
       <GitHubMirror repositoryId={repository.id} onNotify={onNotify} />
     </div>

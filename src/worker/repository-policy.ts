@@ -1,4 +1,4 @@
-import type { AutoIncrease, CheckLimitSource, CheckPlan, CheckTimeout, RunnerSize } from '../shared/types';
+import type { AutoIncrease, CheckLimitSource, CheckPlan, CheckTimeout, RunnerSize, TestEvidence } from '../shared/types';
 import { MAX_TEST_TIMEOUT_MS } from './budgets';
 import { detectPackageManager, hasInstallableDependencies, runnerFor, testScript, type InstallPlan, type PackageManager } from './package-manager';
 
@@ -46,9 +46,12 @@ export function defaultCheckRunner(command: string): RunnerSize {
   return isPackageScriptTest(command) ? PACKAGE_SCRIPT_RUNNER : DEFAULT_RUNNER;
 }
 
+export type EvidenceSource = 'gitflare.json' | 'owner' | 'default';
+
 export interface RepositoryPolicy {
   testCommand: string;
-  evidence: 'tap' | 'exit-code';
+  evidence: TestEvidence;
+  evidenceSource?: EvidenceSource;
   editable: string[];
   install: InstallPlan | null;
   previewCommand: string;
@@ -125,9 +128,23 @@ function startingTimeout(command: string, settings: CheckPlan | null | undefined
   return learned > fallback ? [learned, 'learned'] : [fallback, 'default'];
 }
 
-function withLimits(policy: RepositoryPolicy, explicit: { timeoutSeconds?: number; runner?: RunnerSize }, settings?: CheckPlan | null): RepositoryPolicy {
-  const timeout: [number, CheckLimitSource] = settings?.override?.testTimeoutSeconds !== undefined ? [settings.override.testTimeoutSeconds * 1000, 'owner'] : explicit.timeoutSeconds !== undefined ? [explicit.timeoutSeconds * 1000, 'gitflare.json'] : settings?.testTimeoutSeconds !== undefined ? [settings.testTimeoutSeconds * 1000, 'repository'] : startingTimeout(policy.testCommand, settings);
-  const runner: [RunnerSize, CheckLimitSource] = settings?.override?.runner !== undefined ? [settings.override.runner, 'owner'] : explicit.runner !== undefined ? [explicit.runner, 'gitflare.json'] : settings?.runner !== undefined ? [settings.runner, 'repository'] : [defaultCheckRunner(policy.testCommand), 'default'];
+export function defaultEvidence(command: string): TestEvidence {
+  return isPackageScriptTest(command) ? 'exit-code' : 'tap';
+}
+
+function withOwnerPolicy(policy: RepositoryPolicy, settings?: CheckPlan | null): RepositoryPolicy {
+  const owner = settings?.policyOverride;
+  if (!owner?.test && !owner?.evidence) return policy;
+  const testCommand = owner.test ?? policy.testCommand;
+  const evidence = owner.evidence ?? (owner.test ? defaultEvidence(owner.test) : policy.evidence);
+  return { ...policy, testCommand, evidence, evidenceSource: owner.evidence ? 'owner' : owner.test ? 'default' : policy.evidenceSource, ...(owner.test ? { untested: false } : {}) };
+}
+
+function withLimits(base: RepositoryPolicy, explicit: { timeoutSeconds?: number; runner?: RunnerSize }, settings?: CheckPlan | null): RepositoryPolicy {
+  const policy = withOwnerPolicy(base, settings);
+  const owner = settings?.policyOverride;
+  const timeout: [number, CheckLimitSource] = settings?.override?.testTimeoutSeconds !== undefined ? [settings.override.testTimeoutSeconds * 1000, 'owner'] : owner?.testTimeoutSeconds !== undefined ? [owner.testTimeoutSeconds * 1000, 'owner'] : explicit.timeoutSeconds !== undefined ? [explicit.timeoutSeconds * 1000, 'gitflare.json'] : settings?.testTimeoutSeconds !== undefined ? [settings.testTimeoutSeconds * 1000, 'repository'] : startingTimeout(policy.testCommand, settings);
+  const runner: [RunnerSize, CheckLimitSource] = settings?.override?.runner !== undefined ? [settings.override.runner, 'owner'] : owner?.runner !== undefined ? [owner.runner, 'owner'] : explicit.runner !== undefined ? [explicit.runner, 'gitflare.json'] : settings?.runner !== undefined ? [settings.runner, 'repository'] : [defaultCheckRunner(policy.testCommand), 'default'];
   return { ...policy, testTimeoutMs: timeout[0], testTimeoutSource: timeout[1], runner: runner[0], runnerSource: runner[1], autoIncrease: autoIncreaseOf(settings) };
 }
 
@@ -155,7 +172,8 @@ export function parseRepositoryPolicy(raw: string | null, defaultTestCommand: st
   if (fields.evidence !== undefined) {
     if (fields.evidence !== 'tap' && fields.evidence !== 'exit-code') throw new Error(`${POLICY_FILE}: "evidence" must be "tap" or "exit-code"`);
     policy.evidence = fields.evidence;
-  }
+    policy.evidenceSource = 'gitflare.json';
+  } else policy.evidence = defaultEvidence(policy.testCommand);
   if (fields.install !== undefined) {
     if (fields.install !== false && !INSTALL_VALUES.includes(fields.install as string)) throw new Error(`${POLICY_FILE}: "install" must be "npm", "pnpm", "yarn", "auto" or false`);
     policy.install = fields.install === false ? null : configuredInstall(fields.install as PackageManager | 'auto', baseFiles ?? [], basePackageJson ?? null, baseLockHead);

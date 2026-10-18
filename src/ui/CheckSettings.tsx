@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { ArrowCounterClockwiseIcon, ArrowFatLinesUpIcon, CpuIcon, TimerIcon } from "@phosphor-icons/react";
-import type { Check, CheckLimitSource, Mission, RepositoryCheckSettings, RunnerSize } from "../shared/types";
+import type { Check, CheckLimitSource, CheckPolicyOverride, Mission, RepositoryCheckSettings, RunnerSize, TestEvidence } from "../shared/types";
 import { request } from "./api";
 import { ErrorNotice } from "./components";
 import "./check-settings.css";
@@ -14,10 +14,10 @@ export const RUNNER_LABELS: Record<RunnerSize, string> = {
   "standard-4": "standard-4 · 4 vCPU, 12 GiB",
 };
 const RUNNERS = Object.keys(RUNNER_LABELS) as RunnerSize[];
-const SOURCE_LABELS: Record<CheckLimitSource, string> = { owner: "Owner override for this proposal", "gitflare.json": "set by gitflare.json", repository: "repository setting", learned: "learned from recent runs", auto: "automatically increased", default: "default" };
+const SOURCE_LABELS: Record<CheckLimitSource, string> = { owner: "Owner override", "gitflare.json": "set by gitflare.json", repository: "repository setting", learned: "learned from recent runs", auto: "automatically increased", default: "default" };
 const seconds = (value: string) => value.trim() ? Number(value) : null;
 
-export default function CheckSettings({ repositoryId, canChange, onNotify }: { repositoryId: string; canChange: boolean; onNotify: (message: string) => void }) {
+export default function CheckSettings({ repositoryId, canChange, isOwner = false, onNotify }: { repositoryId: string; canChange: boolean; isOwner?: boolean; onNotify: (message: string) => void }) {
   const path = `/api/repositories/${encodeURIComponent(repositoryId)}/check-settings`;
   const [settings, setSettings] = useState<RepositoryCheckSettings | null>(null);
   const [limit, setLimit] = useState("");
@@ -25,6 +25,10 @@ export default function CheckSettings({ repositoryId, canChange, onNotify }: { r
   const [autoEnabled, setAutoEnabled] = useState(true);
   const [autoLimit, setAutoLimit] = useState("900");
   const [autoRunner, setAutoRunner] = useState<RunnerSize>("standard-3");
+  const [overrideTest, setOverrideTest] = useState("");
+  const [overrideEvidence, setOverrideEvidence] = useState<TestEvidence | "">("");
+  const [overrideLimit, setOverrideLimit] = useState("");
+  const [overrideRunner, setOverrideRunner] = useState<RunnerSize | "">("");
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -38,6 +42,10 @@ export default function CheckSettings({ repositoryId, canChange, onNotify }: { r
     setAutoEnabled(current.autoIncrease.enabled);
     setAutoLimit(String(current.autoIncrease.maxTimeoutSeconds));
     setAutoRunner(current.autoIncrease.maxRunner);
+    setOverrideTest(current.policyOverride?.test ?? "");
+    setOverrideEvidence(current.policyOverride?.evidence ?? "");
+    setOverrideLimit(current.policyOverride?.testTimeoutSeconds?.toString() ?? "");
+    setOverrideRunner(current.policyOverride?.runner ?? "");
   }
 
   useEffect(() => {
@@ -51,7 +59,8 @@ export default function CheckSettings({ repositoryId, canChange, onNotify }: { r
 
   async function save() {
     if (busy || !settings) return;
-    const body = { testTimeoutSeconds: seconds(limit), runner: runner || null, autoIncrease: { enabled: autoEnabled, maxTimeoutSeconds: Number(autoLimit), maxRunner: autoRunner } };
+    const policyOverride: CheckPolicyOverride = { ...(overrideTest.trim() ? { test: overrideTest.trim() } : {}), ...(overrideEvidence ? { evidence: overrideEvidence } : {}), ...(overrideLimit.trim() ? { testTimeoutSeconds: Number(overrideLimit) } : {}), ...(overrideRunner ? { runner: overrideRunner } : {}) };
+    const body = { testTimeoutSeconds: seconds(limit), runner: runner || null, autoIncrease: { enabled: autoEnabled, maxTimeoutSeconds: Number(autoLimit), maxRunner: autoRunner }, ...(isOwner ? { policyOverride: Object.keys(policyOverride).length ? policyOverride : null } : {}) };
     const signature = JSON.stringify(body);
     if (mutation.current?.signature !== signature) mutation.current = { signature, key: crypto.randomUUID() };
     setBusy(true);
@@ -74,13 +83,13 @@ export default function CheckSettings({ repositoryId, canChange, onNotify }: { r
     const number = Number(value);
     return !Number.isInteger(number) || number < minTimeoutSeconds || number > maxTimeoutSeconds;
   };
-  const invalid = outOfRange(limit, true) || outOfRange(autoLimit, false);
+  const invalid = outOfRange(limit, true) || outOfRange(autoLimit, false) || outOfRange(overrideLimit, true) || overrideTest.length > 500;
   const { history } = settings;
   return (
     <section className="panel check-settings">
       <div className="panel-header"><h2>Checks</h2></div>
       <div className="panel-body">
-        <p className="branch-rule-note">Applies to new attempts. A <code>timeoutSeconds</code> or <code>runner</code> in <code>gitflare.json</code> at the base revision takes precedence, then these settings, then the defaults: 600 s on standard-2 for package test scripts (<code>npm test</code>, <code>pnpm test</code>, <code>yarn test</code>), otherwise 120 s on standard-1. Larger runners cost more per second of check time.</p>
+        <p className="branch-rule-note">Applies to new attempts. An Owner override of gitflare.json takes precedence, then a <code>timeoutSeconds</code> or <code>runner</code> in <code>gitflare.json</code> at the base revision, then these settings, then the defaults: 600 s on standard-2 for package test scripts (<code>npm test</code>, <code>pnpm test</code>, <code>yarn test</code>), otherwise 120 s on standard-1. Larger runners cost more per second of check time.</p>
         {!canChange && <p className="branch-rule-note">Only Owners and Maintainers can change check settings.</p>}
         <fieldset className="check-settings-fields" disabled={!canChange || busy}>
           <div className="form-field"><label htmlFor="check-timeout">Check time limit (seconds)</label><Input id="check-timeout" inputMode="numeric" value={limit} placeholder="Default" aria-invalid={outOfRange(limit, true)} onChange={event => setLimit(event.target.value.replace(/[^0-9]/g, ""))} /><small>{minTimeoutSeconds}–{maxTimeoutSeconds} s. Leave empty for the default.</small></div>
@@ -90,6 +99,15 @@ export default function CheckSettings({ repositoryId, canChange, onNotify }: { r
           <label className="check-settings-toggle"><input type="checkbox" checked={autoEnabled} onChange={event => setAutoEnabled(event.target.checked)} />Automatically retry a timed-out check once with double the time and the next runner size</label>
           <div className="form-field"><label htmlFor="check-auto-limit">Auto-increase time up to (seconds)</label><Input id="check-auto-limit" inputMode="numeric" value={autoLimit} disabled={!autoEnabled} aria-invalid={outOfRange(autoLimit, false)} onChange={event => setAutoLimit(event.target.value.replace(/[^0-9]/g, ""))} /></div>
           <div className="form-field"><label htmlFor="check-auto-runner">Auto-increase runner up to</label><select id="check-auto-runner" value={autoRunner} disabled={!autoEnabled} onChange={event => setAutoRunner(event.target.value as RunnerSize)}>{RUNNERS.map(size => <option key={size} value={size}>{RUNNER_LABELS[size]}</option>)}</select></div>
+        </fieldset>
+        <fieldset className="check-settings-fields" disabled={!canChange || !isOwner || busy}>
+          <legend>gitflare.json override (Owner)</legend>
+          <p className="branch-rule-note">gitflare.json is protected, so agents cannot change its checks. An Owner can override its test command, evidence, time limit and runner here; overrides take precedence over gitflare.json for new attempts and are logged. Evidence <code>tap</code> needs a TAP report (<code>node --test --test-reporter=tap</code>); <code>exit-code</code> passes on exit code 0. Without an evidence setting, package test scripts use the exit code and other commands expect TAP, falling back to a recognised node:test, Vitest, Jest or Mocha summary.</p>
+          <div className="form-field"><label htmlFor="check-override-test">Test command</label><Input id="check-override-test" value={overrideTest} placeholder="From gitflare.json" aria-invalid={overrideTest.length > 500} onChange={event => setOverrideTest(event.target.value)} /></div>
+          <div className="form-field"><label htmlFor="check-override-evidence">Test evidence</label><select id="check-override-evidence" value={overrideEvidence} onChange={event => setOverrideEvidence(event.target.value as TestEvidence | "")}><option value="">From gitflare.json</option><option value="tap">tap · TAP report</option><option value="exit-code">exit-code · exit code only</option></select></div>
+          <div className="form-field"><label htmlFor="check-override-timeout">Time limit (seconds)</label><Input id="check-override-timeout" inputMode="numeric" value={overrideLimit} placeholder="From gitflare.json" aria-invalid={outOfRange(overrideLimit, true)} onChange={event => setOverrideLimit(event.target.value.replace(/[^0-9]/g, ""))} /></div>
+          <div className="form-field"><label htmlFor="check-override-runner">Runner size</label><select id="check-override-runner" value={overrideRunner} onChange={event => setOverrideRunner(event.target.value as RunnerSize | "")}><option value="">From gitflare.json</option>{RUNNERS.map(size => <option key={size} value={size}>{RUNNER_LABELS[size]}</option>)}</select></div>
+          {!isOwner && <small>Only an Owner can change the gitflare.json override.</small>}
         </fieldset>
         <p className="branch-rule-note">{history.p90Seconds !== undefined ? <>Recent passing checks: 90th percentile {history.p90Seconds} s over {history.samples} runs. {history.learnedTimeoutSeconds ? <>Without a set limit, checks start at the higher of the default and {history.learnedTimeoutSeconds} s (twice that, rounded up to a minute), within the auto-increase ceiling.</> : null}</> : <>Gitflare learns a starting limit after 3 passing checks ({history.samples} so far).</>}{settings.updatedBy === "gitflare:auto-increase" && <> The current values were saved automatically after a retried check passed.</>}</p>
         {error && <div className="error-notice" role="alert">{error}</div>}

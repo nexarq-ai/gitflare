@@ -104,10 +104,22 @@ export interface AutoIncrease {
   maxRunner: RunnerSize;
 }
 
+export type TestEvidence = 'tap' | 'exit-code';
+
+export interface CheckPolicyOverride {
+  test?: string;
+  evidence?: TestEvidence;
+  testTimeoutSeconds?: number;
+  runner?: RunnerSize;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface CheckSettings {
   testTimeoutSeconds?: number;
   runner?: RunnerSize;
   autoIncrease?: AutoIncrease;
+  policyOverride?: CheckPolicyOverride;
   updatedAt?: string;
   updatedBy?: string;
 }

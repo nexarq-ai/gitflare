@@ -7,7 +7,7 @@ import { createArtifactsRepository, repositoryHead } from './artifacts';
 import { assertDependencyApproval } from './dependency-changes';
 import { agentRunIds, ApiError, assertMutationOrigin, findRepositoryByName, isLocalRequest, MISSION_REQUEST_MAX_BYTES, missionInput, publicError, readJson, repositoryName, repositoryPath, repositoryRef, requireIdempotencyKey, requireString, retryGuidance, storageRepositoryName } from './domain';
 import { repositoryLabel } from '../shared/repository-names';
-import { checkSettingsSnapshot, normalizeCheckSettings, retryPlan } from './check-settings';
+import { checkSettingsSnapshot, normalizeCheckSettings, retryPlan, samePolicyOverride } from './check-settings';
 import { handlePreviewSettings } from './preview-settings-api';
 import type { AppEnv } from './env';
 import { executionReadiness } from './execution';
@@ -524,8 +524,14 @@ async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promi
     assertMutationOrigin(request);
     const key = requireIdempotencyKey(request), body = await readJson(request, 4096);
     await access.authorize(principal, 'land', 'repository', repository.id);
-    const saved = await coordinator.setCheckSettings(key, normalizeCheckSettings(body), principal.userId);
-    await access.auditRepositoryChange(principal, 'repository.check-settings', repository.id);
+    const input = normalizeCheckSettings(body);
+    const current = await coordinator.getCheckSettings();
+    const overrideChanged = body.policyOverride !== undefined && !samePolicyOverride(input.policyOverride, current?.policyOverride);
+    if (overrideChanged && (principal.role !== 'Owner' || principal.credentialId)) throw new ApiError(403, 'OWNER_REQUIRED', 'Only a workspace Owner can override the check settings of gitflare.json. Leave policyOverride out to keep the current override.');
+    if (overrideChanged && input.policyOverride) input.policyOverride = { ...input.policyOverride, updatedAt: new Date().toISOString(), updatedBy: principal.userId };
+    else if (!overrideChanged && current?.policyOverride) input.policyOverride = current.policyOverride;
+    const saved = await coordinator.setCheckSettings(key, input, principal.userId);
+    await access.auditRepositoryChange(principal, overrideChanged ? 'repository.check-settings.policy-override' : 'repository.check-settings', repository.id);
     return Response.json(checkSettingsSnapshot(repository.id, saved, await coordinator.getCheckDurations()));
   }
   const previewSettingsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/preview-settings$/.exec(url.pathname);
