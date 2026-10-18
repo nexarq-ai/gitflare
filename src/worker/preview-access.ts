@@ -1,7 +1,7 @@
 import { ApiError } from './domain';
 import type { CloudflareCall } from './cloudflare-deploy';
 
-export const ACCESS_SCOPE_MISSING_MESSAGE = 'Needs the Access: Apps and Policies Edit permission on the OAuth client';
+export const ACCESS_SCOPE_MISSING_MESSAGE = 'Needs the Access: Apps and Policies Write permission on the OAuth client';
 const MAX_EMAILS = 200;
 const subdomainPattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
