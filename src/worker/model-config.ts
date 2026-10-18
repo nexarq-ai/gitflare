@@ -1,8 +1,9 @@
 import type { Mission, ModelConnection, ModelConnectionsSnapshot } from '../shared/types';
 import { ApiError, requireString } from './domain';
 import { classifyModelFailure, inferenceMessage, ModelResponseError, type ModelEnv } from './model-adapter';
+import { DEFAULT_MODEL } from '../shared/models';
 
-export const DEFAULT_MODEL = 'openai/gpt-6-luna';
+export { DEFAULT_MODEL };
 export const ESCALATION_MODEL = 'openai/gpt-6.1-sol';
 export const WORKERS_AI_CATALOG: ModelConnection[] = [
   { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'Llama 3.3 70B', source: 'workers-ai', protocol: 'workers-ai' },
@@ -10,10 +11,10 @@ export const WORKERS_AI_CATALOG: ModelConnection[] = [
 
 export function defaultModelConnections(): ModelConnection[] {
   return [
-    { id: DEFAULT_MODEL, label: 'GPT-6 Luna', source: 'gateway', protocol: 'responses' },
-    { id: ESCALATION_MODEL, label: 'GPT-6.1 Sol', source: 'gateway', protocol: 'responses' },
-    { id: 'anthropic/claude-sonnet-5-5', label: 'Claude Sonnet 5.5', source: 'gateway', protocol: 'anthropic' },
+    { id: DEFAULT_MODEL, label: 'Claude Sonnet 5.5', source: 'gateway', protocol: 'anthropic' },
     { id: 'anthropic/claude-opus-5-5', label: 'Claude Opus 5.5', source: 'gateway', protocol: 'anthropic' },
+    { id: 'openai/gpt-6-luna', label: 'GPT-6 Luna', source: 'gateway', protocol: 'responses' },
+    { id: ESCALATION_MODEL, label: 'GPT-6.1 Sol', source: 'gateway', protocol: 'responses' },
   ];
 }
 

@@ -6,10 +6,11 @@ import type { DeployEnvironmentSettings, DeploymentRecord, DeploySettings } from
 import type { LastPreview } from './coordinator';
 import type { Principal, Role } from './security';
 import { neonDriftRuns, type DemoRunsPlan } from './demo-runs';
+import { DEFAULT_MODEL } from '../shared/models';
 
 export const DEMO_VISITOR_ID = 'demo-visitor';
 export const DEMO_WORKSPACE_NAME = 'Gitflare demo';
-export const DEMO_MODEL = 'openai/gpt-6-luna';
+export const DEMO_MODEL = DEFAULT_MODEL;
 const DEMO_ACCOUNT_ID = 'de000000000000000000000000000000';
 
 export interface DemoUser { id: string; name: string; email: string; role: Role }
