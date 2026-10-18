@@ -198,9 +198,9 @@ export async function cloudflareAnalyticsRequest(env:AppEnv,p:Principal,body:{qu
   if(response.errors?.length) throw new ApiError(502,'CLOUDFLARE_ANALYTICS_REJECTED','Cloudflare could not return usage for this project. Check analytics permissions.'); return response.data;
 }
 export async function cloudflareDeployAccess(env: AppEnv, p: Principal, authorization: CloudflareAuthorization, repositoryId?: string, environment?: string): Promise<CloudflareDeployAccess> {
-  const {vault,source}=await loadPreferred(env,p,authorization,repositoryId,environment); const account=selectedAccount(vault,source);
+  const {vault,source,selection}=await loadPreferred(env,p,authorization,repositoryId,environment); const account=selectedAccount(vault,source);
   checkAccount(vault,authorization.expectedAccountId);
-  return {accessToken:vault.accessToken,accountId:account.id,...(account.name?{accountName:account.name}:{}),scopes:grantedScopes(vault.scopes),source};
+  return {accessToken:vault.accessToken,accountId:account.id,...(account.name?{accountName:account.name}:{}),scopes:grantedScopes(vault.scopes),source,selection};
 }
 export function assertDeployScope(scopes: string[]): void {
   if (!hasScope(scopes,CLOUDFLARE_DEPLOY_SCOPE)) throw new ApiError(403,'CLOUDFLARE_SCOPE_MISSING',`The Cloudflare connection was not granted ${CLOUDFLARE_DEPLOY_SCOPE} (Workers Scripts Write). An Owner must reconnect Cloudflare after the installation requests that scope.`);

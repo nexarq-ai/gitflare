@@ -24,7 +24,8 @@ export interface CloudflareDeployClient {
   call: CloudflareCall;
 }
 
-export interface CloudflareDeployAccess { accessToken: string; accountId: string; accountName?: string; scopes: string[]; source: 'repository' | 'workspace' }
+export type CloudflareAccountSelection = 'own' | 'environment' | 'repository' | 'default';
+export interface CloudflareDeployAccess { accessToken: string; accountId: string; accountName?: string; scopes: string[]; source: 'repository' | 'workspace'; selection?: CloudflareAccountSelection }
 
 const safePath = /^\/[A-Za-z0-9_.:@=-]+(?:\/[A-Za-z0-9_.:@=-]+)*$/;
 

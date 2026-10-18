@@ -50,7 +50,7 @@ export interface DeployAccessStore {
   receipt(key: string, fingerprint: string): Promise<DeployAccessResult | null>;
   save(key: string, fingerprint: string, environment: string, record: DeployAccessRecord | null, result: DeployAccessResult): Promise<DeployAccessResult>;
 }
-export interface DeployAccessDeps { store: DeployAccessStore; client(): Promise<DeployAccessClient>; scopes: AccessScopeEnv }
+export interface DeployAccessDeps { store: DeployAccessStore; client(environment?: string): Promise<DeployAccessClient>; scopes: AccessScopeEnv }
 export interface DeployAccessTarget {
   environment: string;
   settings?: DeployEnvironmentSettings;
@@ -295,7 +295,7 @@ export async function manageDeployAccess(input: { principal: Principal; reposito
   const unchanged = `Access protection of ${environment}`;
   if (!enabled) {
     if (!existing) return deps.store.save(input.key, fingerprint, environment, null, { environment, access: unprotectedView(principal), notes: [`${environment} was not protected by Gitflare.`] });
-    const connection = await deps.client();
+    const connection = await deps.client(environment);
     assertAccessScope(deps.scopes, connection.scopes, unchanged);
     if (connection.accountId !== existing.accountId) throw new ApiError(409, 'CLOUDFLARE_ACCOUNT_MISMATCH', `Access protection of ${environment} is on Cloudflare account ${existing.accountId}, but the repository's Cloudflare connection is on ${connection.accountId}. Reconnect Cloudflare to ${existing.accountId} first.`);
     const removed = await removeDeployAccess(connection.call, existing);
@@ -304,7 +304,7 @@ export async function manageDeployAccess(input: { principal: Principal; reposito
   }
   const settings = target.settings;
   if (!settings) throw new ApiError(409, 'DEPLOY_NOT_CONFIGURED', `Choose target Workers for ${environment} in deployment settings before protecting it with Cloudflare Access.`);
-  const connection = await deps.client();
+  const connection = await deps.client(environment);
   assertAccessScope(deps.scopes, connection.scopes, unchanged);
   if (connection.accountId !== settings.accountId) throw new ApiError(409, 'CLOUDFLARE_ACCOUNT_MISMATCH', `${environment} deploys to Cloudflare account ${settings.accountId}, but the repository's Cloudflare connection is on ${connection.accountId}. Reconnect Cloudflare to ${settings.accountId} first.`);
   const notes: string[] = [];

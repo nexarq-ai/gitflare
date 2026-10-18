@@ -53,7 +53,10 @@ export interface DetectedEnvironment { targets: DetectedTarget[]; warnings: Setu
 export interface DetectedConfig { path: string; workerName?: string; environments: DeployEnvironment[]; error?: string }
 export interface AccountFacts { connected: true; accountId: string; accountName?: string; source: 'repository' | 'workspace'; subdomain: string | null; scopes?: string[]; requiredScopes: string[]; missingScopes?: string[]; resourceBlockers?: string[]; notes: string[] }
 export interface ConnectionFacts { accountName?: string; scopes?: string[] }
+export type EnvironmentAccount = { connected: true; accountId: string; accountName?: string; source: 'repository' | 'workspace'; selection: 'own' | 'environment' | 'repository' | 'default' } | { connected: false; reason: string };
+
 export interface DetectedSetup {
+  environmentAccounts?: Record<string, EnvironmentAccount>;
   commitSha: string;
   fingerprint: string;
   files: Record<string, string>;

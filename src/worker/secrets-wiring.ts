@@ -67,9 +67,9 @@ export function secretsApiContext(env: AppEnv, principal: Principal, repository:
     canManage: async () => !principal.credentialId && await security.check(principal, 'deploy', 'secret', repository.id).then(() => true, () => false),
     environments: async () => Object.keys((await coordinator.deployState()).settings?.environments ?? {}),
     requirements: async () => headRequirements(env, repository, (await coordinator.deployState()).settings),
-    connection: async (): Promise<SecretsConnection> => {
+    connection: async (environment?: string): Promise<SecretsConnection> => {
       try {
-        const access = await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repository.id }, repository.id);
+        const access = await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repository.id }, repository.id, environment);
         return { connected: true, accountId: access.accountId, scopes: access.scopes, source: access.source, call: cloudflareDeployClient(access).call };
       } catch (error) {
         return { connected: false, reason: error instanceof ApiError ? error.detail : 'Connect Cloudflare for this repository or workspace first.' };

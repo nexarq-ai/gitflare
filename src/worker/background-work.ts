@@ -21,7 +21,7 @@ import { ensurePreviewAccess } from './preview-access';
 import { previewAccessIncludes } from './preview-settings-api';
 import { POLICY_FILE } from './repository-policy';
 import type { ProjectSnapshot } from './cloudflare-projects';
-import { declaresRoutes, detectDeploySetup, environmentBlock, parseWranglerConfig, scanRepository, withAccountFacts, type DetectedSetup } from './deploy-detect';
+import { declaresRoutes, detectDeploySetup, environmentBlock, parseWranglerConfig, scanRepository, withAccountFacts, type DetectedSetup, type EnvironmentAccount } from './deploy-detect';
 import type { Repository } from '../shared/types';
 import { triggerMirrorSync } from './github-mirror-runtime';
 import { previewSecretBindings } from './repository-secrets';
@@ -169,8 +169,10 @@ function previewsCall(config: { token: string; accountId: string }) {
   return cloudflareDeployClient({ accessToken: config.token, accountId: config.accountId, scopes: [], source: 'workspace' }).call;
 }
 
-function connectionAccess(env: AppEnv, principal: Principal, repositoryId: string, expectedAccountId?: string): Promise<CloudflareDeployAccess> {
-  return cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repositoryId, ...(expectedAccountId ? { expectedAccountId } : {}) }, repositoryId);
+export const PREVIEW_ENVIRONMENT = 'preview';
+
+function connectionAccess(env: AppEnv, principal: Principal, repositoryId: string, expectedAccountId?: string, environment: string = PREVIEW_ENVIRONMENT): Promise<CloudflareDeployAccess> {
+  return cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repositoryId, ...(expectedAccountId ? { expectedAccountId } : {}) }, repositoryId, environment);
 }
 
 async function retireConfig(env: AppEnv, params: PreviewRetireParams): Promise<WorkerPreviewsConfig | null> {
@@ -224,9 +226,13 @@ export async function detectRepositorySetup(env: AppEnv, principal: Principal, r
   using source = await env.ARTIFACTS.get(repository.name);
   const setup = await detectDeploySetup(await scanRepository(source, head), (path) => readText(source, head, path));
   let access: CloudflareDeployAccess;
-  try { access = await connectionAccess(env, principal, repository.id); }
-  catch (error) { return { ...setup, account: { connected: false, reason: error instanceof ApiError ? error.detail : 'Connect Cloudflare for this repository or workspace first.' } }; }
-  return withAccountFacts(setup, cloudflareDeployClient(access).call, access.accountId, access.source, { ...(access.accountName ? { accountName: access.accountName } : {}), scopes: access.scopes });
+  const environmentAccounts: Record<string, EnvironmentAccount> = Object.fromEntries(await Promise.all(Object.keys(setup.environments).map(async (environment) => {
+    try { const resolved = await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repository.id }, repository.id, environment); return [environment, { connected: true, accountId: resolved.accountId, ...(resolved.accountName ? { accountName: resolved.accountName } : {}), source: resolved.source, selection: resolved.selection ?? 'default' }]; }
+    catch (error) { return [environment, { connected: false, reason: error instanceof ApiError ? error.detail : 'Connect Cloudflare for this repository or workspace first.' }]; }
+  })));
+  try { access = await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repository.id }, repository.id); }
+  catch (error) { return { ...setup, environmentAccounts, account: { connected: false, reason: error instanceof ApiError ? error.detail : 'Connect Cloudflare for this repository or workspace first.' } }; }
+  return { ...await withAccountFacts(setup, cloudflareDeployClient(access).call, access.accountId, access.source, { ...(access.accountName ? { accountName: access.accountName } : {}), scopes: access.scopes }), environmentAccounts };
 }
 
 async function policyBase(env: AppEnv, repositoryName: string, record: DeploymentRecord): Promise<string | null> {
@@ -244,7 +250,8 @@ export async function deployLandedWorker(env: AppEnv, params: DeployParams, step
     coordinator,
     self: selfWorker(env),
     authorize: (principal, workerName) => access.check(principal, 'deploy', 'environment', workerName),
-    deployer: (principal, record, workerName) => cloudflareWorkerDeployer(env, principal, workerName, record.accountId, undefined, record.repositoryId),
+    deployer: (principal, record, workerName) => cloudflareWorkerDeployer(env, principal, workerName, record.accountId, undefined, record.repositoryId, record.environment),
+    environmentAccount: async (principal, repositoryId, environment) => (await connectionAccess(env, principal, repositoryId, undefined, environment).catch(() => null))?.accountId ?? null,
     build: (repository, record, target, index, assertAuthority, publish) => buildLandedWorker(env, { repository, commitSha: record.commitSha!, attemptId: record.attemptId, assertAuthority, ...(target.inheritBindings ? {} : { target }), index, environment: wranglerEnvironment(record.environment, target) }, publish),
     policyTargets: async (repository, record) => {
       if (!env.ARTIFACTS) return null;

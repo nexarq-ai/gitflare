@@ -19,7 +19,7 @@ export function deployAccessDeps(env: AppEnv, principal: Principal, repositoryId
       receipt: async (key, fingerprint) => coordinator.deployAccessReceipt(key, fingerprint),
       save: async (key, fingerprint, environment, record, result) => coordinator.saveDeployAccess(key, fingerprint, environment, record, result),
     },
-    client: async () => cloudflareDeployClient(await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repositoryId }, repositoryId), fetcher),
+    client: async (environment) => cloudflareDeployClient(await cloudflareDeployAccess(env, principal, { action: 'read', resourceType: 'repository', resourceId: repositoryId }, repositoryId, environment), fetcher),
     scopes: env,
   };
 }
