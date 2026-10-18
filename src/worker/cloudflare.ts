@@ -7,6 +7,7 @@ import { cloudflareDeployClient, workerDeployer, type CloudflareDeployAccess } f
 import { handleInstallationCredential } from './installation-credential';
 import { secretsStoreScopes } from './secrets-scopes';
 import { accessScopes } from './preview-access';
+import { gitflareInfrastructure, isGitflareResource, type CatalogItem } from '../shared/gitflare-infrastructure';
 import { CLOUDFLARE_PERMISSIONS_DOCS_PATH, describeCloudflareScopes, type CloudflarePermissionPlan } from '../shared/cloudflare-permissions';
 
 export interface CloudflareConnection { version: string; encrypted: string; issuer: Principal }
@@ -253,7 +254,7 @@ async function resourceCatalog(env:AppEnv,vault:Vault,source:CloudflareConnectio
   const account=selectedAccount(vault,source);
   const kinds = [ ['workers', '/workers/scripts'], ['durableObjects', '/workers/durable_objects/namespaces'], ['databases', '/d1/database'], ['containers', '/containers/applications'], ['workflows', '/workflows'] ] as const;
   const results = await Promise.allSettled(kinds.map(([, path]) => listResources(env, vault, path)));
-  const catalogs: Record<string, { id: string; name: string; script?: string }[]> = {};
+  const catalogs: Record<string, { id: string; name: string; script?: string; gitflare?: true }[]> = {};
   const availability: Record<string, { available: boolean; reason?: string }> = {};
   results.forEach((result, index) => {
     const [kind] = kinds[index];
@@ -267,7 +268,13 @@ async function resourceCatalog(env:AppEnv,vault:Vault,source:CloudflareConnectio
       return typeof id === 'string' && typeof name === 'string' ? [{ id, name: name.slice(0, 200), ...(typeof item.script === 'string' ? { script: item.script } : typeof item.script_name === 'string' ? { script: item.script_name } : {}) }] : [];
     });
   });
-  return { account, ...catalogs, availability };
+  const installation = !!env.PREVIEWS_ACCOUNT_ID && env.PREVIEWS_ACCOUNT_ID === account.id;
+  if (installation) {
+    const infrastructure = gitflareInfrastructure(env.GITFLARE_PRIMARY_WORKER, env.PREVIEWS_WORKER_NAME);
+    const types: Record<string, CatalogItem['type']> = { workers: 'worker', durableObjects: 'durable_object', databases: 'd1', containers: 'container', workflows: 'workflow' };
+    for (const [kind, items] of Object.entries(catalogs)) catalogs[kind] = items.map(item => isGitflareResource({ ...item, type: types[kind]! }, infrastructure) ? { ...item, gitflare: true } : item);
+  }
+  return { account, ...catalogs, availability, installation };
 }
 async function disconnect(env:AppEnv,p:Principal,repositoryId?:string) {
   const removed=await service(env).connectionStore(p,'delete',repositoryScope(repositoryId)) as CloudflareConnection|null;
