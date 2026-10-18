@@ -42,3 +42,6 @@
 .account-recovery { padding-top: 20px; }
 .account-recovery > div { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; }
 @media (max-width: 600px) { .account-card { padding: 20px; } .account-details { grid-template-columns: 1fr; gap: 6px; } .account-details dd { margin-bottom: 14px; } .account-page-heading h1 { font-size: 22px; } .account-menu-trigger > span:not(.account-avatar) { display: none; } .account-menu-trigger { padding-right: 6px; } }
+.account-method-on { display: inline-flex; align-items: center; gap: 6px; color: var(--gf-color-success); font-size: 12px; white-space: nowrap; }
+.account-session-icon { flex-shrink: 0; color: var(--gf-color-text-secondary); }
+.account-sessions li > div { flex: 1; }

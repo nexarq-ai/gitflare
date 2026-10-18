@@ -32,6 +32,7 @@ import { hostRedirect, withHostOrigins } from './host-split';
 import { publicGitResponse } from './hosted-source';
 import { deliverInvitation } from './email';
 import { ADMIN_STATUS_PATH, installationAdminStatus } from './installation-admin';
+import { requestSessionMeta } from './session-meta';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare, handleRepositoryCloudflare, cloudflareAccount, cloudflareApiRequest, cloudflareAnalyticsRequest, cloudflareDeployAccess } from './cloudflare';
 import { dispatchCloudflareProject, projectDependencies, type ProjectOperation } from './cloudflare-projects';
 import { validateRepositoryInitialization, initializeArtifactsRepository } from './repository-initialization';
@@ -295,7 +296,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     assertMutationOrigin(request);
     await security(env).rateLimit(`auth:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
     const body = await readJson(request);
-    if (url.pathname === '/api/login') { const link = requestCookie(request, CLOUDFLARE_LINK_COOKIE); return sessionResponse(await security(env).login(body, request.headers.get('CF-Connecting-IP') ?? 'local', link), !!link); }
+    if (url.pathname === '/api/login') { const link = requestCookie(request, CLOUDFLARE_LINK_COOKIE); return sessionResponse(await security(env).login(body, request.headers.get('CF-Connecting-IP') ?? 'local', link, requestSessionMeta(request)), !!link); }
     const token = requireString(body.token, 'Token', 1024, 32);
     if (env.EDITION === 'self-hosted' || !env.OWNER_TOKEN || !await tokenMatches(token, env.OWNER_TOKEN)) throw new ApiError(401, 'AUTH_REQUIRED', 'The owner token was not accepted.');
     return sessionResponse({ token: await security(env).legacySession(), workspaceId: 'legacy' });
@@ -308,6 +309,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const [snapshot, name] = await Promise.all([access.snapshot(principal), workspaceName(env, access, principal)]);
     return Response.json({ ...snapshot, workspace: snapshot.workspace ? { ...snapshot.workspace, name } : snapshot.workspace, workspaces: snapshot.workspaces.map((workspace) => workspace.id === principal.workspaceId ? { ...workspace, name } : workspace) });
   }
+  if (url.pathname === '/api/account' && request.method === 'GET') return Response.json(await access.account(principal), { headers: { 'Cache-Control': 'no-store' } });
+  if (url.pathname === '/api/account/sessions/revoke-others' && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.revokeOtherSessions(principal)); }
   if (url.pathname === ADMIN_STATUS_PATH && request.method === 'GET') return Response.json(await installationAdminStatus(env, principal), { headers: { 'Cache-Control': 'no-store' } });
   if (url.pathname === '/api/workspaces' && request.method === 'GET') {
     const [items, name] = await Promise.all([access.workspaces(principal), workspaceName(env, access, principal)]);

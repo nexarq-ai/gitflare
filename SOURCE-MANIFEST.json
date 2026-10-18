@@ -225,13 +225,18 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 13894,
-      "sha256": "33fc5cf4decac233e11bd97d8550b590f5a846c8c122652f5aa6ae7eaa79228e"
+      "size": 14002,
+      "sha256": "b7b78b328460b8fca91181e6821c89f89c69d13beec4ccd52e7168307b48a3ef"
+    },
+    {
+      "path": "src/ui/account-data.ts",
+      "size": 2248,
+      "sha256": "47dd48d7ff4873efa8bf1f596054aae8a4491911354c8490ce4a0405280a6745"
     },
     {
       "path": "src/ui/account-settings.css",
-      "size": 5935,
-      "sha256": "69ad0cea69afaee88f6d3e0ec58ae559d24cc16b351c97b3688ebbbab0b6ab43"
+      "size": 6202,
+      "sha256": "857c0810a65f8cc3cc8773b470592a0783a24a942cc4d5a887bb2cce87a81370"
     },
     {
       "path": "src/ui/AccountMenu.tsx",
@@ -240,8 +245,8 @@
     },
     {
       "path": "src/ui/AccountSettings.tsx",
-      "size": 7851,
-      "sha256": "a1d494e58bdaca22b0f0a30e4b61b12338397ab4a7f94808e598c718f1376147"
+      "size": 17417,
+      "sha256": "39bd658c6edc46c8e2205517191735d889f32c8b778584eb004fd3254aff23db"
     },
     {
       "path": "src/ui/AgentAssignment.tsx",
@@ -265,8 +270,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 83019,
-      "sha256": "b4c45e8f4dc254e9826e39094140ef116e94b8ed189caa54e22ae86f769f77c6"
+      "size": 83147,
+      "sha256": "d1be76ac7559f1732f8f3a305a869bdf38fc8db9b7df9fab819c469b016c86fc"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -740,8 +745,8 @@
     },
     {
       "path": "src/ui/router.ts",
-      "size": 8037,
-      "sha256": "7fb70edfc64ada3ff022fb1cd7855fb1346572f5543c2781400c15f60d265447"
+      "size": 8057,
+      "sha256": "3fd5f0ebdfea134787e71aeef3d277891e2c41dd4845c96b9468097de06f89d1"
     },
     {
       "path": "src/ui/secret-settings.css",
@@ -1055,8 +1060,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 95085,
-      "sha256": "eac0f144faa54f49d92236a36c419f25f288ffc6a72ceef4ba6875d33aec02c2"
+      "size": 95528,
+      "sha256": "b5611c8337f4a5ffdb3411b7cbeb41723a1fe84dc442ef0a9a9dede302628aa1"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -1125,8 +1130,8 @@
     },
     {
       "path": "src/worker/onboarding.ts",
-      "size": 5691,
-      "sha256": "35629bc656eb297fe848cb36953f7566cf31c98a1754789d44a3040f6e7787f1"
+      "size": 5773,
+      "sha256": "7bebd744256d7425c668937379df2d89446585556cacae68389340e33ebfaeb5"
     },
     {
       "path": "src/worker/package-manager.ts",
@@ -1225,8 +1230,13 @@
     },
     {
       "path": "src/worker/security.ts",
-      "size": 172118,
-      "sha256": "597b31f637a783b92c4cc765122a653086004bc493575ab6831eaf668a35d808"
+      "size": 175954,
+      "sha256": "506fc74a9107ac07ae2adc4a081c77dd907f122a0561e6d871e4d2d35b11641e"
+    },
+    {
+      "path": "src/worker/session-meta.ts",
+      "size": 1140,
+      "sha256": "02577353ed9072b282b03b15cec45c1609016462ff026905ae13e2419bf2c55f"
     },
     {
       "path": "src/worker/session-policy.ts",

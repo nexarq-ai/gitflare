@@ -17,7 +17,9 @@ export const ROLE_ACTIONS: Record<Role, Action[]> = {
 };
 interface User { id: string; name: string; email: string; salt: string; hash: string; machine?: boolean; emailVerified?: boolean; cloudflareId?: string; revision?: number; reviewer?: { workspaceId: string }; disabled?: boolean }
 interface Member { userId: string; workspaceId: string; role: Role; repositoryIds?: string[]; superAdmin?: { previousRole?: Role; previousRepositoryIds?: string[] } }
-interface Session { id: string; userId: string; workspaceId: string; hash: string; expiresAt: number; authenticatedAt?: number; revoked?: boolean; client?: string; sliding?: boolean }
+interface Session { id: string; userId: string; workspaceId: string; hash: string; expiresAt: number; authenticatedAt?: number; revoked?: boolean; client?: string; sliding?: boolean; kind?: 'browser' | 'token'; device?: string; country?: string }
+export interface SessionMeta { device?: string; country?: string }
+function sessionMeta(meta: SessionMeta | undefined): SessionMeta { return { ...(meta?.device ? { device: String(meta.device).slice(0, 80) } : {}), ...(meta?.country && /^[A-Z]{2}$/.test(meta.country) ? { country: meta.country } : {}) }; }
 type PublicSession = Omit<Session, 'hash'>;
 interface WorkspaceRecord { id: string; name: string; bootstrapDisabled?: boolean; agentPending?: boolean }
 export type InvitationScope = { kind: 'organization'; ownerId: string; ownerName?: string } | { kind: 'repository'; repositoryId: string; repositoryName?: string };
@@ -36,7 +38,7 @@ interface MfaRecord { id: string; encryptedSecret: string; enabled: boolean; las
 interface AuthChallenge { id: string; userId: string; kind: 'setup' | 'enroll' | 'login'; workspaceId?: string; expiresAt: number; used?: boolean; linkId?: string }
 export interface CloudflareSigninState { id: string; browserHash: string; expiresAt: number; encrypted: string }
 interface CloudflareLink { id: string; cloudflareId: string; email: string; expiresAt: number }
-export interface CloudflareSigninInput { identity: CloudflareIdentity; userId: string; workspaceId: string; workspaceName: string; sessionHash?: string; linkHash: string; invitation?: string; mintToken?: boolean }
+export interface CloudflareSigninInput { identity: CloudflareIdentity; userId: string; workspaceId: string; workspaceName: string; sessionHash?: string; linkHash: string; invitation?: string; mintToken?: boolean; meta?: SessionMeta }
 export type CloudflareSigninResult = { status: 'signed-in'; user: ReturnType<typeof safeUser>; workspaceId: string; created: boolean; token?: string } | { status: 'link-required'; created: false }
 interface Installation { workspaceName?: string; workspaceId?: string; pendingUser?: User; challengeId?: string; pendingWorkspaceId?: string }
 interface EmailToken { id: string; userId: string; email: string; kind: 'verify' | 'reset'; expiresAt: number }
@@ -64,7 +66,7 @@ export async function passwordHash(password: string, salt: string): Promise<stri
   return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: encode.encode(salt), iterations: 100000 }, key, 256));
 }
 function role(value: unknown): Role { if (!ROLES.includes(value as Role)) throw new ApiError(400, 'INVALID_ROLE', 'Select a valid workspace role.'); return value as Role; }
-function safeUser(user: User) { return { id: user.id, name: user.name, email: user.email, emailVerified: user.emailVerified === true, cloudflareLinked: !!user.cloudflareId }; }
+function safeUser(user: User) { return { id: user.id, name: user.name, email: user.email, emailVerified: user.emailVerified === true, cloudflareLinked: !!user.cloudflareId, passwordSignIn: !!user.hash }; }
 function fail(code = 'FORBIDDEN', message = 'Your workspace permissions do not allow this action.'): never { throw new ApiError(403, code, message); }
 function publicValue<T extends { hash: string }>(value: T): Omit<T, 'hash'> { const { hash: _hash, ...rest } = value; return rest; }
 const AUDIT_LIMIT_PER_WORKSPACE = 1000;
@@ -840,7 +842,7 @@ export class WorkspaceStore {
     return this.guarded(() => ({ workspace: this.data.member.has(userId) || bootstrap && this.workspaceId === 'legacy' ? this.record() ?? null : null, role: this.data.member.get(userId)?.role ?? (bootstrap && this.workspaceId === 'legacy' ? 'Owner' as Role : null), repositoryScoped: !!this.data.member.get(userId)?.repositoryIds, sessions: [...this.data.session.values()].filter(s => s.userId === userId && s.expiresAt > now).map(publicValue) }));
   }
   async bootstrapAllowed(): Promise<Principal> { await this.load(); if (this.record()?.bootstrapDisabled) fail('BOOTSTRAP_DISABLED', 'The legacy owner key was retired by ownership transfer.'); return { userId: 'bootstrap-owner', workspaceId: 'legacy', role: 'Owner', bootstrap: true }; }
-  async createSession(input: { userId: string; hash: string; expiresAt?: number; authenticatedAt?: number; revision?: number; bootstrap?: boolean; sliding?: boolean }): Promise<PublicSession> {
+  async createSession(input: { userId: string; hash: string; expiresAt?: number; authenticatedAt?: number; revision?: number; bootstrap?: boolean; sliding?: boolean } & SessionMeta): Promise<PublicSession> {
     return this.change(() => {
       if (input.bootstrap) { if (this.options.EDITION === 'self-hosted') fail('BOOTSTRAP_DISABLED'); if (this.workspaceId !== 'legacy' || this.record()?.bootstrapDisabled) fail(); }
       else {
@@ -849,7 +851,7 @@ export class WorkspaceStore {
       }
       const now = Date.now();
       const authenticatedAt = input.authenticatedAt ?? now; const sliding = input.sliding === true && !input.bootstrap;
-      const session: Session = { id: `${this.workspaceId}.${crypto.randomUUID()}`, userId: input.userId, workspaceId: this.workspaceId, hash: input.hash, expiresAt: input.expiresAt ?? (sliding ? slidingExpiry(authenticatedAt, now) : now + SESSION_MS), authenticatedAt, ...(sliding ? { sliding } : {}) };
+      const session: Session = { id: `${this.workspaceId}.${crypto.randomUUID()}`, userId: input.userId, workspaceId: this.workspaceId, hash: input.hash, expiresAt: input.expiresAt ?? (sliding ? slidingExpiry(authenticatedAt, now) : now + SESSION_MS), authenticatedAt, ...(sliding ? { sliding } : {}), kind: 'browser', ...sessionMeta(input) };
       this.data.session.set(session.id, session);
       return publicValue(session);
     });
@@ -873,6 +875,10 @@ export class WorkspaceStore {
   async revokeUserSessions(userId: string, revision: number): Promise<void> {
     await this.load(); if (!this.initialized) return;
     await this.change(() => { this.data.revision.set(userId, Math.max(revision, this.data.revision.get(userId) ?? 0)); for (const session of this.data.session.values()) if (session.userId === userId) session.revoked = true; });
+  }
+  async revokeSessionsExcept(userId: string, keepId: string): Promise<number> {
+    await this.load(); if (!this.initialized) return 0;
+    return this.change(() => { let revoked = 0; for (const session of this.data.session.values()) if (session.userId === userId && session.id !== keepId && !session.client && session.kind !== 'token' && !session.revoked) { session.revoked = true; revoked++; } return revoked; });
   }
   async revokeUserCredentials(userId: string): Promise<void> {
     await this.load(); if (!this.initialized) return;
@@ -976,7 +982,7 @@ export class WorkspaceStore {
         const authenticatedAt = this.session(p.sessionId, prepared)?.authenticatedAt;
         const now = Date.now();
         if (authenticatedAt === undefined || authenticatedAt > now || now - authenticatedAt >= MAX_DERIVED_SESSION_AGE_MS) fail('RECENT_AUTH_REQUIRED', 'Sign in again before creating another session.');
-        const session: Session = { id: `${workspaceId}.${crypto.randomUUID()}`, userId: p.userId, workspaceId, hash, expiresAt: Math.min(now + SESSION_MS, authenticatedAt + MAX_DERIVED_SESSION_AGE_MS), authenticatedAt };
+        const session: Session = { id: `${workspaceId}.${crypto.randomUUID()}`, userId: p.userId, workspaceId, hash, expiresAt: Math.min(now + SESSION_MS, authenticatedAt + MAX_DERIVED_SESSION_AGE_MS), authenticatedAt, kind: 'token' };
         data.session.set(session.id, session); return { token: raw, session: publicValue(session) };
       }
       if (action === 'session-revoke') { const session = data.session.get(String(body.id)); if (!session || session.userId !== p.userId) fail(); session.revoked = true; return { ok: true }; }
@@ -1329,7 +1335,7 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
 const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall']);
-const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
+const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
     get: (_target, op) => typeof op !== 'string' || op === 'then' ? undefined : async (...args: unknown[]) => {
@@ -1391,7 +1397,7 @@ export class SecurityService {
     }
     return grant ? workspaces[0] : undefined;
   }
-  private async issueSession(user: User, workspaceId: string, revision?: number, extra: Partial<{ expiresAt: number; authenticatedAt: number }> = {}) {
+  private async issueSession(user: User, workspaceId: string, revision?: number, extra: Partial<{ expiresAt: number; authenticatedAt: number }> & SessionMeta = {}) {
     const value = mintToken(workspaceId);
     await this.shard(workspaceId).createSession({ userId: user.id, hash: await hashToken(value), revision, sliding: true, ...extra });
     return { token: value, user: safeUser(user), workspaceId };
@@ -1438,7 +1444,7 @@ export class SecurityService {
     if (!await this.identity().rateLimit(key, max, windowMs)) throw new ApiError(429, 'RATE_LIMITED', 'Too many authentication attempts. Try again in 15 minutes.');
   }
   async signup(body: Record<string, unknown>) : Promise<never> { throw new Error('This feature belongs to the hosted edition'); }
-  async login(body: Record<string, unknown>, client = 'unknown', linkToken?: string) {
+  async login(body: Record<string, unknown>, client = 'unknown', linkToken?: string, meta?: SessionMeta) {
     const email = requireString(body.email, 'Email', 254).toLowerCase(); const password = requireString(body.password, 'Password', 256);
     const linkId = linkToken && /^[a-f0-9]{64}$/.test(linkToken) ? await hashToken(linkToken) : undefined;
     const found = await this.identity().accountByEmail(email);
@@ -1453,7 +1459,7 @@ export class SecurityService {
     if (!workspaceId) fail();
     const value = mintToken(workspaceId); const sessionHash = await hashToken(value);
     const current = await this.identity().loginFinish(user);
-    await this.shard(workspaceId).createSession({ userId: current.id, hash: sessionHash, revision: current.revision ?? 0, sliding: true });
+    await this.shard(workspaceId).createSession({ userId: current.id, hash: sessionHash, revision: current.revision ?? 0, sliding: true, ...sessionMeta(meta) });
     const linked = linkId ? await this.identity().applyLink(current.id, linkId) : null;
     if (linked) await this.auditAccount(current.id, 'account:cloudflare-linked');
     return { token: value, user: safeUser(linked ?? current), workspaceId, ...(linked ? { cloudflareLinked: true } : {}) };
@@ -1525,6 +1531,44 @@ export class SecurityService {
       if (workspace && await this.shard(workspaceId).repositoryVisible(p.userId, repositoryId, !!p.bootstrap)) found.push(workspace);
     }
     return found;
+  }
+  private async accountWorkspaceIds(p: Principal): Promise<string[]> {
+    if (p.bootstrap) return ['legacy'];
+    const home = p.sessionId ? sessionIdHome(p.sessionId) ?? await this.identity().lookup('sessionHome', p.sessionId) : null;
+    return [...new Set([p.workspaceId, ...(home ? [home] : []), ...await this.identity().hints(p.userId)])];
+  }
+  async account(p: Principal) {
+    if (p.credentialId) fail();
+    await this.shard(p.workspaceId).validatePrincipal(p);
+    const ids = await this.accountWorkspaceIds(p);
+    const [users, mfaEnabled, memberships] = await Promise.all([
+      this.identity().users([p.userId]),
+      p.bootstrap ? Promise.resolve(false) : this.identity().mfaEnabled(p.userId),
+      Promise.all(ids.map(id => this.shard(id).membership(p.userId, !!p.bootstrap).catch(() => null))),
+    ]);
+    const now = Date.now();
+    const sessions = new Map<string, PublicSession & { workspaceName?: string }>();
+    for (const item of memberships) for (const session of item?.sessions ?? []) if (!session.revoked && session.expiresAt > now) sessions.set(session.id, { ...session, ...(item?.workspace ? { workspaceName: item.workspace.name } : {}) });
+    if (p.sessionId && !sessions.has(p.sessionId)) {
+      const home = sessionIdHome(p.sessionId) ?? await this.identity().lookup('sessionHome', p.sessionId) ?? p.workspaceId;
+      const current = await this.shard(home).sessionState(p.sessionId).catch(() => null);
+      if (current && current.userId === p.userId) sessions.set(current.id, current);
+    }
+    return {
+      user: users[p.userId] ?? { id: p.userId, name: 'Legacy owner', emailVerified: false },
+      mfaEnabled,
+      currentSessionId: p.sessionId ?? null,
+      sessions: [...sessions.values()].sort((a, b) => (b.authenticatedAt ?? 0) - (a.authenticatedAt ?? 0)),
+      workspaces: memberships.flatMap(item => item?.workspace && item.role ? [{ id: item.workspace.id, name: item.workspace.name, role: item.role, repositoryScoped: item.repositoryScoped, current: item.workspace.id === p.workspaceId }] : []),
+    };
+  }
+  async revokeOtherSessions(p: Principal) {
+    if (p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to sign out other sessions.');
+    await this.shard(p.workspaceId).validatePrincipal(p, { account: true });
+    let revoked = 0;
+    for (const id of await this.accountWorkspaceIds(p)) revoked += await this.shard(id).revokeSessionsExcept(p.userId, p.sessionId).catch(() => 0);
+    await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: 'account:sessions-revoked' }]);
+    return { ok: true, revoked };
   }
   async switchWorkspace(p: Principal, workspaceId: string) {
     if (p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to switch workspaces.');
@@ -1669,7 +1713,7 @@ export class SecurityService {
     if (await this.identity().mfaEnabled(p.userId)) throw new ApiError(409, 'MFA_ALREADY_ENABLED', 'This account already has an authenticator.');
     return this.beginMfa(p.userId, p.workspaceId, { principal: p });
   }
-  async verifyMfa(body: Record<string, unknown>, setupOnly = false) {
+  async verifyMfa(body: Record<string, unknown>, setupOnly = false, meta?: SessionMeta) {
     const challengeId = requireString(body.challengeId, 'Authentication challenge', 128); const id = await hashToken(challengeId);
     await this.rateLimit(`mfa:${id}`, 5, 300000);
     const pending = await this.identity().challenge(id);
@@ -1685,7 +1729,7 @@ export class SecurityService {
     if (!workspaceId || !await this.shard(workspaceId).isMember(user.id)) fail();
     await this.revokeEverywhere(verified.outbox);
     const linked = verified.kind !== 'setup' && verified.linkId ? await this.identity().applyLink(user.id, verified.linkId) : null;
-    const session = await this.issueSession(linked ?? user, workspaceId, verified.revision);
+    const session = await this.issueSession(linked ?? user, workspaceId, verified.revision, sessionMeta(meta));
     if (linked) await this.auditAccount(user.id, 'account:cloudflare-linked');
     return { ...session, ...(verified.enrolling ? { recoveryCodes } : {}), ...(linked ? { cloudflareLinked: true } : {}) };
   }
@@ -1780,7 +1824,7 @@ export class SecurityService {
   assertLand(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule) { return this.shard(p.workspaceId).assertLand(p, missionId, candidateSha, baseSha, epoch, repositoryId, rule); }
 }
 
-const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authenticateSession', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'workspaces', 'locateRepository', 'switchWorkspace', 'createWorkspace', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
+const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authenticateSession', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'account', 'revokeOtherSessions', 'workspaces', 'locateRepository', 'switchWorkspace', 'createWorkspace', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
 export type SecurityEnv = { GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity> } & { [K in keyof SecurityOptions]?: unknown };
 // While a deployment still runs a global instance without the shard protocol, its original methods serve the call
 export function securityClient(env: SecurityEnv): SecurityService {
@@ -1852,6 +1896,8 @@ export class GitflareSecurity extends DurableObject<AppEnv> {
   workspace(p: Principal) { return this.service.workspace(p); }
   snapshot(p: Principal) { return this.service.snapshot(p); }
   workspaces(p: Principal) { return this.service.workspaces(p); }
+  account(p: Principal) { return this.service.account(p); }
+  revokeOtherSessions(p: Principal) { return this.service.revokeOtherSessions(p); }
   locateRepository(p: Principal, repositoryId: string, candidates: string[]) { return this.service.locateRepository(p, repositoryId, candidates); }
   switchWorkspace(p: Principal, workspaceId: string) { return this.service.switchWorkspace(p, workspaceId); }
   createWorkspace(p: Principal, body: Record<string, unknown>) { return this.service.createWorkspace(p, body); }
