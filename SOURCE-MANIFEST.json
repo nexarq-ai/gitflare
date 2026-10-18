@@ -795,13 +795,13 @@
     },
     {
       "path": "src/worker/cloudflare-projects.ts",
-      "size": 20679,
-      "sha256": "f4fed96e8a45362aa23bc307b574cacd35736501473b77353dc318e93269a2a0"
+      "size": 21276,
+      "sha256": "46783e3b3fcf2b33308af56bb52b9a9050532191ba0bdc9eb4b06115dd68d3e1"
     },
     {
       "path": "src/worker/cloudflare.ts",
-      "size": 40626,
-      "sha256": "683c8e2304e7c82756104d7b9938c9fe9f2382fcc5cc85df3cc98b7e75073829"
+      "size": 47999,
+      "sha256": "ca52d98e53a721712c42b6b93c1e9ad3d93958cab44b8b996ec93692b8bc625d"
     },
     {
       "path": "src/worker/config-text.ts",
@@ -985,8 +985,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 94712,
-      "sha256": "d6acac6911cfcdcbdd6cd73bd7205e7d1dc6cb4d85b9f1a93379a1b8ef1daff2"
+      "size": 94723,
+      "sha256": "6c33c46e156bed01abfd337258570a092a0623cd91ef9107fa597f5e613cf5a9"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -1000,8 +1000,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 110961,
-      "sha256": "e589a3bbe509fc1b5d94b4f7df2dd464ed2a36f19638ba0699be159239a77dcb"
+      "size": 113285,
+      "sha256": "22a642d8309820d4013f3622e8da3876e16f78a088853d7169b1b91977cfd06c"
     },
     {
       "path": "src/worker/mfa.ts",

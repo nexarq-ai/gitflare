@@ -246,18 +246,20 @@ export function connectFeatures(env: AppEnv, requested: readonly CloudflareFeatu
   const legacySecrets = secretsStoreScopes(env).some(scope=>kept.includes(scope));
   return CLOUDFLARE_FEATURES.filter(feature=>(requested??defaultFeatures(env)).includes(feature)||grantedFeatures(env,kept).includes(feature)||(feature==='secrets'&&(secrets||legacySecrets)));
 }
-async function start(env:AppEnv,p:Principal,origin:string,repositoryId?:string,options:{secrets?:boolean;features?:CloudflareFeature[]}={}) {
+async function start(env:AppEnv,p:Principal,origin:string,repositoryId?:string,options:{secrets?:boolean;features?:CloudflareFeature[];grantId?:string}={}) {
   await owner(env,p); requireConfiguration(env); if(!p.sessionId) throw new ApiError(403,'ACCOUNT_SESSION_REQUIRED','Sign in through the browser before connecting Cloudflare.');
   const uri=new URL(origin); if(uri.protocol!=='https:') throw new ApiError(400,'HTTPS_REQUIRED','Cloudflare account connection requires HTTPS.');
   const state=randomCapability(); const binder=randomCapability(); const verifier=randomCapability(); const id=await sha(state); const expiresAt=Date.now()+600000;
-  const previous=await stored(env,p,undefined,repositorySlot(repositoryId));
-  const kept=previous?await unseal(env,p,previous,repositorySlot(repositoryId)).then(vault=>grantedScopes(vault.scopes),()=>[] as string[]):[];
+  const slot:Slot=options.grantId?{grantId:options.grantId}:repositorySlot(repositoryId);
+  const previous=await stored(env,p,undefined,slot);
+  const template=options.grantId?await stored(env,p):previous;
+  const kept=template?await unseal(env,p,template,options.grantId?{}:slot).then(vault=>grantedScopes(vault.scopes),()=>[] as string[]):[];
   const features=connectFeatures(env,options.features,kept,options.secrets);
   const base=new Set(connectScopes(env));
   const extraScopes=requestedScopes(env,features).filter(scope=>!base.has(scope));
-  const pending:Pending={verifier,redirectUri:`${uri.origin}/api/cloudflare/callback`,expectedVersion:previous?.version??null,...repositoryScope(repositoryId),...(extraScopes.length?{extraScopes}:{})};
-  const record:CloudflareOAuthState={id,browserHash:await sha(binder),principal:p,expiresAt,encrypted:await encryptAuth(JSON.stringify(pending),env.AUTH_ENCRYPTION_KEY,`cloudflare-state:${id}`),...repositoryScope(repositoryId)};
-  await service(env).connectionStore(p,'state-put',{value:record,...repositoryScope(repositoryId)});
+  const pending:Pending={verifier,redirectUri:`${uri.origin}/api/cloudflare/callback`,expectedVersion:previous?.version??null,...slotScope(slot),...(extraScopes.length?{extraScopes}:{})};
+  const record:CloudflareOAuthState={id,browserHash:await sha(binder),principal:p,expiresAt,encrypted:await encryptAuth(JSON.stringify(pending),env.AUTH_ENCRYPTION_KEY,`cloudflare-state:${id}`),...slotScope(slot)};
+  await service(env).connectionStore(p,'state-put',{value:record,...slotScope(slot)});
   return {authorizationUrl:await cloudflareAuthorizationUrl(env,pending.redirectUri,state,verifier,'connect',extraScopes),expiresAt,permissions:connectPermissionPlan(env,features),cookie:`${CLOUDFLARE_CONNECT_STATE_COOKIE}=${binder}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`};
 }
 async function callback(request:Request,env:AppEnv):Promise<Response> {
@@ -267,12 +269,21 @@ async function callback(request:Request,env:AppEnv):Promise<Response> {
   const record=await service(env).connectionStore(null,'state-consume',{id:await sha(state),browserHash:await sha(binder)}) as CloudflareOAuthState;
   const pending=JSON.parse(await decryptAuth(record.encrypted,env.AUTH_ENCRYPTION_KEY,`cloudflare-state:${record.id}`)) as Pending;
   if(pending.redirectUri!==`${url.origin}${url.pathname}`) throw new ApiError(403,'OAUTH_REDIRECT_MISMATCH','The callback does not match the original installation.');
-  if(pending.repositoryId!==record.repositoryId) throw new ApiError(403,'CLOUDFLARE_STATE_INVALID','The connection request has expired. Start again.');
+  if(pending.repositoryId!==record.repositoryId||pending.grantId!==record.grantId) throw new ApiError(403,'CLOUDFLARE_STATE_INVALID','The connection request has expired. Start again.');
   if(url.searchParams.has('error')) throw new ApiError(400,'CLOUDFLARE_AUTHORIZATION_DENIED','Cloudflare authorization was cancelled or denied.');
   const code=requireString(url.searchParams.get('code'),'Authorization code',4096);
-  const vault=await exchangeCloudflareCode(env,code,pending.redirectUri,pending.verifier,'connect',pending.extraScopes);
-  await save(env,record.principal,vault,pending.expectedVersion,undefined,repositorySlot(record.repositoryId));
-  const destination=record.repositoryId?`/repository/${encodeURIComponent(record.repositoryId)}/cloudflare`:'/settings/cloudflare';
+  const exchanged=await exchangeCloudflareCode(env,code,pending.redirectUri,pending.verifier,'connect',pending.extraScopes);
+  const slot:Slot=record.grantId?{grantId:record.grantId}:repositorySlot(record.repositoryId);
+  const reachable=await cloudflareAccounts(env,exchanged).catch(()=>[] as Account[]);
+  const earlier=pending.expectedVersion?await stored(env,record.principal,undefined,slot).then(found=>found?unseal(env,record.principal,found,slot):undefined).catch(()=>undefined):undefined;
+  const chosen=reachable.find(account=>account.id===earlier?.account?.id)??(reachable.length===1?reachable[0]:undefined);
+  const vault=chosen?{...exchanged,account:chosen}:exchanged;
+  await save(env,record.principal,vault,pending.expectedVersion,undefined,slot);
+  if(record.grantId&&chosen){
+    const overview=await service(env).connectionStore(record.principal,'accounts',{}) as CloudflareAccountsOverview;
+    if(!overview.accounts.some(account=>account.id===chosen.id)) await service(env).connectionStore(record.principal,'account-put',{grantId:record.grantId,account:chosen});
+  }
+  const destination=record.repositoryId?`/repository/${encodeURIComponent(record.repositoryId)}/cloudflare`:record.grantId?`/settings/cloudflare?connected=${encodeURIComponent(record.grantId)}`:'/settings/cloudflare';
   return new Response(null,{status:303,headers:{Location:`${url.origin}${destination}`,'Set-Cookie':`${CLOUDFLARE_CONNECT_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
 }
 async function resourceCatalog(env:AppEnv,vault:Vault,source:CloudflareConnectionSource,includeGitflare=false) {
@@ -313,6 +324,75 @@ async function disconnect(env:AppEnv,p:Principal,repositoryId?:string) {
   let revoked:boolean;
   try { revoked=await revokeCloudflareTokens(env,await unseal(env,p,removed,repositorySlot(repositoryId))); }catch{revoked=false;}
   return {connected:false,revoked};
+}
+const GRANT_ID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+function requireGrantId(value: unknown): string { if(typeof value!=='string'||!GRANT_ID.test(value)) throw new ApiError(404,'CLOUDFLARE_LOGIN_NOT_FOUND','This Cloudflare login could not be found.'); return value; }
+function grantSlot(grantId: unknown): Slot { return grantId===undefined||grantId===null?{}:{grantId:requireGrantId(grantId)}; }
+function connectedAccounts(env:AppEnv,p:Principal) { return service(env).connectionStore(p,'accounts',{}) as Promise<CloudflareAccountsOverview>; }
+async function loginAccounts(env:AppEnv,p:Principal,grantId:unknown) {
+  const {vault}=await load(env,p,undefined,grantSlot(grantId));
+  const connected=new Set((await connectedAccounts(env,p)).accounts.map(account=>account.id));
+  return {accounts:(await cloudflareAccounts(env,vault)).map(account=>({...account,connected:connected.has(account.id)}))};
+}
+async function putAccount(env:AppEnv,p:Principal,body:Record<string,unknown>) {
+  const slot=grantSlot(body.grantId);
+  const accountId=requireString(body.accountId,'Cloudflare account',32,32);
+  const {vault}=await load(env,p,undefined,slot);
+  const account=(await cloudflareAccounts(env,vault)).find(item=>item.id===accountId);
+  if(!account) throw new ApiError(403,'ACCOUNT_NOT_GRANTED','This Cloudflare login cannot reach that account. Choose an account it lists.');
+  await service(env).connectionStore(p,'account-put',{...slotScope(slot),account});
+  return connectedAccounts(env,p);
+}
+async function removeAccount(env:AppEnv,p:Principal,body:Record<string,unknown>) {
+  const accountId=requireString(body.accountId,'Cloudflare account',32,32);
+  const removed=await service(env).connectionStore(p,'account-remove',{accountId}) as {connection:CloudflareConnection|null;grantId:string|null};
+  let revoked=false;
+  if(removed.connection&&removed.grantId) { try { revoked=await revokeCloudflareTokens(env,await unseal(env,p,removed.connection,{grantId:removed.grantId})); } catch { revoked=false; } }
+  return {...await connectedAccounts(env,p),loginRemoved:!!removed.connection,revoked};
+}
+async function defaultAccount(env:AppEnv,p:Principal,body:Record<string,unknown>) {
+  const accountId=requireString(body.accountId,'Cloudflare account',32,32);
+  const overview=await connectedAccounts(env,p);
+  const entry=overview.accounts.find(account=>account.id===accountId);
+  if(!entry) throw new ApiError(409,'ACCOUNT_NOT_CONNECTED',`Cloudflare account ${accountId} is not connected to this workspace. An Owner must add it in Settings → Cloudflare first.`);
+  const current=await stored(env,p);
+  if(!current) throw new ApiError(409,'CLOUDFLARE_NOT_CONNECTED','Connect a Cloudflare account first.');
+  const currentVault=await unseal(env,p,current);
+  const account={id:entry.id,name:entry.name};
+  if(!entry.grantId) {
+    await service(env).connectionStore(p,'account-default',{accountId,expectedVersion:current.version,value:await seal(env,p,{...currentVault,account},current.issuer,{})});
+    return connectedAccounts(env,p);
+  }
+  const grant=await stored(env,p,undefined,{grantId:entry.grantId});
+  if(!grant) throw new ApiError(409,'CLOUDFLARE_CONNECTION_CHANGED','The Cloudflare connection changed. Refresh and try again.');
+  const grantVault=await unseal(env,p,grant,{grantId:entry.grantId});
+  await service(env).connectionStore(p,'account-default',{accountId,expectedVersion:current.version,expectedGrantVersion:grant.version,value:await seal(env,p,{...grantVault,account},grant.issuer,{}),grantValue:await seal(env,p,currentVault,current.issuer,{grantId:entry.grantId})});
+  return connectedAccounts(env,p);
+}
+async function disconnectLogin(env:AppEnv,p:Principal,grantId:string) {
+  const removed=await service(env).connectionStore(p,'delete',{grantId}) as CloudflareConnection|null;
+  let revoked=!removed;
+  if(removed) { try { revoked=await revokeCloudflareTokens(env,await unseal(env,p,removed,{grantId})); } catch { revoked=false; } }
+  return {...await connectedAccounts(env,p),revoked};
+}
+async function accountsResponse(request:Request,env:AppEnv,p:Principal,path:string):Promise<Response|null> {
+  const origin=new URL(request.url).origin;
+  const login=/^\/api\/cloudflare\/logins\/([^/]+)\/(accounts|disconnect)$/.exec(path);
+  const json=(value:unknown)=>Response.json(value,{headers:{'Cache-Control':'no-store'}});
+  if(path==='/api/cloudflare/logins'&&request.method==='POST') {
+    assertMutationOrigin(request);const body=await readJson(request);
+    if(!await stored(env,p)) throw new ApiError(409,'CLOUDFLARE_NOT_CONNECTED','Connect Cloudflare first; another login adds accounts to an existing connection.');
+    const features=requestedFeatures(body.features);const grantId=crypto.randomUUID();
+    const {cookie,...result}=await start(env,p,origin,undefined,{grantId,...(features?{features}:{})});
+    return Response.json({...result,grantId},{headers:{'Set-Cookie':cookie,'Cache-Control':'no-store'}});
+  }
+  if(login&&login[2]==='accounts'&&request.method==='GET') return json(await loginAccounts(env,p,login[1]));
+  if(login&&login[2]==='disconnect'&&request.method==='POST') { assertMutationOrigin(request); return json(await disconnectLogin(env,p,requireGrantId(login[1]))); }
+  const action=path.slice('/api/cloudflare/'.length);
+  if(!['account-put','account-remove','account-default'].includes(action)) return null;
+  if(request.method!=='POST') throw new ApiError(405,'METHOD_NOT_ALLOWED','Use POST for Cloudflare account changes.');
+  assertMutationOrigin(request);const body=await readJson(request);
+  return json(action==='account-put'?await putAccount(env,p,body):action==='account-remove'?await removeAccount(env,p,body):await defaultAccount(env,p,body));
 }
 async function selectAccount(env:AppEnv,p:Principal,body:Record<string,unknown>,repositoryId?:string) {
   const {record,vault}=await load(env,p,undefined,repositorySlot(repositoryId));
@@ -367,7 +447,16 @@ export async function handleCloudflare(request:Request,env:AppEnv,authenticate:(
   const url=new URL(request.url);const path=url.pathname;if(!path.startsWith('/api/cloudflare'))return null;
   if(path===CLOUDFLARE_CALLBACK_PATH&&request.method==='GET'&&!requestCookie(request,CLOUDFLARE_CONNECT_STATE_COOKIE))return null;
   if(path===CLOUDFLARE_CALLBACK_PATH&&request.method==='GET')return callback(request,env);
-  const p=await authenticate(request,env);await owner(env,p);await service(env).rateLimit(`cloudflare:${p.userId}`,30,60000);
+  const p=await authenticate(request,env);
+  if(path==='/api/cloudflare/connected-accounts') {
+    if(request.method!=='GET') throw new ApiError(405,'METHOD_NOT_ALLOWED','Use GET to read connected Cloudflare accounts.');
+    if(p.credentialId) throw new ApiError(403,'OWNER_REQUIRED','Task credentials cannot read Cloudflare connections.');
+    await service(env).rateLimit(`cloudflare:${p.userId}`,30,60000);
+    return Response.json(await connectedAccounts(env,p),{headers:{'Cache-Control':'no-store'}});
+  }
+  await owner(env,p);await service(env).rateLimit(`cloudflare:${p.userId}`,30,60000);
+  const accounts=await accountsResponse(request,env,p,path);
+  if(accounts)return accounts;
   const credential=/^\/api\/cloudflare\/installation-credential(?:\/([a-z-]+))?$/.exec(path);
   if(credential)return handleInstallationCredential(request,env,p,credential[1]??'');
   return connectionResponse(request,env,p,path==='/api/cloudflare'?'status':path.slice('/api/cloudflare/'.length));
