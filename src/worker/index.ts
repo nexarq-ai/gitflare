@@ -896,9 +896,9 @@ const application = {
     const publicGit = await publicGitResponse(request, env);
     if (publicGit) return publicGit;
     if (path === '/oauth/authorize') return oauthConsent(request, env, authorize);
-    if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     const publicPage = publicPageResponse(request, env);
     if (publicPage) return publicPage;
+    if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
     if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env);

@@ -235,8 +235,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 78158,
-      "sha256": "4eab457f635894b4f849289299b909444c0c642ba196844b959ccf96aace8961"
+      "size": 78162,
+      "sha256": "0b52ac3abc60f70ce3f86450b2b0371e2cffff6f6354eeb8a4b128be2472cd7e"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -590,8 +590,8 @@
     },
     {
       "path": "src/ui/router.ts",
-      "size": 6532,
-      "sha256": "470876e477a1f45f45f38eb42e033a643782de4822d145372875e320fcb54ba7"
+      "size": 6755,
+      "sha256": "1f20af71c26ecd486a0394cb6d03c686d538654638bd33302a89087231ba2938"
     },
     {
       "path": "src/ui/SelfHostedHome.tsx",
@@ -786,7 +786,7 @@
     {
       "path": "src/worker/index.ts",
       "size": 85972,
-      "sha256": "019783977d9c4b58b7b14f5e34321cf2d3ad80fb36074d35766cf4ccbf5ead4d"
+      "sha256": "be4ca6ccef0510d972f3c1da4c29424d530585478ab4f25f47b40ab49c123e40"
     },
     {
       "path": "src/worker/installation-credential.ts",
