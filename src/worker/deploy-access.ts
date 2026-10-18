@@ -3,7 +3,7 @@ import type { CloudflareCall } from './cloudflare-deploy';
 import type { Principal } from './security';
 import type { SqlStore } from './store';
 import type { DeployEnvironmentSettings } from './deployments';
-import { ACCESS_SCOPE_MISSING_MESSAGE, accessScopeState, assertAccessScope, workersSubdomain, type AccessScopeEnv } from './preview-access';
+import { ACCESS_SCOPE_MISSING_MESSAGE, accessMode, accessScopeState, assertAccessScope, workersSubdomain, type AccessScopeEnv } from './preview-access';
 
 export const DEPLOY_ACCESS_PREFIX = 'deploy-access:';
 const MAX_EMAILS = 200;
@@ -24,6 +24,8 @@ export interface DeployAccessRecord {
   policyId: string;
   created: boolean;
   policyCreated: boolean;
+  zoneId?: string;
+  zoneName?: string;
   hostnames: string[];
   includes: DeployAccessIncludes;
   updatedAt: string;
@@ -134,9 +136,45 @@ function appDestinations(app: AccessApp): string[] {
   return (uris.length ? uris : app.domain ? [app.domain] : []).map((uri) => uri.toLowerCase());
 }
 
-export async function ensureDeployAccess(call: CloudflareCall, accountId: string, input: { name: string; hostnames: string[]; includes: DeployAccessIncludes; previous?: DeployAccessRecord }): Promise<Pick<DeployAccessRecord, 'appId' | 'policyId' | 'created' | 'policyCreated'>> {
-  const { name, hostnames, previous } = input;
-  const listed = await call<AccessApp[]>(`/accounts/${accountId}/access/apps`, { query: { per_page: '1000' } });
+export interface AccessZone { id: string; name: string }
+const zonePattern = /^[a-f0-9]{32}$/;
+const isWorkersDev = (destination: string) => destination.split('/')[0]!.endsWith('.workers.dev');
+
+export function accessBase(location: { accountId: string; zoneId?: string }): string {
+  return location.zoneId ? `/zones/${location.zoneId}/access` : `/accounts/${location.accountId}/access`;
+}
+
+export async function accessZone(call: CloudflareCall, accountId: string, hostnames: string[]): Promise<AccessZone | null> {
+  const custom = hostnames.filter((host) => !isWorkersDev(host));
+  if (!custom.length) return null;
+  const known = new Map<string, AccessZone | null>();
+  const found = new Map<string, AccessZone>();
+  for (const destination of custom) {
+    const labels = destination.split('/')[0]!.replace(/^\*\./, '').split('.');
+    let zone: AccessZone | null = null;
+    for (let start = 0; start <= labels.length - 2 && !zone; start++) {
+      const name = labels.slice(start).join('.');
+      if (!known.has(name)) {
+        let zones: unknown;
+        try { zones = await call<unknown>('/zones', { query: { name, 'account.id': accountId } }); }
+        catch (error) { throw new ApiError(409, 'DEPLOY_ACCESS_ZONE_LOOKUP_FAILED', `Gitflare could not look up the zone of ${destination}: ${error instanceof ApiError ? error.detail : 'Cloudflare refused the request'}.`); }
+        const match = Array.isArray(zones) ? zones.find((item) => item && typeof item === 'object' && (item as { name?: unknown }).name === name && zonePattern.test(String((item as { id?: unknown }).id))) as { id: string; name: string } | undefined : undefined;
+        known.set(name, match ? { id: match.id, name: match.name } : null);
+      }
+      zone = known.get(name) ?? null;
+    }
+    if (!zone) throw new ApiError(409, 'DEPLOY_ACCESS_ZONE_NOT_FOUND', `${destination} is not on a zone of Cloudflare account ${accountId}, so Access cannot protect it with zone-level permissions.`);
+    found.set(zone.id, zone);
+  }
+  if (found.size > 1) throw new ApiError(409, 'DEPLOY_ACCESS_MULTIPLE_ZONES', `This environment serves hostnames on ${[...found.values()].map((zone) => zone.name).join(' and ')}. Gitflare protects one zone per environment; move the other hostnames to their own environment or protect them in Zero Trust.`);
+  return [...found.values()][0]!;
+}
+
+export async function ensureDeployAccess(call: CloudflareCall, accountId: string, input: { name: string; hostnames: string[]; includes: DeployAccessIncludes; previous?: DeployAccessRecord; zoneId?: string }): Promise<Pick<DeployAccessRecord, 'appId' | 'policyId' | 'created' | 'policyCreated'>> {
+  const { name, hostnames, zoneId } = input;
+  const previous = input.previous && (input.previous.zoneId ?? null) === (zoneId ?? null) ? input.previous : undefined;
+  const base = accessBase({ accountId, ...(zoneId ? { zoneId } : {}) });
+  const listed = await call<AccessApp[]>(`${base}/apps`, { query: { per_page: '1000' } });
   const apps = Array.isArray(listed) ? listed : [];
   const existing = (previous ? apps.find((app) => app?.id === previous.appId) : undefined) ?? apps.find((app) => app?.name === name);
   const conflict = apps.find((app) => app !== existing && appDestinations(app).some((uri) => hostnames.includes(uri)));
@@ -145,6 +183,7 @@ export async function ensureDeployAccess(call: CloudflareCall, accountId: string
     throw new ApiError(409, 'DEPLOY_ACCESS_CONFLICT', `Cloudflare Access application ${conflict.name ?? 'unnamed'} (${conflict.id ?? 'unknown id'}) already covers ${host}. Gitflare does not change Access applications it did not create; remove that hostname from it in Zero Trust, then try again.`);
   }
   const policy = { name, decision: 'allow', include: includeRules(input.includes) };
+  if (zoneId) return ensureZoneAccess(call, base, { name, hostnames, policy, ...(existing ? { existing } : {}), ...(previous ? { previous } : {}) });
   const knownPolicy = existing?.policies?.find((item) => typeof item?.id === 'string' && (item.id === previous?.policyId || item.name === name))?.id;
   let policyId: string | undefined;
   let policyCreated = false;
@@ -168,15 +207,42 @@ export async function ensureDeployAccess(call: CloudflareCall, accountId: string
   return { appId: created.id, policyId, created: true, policyCreated };
 }
 
+async function ensureZoneAccess(call: CloudflareCall, base: string, input: { name: string; hostnames: string[]; policy: Record<string, unknown>; existing?: AccessApp; previous?: DeployAccessRecord }): Promise<Pick<DeployAccessRecord, 'appId' | 'policyId' | 'created' | 'policyCreated'>> {
+  const { name, hostnames, existing, previous } = input;
+  const app = { name, type: 'self_hosted', domain: hostnames[0], destinations: hostnames.map((uri) => ({ type: 'public', uri })), app_launcher_visible: false, session_duration: '24h' };
+  let appId: string;
+  let created: boolean;
+  if (existing?.id) {
+    await call(`${base}/apps/${existing.id}`, { method: 'PUT', json: app });
+    appId = existing.id; created = previous?.appId === existing.id && previous.created;
+  } else {
+    const made = await call<AccessApp>(`${base}/apps`, { method: 'POST', json: app });
+    if (typeof made?.id !== 'string') throw new ApiError(502, 'CLOUDFLARE_INVALID_RESPONSE', 'Cloudflare did not return an Access application.');
+    appId = made.id; created = true;
+  }
+  const policies = `${base}/apps/${appId}/policies`;
+  const zonePolicy = { ...input.policy, precedence: 1 };
+  if (previous?.appId === appId && previous.policyId) {
+    const updated = await call(`${policies}/${previous.policyId}`, { method: 'PUT', json: zonePolicy, allowNotFound: true });
+    if (updated !== null) return { appId, policyId: previous.policyId, created, policyCreated: previous.policyCreated };
+  }
+  const listed = await call<AccessPolicy[]>(policies);
+  const named = (Array.isArray(listed) ? listed : []).find((item) => item?.name === name && typeof item.id === 'string');
+  if (named?.id) { await call(`${policies}/${named.id}`, { method: 'PUT', json: zonePolicy }); return { appId, policyId: named.id, created, policyCreated: created }; }
+  const made = await call<AccessPolicy>(policies, { method: 'POST', json: zonePolicy });
+  if (typeof made?.id !== 'string') throw new ApiError(502, 'CLOUDFLARE_INVALID_RESPONSE', 'Cloudflare did not return an Access policy.');
+  return { appId, policyId: made.id, created, policyCreated: true };
+}
+
 export async function removeDeployAccess(call: CloudflareCall, record: DeployAccessRecord): Promise<DeployAccessRemoval> {
-  const path = `/accounts/${record.accountId}/access/apps/${record.appId}`;
+  const path = `${accessBase(record)}/apps/${record.appId}`;
   const left = (why: string): DeployAccessRemoval => ({ appId: record.appId, deleted: false, note: `${why} Gitflare stopped managing it and left it in Cloudflare; remove it in Zero Trust if it is no longer needed.` });
   if (!record.created) return left(`Gitflare adopted Access application ${record.appName} (${record.appId}) but did not create it.`);
   const app = await call<AccessApp | null>(path, { allowNotFound: true });
   if (!app) return { appId: record.appId, deleted: false, note: `Access application ${record.appId} no longer exists in Cloudflare.` };
   if (app.id !== record.appId || app.name !== record.appName) return left(`Access application ${record.appId} is now named ${app.name ?? 'unnamed'}, not ${record.appName}.`);
   await call(path, { method: 'DELETE', allowNotFound: true });
-  if (record.policyCreated) await call(`/accounts/${record.accountId}/access/policies/${record.policyId}`, { method: 'DELETE', allowNotFound: true });
+  if (record.policyCreated && !record.zoneId) await call(`/accounts/${record.accountId}/access/policies/${record.policyId}`, { method: 'DELETE', allowNotFound: true });
   return { appId: record.appId, deleted: true };
 }
 
@@ -196,17 +262,21 @@ export async function deployAccessView(record: DeployAccessRecord | undefined, t
   try { connection = await client(); }
   catch (failure) { return error(failure instanceof ApiError ? failure.detail : 'The Cloudflare connection could not be read.'); }
   const scope = accessScopeState(scopes, connection.scopes);
-  if (!scope.granted) return error(`${ACCESS_SCOPE_MISSING_MESSAGE}. ${scope.requested ? `The Cloudflare connection was not granted ${scope.missing.join(', ')}; an Owner must reconnect Cloudflare.` : 'This installation does not request a Cloudflare Access scope (CLOUDFLARE_ACCESS_SCOPES is not set).'} Gitflare cannot check the Access application.`);
+  if (!scope.granted) return error(`${ACCESS_SCOPE_MISSING_MESSAGE}. ${scope.requested ? `The Cloudflare connection was not granted ${scope.missing.join(', ')}; an Owner must reconnect Cloudflare.` : 'This installation turned Cloudflare Access off (CLOUDFLARE_ACCESS_SCOPES is empty).'} Gitflare cannot check the Access application.`);
   if (connection.accountId !== record.accountId) return error(`Access protection is on Cloudflare account ${record.accountId}, but the repository's Cloudflare connection is on ${connection.accountId}. Reconnect Cloudflare to ${record.accountId}.`);
   let app: AccessApp | null;
-  try { app = await connection.call<AccessApp | null>(`/accounts/${record.accountId}/access/apps/${record.appId}`, { allowNotFound: true }); }
+  let zonePolicies: AccessPolicy[] | null = null;
+  try {
+    app = await connection.call<AccessApp | null>(`${accessBase(record)}/apps/${record.appId}`, { allowNotFound: true });
+    if (app && record.zoneId) zonePolicies = await connection.call<AccessPolicy[] | null>(`${accessBase(record)}/apps/${record.appId}/policies`, { allowNotFound: true });
+  }
   catch (failure) { return error(failure instanceof ApiError ? failure.detail : 'Cloudflare Access could not be read.'); }
   if (!app) return error(`Access application ${record.appName} (${record.appId}) no longer exists in Cloudflare. Turn protection on again to recreate it, or remove it.`);
   const destinations = appDestinations(app);
   const unprotected = record.hostnames.filter((host) => !destinations.includes(host));
   if (unprotected.length) return error(`Access application ${record.appId} was changed outside Gitflare and no longer covers ${unprotected.join(', ')}. Update protection to restore it.`);
-  if (!(app.policies ?? []).some((policy) => policy?.id === record.policyId)) return error(`Access application ${record.appId} no longer uses Gitflare's allow policy ${record.policyId}. Update protection to restore it.`);
-  const uncovered = [...new Set(target.liveUrls.map(urlHostname).filter((host): host is string => !!host && !record.hostnames.includes(host)))];
+  if (!((record.zoneId ? zonePolicies : app.policies) ?? []).some((policy) => policy?.id === record.policyId)) return error(`Access application ${record.appId} no longer uses Gitflare's allow policy ${record.policyId}. Update protection to restore it.`);
+  const uncovered = [...new Set(target.liveUrls.map(urlHostname).filter((host): host is string => !!host && !record.hostnames.includes(host) && !(record.zoneId && isWorkersDev(host))))];
   if (uncovered.length) return error(`${target.environment} now also serves ${uncovered.join(', ')}, which Access does not cover. Update protection to add ${uncovered.length === 1 ? 'it' : 'them'}.`);
   return { status: 'protected', ...view };
 }
@@ -244,9 +314,15 @@ export async function manageDeployAccess(input: { principal: Principal; reposito
   const hostnames = deployAccessHostnames({ workers, subdomain, liveUrls: target.liveUrls, routes: detected?.routes ?? [], customDomains: detected?.customDomains ?? [] });
   if (!hostnames.length) throw new ApiError(409, 'DEPLOY_ACCESS_NO_HOSTNAMES', `${environment} has no hostnames yet: no live deployment URL, Wrangler route or custom domain, and no workers.dev subdomain. Deploy it or add a route first.`);
   const name = deployAccessAppName(input.repositoryName, environment);
-  const ensured = await ensureDeployAccess(connection.call, connection.accountId, { name, hostnames, includes: includes!, ...(existing ? { previous: existing } : {}) });
+  const zoned = accessMode(deps.scopes) === 'zone';
+  const zone = zoned ? await accessZone(connection.call, connection.accountId, hostnames) : null;
+  if (zoned && !zone) throw new ApiError(409, 'DEPLOY_ACCESS_ZONE_REQUIRED', `${environment} is served only on workers.dev, which is not on a zone. Gitflare's Cloudflare Access permission is zone-level, so add a route or custom domain on one of your zones first.`);
+  const protectedHosts = zone ? hostnames.filter((host) => !isWorkersDev(host)) : hostnames;
+  const skipped = hostnames.filter((host) => !protectedHosts.includes(host));
+  if (skipped.length) notes.push(`${skipped.join(', ')} ${skipped.length === 1 ? 'is' : 'are'} on workers.dev, not on zone ${zone!.name}, so zone-level Access does not cover ${skipped.length === 1 ? 'it' : 'them'}. Turn off workers_dev for ${environment} or protect ${skipped.length === 1 ? 'it' : 'them'} in Zero Trust.`);
+  const ensured = await ensureDeployAccess(connection.call, connection.accountId, { name, hostnames: protectedHosts, includes: includes!, ...(existing ? { previous: existing } : {}), ...(zone ? { zoneId: zone.id } : {}) });
   if (!ensured.created) notes.push(`Gitflare adopted the existing Access application ${name} (${ensured.appId}); removing protection will leave it in Cloudflare.`);
-  const record: DeployAccessRecord = { environment, accountId: connection.accountId, appId: ensured.appId, appName: name, policyId: ensured.policyId, created: ensured.created, policyCreated: ensured.policyCreated, hostnames, includes: includes!, updatedAt: new Date().toISOString(), updatedBy: principal.userId };
+  const record: DeployAccessRecord = { environment, accountId: connection.accountId, appId: ensured.appId, appName: name, policyId: ensured.policyId, created: ensured.created, policyCreated: ensured.policyCreated, ...(zone ? { zoneId: zone.id, zoneName: zone.name } : {}), hostnames: protectedHosts, includes: includes!, updatedAt: new Date().toISOString(), updatedBy: principal.userId };
   await input.audit?.(`repository.deploy-access.${environment}.${existing ? 'updated' : 'enabled'}`);
   return deps.store.save(input.key, fingerprint, environment, record, { environment, access: { status: 'protected', ...baseView(record, principal) }, notes });
 }

@@ -1,4 +1,5 @@
 import type { ArtifactRepo } from './artifacts';
+import { hasScope } from '../shared/cloudflare-permissions';
 import type { CloudflareCall } from './cloudflare-deploy';
 import { parseJsonc, parseToml } from './config-text';
 import { ApiError } from './domain';
@@ -449,14 +450,14 @@ export async function withAccountFacts(setup: DetectedSetup, call: CloudflareCal
         resources: await Promise.all(target.resources.map(async (resource) => {
           const found = await lookup(resource);
           const scope = CREATE_SCOPES[resource.type];
-          return { ...resource, status: found, ...(found === 'create' && connection.scopes && !connection.scopes.includes(scope) ? { needsScope: scope } : {}) };
+          return { ...resource, status: found, ...(found === 'create' && connection.scopes && !hasScope(connection.scopes, scope) ? { needsScope: scope } : {}) };
         })),
         urls: [...(target.workersDev && subdomain ? [workersDevUrl(target.workerName, subdomain)] : []), ...target.customDomains.map((domain) => `https://${domain}`)],
       }))),
     };
   }
   const requiredScopes = [...new Set(Object.values(setup.environments).flatMap((value) => value?.targets.flatMap((target) => target.requiredScopes) ?? []))];
-  const missingScopes = connection.scopes ? requiredScopes.filter((scope) => !connection.scopes!.includes(scope)) : undefined;
+  const missingScopes = connection.scopes ? requiredScopes.filter((scope) => !hasScope(connection.scopes!, scope)) : undefined;
   const resourceBlockers = Object.entries(environments).flatMap(([environment, value]) => value!.targets.flatMap((target) => target.resources.filter((resource) => resource.needsScope).map((resource) => `${environment}: ${target.workerName} would create ${RESOURCE_KINDS[resource.type]} ${resource.name}, which needs ${resource.needsScope} (not granted to this connection).`)));
   return { ...setup, environments, account: { connected: true, accountId, ...(connection.accountName ? { accountName: connection.accountName } : {}), source, subdomain, ...(connection.scopes ? { scopes: connection.scopes } : {}), requiredScopes, ...(missingScopes ? { missingScopes } : {}), ...(resourceBlockers.length ? { resourceBlockers } : {}), notes } };
 }

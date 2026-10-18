@@ -1,4 +1,5 @@
 import type { Repository } from '../shared/types';
+import { hasScope } from '../shared/cloudflare-permissions';
 import { ApiError, assertMutationOrigin, readJson, requireIdempotencyKey, requireString } from './domain';
 import type { Principal } from './security';
 import type { SqlStore } from './store';
@@ -121,7 +122,7 @@ export function deployBlocker(environment: DeployEnvironment, value: DeployEnvir
   if (!connection) return { reason: 'The Cloudflare connection could not be read. Check it in the Cloudflare tab.' };
   if (!connection.connected) return { reason: connection.reason };
   if (connection.accountId !== value.accountId) return { reason: `${environment} deploys to Cloudflare account ${value.accountId}, but the ${connection.source} connection is on ${accountLabel(connection)}. Connect the account the Workers live in, or detect and apply the setup again on this account.` };
-  const missingScopes = environmentScopes(value).filter((scope) => !connection.scopes.includes(scope));
+  const missingScopes = environmentScopes(value).filter((scope) => !hasScope(connection.scopes, scope));
   if (missingScopes.length) return { reason: `The ${connection.source} Cloudflare connection to ${accountLabel(connection)} was not granted ${missingScopes.join(', ')}, which deploying ${environment} needs. An Owner must reconnect Cloudflare and grant ${missingScopes.length === 1 ? 'that scope' : 'those scopes'}.`, missingScopes };
   return null;
 }
@@ -510,7 +511,7 @@ export async function runDeployment(params: DeployParams, step: DeployStepRunner
           const dependsOnLater = serviceDependencies(deploy).filter((name) => later.includes(name));
           if (dependsOnLater.length) throw new WorkerBuildFailure('DEPLOY_ORDER_INVALID', `${target.workerName} has a service binding to ${dependsOnLater.join(', ')}, which deploys later. Move ${dependsOnLater.join(', ')} earlier in the target list.`);
           if (deployer.scopes) {
-            const missing = requiredDeployScopes(deploy, { d1Migrations: target.d1Migrations && !uploadOnly, uploadOnly }).filter((scope) => !deployer.scopes!.includes(scope));
+            const missing = requiredDeployScopes(deploy, { d1Migrations: target.d1Migrations && !uploadOnly, uploadOnly }).filter((scope) => !hasScope(deployer.scopes!, scope));
             if (missing.length) throw new ApiError(403, 'CLOUDFLARE_SCOPE_MISSING', `The Cloudflare connection was not granted ${missing.join(', ')}, which deploying ${target.workerName} needs. An Owner must reconnect Cloudflare after the installation requests ${missing.length === 1 ? 'that scope' : 'those scopes'}.`);
           }
           const call = requireCall(deployer);

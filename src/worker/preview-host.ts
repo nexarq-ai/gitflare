@@ -1,4 +1,5 @@
 import type { CloudflareDeployAccess } from './cloudflare-deploy';
+import { hasScope } from '../shared/cloudflare-permissions';
 import type { PreviewHost } from './coordinator';
 import { settingsTargets, type DeploySettings } from './deployments';
 import { accessScopeState, type AccessScopeEnv } from './preview-access';
@@ -40,7 +41,7 @@ export async function resolvePreviewHost(env: AccessScopeEnv, settings: Pick<Pre
   if (target) {
     const access = await deps.connection(target).catch(() => null);
     if (!access) notes.push(`No Cloudflare connection for this repository or workspace can reach Worker ${target.workerName}.`);
-    else if (!access.scopes.includes(WORKERS_SCRIPTS_EDIT_SCOPE)) notes.push(`The ${access.source} Cloudflare connection was not granted ${WORKERS_SCRIPTS_EDIT_SCOPE}, so it cannot create Previews of ${target.workerName}.`);
+    else if (!hasScope(access.scopes, WORKERS_SCRIPTS_EDIT_SCOPE)) notes.push(`The ${access.source} Cloudflare connection was not granted ${WORKERS_SCRIPTS_EDIT_SCOPE}, so it cannot create Previews of ${target.workerName}.`);
     else if (protectedPreview && !accessScopeState(env, access.scopes).granted) notes.push('Cloudflare Access is selected, but the connection cannot manage Access applications.');
     else {
       const config: WorkerPreviewsConfig = { accountId: access.accountId, workerName: target.workerName, token: access.accessToken, connection: access.source };

@@ -31,7 +31,7 @@ const safePath = /^\/[A-Za-z0-9_.:@=-]+(?:\/[A-Za-z0-9_.:@=-]+)*$/;
 export function cloudflareDeployClient(access: CloudflareDeployAccess, fetcher: (request: Request) => Promise<Response> = (request) => fetch(request)): CloudflareDeployClient {
   const accountPrefix = `/accounts/${access.accountId}/`;
   const call: CloudflareCall = async <T,>(path: string, init: CloudflareCallInit = {}): Promise<T> => {
-    if (!safePath.test(path) || path.includes('..') || !(path.startsWith(accountPrefix) || path === '/zones')) throw new ApiError(400, 'INVALID_CLOUDFLARE_PATH', 'Use a resource path inside the selected Cloudflare account.');
+    if (!safePath.test(path) || path.includes('..') || !(path.startsWith(accountPrefix) || path === '/zones' || /^\/zones\/[a-f0-9]{32}\/access\//.test(path))) throw new ApiError(400, 'INVALID_CLOUDFLARE_PATH', 'Use a resource path inside the selected Cloudflare account.');
     const url = new URL(`${CLOUDFLARE_API_ORIGIN}${path}`);
     for (const [name, value] of Object.entries(init.query ?? {})) for (const item of Array.isArray(value) ? value : [value]) url.searchParams.append(name, item);
     const headers = new Headers({ Authorization: `Bearer ${init.bearer ?? access.accessToken}`, ...init.headers });

@@ -1,6 +1,8 @@
 import { ApiError } from './domain';
 import type { CloudflareCall } from './cloudflare-deploy';
+import { featureScopes } from '../shared/cloudflare-permissions';
 
+export const PREVIEW_ACCESS_ZONE_ONLY = 'Worker Preview URLs are on workers.dev, which is not a zone, and this installation’s Cloudflare Access permission (zone-access) is zone-level, so it cannot protect them.';
 export const ACCESS_SCOPE_MISSING_MESSAGE = 'Needs the Access: Apps and Policies Write permission on the OAuth client';
 const MAX_EMAILS = 200;
 const subdomainPattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -14,7 +16,14 @@ interface AccessPolicy { id?: string; name?: string }
 interface AccessApp { id?: string; name?: string; domain?: string; policies?: AccessPolicy[] }
 
 export function accessScopes(env: AccessScopeEnv): string[] {
-  return [...new Set((env.CLOUDFLARE_ACCESS_SCOPES ?? '').split(/\s+/).filter((scope) => scope && scope !== 'openid'))];
+  return featureScopes(env, 'access');
+}
+
+export type AccessMode = 'zone' | 'account';
+
+export function accessMode(env: AccessScopeEnv): AccessMode {
+  const scopes = accessScopes(env);
+  return scopes.length && scopes.every((scope) => scope.startsWith('zone-')) ? 'zone' : 'account';
 }
 
 export function accessScopeState(env: AccessScopeEnv, granted: string[] | null): AccessScopeState {
@@ -27,7 +36,7 @@ export function assertAccessScope(env: AccessScopeEnv, granted: string[] | null,
   const state = accessScopeState(env, granted);
   if (state.granted) return;
   const detail = !state.requested
-    ? 'This installation does not request a Cloudflare Access scope (CLOUDFLARE_ACCESS_SCOPES is not set).'
+    ? 'This installation turned Cloudflare Access off (CLOUDFLARE_ACCESS_SCOPES is empty).'
     : !granted ? 'Connect Cloudflare for this repository or workspace first.' : `The Cloudflare connection was not granted ${state.missing.join(', ')}; an Owner must reconnect Cloudflare.`;
   throw new ApiError(409, 'CLOUDFLARE_ACCESS_SCOPE_MISSING', `${ACCESS_SCOPE_MISSING_MESSAGE}. ${detail} ${unchanged} stays unchanged.`);
 }

@@ -1,4 +1,5 @@
 import { ApiError, assertMutationOrigin, readJson, requireString } from './domain';
+import { hasScope } from '../shared/cloudflare-permissions';
 import type { AppEnv } from './env';
 import { decryptAuth, encryptAuth } from './mfa';
 import { cloudflareDeployAccess } from './cloudflare';
@@ -179,7 +180,7 @@ async function inspectConnection(env: AppEnv, record: InstallationConnectionReco
   try { access = await workspaceAccess(env, principal); }
   catch (error) { return { problem: loadProblem(error, record) }; }
   if (access.accountId !== record.accountId) return { problem: { code: 'CLOUDFLARE_ACCOUNT_CHANGED', message: `The installation workspace’s Cloudflare connection now selects account ${access.accountId}, not ${record.accountId}. Select ${record.accountId} again or choose the connection again.` }, scopes: access.scopes };
-  const missing = INSTALLATION_CONNECTION_SCOPES.filter((scope) => !access.scopes.includes(scope));
+  const missing = INSTALLATION_CONNECTION_SCOPES.filter((scope) => !hasScope(access.scopes, scope));
   if (missing.length) return { problem: { code: 'CLOUDFLARE_SCOPE_MISSING', message: `The installation workspace’s Cloudflare connection was not granted ${missing.join(' and ')}. An Owner must reconnect Cloudflare and grant it.` }, scopes: access.scopes };
   const config: WorkerPreviewsConfig = { accountId: access.accountId, workerName: record.workerName, token: access.accessToken, connection: 'installation' };
   if (options.probe) {
@@ -227,8 +228,8 @@ export async function installationCredentialStatus(env: AppEnv, p: Principal, fe
     return {
       manageable, edition, oauthAvailable, source: 'connection', state, ...(inspected.problem ? { problem: inspected.problem } : {}),
       accountId: reference.accountId, workerName: reference.workerName, verifiedAt: reference.verifiedAt,
-      permissions: INSTALLATION_CONNECTION_SCOPES.filter((scope) => scopes.includes(scope)),
-      missing: labelled(inspected.scopes ? INSTALLATION_CONNECTION_SCOPES.filter((scope) => !scopes.includes(scope)) : [], SCOPE_LABELS),
+      permissions: INSTALLATION_CONNECTION_SCOPES.filter((scope) => hasScope(scopes, scope)),
+      missing: labelled(inspected.scopes ? INSTALLATION_CONNECTION_SCOPES.filter((scope) => !hasScope(scopes, scope)) : [], SCOPE_LABELS),
       connection: { workspaceId: reference.workspaceId, accountId: reference.accountId, ...(reference.accountName ? { accountName: reference.accountName } : {}), workerName: reference.workerName, scopes, setBy: reference.setBy },
       tokenSource, tokenPageUrl: previewsTokenPageUrl(reference.workerName, reference.accountId),
     };
@@ -269,7 +270,7 @@ export async function useInstallationConnection(env: AppEnv, p: Principal, body:
   const access = await workspaceAccess(env, p);
   const wanted = requested ?? fixedAccount;
   if (wanted && access.accountId !== wanted) throw new ApiError(409, 'CLOUDFLARE_ACCOUNT_MISMATCH', `This workspace’s Cloudflare connection uses account ${access.accountId}. Select account ${wanted} on the connection first.`);
-  const missing = INSTALLATION_CONNECTION_SCOPES.filter((scope) => !access.scopes.includes(scope));
+  const missing = INSTALLATION_CONNECTION_SCOPES.filter((scope) => !hasScope(access.scopes, scope));
   if (missing.length) throw new ApiError(422, 'CLOUDFLARE_SCOPE_MISSING', `This workspace’s Cloudflare connection was not granted ${missing.join(' and ')}. Reconnect Cloudflare and grant it; if Cloudflare does not offer it, the installation must request it through CLOUDFLARE_DEPLOY_SCOPES.`);
   const createdWorker = await ensurePreviewsWorker(access.accessToken, access.accountId, workerName, fetcher, {
     list: (outcome) => new ApiError(422, 'CLOUDFLARE_CONNECTION_REFUSED', `Cloudflare refused the connection’s request for the previews Worker ${workerName}: ${describeRefusal(outcome)}. The connection already has workers-scripts.edit, so reconnecting does not help; use an API token for previews instead.`),
