@@ -23,7 +23,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import type { AgentRetryOverride, Mission, ModelConnection, ModelConnectionsSnapshot, Workspace } from "../shared/types";
-import { request } from "./api";
+import { request, RequestError } from "./api";
 import { EmptyState, ErrorNotice, relativeTime, Status } from "./components";
 import AgentAssignment from "./AgentAssignment";
 import AgentRetry, { AgentLimitsDetails } from "./AgentRetry";
@@ -42,11 +42,12 @@ import { RouteProgress } from "./WorkspaceLoader";
 import { ContextFiles, MarkdownContent } from "./MissionDocuments";
 import { useMissionReplay } from "./DemoReplay";
 import { resumePreview, type PreviewProgress, type PreviewStatusLike } from "../shared/preview-progress";
+import { isPreviewSetupCode, type PreviewSetupCode } from "../shared/preview-setup";
 import { PreviewFailedCard, PreviewReadyCard, PreviewStartingCard, type PreviewAccess, type PreviewHost, type PreviewState } from "./PreviewPanel";
 import CommitMessageField, { type CommitDraft } from "./CommitMessageField";
 import { commitMessageProblem, normalizeCommitMessage, suggestedCommitMessage } from "../shared/commit-message";
 
-type PreviewResult = { status?: "starting" | "ready"; message?: string; kind?: "worker" | "container"; previewUrl?: string; deploymentUrl?: string | null; notes?: string[]; candidateSha: string; expiresAt?: string; linkExpiresAt?: string; host?: PreviewHost; access?: PreviewAccess; extended?: boolean };
+type PreviewResult = { status?: "starting" | "ready"; message?: string; kind?: "worker" | "container"; previewUrl?: string; deploymentUrl?: string | null; notes?: string[]; candidateSha: string; expiresAt?: string; linkExpiresAt?: string; host?: PreviewHost; access?: PreviewAccess; extended?: boolean; setup?: string };
 
 type Props = {
   id: string;
@@ -59,6 +60,7 @@ type Props = {
   onBack: () => void;
   onUpdate: () => void;
   demo?: boolean;
+  installationAdmin?: boolean;
 };
 
 export default function MissionDetail({
@@ -72,6 +74,7 @@ export default function MissionDetail({
   onBack,
   onUpdate,
   demo = false,
+  installationAdmin = false,
 }: Props) {
   const [loadedMission, setMission] = useState<Mission>();
   const isActive = !!loadedMission && ["queued", "running", "checking", "integrating"].includes(loadedMission.status);
@@ -99,6 +102,7 @@ export default function MissionDetail({
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewProgress, setPreviewProgress] = useState<PreviewProgress | null>(null);
   const [previewFailure, setPreviewFailure] = useState("");
+  const [previewSetup, setPreviewSetup] = useState<PreviewSetupCode>();
   const previewStarting = previewProgress !== null;
   const previewRef = useRef<PreviewState | null>(null);
   previewRef.current = preview;
@@ -373,6 +377,7 @@ export default function MissionDetail({
     if (resumed.kind === "failed") {
       setPreview(null);
       setPreviewFailure(resumed.error);
+      setPreviewSetup(resumed.setup);
       return;
     }
     if (resumed.kind === "none") {
@@ -459,7 +464,7 @@ export default function MissionDetail({
       ...(result.linkExpiresAt ? { linkExpiresAt: result.linkExpiresAt } : {}),
       extended: !!result.extended,
       access: result.access ?? (result.kind === "worker" ? "link" : "members"),
-      ...(result.kind === "worker" ? { worker: { deploymentUrl: result.deploymentUrl ?? null, notes: result.notes ?? [], ...(result.host ? { host: result.host } : {}) } } : result.notes?.length ? { notes: result.notes } : {}),
+      ...(result.kind === "worker" ? { worker: { deploymentUrl: result.deploymentUrl ?? null, notes: result.notes ?? [], ...(result.host ? { host: result.host } : {}) } } : { ...(result.notes?.length ? { notes: result.notes } : {}), ...(isPreviewSetupCode(result.setup) ? { setup: result.setup } : {}) }),
     });
   }
 
@@ -501,6 +506,7 @@ export default function MissionDetail({
     setBusy("preview");
     setError("");
     setPreviewFailure("");
+    setPreviewSetup(undefined);
     const signature = JSON.stringify({
       id,
       action: "preview",
@@ -518,7 +524,10 @@ export default function MissionDetail({
       if (result.previewUrl) acceptPreview(mission.candidateSha, result);
       else await applyPreviewStatus(mission.candidateSha, result);
     } catch (failure) {
-      setError(
+      if (failure instanceof RequestError && isPreviewSetupCode(failure.code)) {
+        setPreviewFailure(failure.message);
+        setPreviewSetup(failure.code);
+      } else setError(
         failure instanceof Error
           ? failure.message
           : "The preview could not be prepared.",
@@ -613,6 +622,7 @@ export default function MissionDetail({
     !!mission.candidateSha &&
     mission.checks.length > 0 &&
     mission.checks.every((check) => check.status === "passed");
+  const previewViewer = { installationAdmin, owner: permissions.includes("manage") };
   const currentPreview =
     preview &&
     preview.candidateSha === mission.candidateSha &&
@@ -796,7 +806,7 @@ export default function MissionDetail({
             </Button>
           )}
           {readyForReview && dependencyGate && (
-            <DependencyApprovalControl isOwner={isOwner} checked={dependenciesAcknowledged} onChange={(checked) => setDependencyAck({ candidateSha: mission.candidateSha ?? "", checked })} />
+            <DependencyApprovalControl isOwner={isOwner} manifests={mission.dependencyChanges ?? []} checked={dependenciesAcknowledged} onChange={(checked) => setDependencyAck({ candidateSha: mission.candidateSha ?? "", checked })} />
           )}
           {readyForReview && (
             <Button
@@ -805,7 +815,7 @@ export default function MissionDetail({
               icon={ShieldCheckIcon}
               loading={busy === "approve"}
               disabled={!!busy || !permissions.includes("review") || (dependencyGate && !dependenciesAcknowledged)}
-              title={!permissions.includes("review") ? "You need the Reviewer role or higher to approve." : dependencyGate && !dependenciesAcknowledged ? "Tick “I approve these dependency changes” first." : undefined}
+              title={!permissions.includes("review") ? "You need the Reviewer role or higher to approve." : dependencyGate && !dependenciesAcknowledged ? "Allow the new packages first." : undefined}
               onClick={() => openConfirm("approve")}
             >
               Approve candidate
@@ -815,9 +825,9 @@ export default function MissionDetail({
       </div>
       {replay.bar}
       {mission.branchChange && <PullRequestPanel mission={mission} permissions={permissions} onChange={(result) => { revision.current++; setMission(result); onUpdate(); }} />}
-      {currentPreview && <PreviewReadyCard preview={currentPreview} busy={busy} canExtend={permissions.includes("land")} canStop={permissions.includes("contribute")} onExtend={() => void extendPreview()} onStop={() => void stopPreview()} />}
+      {currentPreview && <PreviewReadyCard preview={currentPreview} viewer={previewViewer} busy={busy} canExtend={permissions.includes("land")} canStop={permissions.includes("contribute")} onExtend={() => void extendPreview()} onStop={() => void stopPreview()} />}
       {previewProgress && <PreviewStartingCard progress={previewProgress} />}
-      {previewFailure && !previewStarting && <PreviewFailedCard message={previewFailure} canRetry={canPreview && !replay.active} busy={busy} onRetry={() => void preparePreview()} />}
+      {previewFailure && !previewStarting && <PreviewFailedCard message={previewFailure} setup={previewSetup} viewer={previewViewer} canRetry={canPreview && !replay.active} busy={busy} onRetry={() => void preparePreview()} />}
       {error && <ErrorNotice message={error} />}
       {loadError && <ErrorNotice message={loadError} />}
       {mission.error && mission.error !== error && (

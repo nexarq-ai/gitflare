@@ -2930,6 +2930,7 @@ a svg {
 .dependency-manifest th,.dependency-manifest td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border,var(--gf-color-border));overflow-wrap:anywhere}
 .dependency-ack{display:inline-flex;align-items:center;gap:6px;font-size:13px}
 .dependency-ack.muted{color:var(--muted,var(--gf-color-text-secondary))}
+.dependency-ack label{display:inline-flex;align-items:center;gap:6px;min-width:0;overflow-wrap:anywhere}
 @media (max-width:768px){
   main,section,.panel,.page-heading,.proposal-create-layout,.summary-grid,.detail-summary,.agent-grid{min-width:0;max-width:100%}
   .proposal-create-layout,.detail-summary,.summary-grid{grid-template-columns:minmax(0,1fr)!important}

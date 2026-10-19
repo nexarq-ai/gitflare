@@ -35,7 +35,7 @@ export const mcpToolNames = [
   'gitflare_inspect_mission', 'gitflare_draft_mission', 'gitflare_create_mission', 'gitflare_start_mission', 'gitflare_cancel_mission',
   'gitflare_review_mission', 'gitflare_revert_mission', 'gitflare_select_candidate', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval',
   'gitflare_preview_mission', 'gitflare_preview_status', 'gitflare_mission_history', 'gitflare_workspace_status',
-  'gitflare_list_docs', 'gitflare_read_doc', 'gitflare_public_source', 'gitflare_ai_settings', 'gitflare_set_ai_features', 'gitflare_access_status', 'gitflare_list_workspaces', 'gitflare_manage_access', 'gitflare_cloudflare_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_manage_cloudflare_project', 'gitflare_deployments', 'gitflare_detect_deploy_setup', 'gitflare_deploy', 'gitflare_secrets', 'gitflare_manage_secret',
+  'gitflare_list_docs', 'gitflare_read_doc', 'gitflare_public_source', 'gitflare_ai_settings', 'gitflare_set_ai_features', 'gitflare_access_status', 'gitflare_list_workspaces', 'gitflare_manage_access', 'gitflare_manage_sessions', 'gitflare_cloudflare_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_cloudflare_project', 'gitflare_manage_cloudflare_project', 'gitflare_deployments', 'gitflare_detect_deploy_setup', 'gitflare_deploy', 'gitflare_secrets', 'gitflare_manage_secret',
   'gitflare_list_issues', 'gitflare_read_issue', 'gitflare_create_issue', 'gitflare_comment_issue', 'gitflare_update_issue',
   'gitflare_list_branches', 'gitflare_create_branch', 'gitflare_delete_branch', 'gitflare_create_pull_request', 'gitflare_update_pull_request', 'gitflare_branch_protection', 'gitflare_set_branch_protection',
   'gitflare_check_settings', 'gitflare_set_check_settings', 'gitflare_retry_checks', 'gitflare_agent_settings', 'gitflare_set_agent_settings', 'gitflare_preview_settings', 'gitflare_set_preview_settings',
@@ -80,7 +80,7 @@ function agentOverridesBody(input: AgentLimitInput): Record<string, unknown> {
   return { ...overrides, ...(editScope ? { editScope } : {}) };
 }
 const LAND_TOOLS = new Set(['gitflare_set_check_settings', 'gitflare_set_agent_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
-const ADMIN_TOOLS = new Set(['gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access']);
+const ADMIN_TOOLS = new Set(['gitflare_manage_sessions', 'gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access']);
 
 export function requiredAccess(name: string, annotations: { readOnlyHint?: boolean } | undefined, input: Record<string, unknown>): AccessLevel {
   if (annotations?.readOnlyHint) return 'read';
@@ -361,6 +361,19 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     const browser = ACCESS_BROWSER[action];
     if (browser) return { browserStartUrl: `${origin}${browser.path}`, browserEntryRequired: true, reason: browser.reason };
     return call<Record<string, unknown>>(action === 'email-verification-resend' ? '/api/auth/resend-verification' : action === 'workspace-create' ? '/api/workspaces/create' : `/api/access/${action}`, parameters);
+  }));
+  server.registerTool('gitflare_manage_sessions', {
+    title: 'Sign out sessions',
+    description: 'Account → Sessions actions. sign-out-others signs out every browser session of your account except the one this connection uses; AI clients and personal tokens stay. sign-out ends one session by ID (session IDs from gitflare_access_status) and the client grants derived from it. Needs admin access.',
+    inputSchema: z.object({ action: z.enum(['sign-out-others', 'sign-out']), session_id: accessId.optional().describe('For sign-out: the session to end.') }).strict(),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  }, (input) => guarded(async () => {
+    if (input.action === 'sign-out-others') {
+      if (input.session_id !== undefined) throw new ApiError(400, 'INVALID_INPUT', 'session_id applies only to sign-out.');
+      return call<Record<string, unknown>>('/api/account/sessions/revoke-others', {});
+    }
+    if (!input.session_id) throw new ApiError(400, 'INVALID_INPUT', 'Pass session_id for sign-out.');
+    return call<Record<string, unknown>>('/api/access/session-revoke', { id: input.session_id });
   }));
   server.registerTool('gitflare_list_docs', {
     title: 'List Gitflare documentation', description: 'List Gitflare documentation pages; set public to list only the public guides. Planning pages describe intent, not shipped features. Read-only.',

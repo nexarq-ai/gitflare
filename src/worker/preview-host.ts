@@ -7,12 +7,13 @@ import type { PreviewSettings } from './preview-settings';
 import { parseWranglerConfig } from './deploy-detect';
 import { createPreviewWorker, probePreviewWorker, WorkerPreviewError, type Fetcher, type WorkerPreviewsConfig } from './worker-previews';
 import { WORKER_CONFIG_FILES } from './worker-bundle';
+import type { PreviewSetupCode } from '../shared/preview-setup';
 
 export const WORKERS_SCRIPTS_EDIT_SCOPE = 'workers-scripts.edit';
 
 export interface PreviewTarget { workerName: string; configPath?: string; accountId?: string }
 export interface ProjectWorkers { accountId: string; workers: string[] }
-export interface PreviewHostPlan { host: PreviewHost | null; config: WorkerPreviewsConfig | null; configPath?: string; notes: string[]; containerReason?: string }
+export interface PreviewHostPlan { host: PreviewHost | null; config: WorkerPreviewsConfig | null; configPath?: string; notes: string[]; containerReason?: string; setup?: PreviewSetupCode }
 export interface PreviewHostDeps {
   connection(target: PreviewTarget): Promise<CloudflareDeployAccess | null>;
   installation(): Promise<WorkerPreviewsConfig | null>;
@@ -50,6 +51,14 @@ export async function candidateWorkerTarget(read: (path: string) => Promise<stri
   return null;
 }
 
+export function workerPreviewSetup(error: unknown, config: WorkerPreviewsConfig): PreviewSetupCode | undefined {
+  if (!(error instanceof WorkerPreviewError) || (error.code !== 'PREVIEWS_FORBIDDEN' && error.code !== 'PREVIEWS_WORKER_MISSING')) return undefined;
+  if (!config.connection || config.connection === 'installation') return 'PREVIEWS_INSTALLATION_UNAVAILABLE';
+  return error.code === 'PREVIEWS_FORBIDDEN' ? 'PREVIEWS_CONNECTION_REFUSED' : undefined;
+}
+
+export function usedContainerFallback(notes: string[]): boolean { return notes.some((note) => note.endsWith(`; ${PREVIEWS_PERMISSION_HINT}.`)); }
+
 export const PREVIEWS_PERMISSION_HINT = 'grant the Previews permission in Settings → Cloudflare to use Worker Previews';
 
 export function containerFallbackNote(reason: string, hint = true): string {
@@ -58,12 +67,13 @@ export function containerFallbackNote(reason: string, hint = true): string {
 
 export async function resolvePreviewHost(env: AccessScopeEnv, settings: Pick<PreviewSettings, 'access'>, target: PreviewTarget | null, deps: PreviewHostDeps): Promise<PreviewHostPlan> {
   const notes: string[] = [];
+  let setup: PreviewSetupCode | undefined;
   const protectedPreview = settings.access === 'cloudflare-access';
   if (target) {
     const access = await deps.connection(target).catch(() => null);
-    if (!access) notes.push(`No Cloudflare connection for this repository or workspace can reach Worker ${target.workerName}.`);
-    else if (!hasScope(access.scopes, WORKERS_SCRIPTS_EDIT_SCOPE)) notes.push(`The ${access.source} Cloudflare connection was not granted ${WORKERS_SCRIPTS_EDIT_SCOPE}, so it cannot create Previews of ${target.workerName}.`);
-    else if (protectedPreview && !accessScopeState(env, access.scopes).granted) notes.push('Cloudflare Access is selected, but the connection cannot manage Access applications.');
+    if (!access) { setup = 'PREVIEWS_NOT_CONNECTED'; notes.push(`No Cloudflare connection for this repository or workspace can reach Worker ${target.workerName}.`); }
+    else if (!hasScope(access.scopes, WORKERS_SCRIPTS_EDIT_SCOPE)) { setup = 'PREVIEWS_PERMISSION_MISSING'; notes.push(`The ${access.source} Cloudflare connection was not granted ${WORKERS_SCRIPTS_EDIT_SCOPE}, so it cannot create Previews of ${target.workerName}.`); }
+    else if (protectedPreview && !accessScopeState(env, access.scopes).granted) { setup = 'PREVIEWS_ACCESS_PERMISSION_MISSING'; notes.push('Cloudflare Access is selected, but the connection cannot manage Access applications.'); }
     else {
       const config: WorkerPreviewsConfig = { accountId: access.accountId, workerName: target.workerName, token: access.accessToken, connection: access.source };
       const hosted = (): PreviewHostPlan => ({ host: { kind: 'connection', source: access.source, accountId: access.accountId, workerName: target.workerName, access: settings.access }, config, ...(target.configPath ? { configPath: target.configPath } : {}), notes });
@@ -78,14 +88,14 @@ export async function resolvePreviewHost(env: AccessScopeEnv, settings: Pick<Pre
           if (!(error instanceof WorkerPreviewError)) throw error;
           notes.push(`Worker ${target.workerName} does not exist on account ${access.accountId} and the ${access.source} Cloudflare connection could not create it (${error.status ? `HTTP ${error.status}` : error.code}).`);
         }
-      } else notes.push(`The ${access.source} Cloudflare connection was refused for Worker ${target.workerName}.`);
+      } else { setup = 'PREVIEWS_CONNECTION_REFUSED'; notes.push(`The ${access.source} Cloudflare connection was refused for Worker ${target.workerName}.`); }
     }
   }
   if (protectedPreview) {
     notes.push('Cloudflare Access is required for this repository, so the preview runs in the members-only preview container instead.');
-    return { host: null, config: null, notes, containerReason: notes.join(' ') };
+    return { host: null, config: null, notes, containerReason: notes.join(' '), ...(setup ? { setup } : {}) };
   }
   const installation = await deps.installation();
-  if (!installation) return { host: null, config: null, notes, containerReason: notes.length ? notes.join(' ') : target ? 'no Cloudflare connection with Worker Previews is available for this repository' : 'no Worker was found to preview' };
+  if (!installation) return { host: null, config: null, notes, containerReason: notes.length ? notes.join(' ') : target ? 'no Cloudflare connection with Worker Previews is available for this repository' : 'no Worker was found to preview', ...(setup ? { setup } : {}) };
   return { host: { kind: 'installation', accountId: installation.accountId, workerName: installation.workerName, access: 'link' }, config: installation, notes };
 }
