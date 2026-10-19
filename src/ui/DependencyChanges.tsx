@@ -1,5 +1,6 @@
 import { PackageIcon } from "@phosphor-icons/react";
-import type { Mission } from "../shared/types";
+import type { ManifestDependencyChanges, Mission } from "../shared/types";
+import InfoTip from "./InfoTip";
 
 export function DependencyChangesPanel({ mission }: { mission: Mission }) {
   const manifests = mission.dependencyChanges ?? [];
@@ -43,12 +44,27 @@ export function DependencyChangesPanel({ mission }: { mission: Mission }) {
   );
 }
 
-export function DependencyApprovalControl({ isOwner, checked, onChange }: { isOwner: boolean; checked: boolean; onChange: (value: boolean) => void }) {
-  if (!isOwner) return <span className="dependency-ack muted">Dependency changes need an Owner's approval</span>;
+const LISTED = 3;
+
+export function dependencyAllowLine(manifests: ManifestDependencyChanges[]): string {
+  const changes = manifests.flatMap((manifest) => manifest.changes);
+  const added = changes.some((change) => change.change !== "removed");
+  const names = [...new Set(changes.filter((change) => !added || change.change !== "removed").map((change) => change.name))];
+  const shown = names.slice(0, LISTED).join(", ");
+  return `${added ? "Allow new packages" : "Allow package removals"}: ${names.length > LISTED ? `${shown} +${names.length - LISTED} more` : shown}`;
+}
+
+const ALLOW_TIP = "Agents added or changed dependencies. Landing needs a workspace Owner's OK. The full list is under Dependency changes.";
+
+export function DependencyApprovalControl({ isOwner, checked, onChange, manifests }: { isOwner: boolean; checked: boolean; onChange: (value: boolean) => void; manifests: ManifestDependencyChanges[] }) {
+  if (!isOwner) return <span className="dependency-ack muted">Package changes need an Owner's OK<InfoTip label="Package changes">{ALLOW_TIP}</InfoTip></span>;
   return (
-    <label className="dependency-ack">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      I approve these dependency changes
-    </label>
+    <span className="dependency-ack">
+      <label>
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        {dependencyAllowLine(manifests)}
+      </label>
+      <InfoTip label="Allow packages">{ALLOW_TIP}</InfoTip>
+    </span>
   );
 }

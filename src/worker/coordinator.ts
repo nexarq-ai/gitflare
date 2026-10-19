@@ -5,6 +5,7 @@ import { assertDependenciesAcknowledged, assertDependencyApprover } from './depe
 import { activeLandingMessage } from '../shared/commit-message';
 import { repositoryLabel } from '../shared/repository-names';
 import { PREVIEW_FAILURE_MAX, type PreviewStep } from '../shared/preview-progress';
+import type { PreviewSetupCode } from '../shared/preview-setup';
 import type { AppEnv } from './env';
 import type { ExecutionResult } from './execution';
 import { SqlStore } from './store';
@@ -84,7 +85,7 @@ export type PreviewHost =
   | { kind: 'installation'; accountId: string; workerName: string; access: 'link' };
 export interface WorkerPreviewInfo { previewName: string; previewUrl: string | null; deploymentUrl: string | null; notes: string[]; d1Databases?: PreviewD1Database[]; host?: PreviewHost; baseBindings?: { name: string; type: string }[] }
 export interface PreviewLifetime { lifetimeMs: number; extendMs: number }
-interface PreviewState { claimId: string; epoch: number; candidateSha: string; phase: 'preparing' | 'ready'; expiresAt: number; startedAt?: number; step?: PreviewStep; sandboxName?: string; worker?: WorkerPreviewInfo; notes?: string[]; readyAt?: number; extendMs?: number; extended?: boolean }
+interface PreviewState { claimId: string; epoch: number; candidateSha: string; phase: 'preparing' | 'ready'; expiresAt: number; startedAt?: number; step?: PreviewStep; sandboxName?: string; worker?: WorkerPreviewInfo; notes?: string[]; setup?: PreviewSetupCode; readyAt?: number; extendMs?: number; extended?: boolean }
 export interface WorkerPreviewRecord { previewName: string; claimId: string; expiresAt: number; d1DatabaseIds?: string[]; host?: PreviewHost; principal?: Principal }
 export interface PreviewExtension { expiresAt: number; kind: 'worker' | 'container'; sandboxName?: string }
 export type StoppedPreview = { kind: 'worker'; record: WorkerPreviewRecord } | { kind: 'container'; sandboxName: string } | { kind: 'none' };
@@ -92,10 +93,10 @@ export const PREVIEW_LEASE_MS = 120_000;
 export const PREVIEW_HEARTBEAT_MS = 30_000;
 export const PREVIEW_READY_MS = 900_000;
 export const WORKER_PREVIEW_TTL_MS = 900_000;
-interface PreviewFailureRecord { claimId: string; epoch: number; candidateSha: string; message: string; failedAt: string }
+interface PreviewFailureRecord { claimId: string; epoch: number; candidateSha: string; message: string; failedAt: string; setup?: PreviewSetupCode }
 export type PreviewEndReason = 'expired' | 'retired' | 'replaced';
 export interface LastPreview { candidateSha: string; epoch: number; kind: 'worker' | 'container'; previewUrl: string | null; readyAt?: string; expiresAt: string; endedAt: string; reason: PreviewEndReason }
-export interface PreviewStatus { status: 'none' | 'starting' | 'ready' | 'failed'; candidateSha: string | null; last?: LastPreview; expiresAt?: string; readyAt?: string; extended?: boolean; extendable?: boolean; error?: string; message?: string; startedAt?: string; step?: PreviewStep; kind?: 'worker' | 'container'; worker?: WorkerPreviewInfo; notes?: string[]; access?: 'link' | 'cloudflare-access' | 'members' }
+export interface PreviewStatus { status: 'none' | 'starting' | 'ready' | 'failed'; candidateSha: string | null; last?: LastPreview; expiresAt?: string; readyAt?: string; extended?: boolean; extendable?: boolean; error?: string; message?: string; startedAt?: string; step?: PreviewStep; kind?: 'worker' | 'container'; worker?: WorkerPreviewInfo; notes?: string[]; setup?: PreviewSetupCode; access?: 'link' | 'cloudflare-access' | 'members' }
 interface DispatchIntent { workflowId: string; missionId: string; repositoryId: string; epoch: number; attempts: number; nextAttemptAt: number }
 export const DISPATCH_FAST_ATTEMPTS = 8;
 interface MissionWatch { workflowId: string; missionId: string; epoch: number; deliveredAt: number; lastReportAt: number; checkAt: number; misses: number }
@@ -556,7 +557,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     if (next !== Infinity) await this.ensureDispatchAlarm(next);
   }
 
-  claimPreview(key: string, id: string, epoch: number, candidateSha: string): { sandboxName?: string; worker?: WorkerPreviewInfo; notes?: string[]; claimId: string; claimed: boolean; expiresAt?: number; previous?: string } {
+  claimPreview(key: string, id: string, epoch: number, candidateSha: string): { sandboxName?: string; worker?: WorkerPreviewInfo; notes?: string[]; setup?: PreviewSetupCode; claimId: string; claimed: boolean; expiresAt?: number; previous?: string } {
     return this.ctx.storage.transactionSync(() => {
       const mission = this.requiredMission(id);
       if (mission.epoch !== epoch || mission.candidateSha !== candidateSha || !['needs_review', 'approved', 'integrating', 'integrated'].includes(mission.status)) throw new ApiError(409, 'STALE_PREVIEW', 'Only the current verified candidate can be previewed.');
@@ -566,7 +567,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const current = this.store.get<PreviewState>(`preview-state:${id}`);
       if (current?.claimId && current.epoch === epoch && current.candidateSha === candidateSha && current.expiresAt > Date.now()) {
         if (current.worker) return { worker: current.worker, claimId: current.claimId, claimed: false, expiresAt: current.expiresAt };
-        return current.sandboxName ? { sandboxName: current.sandboxName, claimId: current.claimId, claimed: false, expiresAt: current.expiresAt, ...(current.notes?.length ? { notes: current.notes } : {}) } : { claimId: current.claimId, claimed: false };
+        return current.sandboxName ? { sandboxName: current.sandboxName, claimId: current.claimId, claimed: false, expiresAt: current.expiresAt, ...(current.notes?.length ? { notes: current.notes } : {}), ...(current.setup ? { setup: current.setup } : {}) } : { claimId: current.claimId, claimed: false };
       }
       if (current?.phase === 'ready') this.rememberPreview(id, current, current.expiresAt <= Date.now() ? 'expired' : 'replaced');
       const claimId = crypto.randomUUID();
@@ -598,12 +599,12 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  previewReady(id: string, epoch: number, candidateSha: string, claimId: string, sandboxName: string, lifetime: PreviewLifetime = { lifetimeMs: PREVIEW_READY_MS, extendMs: PREVIEW_READY_MS }, notes: string[] = []): number {
+  previewReady(id: string, epoch: number, candidateSha: string, claimId: string, sandboxName: string, lifetime: PreviewLifetime = { lifetimeMs: PREVIEW_READY_MS, extendMs: PREVIEW_READY_MS }, notes: string[] = [], setup?: PreviewSetupCode): number {
     const state = this.previewClaim(id, epoch, candidateSha, claimId);
     if (sandboxName !== `preview-${id}-${claimId}`) throw new ApiError(409, 'STALE_PREVIEW', 'The preview sandbox does not belong to this attempt.');
     const readyAt = Date.now();
     const expiresAt = readyAt + lifetime.lifetimeMs;
-    this.store.put(`preview-state:${id}`, { ...state, phase: 'ready', sandboxName, expiresAt, readyAt, extendMs: lifetime.extendMs, ...(notes.length ? { notes: notes.slice(0, 20).map((note) => note.slice(0, 500)) } : {}) } satisfies PreviewState);
+    this.store.put(`preview-state:${id}`, { ...state, phase: 'ready', sandboxName, expiresAt, readyAt, extendMs: lifetime.extendMs, ...(notes.length ? { notes: notes.slice(0, 20).map((note) => note.slice(0, 500)) } : {}), ...(setup ? { setup } : {}) } satisfies PreviewState);
     return expiresAt;
   }
 
@@ -682,12 +683,12 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     this.store.put(`preview-last:${id}`, lastPreview(state, reason, Date.now()) satisfies LastPreview);
   }
 
-  previewFailed(id: string, claimId: string, message?: string): boolean {
+  previewFailed(id: string, claimId: string, message?: string, setup?: PreviewSetupCode): boolean {
     return this.ctx.storage.transactionSync(() => {
       const state = this.store.get<PreviewState>(`preview-state:${id}`);
       if (state?.claimId !== claimId) return false;
       this.store.delete(`preview-state:${id}`);
-      if (message) this.store.put(`preview-failure:${id}`, { claimId, epoch: state.epoch, candidateSha: state.candidateSha, message: message.slice(0, PREVIEW_FAILURE_MAX), failedAt: new Date().toISOString() } satisfies PreviewFailureRecord);
+      if (message) this.store.put(`preview-failure:${id}`, { claimId, epoch: state.epoch, candidateSha: state.candidateSha, message: message.slice(0, PREVIEW_FAILURE_MAX), failedAt: new Date().toISOString(), ...(setup ? { setup } : {}) } satisfies PreviewFailureRecord);
       return true;
     });
   }
@@ -703,14 +704,14 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
         status: 'ready', candidateSha: mission.candidateSha, expiresAt: new Date(ready.expiresAt).toISOString(),
         ...(ready.readyAt ? { readyAt: new Date(ready.readyAt).toISOString() } : {}),
         extended: !!ready.extended, extendable: !ready.extended,
-        ...(ready.worker ? { kind: 'worker' as const, worker: ready.worker, access: ready.worker.host?.access ?? 'link' } : { kind: 'container' as const, access: 'members' as const, ...(ready.notes?.length ? { notes: ready.notes } : {}) }),
+        ...(ready.worker ? { kind: 'worker' as const, worker: ready.worker, access: ready.worker.host?.access ?? 'link' } : { kind: 'container' as const, access: 'members' as const, ...(ready.notes?.length ? { notes: ready.notes } : {}), ...(ready.setup ? { setup: ready.setup } : {}) }),
       };
     }
     const expired = state?.phase === 'ready' && state.expiresAt <= Date.now() ? lastPreview(state, 'expired', Date.now()) : undefined;
     const last = expired ?? this.store.get<LastPreview>(`preview-last:${id}`);
     const history = last ? { last } : {};
     const failure = this.store.get<PreviewFailureRecord>(`preview-failure:${id}`);
-    if (current(failure)) return { status: 'failed', candidateSha: mission.candidateSha, error: failure!.message, ...history };
+    if (current(failure)) return { status: 'failed', candidateSha: mission.candidateSha, error: failure!.message, ...(failure!.setup ? { setup: failure!.setup } : {}), ...history };
     return { status: 'none', candidateSha: mission.candidateSha, ...history };
   }
 

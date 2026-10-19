@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { CheckCircleIcon, CopyIcon, TrashIcon } from "@phosphor-icons/react";
@@ -32,6 +32,8 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
   const [authorization, setAuthorization] = useState<Authorization | null>(null);
   const [reachable, setReachable] = useState<{ grantId: string | null; accounts: Reachable[] }[]>([]);
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
+  const [highlight] = useState(() => new URLSearchParams(window.location.search).get("grant"));
+  const scrolled = useRef(false);
   useEffect(() => {
     if (!authorization?.features || authorization.plan) return;
     let active = true;
@@ -137,7 +139,7 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
           <div className="panel-header"><h2>What Gitflare can do</h2></div>
           <ul className="people-list cf-features">
             <li><div><strong>Read accounts and resources</strong><small>List accounts, Workers, D1 databases and usage.</small></div><span className="account-method-on"><CheckCircleIcon size={16} weight="fill" aria-hidden="true" />On</span></li>
-            {features.map(item => <li key={item.feature}><div><strong>{FEATURE_LABELS[item.feature]}<InfoTip label={FEATURE_LABELS[item.feature]}>{FEATURE_HELP[item.feature]}</InfoTip></strong>{!item.granted && <small>Not granted yet</small>}</div>
+            {features.map(item => <li key={item.feature} className={item.feature === highlight ? "cf-feature-highlight" : undefined} ref={item.feature === highlight ? (node => { if (node && !scrolled.current) { scrolled.current = true; node.scrollIntoView({ block: "center" }); } }) : undefined}><div><strong>{FEATURE_LABELS[item.feature]}<InfoTip label={FEATURE_LABELS[item.feature]}>{FEATURE_HELP[item.feature]}</InfoTip></strong>{!item.granted && <small>Not granted yet</small>}</div>
               {item.granted ? <span className="account-method-on"><CheckCircleIcon size={16} weight="fill" aria-hidden="true" />On</span> : <Button variant="secondary" size="sm" disabled={!!busy} onClick={() => setAuthorization({ kind: "primary", features: [...granted, item.feature] })}>Grant</Button>}
             </li>)}
           </ul>

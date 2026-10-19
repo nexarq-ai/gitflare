@@ -34,3 +34,5 @@
   .preview-card { padding: 12px; }
   .preview-card[data-state="ready"] .preview-card-meta { margin-left: 0; }
 }
+.preview-card-setup { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.preview-card-setup .preview-card-reason { flex: 0 1 auto; white-space: normal; }

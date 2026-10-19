@@ -705,6 +705,7 @@ function Workspace() {
                 onBack={() => { const mission = workspace.missions.find(item => item.id === route.split("/")[1]); navigate(mission ? `repository/${mission.repositoryId}/pulls` : "missions"); }}
                 onUpdate={() => void load()}
                 demo={!!authConfig.demo}
+                installationAdmin={installationAdmin}
               />
             ) : page === "repository" ? (
               <RepositoryDetail

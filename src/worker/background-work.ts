@@ -16,7 +16,8 @@ import { cloudflareDeployClient, type CloudflareDeployAccess } from './cloudflar
 import { bindPreviewD1, deletePreviewD1 } from './preview-d1';
 import { cloudflareDeployAccess, cloudflareWorkerDeployer } from './cloudflare';
 import { previewLifetimeMs } from './preview-settings';
-import { candidateWorkerTarget, previewTarget, resolvePreviewHost, type PreviewTarget, type ProjectWorkers } from './preview-host';
+import { candidateWorkerTarget, previewTarget, resolvePreviewHost, usedContainerFallback, workerPreviewSetup, type PreviewTarget, type ProjectWorkers } from './preview-host';
+import { isPreviewSetupCode, type PreviewSetupCode } from '../shared/preview-setup';
 import { ensurePreviewAccess } from './preview-access';
 import { previewAccessIncludes } from './preview-settings-api';
 import { POLICY_FILE } from './repository-policy';
@@ -318,6 +319,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
   const access = securityClient(env);
   const prepared = await step.do('prepare candidate preview', { retries: { limit: 0, delay: '1 second' }, timeout: PREVIEW_STEP_MS }, async (): Promise<{ worker: boolean; expiresAt?: number; lifetimeMs?: number }> => {
     let finished = false;
+    let setup: PreviewSetupCode | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const renew = async () => {
       try { await coordinator.renewPreview(missionId, epoch, candidateSha, claimId); }
@@ -328,7 +330,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
     try {
       const [mission, repository] = await Promise.all([coordinator.getMission(missionId), coordinator.getRepository(repositoryId)]);
       if (!mission || !repository || mission.epoch !== epoch || mission.candidateSha !== candidateSha) throw new PreviewFailure('The candidate changed before its preview started.');
-      if (!env.SANDBOX) throw new PreviewFailure('The preview runner is unavailable.');
+      if (!env.SANDBOX) { setup = 'PREVIEW_NOT_CONFIGURED'; throw new PreviewFailure('The preview runner is unavailable.'); }
       const settings = await coordinator.getPreviewSettings();
       const lifetimeMs = previewLifetimeMs(settings, env);
       const lifetime = { lifetimeMs, extendMs: lifetimeMs };
@@ -352,7 +354,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
         assertAuthority: () => access.check(principal, 'read', 'repository', repositoryId, missionId),
         onStep: (step) => coordinator.previewStep(missionId, epoch, candidateSha, claimId, step),
         publishWorker: async (built) => {
-          if (!previews || !previewCall || !host) throw new PreviewFailure(installationProblem ?? 'Worker previews are not configured for this installation.');
+          if (!previews || !previewCall || !host) { setup = installationProblem ? 'PREVIEWS_INSTALLATION_UNAVAILABLE' : plan.setup ?? 'PREVIEWS_NOT_CONNECTED'; throw new PreviewFailure(installationProblem ?? 'Worker previews are not configured for this installation.'); }
           if (host.access === 'cloudflare-access') await ensurePreviewAccess(previewCall, previews.accountId, previews.workerName, await previewAccessIncludes(env, principal, repositoryId, settings));
           const { uploadAssets } = built;
           const d1 = built.d1?.length ? await bindPreviewD1(previewCall, previews.accountId, built.d1) : undefined;
@@ -368,7 +370,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
             ...(d1 ? { d1 } : {}),
             inheritBaseConfig: host.kind === 'connection',
             emailRecipients: settings.previewEmailRecipients,
-          });
+          }).catch((error: unknown) => { setup = workerPreviewSetup(error, previews); throw error; });
         },
       });
       if (prepared.kind === 'worker') {
@@ -378,12 +380,14 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
         await catalog.holdPreviewSlot(missionId, expiresAt);
         return { worker: true, expiresAt, lifetimeMs };
       }
-      const expiresAt = await coordinator.previewReady(missionId, epoch, candidateSha, claimId, prepared.sandboxName, lifetime, prepared.notes);
+      const fallback = !previews && !installationProblem && plan.setup && usedContainerFallback(prepared.notes) ? plan.setup : undefined;
+      const expiresAt = await coordinator.previewReady(missionId, epoch, candidateSha, claimId, prepared.sandboxName, lifetime, prepared.notes, fallback);
       await env.SANDBOX.getByName(prepared.sandboxName).expireAt(expiresAt);
       await catalog.holdPreviewSlot(missionId, expiresAt);
     } catch (error) {
       const message = error instanceof PreviewFailure || error instanceof WorkerPreviewError || error instanceof WorkerBuildFailure ? error.message : error instanceof ApiError ? `The preview could not be started. ${error.detail}` : 'The preview could not be started.';
-      const released = await coordinator.previewFailed(missionId, claimId, message).catch(() => false);
+      const code = setup ?? (error instanceof ApiError && isPreviewSetupCode(error.code) ? error.code : undefined);
+      const released = await coordinator.previewFailed(missionId, claimId, message, code).catch(() => false);
       await env.SANDBOX?.getByName(`preview-${missionId}-${claimId}`).destroy().catch(() => {});
       if (released) await catalog.releasePreviewSlot(missionId).catch(() => {});
     } finally {

@@ -83,7 +83,7 @@ export async function oauthConsent(request: Request, env: AppEnv, authenticate: 
     const scope = grantedScopes(access);
     const client = (await oauth.lookupClient(approved.request.clientId))?.clientName?.trim() || approved.request.clientId;
     const service = securityClient(env);
-    const session = principal.bootstrap ? { token: await service.legacySession(), session: undefined } : await service.clientSession(principal, client, CLIENT_GRANT_SECONDS * 1000);
+    const session = principal.bootstrap ? { token: await service.legacySession(client), session: undefined } : await service.clientSession(principal, client, CLIENT_GRANT_SECONDS * 1000);
     if (!session || typeof session.token !== 'string') throw new ApiError(503, 'SESSION_FAILED', 'The client session could not be created.');
     const { redirectTo } = await oauth.completeAuthorization({ request: { ...approved.request, scope }, userId: principal.userId, metadata: { workspaceId: principal.workspaceId, sessionId: session.session?.id, client, access }, scope, props: { token: session.token, workspaceId: principal.workspaceId } });
     approved.headers.set('Location', redirectTo);

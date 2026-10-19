@@ -1,3 +1,5 @@
+import { isPreviewSetupCode, type PreviewSetupCode } from './preview-setup';
+
 export const PREVIEW_FAILURE_MAX = 6_000;
 
 export const PREVIEW_STEPS = ['queued', 'cloning', 'installing', 'building', 'publishing', 'starting'] as const;
@@ -13,18 +15,18 @@ export const PREVIEW_STEP_LABELS: Record<PreviewStep, string> = {
 };
 
 export interface PreviewProgress { startedAt?: string; step?: PreviewStep; message?: string }
-export interface PreviewStatusLike extends PreviewProgress { status?: string; error?: string }
+export interface PreviewStatusLike extends PreviewProgress { status?: string; error?: string; setup?: string }
 
 export type ResumedPreview =
   | { kind: 'preparing'; progress: PreviewProgress }
   | { kind: 'ready' }
-  | { kind: 'failed'; error: string }
+  | { kind: 'failed'; error: string; setup?: PreviewSetupCode }
   | { kind: 'none' };
 
 export function resumePreview(status: PreviewStatusLike): ResumedPreview {
   if (status.status === 'starting') return { kind: 'preparing', progress: { ...(status.startedAt ? { startedAt: status.startedAt } : {}), ...(status.step ? { step: status.step } : {}), ...(status.message ? { message: status.message } : {}) } };
   if (status.status === 'ready') return { kind: 'ready' };
-  if (status.status === 'failed') return { kind: 'failed', error: status.error ?? 'The preview stopped before it was ready. Prepare it again.' };
+  if (status.status === 'failed') return { kind: 'failed', error: status.error ?? 'The preview stopped before it was ready. Prepare it again.', ...(isPreviewSetupCode(status.setup) ? { setup: status.setup } : {}) };
   return { kind: 'none' };
 }
 

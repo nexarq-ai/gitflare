@@ -914,7 +914,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       const expiresAt = Math.min(Date.now() + PREVIEW_CAPABILITY_MS, claim.expiresAt ?? Infinity);
       await access.check(principal, 'read', 'repository', repository.id, mission.id);
       await env.GITFLARE_COORDINATOR.getByName(previewCapabilityStore(principal.workspaceId)).savePreviewCapability(await capabilityHash(token), { workspaceId: principal.workspaceId, principal, repositoryId: repository.id, missionId: mission.id, epoch: mission.epoch, candidateSha: mission.candidateSha, sandboxName, expiresAt, host: target.host, isolated: target.isolated });
-      return Response.json({ status: 'ready', kind: 'container', access: 'members', previewUrl: `${target.origin}/open/${token}`, candidateSha: mission.candidateSha, expiresAt: new Date(claim.expiresAt ?? expiresAt).toISOString(), linkExpiresAt: new Date(expiresAt).toISOString(), ...(claim.notes?.length ? { notes: claim.notes } : {}) });
+      return Response.json({ status: 'ready', kind: 'container', access: 'members', previewUrl: `${target.origin}/open/${token}`, candidateSha: mission.candidateSha, expiresAt: new Date(claim.expiresAt ?? expiresAt).toISOString(), linkExpiresAt: new Date(expiresAt).toISOString(), ...(claim.notes?.length ? { notes: claim.notes } : {}), ...(claim.setup ? { setup: claim.setup } : {}) });
     }
     if (match[2] === 'revert') {
       await access.authorize(principal, 'contribute', 'repository', repository.id);

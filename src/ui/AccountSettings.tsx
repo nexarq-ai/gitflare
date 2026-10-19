@@ -120,11 +120,11 @@ function Security({ data, config, onChanged }: { data: AccountSnapshot; config: 
   </>;
 }
 
-function SessionRow({ session, current, busy, onSignOut }: { session: Session; current: boolean; busy: boolean; onSignOut: () => void }) {
-  const info = describeSession(session);
+function SessionRow({ session, current, busy, onSignOut, fallbackMethod }: { session: Session; current: boolean; busy: boolean; onSignOut: () => void; fallbackMethod?: string }) {
+  const info = describeSession(session, Date.now(), fallbackMethod);
   return <li>
     <DesktopIcon size={20} aria-hidden="true" className="account-session-icon" />
-    <div><strong>{info.title}{current && <span className="people-tag">This device</span>}</strong><small>{[info.location, info.workspace, info.signedIn].filter(Boolean).join(" · ")}</small></div>
+    <div><strong>{info.title}{current && <span className="people-tag">This device</span>}</strong><small title={info.signedIn}>{[info.method, info.location, info.workspace, current ? "Active now" : info.lastActive ?? info.signedIn].filter(Boolean).join(" · ")}</small></div>
     <Button variant="ghost" size="sm" loading={busy} onClick={onSignOut}>Sign out</Button>
   </li>;
 }
@@ -136,6 +136,7 @@ function Sessions({ data, reload, onSignOut }: { data: AccountSnapshot; reload: 
   const sessions = browserSessions(data);
   const current = sessions.find(item => item.id === data.currentSessionId);
   const others = sessions.filter(item => item.id !== data.currentSessionId);
+  const fallbackMethod = "passwordSignIn" in data.user && !data.user.passwordSignIn && data.user.cloudflareLinked ? "cloudflare" : undefined;
   async function act(key: string, path: string, body: unknown, done: string) {
     setBusy(key); setError(""); setNotice("");
     try { await request(path, body); setNotice(done); await reload(); }
@@ -148,8 +149,8 @@ function Sessions({ data, reload, onSignOut }: { data: AccountSnapshot; reload: 
     <section className="panel">
       <div className="panel-header"><h2>Signed in</h2>{others.length > 0 && <Button variant="secondary" size="sm" loading={busy === "others"} disabled={!!busy} onClick={() => void act("others", "/api/account/sessions/revoke-others", {}, "Signed out everywhere else.")}>Sign out everywhere else</Button>}</div>
       <ul className="people-list account-sessions">
-        {current && <SessionRow session={current} current busy={false} onSignOut={onSignOut} />}
-        {others.map(session => <SessionRow key={session.id} session={session} current={false} busy={busy === session.id} onSignOut={() => void act(session.id, "/api/access/session-revoke", { id: session.id }, "Signed out that session.")} />)}
+        {current && <SessionRow session={current} current busy={false} onSignOut={onSignOut} fallbackMethod={fallbackMethod} />}
+        {others.map(session => <SessionRow key={session.id} session={session} current={false} fallbackMethod={fallbackMethod} busy={busy === session.id} onSignOut={() => void act(session.id, "/api/access/session-revoke", { id: session.id }, "Signed out that session.")} />)}
       </ul>
       <div className="panel-body"><p className="people-muted">{others.length ? "" : "No other browsers are signed in. "}AI clients and personal tokens are listed under <a href="/account/clients">AI clients</a>.</p></div>
     </section>

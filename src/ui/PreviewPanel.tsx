@@ -3,6 +3,7 @@ import { Button, LinkButton } from "@cloudflare/kumo/components/button";
 import { ArrowClockwiseIcon, ArrowSquareOutIcon, CheckCircleIcon, CheckIcon, CircleNotchIcon, ClockIcon, CopyIcon, StopIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import InfoTip from "./InfoTip";
 import { previewProgressLine, type PreviewProgress } from "../shared/preview-progress";
+import { previewSetupFix, type PreviewSetupCode, type PreviewSetupViewer } from "../shared/preview-setup";
 import "./preview-panel.css";
 
 export type PreviewHost =
@@ -18,6 +19,7 @@ export type PreviewState = {
   access: PreviewAccess;
   worker?: { deploymentUrl: string | null; notes: string[]; host?: PreviewHost };
   notes?: string[];
+  setup?: PreviewSetupCode;
 };
 
 const ACCESS_LABEL: Record<PreviewAccess, string> = { link: "Public link", "cloudflare-access": "Cloudflare Access", members: "Members only" };
@@ -77,7 +79,16 @@ function CopyUrl({ url }: { url: string }) {
   return <Button variant="ghost" size="sm" shape="square" icon={copied ? CheckIcon : CopyIcon} aria-label={copied ? "Preview link copied" : "Copy preview link"} title={copied ? "Copied" : "Copy link"} onClick={() => void navigator.clipboard.writeText(url).then(() => setCopied(true)).catch(() => {})} />;
 }
 
-export function PreviewReadyCard({ preview, busy, canExtend, canStop, onExtend, onStop }: { preview: PreviewState; busy: string; canExtend: boolean; canStop: boolean; onExtend: () => void; onStop: () => void }) {
+export function PreviewSetupNotice({ code, viewer }: { code: PreviewSetupCode; viewer: PreviewSetupViewer }) {
+  const fix = previewSetupFix(code, viewer);
+  return <div className="preview-card-setup" data-setup={code}>
+    <span className="preview-card-reason">{fix.line}</span>
+    <InfoTip label={fix.line}>{fix.tip}</InfoTip>
+    {fix.action ? <LinkButton variant="primary" size="sm" href={fix.action.href}>{fix.action.label}</LinkButton> : <span className="preview-card-meta">{fix.ask}</span>}
+  </div>;
+}
+
+export function PreviewReadyCard({ preview, busy, canExtend, canStop, onExtend, onStop, viewer }: { preview: PreviewState; busy: string; canExtend: boolean; canStop: boolean; onExtend: () => void; onStop: () => void; viewer: PreviewSetupViewer }) {
   const host = hostSummary(preview);
   const notes = preview.worker?.notes ?? preview.notes ?? [];
   const deploymentUrl = preview.worker?.deploymentUrl;
@@ -93,6 +104,7 @@ export function PreviewReadyCard({ preview, busy, canExtend, canStop, onExtend, 
       <a href={preview.previewUrl} target="_blank" rel="noreferrer">{displayUrl(preview.previewUrl)}</a>
       <CopyUrl url={preview.previewUrl} />
     </div>
+    {preview.setup && <PreviewSetupNotice code={preview.setup} viewer={viewer} />}
     <div className="preview-card-actions">
       <LinkButton variant="primary" size="sm" href={preview.previewUrl} external icon={ArrowSquareOutIcon}>Open preview</LinkButton>
       {canExtend && !preview.extended && <span className="preview-card-action">
@@ -130,8 +142,19 @@ export function PreviewStartingCard({ progress }: { progress: PreviewProgress })
   </section>;
 }
 
-export function PreviewFailedCard({ message, canRetry, busy, onRetry }: { message: string; canRetry: boolean; busy: string; onRetry: () => void }) {
+export function PreviewFailedCard({ message, setup, viewer, canRetry, busy, onRetry }: { message: string; setup?: PreviewSetupCode; viewer: PreviewSetupViewer; canRetry: boolean; busy: string; onRetry: () => void }) {
   const headline = failureHeadline(message);
+  if (setup) return <section className="preview-card" data-state="failed" role="alert" aria-label="Candidate preview">
+    <div className="preview-card-head">
+      <WarningCircleIcon size={17} className="preview-card-icon" aria-hidden="true" />
+      <strong>Preview can’t start</strong>
+    </div>
+    <PreviewSetupNotice code={setup} viewer={viewer} />
+    <details className="preview-card-details">
+      <summary>Details</summary>
+      <pre tabIndex={0}>{message}</pre>
+    </details>
+  </section>;
   return <section className="preview-card" data-state="failed" role="alert" aria-label="Candidate preview">
     <div className="preview-card-head">
       <WarningCircleIcon size={17} className="preview-card-icon" aria-hidden="true" />

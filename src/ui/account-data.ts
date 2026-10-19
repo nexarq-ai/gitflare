@@ -37,11 +37,20 @@ export function countryName(code: string | undefined): string | undefined {
   try { return new Intl.DisplayNames(undefined, { type: "region" }).of(code) ?? code; } catch { return code; }
 }
 
-export function describeSession(session: Session, now = Date.now()) {
+const METHOD_LABELS: Record<string, string> = { cloudflare: "Cloudflare", password: "Email", authenticator: "Email + authenticator", "owner-token": "Owner token" };
+
+export function signInMethodLabel(method: string | undefined): string | undefined {
+  return method ? METHOD_LABELS[method] : undefined;
+}
+
+export function describeSession(session: Session, now = Date.now(), fallbackMethod?: string) {
+  const activeAt = session.lastActiveAt ?? session.authenticatedAt;
   return {
     title: session.device ?? "Browser",
+    method: signInMethodLabel(session.method ?? fallbackMethod),
     location: countryName(session.country),
     workspace: "workspaceName" in session ? session.workspaceName : undefined,
     signedIn: session.authenticatedAt ? `Signed in ${relativeTime(session.authenticatedAt, now)}` : `Expires ${new Date(session.expiresAt).toLocaleDateString()}`,
+    lastActive: activeAt ? `Active ${relativeTime(activeAt, now)}` : undefined,
   };
 }
