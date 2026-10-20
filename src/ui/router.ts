@@ -1,4 +1,4 @@
-import { HANDLE_PATTERN, OPERATOR_HANDLES, RESERVED_HANDLES, type PublicRepositoryView } from "../shared/handles";
+import { HANDLE_PATTERN, OPERATOR_HANDLES, PUBLIC_ISSUE_PATH, RESERVED_HANDLES, type PublicRepositoryView } from "../shared/handles";
 
 const ROUTE_EVENT = "gitflare:route";
 // Bearer tokens travel in the fragment so they never reach server logs or Referer headers
@@ -81,6 +81,10 @@ export function publicRepositoryLocation(route: string): PublicRepositoryLocatio
   if (!PUBLIC_REPOSITORY_NAME.test(repository) || /\.git$/i.test(repository)) return null;
   if (view === undefined) return { handle, repository, view: "code", path: "" };
   if ((SINGLE_PUBLIC_VIEWS as readonly string[]).includes(view)) return rest.length ? null : { handle, repository, view: view as PublicRepositoryView, path: "" };
+  if (view === "issues") {
+    if (!rest.length) return { handle, repository, view, path: "" };
+    return rest.length === 1 && PUBLIC_ISSUE_PATH.test(rest[0]!) ? { handle, repository, view, path: rest[0]! } : null;
+  }
   if (view !== "tree" && view !== "blob") return null;
   if (!rest.length) return view === "tree" ? { handle, repository, view: "code", path: "" } : null;
   if (rest.some(unsafeSegment)) return null;
@@ -165,6 +169,7 @@ export const REPOSITORY_SETTINGS_PAGES = [
   { path: "deploys", label: "Deploys" },
   { path: "previews", label: "Previews" },
   { path: "agents", label: "Agents" },
+  { path: "issues", label: "Issues" },
   { path: "secrets", label: "Secrets" },
   { path: "cloudflare", label: "Resources" },
   { path: "access", label: "Access" },

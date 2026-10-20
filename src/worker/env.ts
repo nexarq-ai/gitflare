@@ -61,4 +61,6 @@ export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRE
   OPENAI_APPS_CHALLENGE?: string;
   DEMO_MODE?: string;
   DEMO_RESET_TOKEN?: string;
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
 };

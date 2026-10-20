@@ -5,12 +5,13 @@ export type InviteScope = "organization" | "workspace" | "repository";
 export type Invitation = AccessSnapshot["invitations"][number];
 export type Member = AccessSnapshot["members"][number];
 
-export const INVITE_ROLES = ["Viewer", "Contributor", "Reviewer", "Maintainer", "Deployer"] as const;
+export const INVITE_ROLES = ["Viewer", "Triager", "Contributor", "Reviewer", "Maintainer", "Deployer"] as const;
 
 export const ROLE_HELP: Record<string, string> = {
   Viewer: "Viewer: read code, proposals and checks.",
+  Triager: "Triager: label, close, lock and moderate issues, cannot change code.",
   Contributor: "Contributor: propose changes and run agents, cannot land or deploy.",
-  Reviewer: "Reviewer: review and approve proposals, cannot change code.",
+  Reviewer: "Reviewer: review and approve proposals and triage issues, cannot change code.",
   Maintainer: "Maintainer: propose, review and land changes, cannot deploy.",
   Deployer: "Deployer: deploy to environments and read code.",
   Owner: "Owner: everything, including people, Cloudflare and settings.",
