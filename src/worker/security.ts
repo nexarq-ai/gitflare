@@ -1940,6 +1940,10 @@ export class SecurityService {
     const reports = await this.identity().reports();
     return { reports, people: await this.profiles(reports.map(report => report.reporterId)) };
   }
+  async auditInstallation(p: Principal, action: string, resourceId: string): Promise<void> {
+    if (!await this.installationCredentialAdmin(p).catch(() => false)) throw new ApiError(404, 'NOT_FOUND', 'This API route could not be found.');
+    await this.shard(p.workspaceId).audit([{ actorId: p.userId, action, resourceId }]);
+  }
   async dismissReport(p: Principal, id: string): Promise<{ reports: ContentReport[]; people: Record<string, IssuePerson> }> {
     if (!await this.installationCredentialAdmin(p).catch(() => false)) throw new ApiError(404, 'NOT_FOUND', 'This API route could not be found.');
     const report = await this.identity().dismissReport(requireString(id, 'Report', 100));

@@ -1,0 +1,45 @@
+.github-import .panel-header h2 { display: flex; align-items: center; gap: 8px; }
+.github-import-wide { grid-column: 1 / -1; }
+.github-import-options { display: flex; flex-wrap: wrap; gap: 6px 18px; padding-top: 4px; }
+.github-import .github-import-options label { display: inline-flex; align-items: center; gap: 6px; width: auto; margin: 0; font-size: 13px; font-weight: 400; }
+.github-import .github-import-options input[type="checkbox"], .github-import .github-import-toggle input[type="checkbox"], .github-org-import .github-import-options input[type="checkbox"], .github-org-row input[type="checkbox"] { width: auto; margin: 0; flex: none; }
+.github-org-import .github-import-options { margin: 12px 0 4px; }
+.github-org-import .github-import-options label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.github-import-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.github-import-muted { font-size: 12px; color: var(--gf-color-text-tertiary); }
+.github-import-status { display: grid; gap: 10px; }
+.github-import-form { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--gf-color-border); }
+.github-import-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.github-import-line a { font-weight: 600; overflow-wrap: anywhere; }
+.github-import-line small { color: var(--gf-color-text-tertiary); }
+.github-import-state { font-weight: 600; color: var(--gf-color-text-secondary); }
+.github-import-running, .github-import-queued { color: var(--gf-color-accent, #f6821f); }
+.github-import-completed { color: var(--gf-color-success, #1a7f37); }
+.github-import-failed { color: var(--gf-color-danger, #cf222e); }
+.github-import-counts { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin: 0; }
+.github-import-counts div { padding: 8px 10px; border: 1px solid var(--gf-color-border); border-radius: 6px; background: var(--gf-color-surface); min-width: 0; }
+.github-import-counts dt { font-size: 11px; color: var(--gf-color-text-tertiary); text-transform: uppercase; letter-spacing: .04em; }
+.github-import-counts dd { margin: 2px 0 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.github-import-skipped summary { cursor: pointer; font-size: 13px; color: var(--gf-color-text-secondary); }
+.github-import-skipped ul { margin: 8px 0 4px; padding-left: 18px; max-height: 220px; overflow: auto; font-size: 13px; }
+.github-import-skipped li { margin: 2px 0; overflow-wrap: anywhere; }
+.github-import-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.github-mirror-actions .github-import-toggle { margin-right: 4px; }
+.github-org-import { display: grid; gap: 16px; }
+.github-org-list { display: grid; margin-top: 12px; border: 1px solid var(--gf-color-border); border-radius: 6px; overflow: hidden; }
+.github-org-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--gf-color-border); font-size: 13px; }
+.github-org-row:first-child { border-top: 0; }
+.github-org-row strong { overflow-wrap: anywhere; }
+.github-org-row small { display: block; color: var(--gf-color-text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.github-org-row .repo-pill { margin-left: 6px; }
+.github-org-progress { display: grid; gap: 8px; }
+.github-org-progress-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--gf-color-border); font-size: 13px; }
+.github-org-progress-row:first-child { border-top: 0; }
+.github-org-progress-row span { color: var(--gf-color-text-secondary); }
+.issue-imported { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--gf-color-text-tertiary); }
+@media (max-width: 640px) {
+  .github-org-row { grid-template-columns: auto minmax(0, 1fr); }
+  .github-org-row > :last-child { grid-column: 2; }
+}
+.github-org-import .panel-header h2 { display: flex; align-items: center; gap: 8px; }
+.github-org-progress-row .github-import-counts { flex-basis: 100%; }

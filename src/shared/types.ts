@@ -272,6 +272,7 @@ export interface Mission {
   skillChange?: RepositorySkillChange;
   revertChange?: RevertChange;
   branchChange?: BranchChange;
+  fixRequest?: FixRequest;
   issueNumber?: number;
   authorization?: { principal: import('../worker/security').Principal; workspaceId: string; creatorId: string };
   id: string;
@@ -453,7 +454,7 @@ export interface BranchChangeResult { name: string; headSha: string; created?: t
 export interface BranchList { repositoryId: string; defaultBranch: string; gitUrl: string; branches: BranchInfo[] }
 export interface CreatePullRequestInput { title: string; description?: string; branch: string; target?: 'self' | 'upstream' }
 export interface RepositorySkillChange { action: 'create' | 'update'; path: string; content: string; baseSha: string }
-export interface CreateMissionInput { attachments?: MissionAttachment[]; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
+export interface CreateMissionInput { attachments?: MissionAttachment[]; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; fixRequest?: FixRequest; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
 export interface CreateRepositoryInput { name: string; description?: string }
 export interface ApproveMissionInput { candidateSha: string; baseSha: string }
 export interface ApiError { error: { code: string; message: string } }
@@ -512,8 +513,10 @@ export type IssueHideReason = typeof ISSUE_HIDE_REASONS[number];
 export const CONTENT_REPORT_REASONS = ['spam', 'abuse', 'harassment', 'illegal', 'other'] as const;
 export type ContentReportReason = typeof CONTENT_REPORT_REASONS[number];
 export interface IssueModeration { by?: string; at: string }
-export interface IssueComment { id: string; authorId: string; body: string; createdAt: string; editedAt?: string; hidden?: IssueModeration & { reason: IssueHideReason } }
-export interface Issue { repositoryId: string; number: number; title: string; body: string; state: IssueState; closedReason?: IssueCloseReason; labels: string[]; assignees: string[]; missionIds: string[]; authorId: string; createdAt: string; updatedAt: string; closedAt?: string; commentCount: number; locked?: IssueModeration & { reason: IssueLockReason } }
+export interface ImportedComment { source: 'github'; url: string; author: string }
+export interface ImportedIssue extends ImportedComment { number: number; pullRequest?: { merged: boolean } }
+export interface IssueComment { id: string; authorId: string; body: string; createdAt: string; editedAt?: string; hidden?: IssueModeration & { reason: IssueHideReason }; importedFrom?: ImportedComment }
+export interface Issue { repositoryId: string; number: number; title: string; body: string; state: IssueState; closedReason?: IssueCloseReason; labels: string[]; assignees: string[]; missionIds: string[]; authorId: string; createdAt: string; updatedAt: string; closedAt?: string; commentCount: number; locked?: IssueModeration & { reason: IssueLockReason }; importedFrom?: ImportedIssue }
 export interface IssuePerson { name: string; handle: string | null }
 export interface IssueDetail extends Issue { comments: IssueComment[]; people?: Record<string, IssuePerson> }
 export interface IssueLabelDefinition { name: string; color: string; description: string }
@@ -522,6 +525,21 @@ export interface IssueTemplate { file: string; name: string; about: string; titl
 export interface IssueTemplates { directory: string | null; commitSha: string | null; templates: IssueTemplate[] }
 export interface IssueViewer { signedIn: boolean; userId: string | null; member: boolean; repositoryId: string | null; canParticipate: boolean; canTriage: boolean; limited: boolean; turnstileSiteKey: string | null }
 export interface RepositoryBlock { userId: string; person: IssuePerson | null; blockedBy: string; blockedAt: string; reason: string }
+export const AGENT_REVIEWER_ID = 'gitflare-agent';
+export type FixFundingSource = 'pool' | 'requester';
+export interface FixRequest { requesterId: string; requester: IssuePerson; source: FixFundingSource; fundingWorkspaceId: string; model: string; issueNumber?: number; requestedAt: string; waiting?: boolean }
+export interface CommunityPool { models: string[]; missionsPerDay: number; draftsPerDay: number; perUserPerDay: number; grantedAt: string; grantedBy: string }
+export interface AgentAssistSettings { triage: boolean; review: boolean; updatedAt?: string; updatedBy?: string }
+export interface CommunityPoolUsage { day: string; missions: number; drafts: number; requests: number }
+export interface CommunityAiModel { id: string; label: string }
+export interface CommunityAiSettings { repositoryId: string; public: boolean; pool: CommunityPool | null; assist: AgentAssistSettings; usage: CommunityPoolUsage; eligibleModels: CommunityAiModel[]; operatorTriage: boolean; canManage: boolean }
+export interface FixQuote { signedIn: boolean; available: boolean; source: FixFundingSource | null; model: CommunityAiModel | null; reason: string; waitsForMaintainer: boolean; remainingToday: number | null }
+export type AgentMissionState = 'planning' | 'waiting' | 'running' | 'review' | 'landed' | 'closed' | 'failed';
+export interface AgentMissionEntry { id: string; title: string; issueNumber: number | null; requester: IssuePerson; source: FixFundingSource; state: AgentMissionState; createdAt: string; landedSha: string | null }
+export interface FixRequests { missions: AgentMissionEntry[]; quote: FixQuote | null }
+export interface TriageSuggestion { issueNumber: number; labels: string[]; duplicates: number[]; checklist: string[]; summary: string; model: string; funding: 'pool' | 'operator'; createdAt: string }
+export interface OperatorAiUse { workspaceId: string; repositoryId: string; issueNumber: number; model: string; at: string }
+export interface OperatorAiStatus { workspaces: string[]; triagePerDay: number; recent: OperatorAiUse[] }
 export interface ContentReport { id: string; workspaceId: string; repositoryId: string; address: string; issueNumber: number; commentId?: string; reason: ContentReportReason; detail: string; reporterId: string; createdAt: string }
 export interface Release {
   id: string;
@@ -536,6 +554,7 @@ export interface Release {
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
+  importedFrom?: ImportedComment;
 }
 
 export interface ReleaseList {

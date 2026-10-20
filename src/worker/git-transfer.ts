@@ -55,7 +55,7 @@ async function bounded(remote: GitRemote, body: ReadableStream<Uint8Array> | nul
 async function send(remote: GitRemote, path: string, init: { method: string; headers: Record<string, string>; body?: ReadableStream<Uint8Array> | Uint8Array; timeoutMs: number }, fetcher: typeof fetch): Promise<Response> {
   let response: Response;
   try {
-    response = await fetcher(`${remote.url}${path}`, { method: init.method, headers: { authorization: remote.authorization, 'user-agent': USER_AGENT, ...init.headers }, body: init.body as BodyInit | undefined, redirect: 'manual', signal: AbortSignal.timeout(init.timeoutMs) });
+    response = await fetcher(`${remote.url}${path}`, { method: init.method, headers: { ...(remote.authorization ? { authorization: remote.authorization } : {}), 'user-agent': USER_AGENT, ...init.headers }, body: init.body as BodyInit | undefined, redirect: 'manual', signal: AbortSignal.timeout(init.timeoutMs) });
   } catch { throw new ApiError(502, 'MIRROR_UNREACHABLE', `${remote.label} could not be reached.`); }
   if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new ApiError(422, 'MIRROR_REDIRECT', `${remote.label} redirected the request. Check the repository owner and name.`); }
   if (response.status === 401 || response.status === 403) { await response.body?.cancel(); throw new ApiError(422, 'MIRROR_AUTH_REJECTED', `${remote.label} rejected the credential. It needs Contents read and write access to this repository.`); }

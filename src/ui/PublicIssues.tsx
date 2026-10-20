@@ -12,6 +12,8 @@ import { useConfirm } from "./ConfirmDialog";
 import { appHref, siteSignedInHint } from "./hosts";
 import InfoTip from "./InfoTip";
 import SubscribeButton, { publicThreadTarget } from "./SubscribeButton";
+import { ImportedFrom } from "./IssueLabels";
+import { RequestFix } from "./FixRequests";
 import { currentRoute } from "./router";
 import { useTurnstile, type Turnstile } from "./turnstile";
 import "./public-issues.css";
@@ -24,6 +26,7 @@ type People = Record<string, IssuePerson>;
 
 export function personLabel(id: string, people?: People): string {
   if (id === SYSTEM_AUTHOR) return "Gitflare";
+  if (id.startsWith("github:")) return id;
   const person = people?.[id];
   return person?.handle ? `@${person.handle}` : person?.name || "Unknown";
 }
@@ -567,6 +570,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
       <div className="pub-issue-meta">
         <StateBadge state={issue.state} reason={issue.closedReason} />
         <span><strong>{name(issue.authorId)}</strong> opened <Time value={issue.createdAt} /> · {issue.commentCount} {issue.commentCount === 1 ? "comment" : "comments"}</span>
+        <ImportedFrom source={issue.importedFrom} />
         {issue.locked && <span className="pub-issue-locked"><LockSimpleIcon size={13} aria-hidden="true" />Locked</span>}
       </div>
       {issue.labels.length > 0 && <LabelChips labels={issue.labels} colors={colors} />}
@@ -580,6 +584,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
       </article>}
       {issue.comments.map(commentCard)}
       {issue.state === "closed" && issue.closedAt && <p className="pub-issue-event"><StateIcon state="closed" reason={issue.closedReason} size={15} />{issue.closedReason === "not_planned" ? "Closed as not planned" : "Closed"} <Time value={issue.closedAt} /></p>}
+      <RequestFix api={api} issueNumber={issue.number} open={issue.state === "open"} signIn={<SignIn>Sign in to request a fix</SignIn>} />
       {replyArea()}
     </div>
     <div className="pub-issue-foot"><TriageLink viewer={viewer} number={issue.number} /></div>

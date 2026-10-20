@@ -1,6 +1,6 @@
 import type { Mission, ModelConnection, ModelConnectionsSnapshot } from '../shared/types';
 import { ApiError, requireString } from './domain';
-import { classifyModelFailure, inferenceMessage, ModelResponseError, type ModelEnv } from './model-adapter';
+import { classifyModelFailure, inferenceMessage, ModelResponseError, redactedProviderMessage, type ModelEnv } from './model-adapter';
 import { DEFAULT_MODEL } from '../shared/models';
 
 export { DEFAULT_MODEL };
@@ -83,9 +83,11 @@ export async function verifyModelConnection(env: ModelEnv, model: ModelConnectio
     return { ...validated, verification: { status: 'verified', checkedAt, detail: 'A bounded inference returned text through the configured AI Gateway. Coding and tool compatibility are not proven by this check.' } };
   } catch (error) {
     const failure = classifyModelFailure(error);
-    console.error(JSON.stringify({ event: 'model_verification_failed', ...failure }));
+    const providerMessage = failure.operation === 'inference' && !(error instanceof Error && error.message.startsWith('AI Gateway rejected')) ? redactedProviderMessage(error) : null;
+    console.error(JSON.stringify({ event: 'model_verification_failed', model: validated.id, ...failure, ...(providerMessage ? { providerMessage } : {}) }));
     const rejection = error instanceof Error && error.message.startsWith('AI Gateway rejected') ? error.message : null;
-    const reason = rejection ?? (failure.operation === 'normalize' ? `Unexpected model output (${failure.code}).` : failure.errorName === 'TimeoutError' || failure.errorName === 'AbortError' ? 'The bounded inference timed out.' : `The AI binding rejected inference${failure.providerStatus ? ` (HTTP ${failure.providerStatus})` : ''}.`);
+    const provider = [failure.providerStatus ? `HTTP ${failure.providerStatus}` : '', failure.providerCode !== undefined ? `code ${failure.providerCode}` : ''].filter(Boolean).join(', ');
+    const reason = rejection ?? (failure.operation === 'normalize' ? `Unexpected model output (${failure.code}).` : failure.errorName === 'TimeoutError' || failure.errorName === 'AbortError' ? 'The bounded inference timed out.' : `The AI binding rejected inference${provider ? ` (${provider})` : ''}${providerMessage ? `: ${providerMessage}` : ''}.`);
     return { ...validated, verification: { status: 'failed', checkedAt, detail: `${reason} Check the model identifier, transport, Gateway default BYOK alias or billing, and Workers AI availability.` } };
   }
 }

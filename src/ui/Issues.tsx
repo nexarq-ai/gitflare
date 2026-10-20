@@ -11,7 +11,8 @@ import { EmptyState, relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
 import InfoTip from "./InfoTip";
 import SubscribeButton from "./SubscribeButton";
-import { Labels, personLabel, ReasonDialog } from "./IssueLabels";
+import TriageSuggestionPanel from "./TriageSuggestion";
+import { ImportedFrom, Labels, personLabel, ReasonDialog } from "./IssueLabels";
 import { navigate } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
 
@@ -248,7 +249,7 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
   const canComment = canParticipate && (!issue.locked || canModerate);
   const canEdit = canModerate || (canParticipate && !issue.locked && issue.authorId === viewer.userId);
   const name = (id: string) => personLabel(id, people, viewer.names, viewer.userId);
-  const outsider = (id: string) => id !== "gitflare" && id !== viewer.userId && !viewer.names.has(id);
+  const outsider = (id: string) => id !== "gitflare" && !id.startsWith("github:") && id !== viewer.userId && !viewer.names.has(id);
   return (
     <div className="issue-detail">
       <a className="header-back" href={`/${base}`}><ArrowLeftIcon size={13} />All issues</a>
@@ -262,7 +263,7 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
         </form>
       ) : (
         <div className="issue-header">
-          <div><h2>{issue.title} <span>#{issue.number}</span></h2><p><StateBadge state={issue.state} reason={issue.closedReason} />{issue.locked && <span className="issue-locked"><LockSimpleIcon size={13} weight="bold" />Locked · {reasonLabel(issue.locked.reason)}</span>} {name(issue.authorId)} opened this issue {relativeTime(issue.createdAt)} · {issue.commentCount} {issue.commentCount === 1 ? "comment" : "comments"}</p></div>
+          <div><h2>{issue.title} <span>#{issue.number}</span></h2><p><StateBadge state={issue.state} reason={issue.closedReason} />{issue.locked && <span className="issue-locked"><LockSimpleIcon size={13} weight="bold" />Locked · {reasonLabel(issue.locked.reason)}</span>} {name(issue.authorId)} opened this issue {relativeTime(issue.createdAt)} · {issue.commentCount} {issue.commentCount === 1 ? "comment" : "comments"} <ImportedFrom source={issue.importedFrom} /></p></div>
           <div className="issue-header-actions">
             <SubscribeButton target={{ kind: "issue", repositoryId: repository.id, number: issue.number }} />
             {canContribute && issue.state === "open" && <Button className="ai-only" variant="primary" size="base" icon={SparkleIcon} onClick={() => navigate(`repository/${repository.id}/proposals/new?issue=${issue.number}`)}>Fix with AI</Button>}
@@ -276,6 +277,7 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
       )}
       {error && <div className="error-notice" role="alert">{error}</div>}
       {createdBranch && <BranchCreated repositoryId={repository.id} name={createdBranch} onDismiss={() => setCreatedBranch("")} />}
+      {canModerate && repository.visibility === "public" && <TriageSuggestionPanel key={issue.number} repositoryId={repository.id} number={issue.number} onAccepted={show} />}
       <div className="issue-layout">
         <div className="issue-thread">
           <article className="panel issue-comment">
@@ -287,7 +289,7 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
             return (
               <article className={`panel issue-comment${item.hidden ? " issue-comment-hidden" : ""}`} key={item.id}>
                 <header>
-                  <strong>{name(item.authorId)}</strong> <small>{new Date(item.createdAt).toLocaleString()}{item.editedAt ? " · edited" : ""}</small>
+                  <strong>{name(item.authorId)}</strong> <small>{new Date(item.createdAt).toLocaleString()}{item.editedAt ? " · edited" : ""}</small> <ImportedFrom source={item.importedFrom} />
                   {item.hidden && <span className="issue-hidden-tag"><EyeSlashIcon size={13} />Hidden · {reasonLabel(item.hidden.reason)}</span>}
                   <span className="issue-comment-actions">
                     {item.hidden && canModerate && <button type="button" className="text-link" onClick={() => setRevealed((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })}>{hidden ? "Show" : "Collapse"}</button>}

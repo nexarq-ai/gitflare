@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion } from '../shared/types';
 import type { AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueLabelDefinition, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, OutsideChecksGate, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependenciesAcknowledged, assertDependencyApprover } from './dependency-changes';
@@ -17,8 +18,10 @@ import { assertLineInCandidate, assertReviewClear, currentReviewRequests, review
 import { skillMissionInput, validateRepositorySkillChange } from './skill-edit';
 import type { ImportReceipt, ImportResult } from './repository-import';
 import { applyReleaseChange, type ReleaseChange, type ReleaseReceipt } from './releases';
+import { applyImportChange, importedPullMissions, importedReleaseIds, ORG_IMPORTS_KEPT, type ImportChange, type ImportChangeResult, type ImportRegistryEntry, type OrgImportRecord, type StoredImport } from './github-import';
 import { defaultModelConnections, pinMissionModels, validateModelConnection } from './model-config';
-import { applyIssueChange, applyLabelChange, issueFingerprint, linkIssueMission, listIssues, listLabelDefinitions, readIssue, recordIssueOutcome, type IssueActor, type IssueChange, type IssueLabelChange, type IssueQuery } from './issues';
+import { readAssist, readPool, requesterRemaining, reservePool, poolUsage, publicPool, writeAssist, writePool, type PoolKind, type StoredPool } from './community-pool';
+import { applyIssueChange, applyLabelChange, applyTriage, issueFingerprint, linkIssueMission, listIssues, listLabelDefinitions, readIssue, recordIssueOutcome, type IssueActor, type IssueChange, type IssueLabelChange, type IssueQuery } from './issues';
 import { branchName, normalizeBranchRules, type StoredBranchProtection } from './branch-protection';
 import { capacityError, catalogName, liveSlots, MISSION_SLOT_GRACE_MS, slotKey, WORKSPACE_MISSION_LIMIT, WORKSPACE_PREVIEW_LIMIT, type CapacitySlot } from './capacity';
 import { missionStepTimeoutMs } from './budgets';
@@ -468,6 +471,90 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return this.getAiCredentials();
   }
 
+  communityPool(): CommunityPool | null { return publicPool(readPool(this.store)); }
+
+  storedCommunityPool(): StoredPool | null { return readPool(this.store); }
+
+  setCommunityPool(pool: StoredPool | null): CommunityPool | null { writePool(this.store, pool); return publicPool(pool); }
+
+  agentAssist(): AgentAssistSettings { return readAssist(this.store); }
+
+  setAgentAssist(settings: AgentAssistSettings): AgentAssistSettings { return writeAssist(this.store, settings); }
+
+  communityPoolUsage(now = Date.now()): CommunityPoolUsage { return poolUsage(this.store, now); }
+
+  communityPoolRemaining(userId: string, now = Date.now()): number | null { const pool = readPool(this.store); return pool ? requesterRemaining(this.store, pool, userId, now) : null; }
+
+  reserveCommunityPool(kind: PoolKind, id: string, userId: string | null, now = Date.now()): { allowed: boolean; reason: string } {
+    return this.ctx.storage.transactionSync(() => reservePool(this.store, kind, id, userId, now));
+  }
+
+  reserveOperatorTriage(id: string, limit: number, now = Date.now()): boolean {
+    return this.ctx.storage.transactionSync(() => {
+      const day = new Date(now).toISOString().slice(0, 10);
+      this.store.delete(`operator-triage:${new Date(now - 86_400_000).toISOString().slice(0, 10)}`);
+      const used = this.store.get<string[]>(`operator-triage:${day}`) ?? [];
+      if (used.includes(id)) return true;
+      if (used.length >= limit) return false;
+      this.store.put(`operator-triage:${day}`, [...used, id]);
+      return true;
+    });
+  }
+
+  recordOperatorAi(entry: OperatorAiUse): void {
+    this.ctx.storage.transactionSync(() => this.store.put('operator-ai-log', [entry, ...(this.store.get<OperatorAiUse[]>('operator-ai-log') ?? [])].slice(0, 200)));
+  }
+
+  operatorAiLog(): OperatorAiUse[] { return this.store.get<OperatorAiUse[]>('operator-ai-log') ?? []; }
+
+  triageSuggestion(number: number): TriageSuggestion | null { return this.store.get<TriageSuggestion>(`triage:${number}`) ?? null; }
+
+  saveTriageSuggestion(suggestion: TriageSuggestion): TriageSuggestion {
+    if (!readIssue(this.store, suggestion.issueNumber)) throw new ApiError(404, 'ISSUE_NOT_FOUND', 'This issue could not be found.');
+    this.store.put(`triage:${suggestion.issueNumber}`, suggestion);
+    return suggestion;
+  }
+
+  dismissTriageSuggestion(number: number): void { this.store.delete(`triage:${number}`); }
+
+  acceptTriageSuggestion(key: string, number: number, body: string): IssueDetail {
+    this.mutate(key, JSON.stringify(['triage-accept', number]), () => {
+      const suggestion = this.store.get<TriageSuggestion>(`triage:${number}`);
+      if (!suggestion) throw new ApiError(404, 'TRIAGE_NOT_FOUND', 'This issue has no triage suggestion.');
+      applyTriage(this.store, number, suggestion.labels, body);
+      this.store.delete(`triage:${number}`);
+      return number;
+    });
+    return readIssue(this.store, number)!;
+  }
+
+  missionForRequest(key: string): Mission | undefined {
+    const result = this.store.get<Receipt<{ id?: unknown }>>(`request:${key}`)?.result;
+    return result && typeof result.id === 'string' ? this.getMission(result.id) : undefined;
+  }
+
+  holdFixRequest(id: string): Mission {
+    return this.ctx.storage.transactionSync(() => {
+      const mission = this.requiredMission(id);
+      if (!mission.fixRequest || mission.status !== 'draft') return mission;
+      mission.fixRequest = { ...mission.fixRequest, waiting: true };
+      return this.saveMission(mission, 'Waiting for a maintainer to start the agents.');
+    });
+  }
+
+  addAgentReview(id: string, epoch: number, candidateSha: string, baseSha: string, body: string): Mission {
+    return this.ctx.storage.transactionSync(() => {
+      const mission = this.requiredMission(id);
+      if (mission.epoch !== epoch || mission.candidateSha !== candidateSha || mission.baseSha !== baseSha) throw new ApiError(409, 'STALE_REVIEW', 'The candidate changed while the agent reviewed it.');
+      if (mission.status !== 'needs_review') throw new ApiError(409, 'REVIEW_LOCKED', 'Only a candidate awaiting review can receive an agent review.');
+      mission.reviews ??= [];
+      if (mission.reviews.some(review => review.authorId === AGENT_REVIEWER_ID && review.candidateSha === candidateSha && review.epoch === epoch)) throw new ApiError(409, 'AGENT_REVIEW_EXISTS', 'The agent already reviewed this candidate.');
+      if (mission.reviews.length >= 500) throw new ApiError(409, 'REVIEW_LIMIT', 'This proposal has reached its discussion limit.');
+      mission.reviews.push({ id: crypto.randomUUID(), kind: 'comment', body, authorId: AGENT_REVIEWER_ID, createdAt: new Date().toISOString(), epoch, candidateSha, baseSha });
+      return this.saveMission(mission, 'The review agent added a comment. Agent reviews never approve.');
+    });
+  }
+
   getAiEnabled(): boolean { return this.store.get<boolean>('ai-enabled') ?? true; }
 
   setAiEnabled(enabled: boolean): boolean { this.store.put('ai-enabled', enabled); return enabled; }
@@ -911,7 +998,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       ]);
       const mission: Mission = {
         id, repositoryId: repository.id, title: input.title, prompt: input.prompt,
-        acceptanceCriteria: criteria, authorization, ...(input.attachments?.length ? { attachments: input.attachments.map(({ name, content }) => ({ name, content })) } : {}), ...(skillChange ? { skillChange } : {}), ...(revertChange ? { revertChange: { ...revertChange } } : {}), ...(branchChange ? { branchChange } : {}), ...(input.issueNumber !== undefined ? { issueNumber: input.issueNumber } : {}), ...(race ? { mode: 'race' as const } : {}),
+        acceptanceCriteria: criteria, authorization, ...(input.attachments?.length ? { attachments: input.attachments.map(({ name, content }) => ({ name, content })) } : {}), ...(skillChange ? { skillChange } : {}), ...(revertChange ? { revertChange: { ...revertChange } } : {}), ...(branchChange ? { branchChange } : {}), ...(input.fixRequest ? { fixRequest: { ...input.fixRequest } } : {}), ...(input.issueNumber !== undefined ? { issueNumber: input.issueNumber } : {}), ...(race ? { mode: 'race' as const } : {}),
         status: 'draft', baseSha: repository.headSha, candidateSha: null, epoch: 0,
         runs: tasks.map((task) => ({ ...(skillChange || branchChange || revertChange ? {} : agentDefaults(input.agentOverrides)), ...task, assignment: task.task, id: crypto.randomUUID(), task: `${input.prompt}\nYou are ${task.name} (${task.role}). ${race ? 'Complete the whole mission on your own; other agents are attempting it independently and a reviewer will choose one result. Your approach' : 'Your assigned task'}: ${task.task}\nPreserve existing tests and run them.${criteria.length ? `\nAcceptance criteria:\n${criteria.map((criterion) => `- ${criterion}`).join('\n')}` : ''}`, status: 'draft', changedFiles: [] })),
         checks: [], changes: [], events: [], createdAt: now, updatedAt: now,
@@ -977,8 +1064,9 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       if (mission.skillChange && repository?.headSha !== mission.skillChange.baseSha) throw new ApiError(409, 'STALE_SKILL_BASE', 'The repository changed. Refresh the skill and submit a new edit proposal.');
       if (mission.branchChange?.closedAt) throw new ApiError(409, 'PULL_REQUEST_CLOSED', 'Reopen this pull request before running its checks.');
       if (mission.epoch > 0) this.archive(mission, 'retry');
-      if (authorization) mission.authorization = { ...authorization, creatorId: mission.authorization?.creatorId ?? mission.branchChange?.source?.authorId ?? authorization.creatorId };
+      if (authorization) mission.authorization = { ...authorization, creatorId: mission.authorization?.creatorId ?? mission.branchChange?.source?.authorId ?? mission.fixRequest?.requesterId ?? authorization.creatorId };
       if (mission.branchChange?.gate) { const { gate: _gate, ...open } = mission.branchChange; mission.branchChange = open; }
+      if (mission.fixRequest?.waiting) { const { waiting: _waiting, ...open } = mission.fixRequest; mission.fixRequest = open; }
       mission.status = 'queued';
       mission.epoch += 1;
       mission.baseSha = repository?.headSha ?? null;
@@ -1649,6 +1737,33 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   githubMirror(): StoredMirror | null { return this.store.get<StoredMirror>('github-mirror') ?? null; }
 
   changeGithubMirror(change: MirrorChange): MirrorChangeResult { return this.ctx.storage.transactionSync(() => applyMirrorChange(this.store, change)); }
+
+  githubImport(): StoredImport | null { return this.store.get<StoredImport>('github-import') ?? null; }
+
+  changeGithubImport(change: ImportChange): ImportChangeResult { return this.ctx.storage.transactionSync(() => applyImportChange(this.store, change)); }
+
+  importedGithubPulls(source: string, numbers: number[]): Record<number, string> { return importedPullMissions(this.store, source, numbers); }
+
+  importedGithubReleases(source: string, ids: number[]): number[] { return importedReleaseIds(this.store, source, ids); }
+
+  githubOrgImports(): OrgImportRecord[] { return this.store.list<OrgImportRecord>('github-org-import:').sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
+
+  githubOrgImport(id: string): OrgImportRecord | null { return this.store.get<OrgImportRecord>(`github-org-import:${id}`) ?? null; }
+
+  githubOrgImportRequest(requestId: string): OrgImportRecord | null { return this.githubOrgImports().find(record => record.requestId === requestId) ?? null; }
+
+  saveGithubOrgImport(record: OrgImportRecord): void {
+    this.ctx.storage.transactionSync(() => {
+      this.store.put(`github-org-import:${record.id}`, record);
+      for (const stale of this.githubOrgImports().slice(ORG_IMPORTS_KEPT)) this.store.delete(`github-org-import:${stale.id}`);
+    });
+  }
+
+  githubImportRegistry(): ImportRegistryEntry[] { return this.store.list<ImportRegistryEntry>('github-import-entry:'); }
+
+  registerGithubImport(entry: ImportRegistryEntry, enabled: boolean): void {
+    if (enabled) this.store.put(`github-import-entry:${entry.repositoryId}`, entry); else this.store.delete(`github-import-entry:${entry.repositoryId}`);
+  }
 
   secretLinks(): SecretLink[] { return new SecretLinkBook(this.store).links(); }
 

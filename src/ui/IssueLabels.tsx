@@ -1,7 +1,15 @@
 import { useState, type CSSProperties } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
-import type { IssueLabelDefinition, IssuePerson } from "../shared/types";
+import { GithubLogoIcon } from "@phosphor-icons/react";
+import type { ImportedComment, ImportedIssue, IssueLabelDefinition, IssuePerson } from "../shared/types";
+import InfoTip from "./InfoTip";
+import "./github-import.css";
+
+export function ImportedFrom({ source }: { source?: ImportedIssue | ImportedComment }) {
+  if (!source || !/^https:\/\/github\.com\//.test(source.url)) return null;
+  return <span className="issue-imported"><a href={source.url} target="_blank" rel="noopener noreferrer"><GithubLogoIcon size={12} aria-hidden="true" />{"number" in source ? `GitHub #${source.number}` : "GitHub"}</a>{"number" in source && <InfoTip label="Imported from GitHub">Imported from GitHub. Replies here are not sent to GitHub.</InfoTip>}</span>;
+}
 
 export const LABEL_SWATCHES = ["#d73a4a", "#e99695", "#f9a825", "#fbca04", "#0e8a16", "#1d76db", "#5319e7", "#b60205", "#0075ca", "#6b7280"] as const;
 
@@ -25,6 +33,7 @@ export function Labels({ labels, definitions }: { labels: string[]; definitions?
 
 export function personLabel(id: string, people: Record<string, IssuePerson> | undefined, names?: Map<string, string>, self?: string): string {
   if (id === "gitflare") return "Gitflare";
+  if (id.startsWith("github:")) return id;
   const person = people?.[id];
   if (person?.handle) return `@${person.handle}`;
   return names?.get(id) ?? person?.name ?? (id === self ? "You" : "Someone");
