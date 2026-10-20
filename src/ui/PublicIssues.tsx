@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Button, LinkButton } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
-import { ArrowLeftIcon, ChatCircleIcon, CheckCircleIcon, CircleDashedIcon, CircleIcon, EyeSlashIcon, FileTextIcon, FlagIcon, LockSimpleIcon, MagnifyingGlassIcon, PencilSimpleIcon, PlusIcon, ProhibitIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, ChatCircleIcon, CheckCircleIcon, CircleDashedIcon, CircleIcon, EyeSlashIcon, FileTextIcon, FlagIcon, LockSimpleIcon, MagnifyingGlassIcon, PencilSimpleIcon, PlusIcon, ProhibitIcon, RssSimpleIcon } from "@phosphor-icons/react";
 import { CONTENT_REPORT_REASONS, type ContentReportReason, type IssueCloseReason, type IssueComment, type IssueDetail, type IssueLabelDefinition, type IssueList, type IssuePerson, type IssueTemplate, type IssueTemplates, type IssueViewer } from "../shared/types";
 import { request, RequestError } from "./api";
 import { relativeTime } from "./components";
@@ -66,6 +66,7 @@ interface Context {
   link: (to: string, children: ReactNode, className?: string, title?: string) => ReactNode;
   go: (to: string) => void;
   onNotFound: () => void;
+  feed?: string;
 }
 
 export interface PublicIssuesProps {
@@ -75,9 +76,10 @@ export interface PublicIssuesProps {
   link: (to: string, children: ReactNode, className?: string, title?: string) => ReactNode;
   go: (to: string) => void;
   onNotFound: () => void;
+  feed?: string;
 }
 
-export default function PublicIssues({ api, path, href, link, go, onNotFound }: PublicIssuesProps) {
+export default function PublicIssues({ api, path, href, link, go, onNotFound, feed }: PublicIssuesProps) {
   const [viewer, setViewer] = useState<IssueViewer | null>(null);
   const [labels, setLabels] = useState<IssueLabelDefinition[]>([]);
   const [error, setError] = useState("");
@@ -103,13 +105,13 @@ export default function PublicIssues({ api, path, href, link, go, onNotFound }: 
 
   if (error) return <section className="repo-panel"><div className="repo-panel-padding"><div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => setRetry(value => value + 1)}>Try again</button></div></div></section>;
   if (!viewer) return <section className="repo-panel" aria-busy="true"><p className="repo-panel-padding" role="status">Loading…</p></section>;
-  const context: Context = { api, viewer, userId: viewer.userId ?? "", colors: new Map(labels.flatMap(label => labelColor(label.color) ? [[label.name, label.color] as [string, string]] : [])), href, link, go, onNotFound };
+  const context: Context = { api, viewer, userId: viewer.userId ?? "", colors: new Map(labels.flatMap(label => labelColor(label.color) ? [[label.name, label.color] as [string, string]] : [])), href, link, go, onNotFound, feed };
   if (path === "new") return <NewIssue context={context} />;
   if (path) return <IssueThread key={path} context={context} number={path} />;
   return <IssueIndex context={context} />;
 }
 
-function SafeMarkdown({ children }: { children: string }) {
+export function SafeMarkdown({ children }: { children: string }) {
   return <div className="documentation-markdown issue-markdown pub-issue-markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml components={{
     img: ({ alt }) => <span>{alt || "Image"}</span>,
     a: ({ href, children: text }) => href && /^https?:\/\//i.test(href) ? <a href={href} target="_blank" rel="noopener noreferrer nofollow ugc">{text}</a> : <span>{text}</span>,
@@ -138,7 +140,7 @@ function Time({ value }: { value: string }) {
   return <time dateTime={value} title={new Date(value).toLocaleString()}>{relativeTime(value).replace(/^Just now$/, "just now")}</time>;
 }
 
-function SignIn({ children, primary = false }: { children: ReactNode; primary?: boolean }) {
+export function SignIn({ children, primary = false }: { children: ReactNode; primary?: boolean }) {
   const target = signInHref(siteSignedInHint(), window.location.pathname);
   const remember = () => {
     if (!target.startsWith("/")) return;
@@ -212,7 +214,7 @@ function IssueIndex({ context }: { context: Context }) {
           {labelNames.map(name => <option key={name} value={name}>{name}</option>)}
         </select>
       </div>
-      <div className="pub-issues-action"><NewIssueAction context={context} /></div>
+      <div className="pub-issues-action">{context.feed && <a className="repo-feed-link" href={context.feed} title="Issues feed (Atom)" aria-label="Issues feed (Atom)" target="_blank" rel="noopener noreferrer"><RssSimpleIcon size={14} aria-hidden="true" /></a>}<NewIssueAction context={context} /></div>
     </div>
     {error && <div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => void load()}>Try again</button></div>}
     <section className="repo-panel pub-issue-panel" aria-busy={!data && !error}>
@@ -238,7 +240,7 @@ function IssueIndex({ context }: { context: Context }) {
   </div>;
 }
 
-function MarkdownField({ id, label, value, onChange, rows = 8, maxLength, placeholder, disabled, autoFocus }: { id: string; label: string; value: string; onChange: (value: string) => void; rows?: number; maxLength: number; placeholder?: string; disabled?: boolean; autoFocus?: boolean }) {
+export function MarkdownField({ id, label, value, onChange, rows = 8, maxLength, placeholder, disabled, autoFocus }: { id: string; label: string; value: string; onChange: (value: string) => void; rows?: number; maxLength: number; placeholder?: string; disabled?: boolean; autoFocus?: boolean }) {
   const [preview, setPreview] = useState(false);
   return <div className="pub-md">
     <div className="pub-md-tabs">
@@ -252,7 +254,7 @@ function MarkdownField({ id, label, value, onChange, rows = 8, maxLength, placeh
   </div>;
 }
 
-function HumanCheck({ turnstile }: { turnstile: Turnstile }) {
+export function HumanCheck({ turnstile }: { turnstile: Turnstile }) {
   if (!turnstile.required) return null;
   return <div className="pub-issue-human">
     <span className="pub-issue-human-label">Confirm you're human<InfoTip label="the human check">New accounts confirm this for their first 7 days.</InfoTip></span>
@@ -261,7 +263,7 @@ function HumanCheck({ turnstile }: { turnstile: Turnstile }) {
   </div>;
 }
 
-function human(turnstile: Turnstile): Record<string, string> {
+export function human(turnstile: Turnstile): Record<string, string> {
   return turnstile.token ? { turnstileToken: turnstile.token } : {};
 }
 

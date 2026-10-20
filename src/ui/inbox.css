@@ -19,6 +19,7 @@
 .inbox-icon.is-awaiting_checks { background: var(--gf-color-warning-bg); color: var(--gf-color-warning); }
 .inbox-icon.is-needs_review { background: var(--gf-color-info-bg); color: var(--gf-color-info); }
 .inbox-icon.is-new_issue { background: var(--gf-color-success-bg); color: var(--gf-color-success); }
+.inbox-icon.is-security_report { background: var(--gf-color-danger-bg); color: var(--gf-color-danger); }
 .inbox-dot { flex: none; width: 8px; height: 8px; margin: 7px 4px 0; border-radius: 50%; background: transparent; }
 .inbox-row.is-unread .inbox-dot { background: var(--gf-color-accent); }
 .inbox-row-main { flex: 1; min-width: 0; display: grid; gap: 5px; }

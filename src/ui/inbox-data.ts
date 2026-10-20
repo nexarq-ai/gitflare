@@ -23,6 +23,7 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   awaiting_checks: "Awaiting checks",
   needs_review: "Needs review",
   new_issue: "New issue",
+  security_report: "Security report",
 };
 
 export const AGE_OPTIONS: [string, string][] = [["", "Any time"], ["1", "Last day"], ["7", "Last 7 days"], ["30", "Last 30 days"]];

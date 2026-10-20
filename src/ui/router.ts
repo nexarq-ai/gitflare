@@ -66,6 +66,7 @@ export function publicSourceLocation(route: string): { path: string; kind: "file
 }
 
 const PUBLIC_REPOSITORY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const PUBLIC_ADVISORY_ID = /^[A-Za-z0-9_-]{1,100}$/;
 const SINGLE_PUBLIC_VIEWS = ["commits", "branches", "releases", "agents"] as const;
 
 export type PublicRepositoryLocation = { handle: string; repository: string; view: PublicRepositoryView; path: string };
@@ -84,6 +85,10 @@ export function publicRepositoryLocation(route: string): PublicRepositoryLocatio
   if (view === "issues") {
     if (!rest.length) return { handle, repository, view, path: "" };
     return rest.length === 1 && PUBLIC_ISSUE_PATH.test(rest[0]!) ? { handle, repository, view, path: rest[0]! } : null;
+  }
+  if (view === "security") {
+    if (!rest.length) return { handle, repository, view, path: "" };
+    return rest.length === 1 && PUBLIC_ADVISORY_ID.test(rest[0]!) ? { handle, repository, view, path: rest[0]! } : null;
   }
   if (view !== "tree" && view !== "blob") return null;
   if (!rest.length) return view === "tree" ? { handle, repository, view: "code", path: "" } : null;
@@ -168,7 +173,7 @@ export function isKnownAppRoute(route: string): boolean {
     || /^settings(?:\/(?:people|cloudflare|models|audit))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
-    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|import)|\/settings(?:\/(?:branches|deploys|previews|agents|issues|community|secrets|cloudflare|access))?|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
+    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|import)|\/settings(?:\/(?:branches|deploys|previews|agents|issues|community|secrets|cloudflare|access))?|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases|security)(?:\/[^/]+)?)?$/.test(route)
     || /^(?:forgot-password|reset-password|verify-email)(?:\/[^/]+)?$/.test(route)
     || route === "invite" || route.startsWith("invite?");
 }

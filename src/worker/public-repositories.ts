@@ -1,4 +1,4 @@
-import type { PublicBranches, PublicCommit, PublicFile, PublicHistory, PublicReleases, PublicRepositorySummary, PublicTree, Release, Repository, RepositoryLicense, RepositoryVisibility } from '../shared/types';
+import type { Advisory, FeedLinks, PublicBranches, PublicCommit, PublicFile, PublicHistory, PublicReleases, PublicRepositorySummary, PublicTree, Release, Repository, RepositoryFeeds, RepositoryLicense, RepositoryVisibility } from '../shared/types';
 import { HANDLE_PATTERN } from '../shared/handles';
 import { repositoryLabel } from '../shared/repository-names';
 import { hostOrigins } from '../shared/hosts';
@@ -10,6 +10,9 @@ import { consume, rateLimitedResponse } from './rate-limits';
 import { publicPrincipal, securityClient, type Principal, type PublicListing, type SecurityService, type VisibilityRecord } from './security';
 import { CACHE_DEPENDENCIES } from './public-cache';
 import { sourceView, type SourceHandle } from './source-browse';
+import { readFunding } from './funding';
+import { readSecurityPolicy } from './security-policy';
+import { publicDownloadUrl, servedContentType, type StoredAsset } from './release-assets';
 
 export const PUBLIC_NOT_FOUND = 'This repository does not exist or is not public.';
 const REPOSITORY_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -31,6 +34,11 @@ export function siteOrigin(env: Pick<AppEnv, 'SITE_ORIGIN' | 'APP_ORIGIN'>, requ
 export function publicUrls(origin: string, handle: string, repository: Pick<Repository, 'name' | 'displayName'>) {
   const path = `/${handle}/${encodeURIComponent(repositoryLabel(repository))}`;
   return { path, url: `${origin}${path}`, cloneUrl: `${origin}${path}.git` };
+}
+
+export function feedLinks(origin: string, path: string): RepositoryFeeds {
+  const links = (kind: string): FeedLinks => ({ atom: `${origin}${path}/${kind}.atom`, rss: `${origin}${path}/${kind}.rss` });
+  return { releases: links('releases'), commits: links('commits'), issues: links('issues') };
 }
 
 export function findPublicRepository(repositories: Repository[], name: string): Repository | undefined {
@@ -153,10 +161,11 @@ async function publicView(env: AppEnv, access: SecurityService, target: PublicTa
     const urls = publicUrls(origin, handle, repository);
     const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
     const [[stats], forks] = await Promise.all([access.repositoryStats([repository.id]), Promise.resolve().then(() => records.forkCount()).catch(() => 0)]);
+    const [license, funding, policy] = commit ? await Promise.all([detectLicense(source, repository.defaultBranch), readFunding(source, commit.hash).catch(() => []), readSecurityPolicy(source, commit.hash).catch(() => null)]) : [null, [], null];
     return Response.json({
       handle, name: repositoryLabel(repository), description: repository.description, defaultBranch: repository.defaultBranch, headSha: commit?.hash ?? null, updatedAt: repository.updatedAt,
-      visibility: 'public', license: commit ? await detectLicense(source, repository.defaultBranch) : null, readme, url: urls.url, cloneUrl: urls.cloneUrl, latestCommit: commit ? commits([commit])[0]! : null,
-      stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0, forks,
+      visibility: 'public', license, readme, url: urls.url, cloneUrl: urls.cloneUrl, latestCommit: commit ? commits([commit])[0]! : null,
+      stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0, forks, funding, feeds: feedLinks(origin, urls.path), securityPolicy: !!policy,
     } satisfies PublicRepositorySummary);
   }
   if (view === 'branches') {
@@ -164,8 +173,17 @@ async function publicView(env: AppEnv, access: SecurityService, target: PublicTa
     return Response.json({ defaultBranch: repository.defaultBranch, branches: branches.map(branch => ({ name: branch.name, headSha: branch.headSha, default: branch.default })) } satisfies PublicBranches);
   }
   if (view === 'releases') {
-    const releases = await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).listReleases() as Release[];
-    return Response.json({ releases: releases.filter(release => !release.draft && release.publishedAt).sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '')).map(release => ({ tag: release.tag, name: release.name, notes: release.notes, targetSha: release.targetSha, prerelease: release.prerelease, publishedAt: release.publishedAt })) } satisfies PublicReleases);
+    const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
+    const [releases, assets, advisories] = await Promise.all([records.listReleases() as Promise<Release[]>, Promise.resolve().then(() => records.listReleaseAssets() as Promise<StoredAsset[]>).catch(() => [] as StoredAsset[]), Promise.resolve().then(() => records.listAdvisories() as Promise<Advisory[]>).catch(() => [] as Advisory[])]);
+    const urls = publicUrls(origin, handle, repository);
+    return Response.json({
+      releases: releases.filter(release => !release.draft && release.publishedAt).sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '')).map(release => ({
+        tag: release.tag, name: release.name, notes: release.notes, targetSha: release.targetSha, prerelease: release.prerelease, publishedAt: release.publishedAt,
+        assets: env.RELEASE_ASSETS ? assets.filter(asset => asset.releaseId === release.id).map(asset => ({ name: asset.name, size: asset.size, contentType: servedContentType(asset.contentType), sha256: asset.sha256, downloadUrl: publicDownloadUrl(urls.url, release.tag, asset.name) })) : [],
+        advisories: advisories.filter(advisory => advisory.state === 'published' && advisory.releaseId === release.id).map(advisory => ({ id: advisory.id, title: advisory.title, severity: advisory.severity, cveId: advisory.cveId })),
+      })),
+      feeds: feedLinks(origin, urls.path).releases,
+    } satisfies PublicReleases);
   }
   const ref = await publicRef(source, repository, url.searchParams.get('ref'));
   const commit = (await source.log({ ref, limit: 1 }).catch(() => []))[0];

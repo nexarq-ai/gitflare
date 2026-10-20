@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Tabs } from "@cloudflare/kumo/components/tabs";
-import { ArchiveIcon, ArrowUUpLeftIcon, BellIcon, ChatCircleIcon, CheckCircleIcon, ClockIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon, EyeIcon, PlayIcon, TrayIcon, UserFocusIcon } from "@phosphor-icons/react";
+import { ArchiveIcon, ArrowUUpLeftIcon, BellIcon, ChatCircleIcon, CheckCircleIcon, ClockIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon, EyeIcon, PlayIcon, ShieldWarningIcon, TrayIcon, UserFocusIcon } from "@phosphor-icons/react";
 import { INBOX_KINDS, NOTIFICATION_REASONS, REASON_LABELS, type InboxKind, type InboxRow, type InboxView, type NotificationItem, type NotificationList, type NotificationReason } from "../shared/notifications";
 import { request } from "./api";
 import { EmptyState, ErrorNotice, relativeTime } from "./components";
@@ -19,7 +19,7 @@ type Props = {
   onCounts: (counts: Partial<InboxCounts>) => void;
 };
 
-const KIND_ICONS: Record<InboxKind, typeof EyeIcon> = { review_requested: UserFocusIcon, awaiting_checks: PlayIcon, needs_review: EyeIcon, new_issue: ChatCircleIcon };
+const KIND_ICONS: Record<InboxKind, typeof EyeIcon> = { review_requested: UserFocusIcon, awaiting_checks: PlayIcon, needs_review: EyeIcon, new_issue: ChatCircleIcon, security_report: ShieldWarningIcon };
 
 function failureText(failure: unknown, fallback: string): string {
   return failure instanceof Error ? failure.message : fallback;

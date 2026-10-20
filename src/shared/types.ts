@@ -393,7 +393,15 @@ export interface PublicRepositorySummary {
   stars: number;
   watchers: number;
   forks?: number;
+  funding?: FundingLink[];
+  feeds?: RepositoryFeeds;
+  securityPolicy?: boolean;
 }
+export const FUNDING_PLATFORMS = ['github', 'patreon', 'open_collective', 'ko_fi', 'tidelift', 'community_bridge', 'liberapay', 'issuehunt', 'lfx_crowdfunding', 'polar', 'buy_me_a_coffee', 'thanks_dev', 'custom'] as const;
+export type FundingPlatform = typeof FUNDING_PLATFORMS[number];
+export interface FundingLink { platform: FundingPlatform; label: string; url: string }
+export interface FeedLinks { atom: string; rss: string }
+export interface RepositoryFeeds { releases: FeedLinks; commits: FeedLinks; issues: FeedLinks }
 export interface PublicCommit { sha: string; message: string }
 export type PublicHandleKind = 'user' | 'workspace';
 export interface PublicRepositoryCard { handle: string; name: string; description: string; language: string | null; topics: string[]; license: string | null; stars: number; updatedAt: string; publishedAt: string; url: string }
@@ -411,8 +419,9 @@ export interface PublicTree { entries: { name: string; path: string; type: 'file
 export interface PublicFile { path: string; content: string; commitSha: string }
 export interface PublicHistory { ref: string; commits: PublicCommit[] }
 export interface PublicBranches { defaultBranch: string; branches: { name: string; headSha: string; default: boolean }[] }
-export interface PublicRelease { tag: string; name: string; notes: string; targetSha: string; prerelease: boolean; publishedAt: string | null }
-export interface PublicReleases { releases: PublicRelease[] }
+export interface PublicReleaseAsset { name: string; size: number; contentType: string; sha256: string; downloadUrl: string }
+export interface PublicRelease { tag: string; name: string; notes: string; targetSha: string; prerelease: boolean; publishedAt: string | null; assets?: PublicReleaseAsset[]; advisories?: AdvisoryReference[] }
+export interface PublicReleases { releases: PublicRelease[]; feeds?: FeedLinks }
 
 export interface WorkspaceCloudflareAccount { id: string; name: string; default: boolean }
 export type RepositoryAccountSource = 'repository' | 'selected' | 'default' | 'none';
@@ -555,7 +564,12 @@ export interface Release {
   updatedAt: string;
   publishedAt: string | null;
   importedFrom?: ImportedComment;
+  assets?: ReleaseAsset[];
+  advisories?: AdvisoryReference[];
 }
+
+export interface ReleaseAsset { id: string; releaseId: string; name: string; size: number; contentType: string; sha256: string; uploadedBy: string; uploadedAt: string; downloadUrl: string; publicUrl: string | null }
+export interface ReleaseAssetUsage { available: boolean; usedBytes: number; limitBytes: number; maxAssetBytes: number; maxInlineBytes: number; maxAssetsPerRelease: number }
 
 export interface ReleaseList {
   releases: Release[];
@@ -563,6 +577,53 @@ export interface ReleaseList {
   headSha: string | null;
   commits: { sha: string; message: string }[];
   limit: number;
+  assets?: ReleaseAssetUsage;
 }
+
+export const ADVISORY_SEVERITIES = ['low', 'moderate', 'high', 'critical'] as const;
+export type AdvisorySeverity = typeof ADVISORY_SEVERITIES[number];
+export const ADVISORY_STATES = ['draft', 'published', 'closed'] as const;
+export type AdvisoryState = typeof ADVISORY_STATES[number];
+export const ADVISORY_CLOSE_REASONS = ['not_a_vulnerability', 'duplicate', 'out_of_scope', 'withdrawn'] as const;
+export type AdvisoryCloseReason = typeof ADVISORY_CLOSE_REASONS[number];
+export interface AdvisoryAffected { ecosystem: string; package: string; vulnerableVersions: string; patchedVersions: string }
+export interface AdvisoryComment { id: string; authorId: string; body: string; createdAt: string }
+export interface AdvisoryReference { id: string; title: string; severity: AdvisorySeverity | null; cveId: string | null }
+export interface AdvisoryFields {
+  title: string;
+  description: string;
+  severity: AdvisorySeverity | null;
+  cvssVector: string | null;
+  cveId: string | null;
+  cweIds: string[];
+  affected: AdvisoryAffected[];
+  references: string[];
+  credits: string[];
+  releaseId: string | null;
+}
+export interface Advisory extends AdvisoryFields {
+  id: string;
+  repositoryId: string;
+  state: AdvisoryState;
+  source: 'report' | 'maintainer';
+  reporterId: string | null;
+  collaborators: string[];
+  comments: AdvisoryComment[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+  closedAt: string | null;
+  closeReason: AdvisoryCloseReason | null;
+  acknowledgedAt?: string;
+}
+export interface AdvisoryViewer { maintainer: boolean; reporter: boolean; collaborator: boolean; canComment: boolean }
+export interface AdvisoryDetail extends Advisory { people: Record<string, IssuePerson>; release: { id: string; tag: string; name: string } | null; viewer: AdvisoryViewer }
+export interface AdvisorySummary { id: string; title: string; state: AdvisoryState; source: 'report' | 'maintainer'; severity: AdvisorySeverity | null; cveId: string | null; commentCount: number; createdAt: string; updatedAt: string; publishedAt: string | null }
+export interface AdvisoryList { items: AdvisorySummary[]; maintainer: boolean; counts: Record<AdvisoryState, number> }
+export interface PublicAdvisory { id: string; title: string; description: string; severity: AdvisorySeverity | null; cvssVector: string | null; cveId: string | null; cweIds: string[]; affected: AdvisoryAffected[]; references: string[]; credits: string[]; publishedAt: string; updatedAt: string; release: { tag: string; name: string } | null }
+export interface PublicAdvisoryResponse { published: PublicAdvisory | null; report: AdvisoryDetail | null }
+export interface SecurityPolicy { path: string; content: string }
+export interface PublicSecurity { policy: SecurityPolicy | null; reporting: boolean; signedIn: boolean; canReport: boolean; limited: boolean; turnstileSiteKey: string | null; advisories: PublicAdvisory[]; reports: AdvisorySummary[] }
 
 export interface ReleaseNotes { markdown: string; targetSha: string; previousTag: string | null; commitCount: number; missionCount: number; truncated: boolean }

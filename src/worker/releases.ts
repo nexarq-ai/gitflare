@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import type { Mission, Release, ReleaseList, ReleaseNotes, Repository } from '../shared/types';
+import type { Mission, Release, ReleaseAssetUsage, ReleaseList, ReleaseNotes, Repository } from '../shared/types';
 import type { ArtifactsBinding } from './artifacts';
 import { ApiError, assertMutationOrigin, publicError, readJson, requireIdempotencyKey, requireString } from './domain';
 import { advertisedRefs, discoverRefs, remoteDetails } from './repository-import';
@@ -200,7 +200,8 @@ export function sortReleases(releases: Release[]): Release[] {
   return [...releases].sort((a, b) => Number(b.draft) - Number(a.draft) || (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt));
 }
 
-interface ReleaseContext { artifacts?: ArtifactsBinding; repository: Repository; coordinator: ReleaseStore; principal: Principal; access: ReleaseAccess; fetcher?: typeof fetch }
+export interface ReleaseExtras { decorate(releases: Release[]): Promise<Release[]>; usage(): Promise<ReleaseAssetUsage>; deleted(release: Release): Promise<void> }
+interface ReleaseContext { artifacts?: ArtifactsBinding; repository: Repository; coordinator: ReleaseStore; principal: Principal; access: ReleaseAccess; fetcher?: typeof fetch; extras?: ReleaseExtras }
 
 async function reconcile(context: ReleaseContext, key: string, fingerprint: string, receipt: ReleaseReceipt): Promise<Release> {
   if (receipt.result) return receipt.result;
@@ -240,11 +241,12 @@ export async function releaseApi(request: Request, context: ReleaseContext, rele
     if (releaseId) {
       const release = await coordinator.getRelease(releaseId);
       if (!release) throw new ApiError(404, 'RELEASE_NOT_FOUND', 'This release could not be found.');
-      return Response.json(release);
+      return Response.json(context.extras ? (await context.extras.decorate([release]))[0] : release);
     }
     let commits: ReleaseList['commits'] = [];
     if (context.artifacts && repository.provider === 'artifacts') { using source = await context.artifacts.get(repository.name); commits = (await source.log({ ref: repository.defaultBranch, limit: 30 })).map(commit => ({ sha: commit.hash, message: commit.message.split('\n')[0].slice(0, 200) })); }
-    return Response.json({ releases: sortReleases(await coordinator.listReleases()), defaultBranch: repository.defaultBranch, headSha: commits[0]?.sha ?? null, commits, limit: RELEASE_LIMIT } satisfies ReleaseList);
+    const releases = sortReleases(await coordinator.listReleases());
+    return Response.json({ releases: context.extras ? await context.extras.decorate(releases) : releases, defaultBranch: repository.defaultBranch, headSha: commits[0]?.sha ?? null, commits, limit: RELEASE_LIMIT, ...(context.extras ? { assets: await context.extras.usage() } : {}) } satisfies ReleaseList);
   }
   if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET to read releases and POST to change them.');
   assertMutationOrigin(request);
@@ -284,6 +286,7 @@ export async function releaseApi(request: Request, context: ReleaseContext, rele
   }
   if (operation === 'delete') {
     const result = await coordinator.changeRelease(key, JSON.stringify(['release-delete', releaseId]), { kind: 'delete', id: releaseId });
+    if (result.receipt.result) await context.extras?.deleted(result.receipt.result);
     return Response.json({ deleted: true, release: result.receipt.result, tagRetained: !result.receipt.result?.draft, message: result.receipt.result?.draft ? 'The draft was deleted.' : 'The release record was deleted. Its Git tag is immutable and remains in the repository.' });
   }
   const patch = releasePatch(body), fingerprint = JSON.stringify(['release-update', releaseId, patch]);

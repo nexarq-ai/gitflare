@@ -52,6 +52,7 @@ Every action in the UI has a tool, under the same authorization and state checks
 | Inbox and notifications | `gitflare_inbox` (work waiting on you), `gitflare_notifications` (list, settings, subscriptions), `gitflare_manage_notifications`, `gitflare_submit_review` |
 | GitHub | `gitflare_github_mirror`, `gitflare_github_import` (progress), `gitflare_import_github` (start, resume, cancel, hourly pull, make Gitflare canonical), `gitflare_github_organization`, `gitflare_import_github_organization`; tokens are entered in the browser only, `credential-setup` returns the URL |
 | Community AI | `gitflare_fix_requests` (with `quote` to see who pays), `gitflare_request_fix`; Owners: `gitflare_community_pool`, `gitflare_manage_community_pool`, `gitflare_set_triage`; Triagers: `gitflare_triage_suggestion`, `gitflare_triage_issue`; reviewers: `gitflare_agent_review` (comments only); operators: `gitflare_operator_ai` |
+| Releases and security | `gitflare_upload_release_asset`, `gitflare_delete_release_asset`; `gitflare_advisories`, `gitflare_manage_advisory` (private drafts), `gitflare_publish_advisory`; `gitflare_report_vulnerability` (private report to a public repository with a SECURITY.md) |
 | Models | `gitflare_model_connections`; Owners: `gitflare_manage_model_connection` |
 | Cloudflare | `gitflare_cloudflare_project`, `gitflare_manage_cloudflare_project` (map up to 100 resources, usage, D1 migration plan and execute), `gitflare_deploy_access`, `gitflare_manage_deploy_access` |
 | Access | users, invitations, roles, teams, grants, sessions, audit log |

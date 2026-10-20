@@ -8,11 +8,13 @@ import { Checkbox } from "@cloudflare/kumo/components/checkbox";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { Input, Textarea } from "@cloudflare/kumo/components/input";
 import { Select } from "@cloudflare/kumo/components/select";
-import { ArrowLeftIcon, MagicWandIcon, PencilSimpleIcon, PlusIcon, RocketLaunchIcon, TagIcon, TrashIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, FileIcon, MagicWandIcon, PencilSimpleIcon, PlusIcon, RocketLaunchIcon, ShieldWarningIcon, TagIcon, TrashIcon } from "@phosphor-icons/react";
 import type { Release, ReleaseList, ReleaseNotes, Repository } from "../shared/types";
 import { request, RequestError } from "./api";
 import { navigate as goTo } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
+import ReleaseAssets from "./ReleaseAssets";
+import { SeverityPill } from "./advisory-ui";
 
 const NOTES_MAX = 20_000;
 const tagPattern = /^[A-Za-z0-9][A-Za-z0-9._+/-]{0,99}$/;
@@ -120,7 +122,7 @@ function ReleaseForm({ repository, list, release, onDone, onCancel }: { reposito
   </section>;
 }
 
-function ReleaseDetail({ repository, list, release, canLand, onChanged, onNotify }: { repository: Repository; list: ReleaseList; release: Release; canLand: boolean; onChanged: (release: Release | null) => void; onNotify: (message: string) => void }) {
+function ReleaseDetail({ repository, list, release, canLand, onChanged, onAssetsChanged, onNotify }: { repository: Repository; list: ReleaseList; release: Release; canLand: boolean; onChanged: (release: Release | null) => void; onAssetsChanged: () => void; onNotify: (message: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState<"publish" | "delete" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -157,6 +159,11 @@ function ReleaseDetail({ repository, list, release, canLand, onChanged, onNotify
       <div className="panel-body">{release.notes.trim() ? <ReleaseMarkdown content={release.notes} /> : <p className="release-hint">No checkpoint notes.</p>}</div>
       {!release.draft && <div className="release-fetch"><code>git fetch origin tag {release.tag}</code></div>}
     </section>
+    {release.advisories?.length ? <section className="panel release-advisories" aria-labelledby={`advisories-${release.id}`}>
+      <div className="panel-header"><h2 id={`advisories-${release.id}`}><ShieldWarningIcon size={16} aria-hidden="true" />Fixes advisories</h2></div>
+      <ul>{release.advisories.map((advisory) => <li key={advisory.id}><SeverityPill severity={advisory.severity} /><a href={`/repository/${repository.id}/security/${advisory.id}`}>{advisory.title}</a>{advisory.cveId && <code>{advisory.cveId}</code>}</li>)}</ul>
+    </section> : null}
+    <ReleaseAssets key={release.id} repositoryId={repository.id} release={release} usage={list.assets} canLand={canLand} onChanged={onAssetsChanged} />
     <Dialog.Root open={confirming !== null} onOpenChange={(open) => { if (!open) setConfirming(null); }}>
       <Dialog size="sm" className="dialog-content confirm-dialog">
         <Dialog.Title className="dialog-title">{confirming === "publish" ? `Publish ${release.tag}?` : "Delete this checkpoint?"}</Dialog.Title>
@@ -193,7 +200,7 @@ export default function Releases({ repository, releaseId, canLand: mayLand, demo
   if (releaseId) {
     const release = list.releases.find((item) => item.id === releaseId);
     if (!release) return <><a className="header-back release-back" href={`/${base}`}><ArrowLeftIcon size={13} />All checkpoints</a><div className="error-notice" role="alert">This checkpoint could not be found.</div></>;
-    return <ReleaseDetail key={release.id} repository={repository} list={list} release={release} canLand={canLand} onNotify={onNotify} onChanged={(changed) => { void load(); if (!changed) goTo(base); }} />;
+    return <ReleaseDetail key={release.id} repository={repository} list={list} release={release} canLand={canLand} onNotify={onNotify} onAssetsChanged={() => void load()} onChanged={(changed) => { void load(); if (!changed) goTo(base); }} />;
   }
   const latest = latestId(list.releases);
   return <section className="releases">
@@ -205,7 +212,7 @@ export default function Releases({ repository, releaseId, canLand: mayLand, demo
     {list.releases.length ? <ul className="panel release-list" aria-label="Checkpoints">
       {list.releases.map((release) => <li key={release.id}>
         <div><a href={`/${base}/${release.id}`}>{release.name}</a><ReleaseBadges release={release} latest={release.id === latest} /></div>
-        <div className="release-row-meta"><span><TagIcon size={14} aria-hidden="true" /><code>{release.tag}</code></span><code title={release.targetSha}>{release.targetSha.slice(0, 7)}</code><span>{new Date(release.publishedAt ?? release.createdAt).toLocaleDateString()}</span></div>
+        <div className="release-row-meta"><span><TagIcon size={14} aria-hidden="true" /><code>{release.tag}</code></span><code title={release.targetSha}>{release.targetSha.slice(0, 7)}</code>{release.assets?.length ? <span title={`${release.assets.length} ${release.assets.length === 1 ? "file" : "files"}`}><FileIcon size={14} aria-hidden="true" />{release.assets.length}</span> : null}<span>{new Date(release.publishedAt ?? release.createdAt).toLocaleDateString()}</span></div>
       </li>)}
     </ul> : <section className="panel release-empty"><TagIcon size={30} aria-hidden="true" /><h3>No checkpoints yet</h3><p>Checkpoints mark a revision with a permanent Git tag and notes, so people can find and fetch a known version.</p></section>}
   </section>;

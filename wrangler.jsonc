@@ -150,6 +150,22 @@
         "limit": 30,
         "period": 60
       }
+    },
+    {
+      "name": "RELEASE_ASSET_RATE_LIMIT",
+      "namespace_id": "4160",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    },
+    {
+      "name": "VULNERABILITY_REPORT_RATE_LIMIT",
+      "namespace_id": "4161",
+      "simple": {
+        "limit": 3,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {
