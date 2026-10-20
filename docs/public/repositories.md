@@ -46,4 +46,6 @@ An Owner can make a repository **public** in its Settings → General. Gitflare 
 
 Anonymous reads go through one access check for a public principal that can only read a repository marked public in its own workspace. A private repository, an unknown repository and an unknown handle all return the same `404`. Commit lookups by SHA on the public pages are limited to the last 1,000 commits of the default branch. Anonymous requests are rate-limited per address. Old `/repository/<id>` links of a public repository lead signed-out visitors to its public address.
 
+Anyone can clone or fetch a public repository over HTTPS without an account: `git clone https://<site>/<handle>/<repository>.git`. Pushing to that address asks for a personal token as the password (create one in Account → AI clients), and only workspace members with Contributor access can push, under the same stream protection as `/git/<repository>.git`. A private repository, an unknown one and an unknown handle all answer `Repository not found.`; clone a private repository with a token at `/git/<repository>.git` on the app host. SSH is not offered; use HTTPS with a token. Anonymous fetches are rate-limited per address, and `/llms.txt` lists recently published public repositories.
+
 Public repositories are part of hosted Gitflare; the self-hosted and demo editions keep every repository private.

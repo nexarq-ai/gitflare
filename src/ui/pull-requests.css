@@ -39,6 +39,7 @@
 .git-access .clipboard-row:first-child { margin-top: 0; }
 .git-access-note { display: flex; gap: 8px; margin-top: 14px; font-size: 12px; line-height: 1.6; color: var(--gf-color-text-secondary); }
 .git-access-note svg { flex-shrink: 0; margin-top: 3px; }
+.git-access-public { margin: 0 0 12px; font-size: 13px; color: var(--gf-color-text-secondary); }
 .branch-settings .panel + .panel { margin-top: 24px; }
 .branch-flags { display: flex; gap: 6px; }
 .branch-flags .pill svg { flex-shrink: 0; }

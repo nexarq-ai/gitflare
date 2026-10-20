@@ -57,7 +57,8 @@ import { demoDisabledApi, demoVisitor, handleDemoRoute, runDemoReset } from './d
 import { assertCookieRequestOrigin, CLEAR_SESSION_COOKIE, sessionCookie, sessionCookieValue } from './session-policy';
 import { withSignedInHint } from './signed-in-hint';
 import { browseRepository } from './source-browse';
-import { changeVisibility, publicRepositoryApi, siteOrigin, visibilitySnapshot } from './public-repositories';
+import { changeVisibility, publicRepositoryApi, publicRepositoryIndex, siteOrigin, visibilitySnapshot } from './public-repositories';
+import { handlePublicGit, isPublicGitPath } from './public-git';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -970,19 +971,25 @@ async function entryRedirect(request: Request, env: AppEnv, path: string): Promi
   return location ? new Response(null, { status: 302, headers: { Location: location, 'Cache-Control': 'no-store' } }) : null;
 }
 
+async function gitResponse(handle: () => Promise<Response | null>): Promise<Response> {
+  try { return (await handle())!; }
+  catch (error) { console.error(JSON.stringify({ event: 'git_request_failed', name: error instanceof Error ? error.name : typeof error, message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 200), stack: error instanceof Error ? error.stack?.split('\n').slice(1, 6).join(' | ') : undefined })); return new Response('Gitflare could not complete this Git request. Try again shortly.\n', { status: 502, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } }); }
+}
+
 const application = {
   async fetch(request: Request, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (path.startsWith('/git/')) {
       const demoBlocked = demoMode(env) ? demoGitRestriction(request.method, new URL(request.url)) : null;
       if (demoBlocked) return new Response(`${demoBlocked.message}\n`, { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-      try { return (await handleGitRequest(request, gitDependencies(env)))!; }
-      catch (error) { console.error(JSON.stringify({ event: 'git_request_failed', name: error instanceof Error ? error.name : typeof error, message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 200), stack: error instanceof Error ? error.stack?.split('\n').slice(1, 6).join(' | ') : undefined })); return new Response('Gitflare could not complete this Git request. Try again shortly.\n', { status: 502, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } }); }
+      return gitResponse(() => handleGitRequest(request, gitDependencies(env)));
     }
     const publicGit = await publicGitResponse(request, env);
     if (publicGit) return publicGit;
+    if (isPublicGitPath(path)) return gitResponse(() => handlePublicGit(request, env, gitDependencies(env)));
     if (path === '/oauth/authorize') return oauthConsent(request, env, authorize);
     const publicPage = publicPageResponse(request, env);
+    if (publicPage && path === '/llms.txt' && request.method === 'GET' && publicPage.ok) return new Response(`${await publicPage.text()}${await publicRepositoryIndex(env, siteOrigin(env, new URL(request.url).origin), request.headers.get('CF-Connecting-IP') ?? 'local')}`, { headers: publicPage.headers });
     if (publicPage) return publicPage;
     if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     const entry = await entryRedirect(request, env, path);
