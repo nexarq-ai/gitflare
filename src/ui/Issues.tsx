@@ -10,6 +10,7 @@ import { BranchCreated, createBranch } from "./BranchProtection";
 import { EmptyState, relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
 import InfoTip from "./InfoTip";
+import TriageSuggestionPanel from "./TriageSuggestion";
 import { Labels, personLabel, ReasonDialog } from "./IssueLabels";
 import { navigate } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
@@ -274,6 +275,7 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
       )}
       {error && <div className="error-notice" role="alert">{error}</div>}
       {createdBranch && <BranchCreated repositoryId={repository.id} name={createdBranch} onDismiss={() => setCreatedBranch("")} />}
+      {canModerate && repository.visibility === "public" && <TriageSuggestionPanel key={issue.number} repositoryId={repository.id} number={issue.number} onAccepted={show} />}
       <div className="issue-layout">
         <div className="issue-thread">
           <article className="panel issue-comment">

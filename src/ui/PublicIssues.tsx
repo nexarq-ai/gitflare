@@ -11,6 +11,7 @@ import { relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
 import { appHref, siteSignedInHint } from "./hosts";
 import InfoTip from "./InfoTip";
+import { RequestFix } from "./FixRequests";
 import { currentRoute } from "./router";
 import { useTurnstile, type Turnstile } from "./turnstile";
 import "./public-issues.css";
@@ -577,6 +578,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
       </article>}
       {issue.comments.map(commentCard)}
       {issue.state === "closed" && issue.closedAt && <p className="pub-issue-event"><StateIcon state="closed" reason={issue.closedReason} size={15} />{issue.closedReason === "not_planned" ? "Closed as not planned" : "Closed"} <Time value={issue.closedAt} /></p>}
+      <RequestFix api={api} issueNumber={issue.number} open={issue.state === "open"} signIn={<SignIn>Sign in to request a fix</SignIn>} />
       {replyArea()}
     </div>
     <div className="pub-issue-foot"><TriageLink viewer={viewer} number={issue.number} /></div>
