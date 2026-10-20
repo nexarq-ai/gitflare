@@ -960,8 +960,8 @@
     },
     {
       "path": "src/ui/ReleaseAssets.tsx",
-      "size": 9645,
-      "sha256": "d947181c38535997317c5d3d517e18c7567f420d53a2cde2d25f7ac76c6a295a"
+      "size": 9654,
+      "sha256": "3e7617e69e27c6894dbd087b6203eb28097263331a909a37069c5cd4dea7b23e"
     },
     {
       "path": "src/ui/releases.css",

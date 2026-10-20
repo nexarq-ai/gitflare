@@ -122,8 +122,8 @@ export default function ReleaseAssets({ repositoryId, release, usage, canLand, o
     <div className="panel-header release-assets-header">
       <h2 id={`assets-${release.id}`}>Files<span className="release-assets-count">{assets.length}</span></h2>
       <div className="release-assets-tools">
-        {usage && available && <span className="release-assets-usage">{byteLabel(usage.usedBytes)} of {byteLabel(usage.limitBytes)}<InfoTip label="release file storage">Up to {byteLabel(usage.maxAssetBytes)} per file and {usage.maxAssetsPerRelease} files per release. Storage is shared by every release in this repository.</InfoTip></span>}
-        {usage && !available && <span className="release-assets-usage">Uploads unavailable<InfoTip label="release file uploads">This installation has no storage bucket for release files. An administrator can add one.</InfoTip></span>}
+        {usage && available && <span className="release-assets-usage">{byteLabel(usage.usedBytes)} of {byteLabel(usage.limitBytes)}<InfoTip label="checkpoint file storage">Up to {byteLabel(usage.maxAssetBytes)} per file and {usage.maxAssetsPerRelease} files per release. Storage is shared by every release in this repository.</InfoTip></span>}
+        {usage && !available && <span className="release-assets-usage">Uploads unavailable<InfoTip label="checkpoint file uploads">This installation has no storage bucket for checkpoint files. An administrator can add one.</InfoTip></span>}
         {canLand && available && <>
           <input ref={input} type="file" multiple hidden onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ""; void send(files); }} />
           <Button variant="secondary" size="sm" icon={UploadSimpleIcon} disabled={!canUpload} loading={!!upload} onClick={() => input.current?.click()}>Upload</Button>
