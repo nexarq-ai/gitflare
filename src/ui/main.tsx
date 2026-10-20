@@ -17,9 +17,10 @@ import "./pull-requests.css";
 import "./styles.css";
 import "./design-system.css";
 import { initializeTheme } from "./ThemeToggle";
-import { currentRoute } from "./router";
+import { currentRoute, followsSavedTheme } from "./router";
 
-initializeTheme(isPublicRoute(currentRoute()));
+const route = currentRoute();
+initializeTheme(isPublicRoute(route) && !followsSavedTheme(route));
 
 declare global {
   interface Window {

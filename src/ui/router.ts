@@ -87,6 +87,24 @@ export function publicRepositoryLocation(route: string): PublicRepositoryLocatio
   return { handle, repository, view, path: rest.join("/") };
 }
 
+export function publicProfileLocation(route: string): { handle: string } | null {
+  if (!HANDLE_PATTERN.test(route)) return null;
+  if (RESERVED_HANDLES.has(route) && !(OPERATOR_HANDLES as readonly string[]).includes(route)) return null;
+  return { handle: route };
+}
+
+export function isPublicDiscoveryRoute(route: string): boolean {
+  return route === "explore" || route === "search" || !!publicProfileLocation(route);
+}
+
+export function publicSearchRoute(query: string): string {
+  return `search?${new URLSearchParams({ q: query })}`;
+}
+
+export function followsSavedTheme(route: string): boolean {
+  return !!publicRepositoryLocation(route) || isPublicDiscoveryRoute(route);
+}
+
 export function publicSourceUrl(path = "", kind: "file" | "directory" = "file"): string {
   return path ? `/source/gitflare/${kind === "file" ? "blob" : "tree"}/${path.split("/").map(encodeURIComponent).join("/")}` : "/source/gitflare";
 }

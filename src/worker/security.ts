@@ -72,6 +72,13 @@ export interface VisibilityRecord { visibility: 'public'; publishedAt: string; p
 const HANDLE_REDIRECT_MS = HANDLE_REDIRECT_DAYS * 86_400_000;
 const HANDLE_CHANGES_PER_DAY = 5;
 const PUBLIC_LISTING_LIMIT = 500;
+const FOLLOW_CHANGES_PER_HOUR = 120;
+const FOLLOW_LIST_LIMIT = 500;
+const PROFILE_CHANGES_PER_DAY = 30;
+export type FollowKind = 'star' | 'watch';
+export interface RepositoryStats { stars: number; watchers: number }
+export interface FollowState extends RepositoryStats { starred: boolean; watching: boolean }
+export interface ProfileRecord { displayName: string; bio: string; links: string[]; pinned: string[]; updatedAt: string; updatedBy: string }
 export interface LegacyWorkspaceSlice { workspace: WorkspaceRecord | null; members: Member[]; sessions: Session[]; teams: Team[]; invitations: Invitation[]; grants: Grant[]; credentials: Credential[]; protection: Protection | null; approvals: Record<string, string[]>; connection: CloudflareConnection | null; cloudflareStates: CloudflareOAuthState[]; projects: Record<string, ProjectRecord>; audit: Audit[] }
 interface IndexEntry { workspaceId: string; expiresAt: number }
 interface Outbox { id: string; userId: string; revision: number; workspaces: string[]; at: number }
@@ -171,7 +178,7 @@ const key = {
   failures: (id: string) => `id:fail:${enc(id)}`, limit: (id: string) => `id:limit:${enc(id)}`, installation: (id: string) => `id:install:${enc(id)}`, machine: (id: string) => `id:machine:${enc(id)}`, machineClaim: (hash: string) => `id:mclaim:${enc(hash)}`,
   signin: (id: string) => `id:cfsignin:${enc(id)}`, link: (id: string) => `id:cflink:${enc(id)}`, linkEmail: (email: string) => `id:cflinkemail:${enc(email)}`,
   route: (hash: string) => `id:route:${enc(hash)}`, sessionHome: (id: string) => `id:sesshome:${enc(id)}`, invite: (hash: string) => `id:invite:${enc(hash)}`, oauthState: (id: string) => `id:cfstate:${enc(id)}`,
-  outbox: (id: string) => `id:outbox:${enc(id)}`, handle: (handle: string) => `id:handle:${enc(handle)}`, workspaceHandle: (workspaceId: string) => `id:wshandle:${enc(workspaceId)}`, publicListing: (repositoryId: string) => `id:pubrepo:${enc(repositoryId)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
+  outbox: (id: string) => `id:outbox:${enc(id)}`, handle: (handle: string) => `id:handle:${enc(handle)}`, workspaceHandle: (workspaceId: string) => `id:wshandle:${enc(workspaceId)}`, publicListing: (repositoryId: string) => `id:pubrepo:${enc(repositoryId)}`, follow: (kind: FollowKind, userId: string, repositoryId: string) => `id:${kind}:${enc(userId)}:${repositoryId ? enc(repositoryId) : ''}`, repositoryStats: (repositoryId: string) => `id:rstat:${enc(repositoryId)}`, profile: (workspaceId: string) => `id:profile:${enc(workspaceId)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
 };
 
 class Records {
@@ -588,6 +595,34 @@ export class IdentityStore {
   publicListing(repositoryId: string) { return this.read(async unit => await unit.get<PublicListing>(key.publicListing(repositoryId)) ?? null); }
   publicListings() { return this.read(async unit => [...(await unit.list<PublicListing>({ prefix: 'id:pubrepo:', limit: PUBLIC_LISTING_LIMIT })).values()]); }
   changePublicListing(repositoryId: string, listing: PublicListing | null) { return this.write(unit => { if (listing) unit.put(key.publicListing(repositoryId), listing); else unit.delete(key.publicListing(repositoryId)); }); }
+  publicListed(repositoryIds: string[]) { return this.read(unit => Promise.all(repositoryIds.slice(0, PUBLIC_LISTING_LIMIT).map(async id => await unit.get<PublicListing>(key.publicListing(id)) ?? null))); }
+  private async followRecord(unit: Unit, userId: string, repositoryId: string): Promise<FollowState> {
+    const [stats, starred, watching] = await Promise.all([unit.get<RepositoryStats>(key.repositoryStats(repositoryId)), unit.get(key.follow('star', userId, repositoryId)), unit.get(key.follow('watch', userId, repositoryId))]);
+    return { stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0, starred: !!starred, watching: !!watching };
+  }
+  followState(userId: string, repositoryId: string) { return this.read(unit => this.followRecord(unit, userId, repositoryId)); }
+  follow(input: { userId: string; repositoryId: string; kind: FollowKind; on: boolean }) {
+    return this.write(async unit => {
+      const current = await this.followRecord(unit, input.userId, input.repositoryId);
+      if ((input.kind === 'star' ? current.starred : current.watching) === input.on) return current;
+      if (!await this.limitAllows(unit, `follow:${input.userId}`, FOLLOW_CHANGES_PER_HOUR, 3_600_000)) throw new ApiError(429, 'RATE_LIMITED', 'You starred or watched many repositories in the last hour. Try again later.');
+      const id = key.follow(input.kind, input.userId, input.repositoryId);
+      if (input.on) unit.put(id, { at: new Date().toISOString() }); else unit.delete(id);
+      const next = { ...current, ...(input.kind === 'star' ? { starred: input.on, stars: Math.max(0, current.stars + (input.on ? 1 : -1)) } : { watching: input.on, watchers: Math.max(0, current.watchers + (input.on ? 1 : -1)) }) };
+      unit.put(key.repositoryStats(input.repositoryId), { stars: next.stars, watchers: next.watchers } satisfies RepositoryStats);
+      return next;
+    });
+  }
+  follows(userId: string, kind: FollowKind) { return this.read(async unit => [...(await unit.list<{ at: string }>({ prefix: key.follow(kind, userId, ''), limit: FOLLOW_LIST_LIMIT })).entries()].map(([id, value]) => ({ repositoryId: decodeURIComponent(id.slice(key.follow(kind, userId, '').length)), at: value.at })).sort((a, b) => b.at.localeCompare(a.at))); }
+  repositoryStats(repositoryIds: string[]) { return this.read(unit => Promise.all(repositoryIds.slice(0, PUBLIC_LISTING_LIMIT).map(async id => await unit.get<RepositoryStats>(key.repositoryStats(id)) ?? { stars: 0, watchers: 0 }))); }
+  profile(workspaceId: string) { return this.read(async unit => await unit.get<ProfileRecord>(key.profile(workspaceId)) ?? null); }
+  setProfile(workspaceId: string, record: ProfileRecord, actor: string) {
+    return this.write(async unit => {
+      if (!await this.limitAllows(unit, `profile:${actor}`, PROFILE_CHANGES_PER_DAY, 86_400_000)) throw new ApiError(429, 'RATE_LIMITED', 'You changed this profile many times today. Try again tomorrow.');
+      unit.put(key.profile(workspaceId), record);
+      return record;
+    });
+  }
   async pushLegacy(): Promise<void> {
     const status = await this.migrationStatus();
     const failures: unknown[] = [];
@@ -1430,7 +1465,7 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
-const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing']);
+const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing', 'publicListed', 'followState', 'follow', 'follows', 'repositoryStats', 'profile', 'setProfile']);
 const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand', 'visibility', 'setVisibility']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
@@ -1751,6 +1786,64 @@ export class SecurityService {
     await this.shard(p.workspaceId).validatePrincipal(p, { owner: true });
     await this.identity().changePublicListing(repository.id, null);
     return this.shard(p.workspaceId).setVisibility(p, repository.id, null);
+  }
+  publicListed(repositoryIds: string[]): Promise<(PublicListing | null)[]> { return repositoryIds.length ? this.identity().publicListed(repositoryIds) : Promise.resolve([]); }
+  repositoryStats(repositoryIds: string[]): Promise<RepositoryStats[]> { return repositoryIds.length ? this.identity().repositoryStats(repositoryIds) : Promise.resolve([]); }
+  profileOf(workspaceId: string): Promise<ProfileRecord | null> { return this.identity().profile(workspaceId); }
+  private async followPrincipal(p: Principal): Promise<void> {
+    if (p.kind !== undefined || p.credentialId || p.bootstrap || !/^[A-Za-z0-9-]{1,54}$/.test(p.userId)) fail('ACCOUNT_REQUIRED', 'Sign in with an account to star or watch repositories.');
+    await this.shard(p.workspaceId).validatePrincipal(p);
+  }
+  private async publiclyReadable(repositoryId: string): Promise<boolean> {
+    const listing = await this.identity().publicListing(repositoryId);
+    return !!listing && await this.shard(listing.workspaceId).check(publicPrincipal(listing.workspaceId), 'read', 'repository', repositoryId).then(() => true, () => false);
+  }
+  async followState(p: Principal, repositoryId: string): Promise<FollowState> {
+    await this.followPrincipal(p);
+    return this.identity().followState(p.userId, repositoryId);
+  }
+  async follow(p: Principal, repositoryId: string, kind: FollowKind, on: boolean): Promise<FollowState> {
+    this.publicLayerAvailable();
+    if (kind !== 'star' && kind !== 'watch') throw new ApiError(400, 'INVALID_INPUT', 'Choose star or watch.');
+    if (typeof on !== 'boolean') throw new ApiError(400, 'INVALID_INPUT', 'on must be true or false.');
+    await this.followPrincipal(p);
+    if (!await this.publiclyReadable(repositoryId)) throw new ApiError(404, 'NOT_FOUND', 'This repository does not exist or is not public.');
+    return this.identity().follow({ userId: p.userId, repositoryId, kind, on });
+  }
+  async follows(p: Principal): Promise<Record<FollowKind, { repositoryId: string; at: string }[]>> {
+    await this.followPrincipal(p);
+    const [star, watch] = await Promise.all([this.identity().follows(p.userId, 'star'), this.identity().follows(p.userId, 'watch')]);
+    return { star, watch };
+  }
+  async userFollows(workspaceId: string): Promise<{ repositoryId: string; at: string }[]> {
+    if (!isPersonalWorkspace(workspaceId)) return [];
+    return this.identity().follows(workspaceId.slice('personal-'.length), 'star');
+  }
+  private async profileTarget(p: Principal, scope: HandleKind, change: boolean): Promise<{ workspaceId: string; canChange: boolean }> {
+    if (p.kind !== undefined || p.credentialId) fail();
+    if (scope === 'user') {
+      if (p.bootstrap || !/^[A-Za-z0-9-]{1,54}$/.test(p.userId) || (change && !p.sessionId)) fail('ACCOUNT_REQUIRED', 'Sign in with an account to edit your profile.');
+      await this.shard(p.workspaceId).validatePrincipal(p, { account: change });
+      return { workspaceId: personalWorkspaceId(p.userId), canChange: !!p.sessionId };
+    }
+    await this.shard(p.workspaceId).validatePrincipal(p, { owner: change });
+    if (change && isPersonalWorkspace(p.workspaceId)) fail('PERSONAL_WORKSPACE', 'This personal workspace uses your account profile. Change it in Account → Profile.');
+    return { workspaceId: p.workspaceId, canChange: p.role === 'Owner' && !isPersonalWorkspace(p.workspaceId) };
+  }
+  async profileSettings(p: Principal, scope: HandleKind): Promise<{ workspaceId: string; handle: string | null; profile: ProfileRecord | null; canChange: boolean }> {
+    const target = await this.profileTarget(p, scope, false);
+    const [handle, profile] = await Promise.all([this.identity().handleOf(target.workspaceId), this.identity().profile(target.workspaceId)]);
+    return { ...target, handle, profile };
+  }
+  async setProfile(p: Principal, scope: HandleKind, input: Omit<ProfileRecord, 'updatedAt' | 'updatedBy'>, validate: (workspaceId: string) => Promise<void>): Promise<{ workspaceId: string; handle: string; profile: ProfileRecord }> {
+    this.publicLayerAvailable();
+    const target = await this.profileTarget(p, scope, true);
+    const handle = await this.identity().handleOf(target.workspaceId);
+    if (!handle) throw new ApiError(409, 'HANDLE_REQUIRED', scope === 'user' ? 'Choose your handle in Account → Profile first.' : 'Choose a handle for this workspace in Settings → General first.');
+    await validate(target.workspaceId);
+    const profile = await this.identity().setProfile(target.workspaceId, { ...input, updatedAt: new Date().toISOString(), updatedBy: p.userId }, `${scope}:${scope === 'user' ? p.userId : target.workspaceId}`);
+    await this.shard(target.workspaceId).audit([{ actorId: p.userId, action: scope === 'user' ? 'account.profile.update' : 'workspace.profile.update', resourceId: handle }]);
+    return { workspaceId: target.workspaceId, handle, profile };
   }
   private async inviteAccepted(invite: { scope?: InvitationScope; role: Role; workspaceId: string }, userId: string) {
     if (invite.scope?.kind !== 'organization') return;
