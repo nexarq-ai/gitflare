@@ -2,6 +2,8 @@ export const HANDLE_MAX = 39;
 export const HANDLE_REDIRECT_DAYS = 90;
 export const HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$/;
 
+export const PROFILE_LIMITS = { displayName: 80, bio: 300, links: 4, linkLength: 200, pinned: 6 } as const;
+
 export const OPERATOR_HANDLES = ['gitflare', 'nexarq'] as const;
 
 export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
@@ -31,12 +33,14 @@ export function suggestedHandle(name: string): string {
   return slug && !RESERVED_HANDLES.has(slug) ? slug : '';
 }
 
-export const PUBLIC_REPOSITORY_VIEWS = ['tree', 'blob', 'commits', 'branches', 'releases'] as const;
+export const PUBLIC_REPOSITORY_VIEWS = ['tree', 'blob', 'issues', 'commits', 'branches', 'releases'] as const;
+export const PUBLIC_ISSUE_PATH = /^(?:new|[1-9]\d{0,5})$/;
 export type PublicRepositoryView = 'code' | typeof PUBLIC_REPOSITORY_VIEWS[number];
 
 export function publicRepositoryPath(handle: string, repository: string, view: PublicRepositoryView = 'code', path = ''): string {
   const base = `/${encodeURIComponent(handle)}/${encodeURIComponent(repository)}`;
   if (view === 'code') return base;
   if ((view === 'tree' || view === 'blob') && path) return `${base}/${view}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  if (view === 'issues' && PUBLIC_ISSUE_PATH.test(path)) return `${base}/issues/${path}`;
   return view === 'tree' ? base : `${base}/${view}`;
 }

@@ -21,7 +21,7 @@ import type { ProjectSnapshot } from './cloudflare-projects';
 import { PREVIEW_STEP_MS } from './budgets';
 import { handleMcp, mcpToolNames } from './mcp';
 import { integrationPendingMessage, startWithDurableDispatch } from './coordinator';
-import { hashToken, publicPrincipal, securityClient, wellFormedToken, type Principal, type Action, type InvitationScope } from './security';
+import { hashToken, personalWorkspaceId, publicPrincipal, securityClient, wellFormedToken, type Principal, type Action, type InvitationScope } from './security';
 import { consume, gitRateLimits, rateLimitedResponse, rateSubject } from './rate-limits';
 import { listDocs, readDoc } from './docs';
 import { documentationImage, documentationMarkdown } from './docs-markdown';
@@ -40,6 +40,7 @@ import { validateRepositoryInitialization, initializeArtifactsRepository } from 
 import { SKILL_REQUEST_MAX_BYTES, validateRepositorySkillChange, verifyRepositorySkillChange } from './skill-edit';
 import { autoDraftRequest, draftMission, draftRequest, planMission, repositorySnapshot } from './mission-draft';
 import { handleIssues } from './issues';
+import { issueServices, publicIssuesApi } from './public-issues';
 import { releaseApi } from './releases';
 import { effectiveDefaultModel, modelConnectionsSnapshot, modelIdentifier, resolveModelConnection, validateModelConnection, verifyModelConnection } from './model-config';
 import { aiKeyProvider, aiKeysSnapshot, assertModelAccess, assertWorkspaceAi, createModelAccess, encryptAiGateway, encryptAiKey, ownGatewayInput, providerKey, reserveOperatorUsage, storedOwnGateway, storedProviderKey, verificationModel, verifyProviderKey, type AiCredentials } from './ai-keys';
@@ -59,6 +60,9 @@ import { withSignedInHint } from './signed-in-hint';
 import { browseRepository } from './source-browse';
 import { changeVisibility, publicRepositoryApi, publicRepositoryIndex, siteOrigin, visibilitySnapshot } from './public-repositories';
 import { handlePublicGit, isPublicGitPath } from './public-git';
+import { accountDiscoveryApi, handleChanged, publicDiscoveryApi, refreshPublicRepository, visibilityChanged } from './public-discovery';
+import { servePublicCached } from './public-cache';
+import { PUBLIC_INDEX_CRON, publicIndex, reconcilePublicIndex } from './public-index';
 import { FORK_STORAGE_LIMIT_BYTES, handleForks } from './forks';
 import { handleUpstreamProposals, proposeUpstream, type OutsideContext } from './outside-proposals';
 import { isOutsideProposal, proposalAuthor } from '../shared/pull-requests';
@@ -121,6 +125,14 @@ async function authorize(request: Request, env: AppEnv, bearerOnly = false): Pro
   throw new ApiError(401, 'AUTH_REQUIRED', 'Sign in to Gitflare.');
 }
 
+function signedInPrincipal(env: AppEnv) {
+  return async (request: Request): Promise<Principal | null> => {
+    if (demoMode(env) || !request.headers.get('Authorization') && !cookieValue(request)) return null;
+    try { return await authorize(request, env); }
+    catch (error) { if (publicError(error).status === 401) return null; throw error; }
+  };
+}
+
 async function landingReviewRule(env: AppEnv, repository: Repository) { return landingRule(await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).getBranchProtection(), repository.defaultBranch); }
 const gitBlocks = new Map<string, number>();
 
@@ -136,7 +148,7 @@ function gitDependencies(env: AppEnv): GitHttpDependencies {
     repository: async (principal, name) => findRepositoryByName(await env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId)).listRepositories(), principal.workspaceId, name),
     rules: async (repository) => effectiveRules(await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).getBranchProtection(), repository.defaultBranch),
     artifacts: env.ARTIFACTS,
-    pushed: (repository, refs) => triggerMirrorSync(env, repository.id, repository.workspaceId ?? 'legacy', 'push', refs),
+    pushed: async (repository, refs) => { await Promise.all([triggerMirrorSync(env, repository.id, repository.workspaceId ?? 'legacy', 'push', refs), refreshPublicRepository(env, repository.id).catch(() => undefined)]); },
     storage: async (repository) => repository.fork ? { remainingBytes: FORK_STORAGE_LIMIT_BYTES - await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).forkStorage(), limitBytes: FORK_STORAGE_LIMIT_BYTES } : null,
     stored: async (repository, bytes) => { await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).addForkStorage(bytes); },
   };
@@ -225,8 +237,12 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     return markdown ? documentationMarkdown(doc, listPublicDocs(), request.url, true) : Response.json(doc);
   }
   if (url.pathname.startsWith('/api/public/source')) return publicSourceResponse(request, env.ASSETS);
+  const publicIssues = await publicIssuesApi(request, env, signedInPrincipal(env));
+  if (publicIssues) return publicIssues;
   const publicRepository = await publicRepositoryApi(request, env);
   if (publicRepository) return publicRepository;
+  const discovery = await publicDiscoveryApi(request, env, ctx);
+  if (discovery) return discovery;
   const cloudflare = await handleCloudflare(request, env, authorize);
   if (cloudflare) return cloudflare;
   const onboarding = await handleOnboarding(request, env, authorize, ctx);
@@ -251,6 +267,9 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (url.pathname === '/api/account' && request.method === 'GET') return Response.json(await access.account(principal), { headers: { 'Cache-Control': 'no-store' } });
   if (url.pathname === '/api/account/sessions/revoke-others' && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.revokeOtherSessions(principal)); }
   if (url.pathname === ADMIN_STATUS_PATH && request.method === 'GET') return Response.json(await installationAdminStatus(env, principal), { headers: { 'Cache-Control': 'no-store' } });
+  if (url.pathname === '/api/admin/reports' && request.method === 'GET') return Response.json(await access.reports(principal));
+  const dismissReport = /^\/api\/admin\/reports\/([a-f0-9-]{36})\/dismiss$/.exec(url.pathname);
+  if (dismissReport && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.dismissReport(principal, dismissReport[1]!)); }
   if (url.pathname === '/api/workspaces' && request.method === 'GET') {
     const [items, name] = await Promise.all([access.workspaces(principal), workspaceName(env, access, principal)]);
     return Response.json({ workspaces: items.map(item => item.current ? { ...item, name } : item) });
@@ -276,8 +295,14 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (url.pathname === '/api/handles' && request.method === 'POST') {
     assertMutationOrigin(request); const body = await readJson(request, 4096);
     if (body.scope !== 'user' && body.scope !== 'workspace') throw new ApiError(400, 'INVALID_INPUT', 'Choose the user or workspace handle.');
-    return Response.json(await access.setHandle(principal, body.scope, String(body.handle ?? ''), siteOrigin(env, url.origin)));
+    const workspaceId = body.scope === 'workspace' ? principal.workspaceId : (() => { try { return personalWorkspaceId(principal.userId); } catch { return null; } })();
+    const previous = workspaceId ? await access.handleOf(workspaceId).catch(() => null) : null;
+    const status = await access.setHandle(principal, body.scope, String(body.handle ?? ''), siteOrigin(env, url.origin));
+    if (workspaceId && (body.scope === 'user' ? status.user.handle : status.workspace.handle) !== previous) handleChanged(env, ctx, workspaceId, previous, url.origin);
+    return Response.json(status);
   }
+  const discoveryAccount = await accountDiscoveryApi(request, env, ctx, principal, access);
+  if (discoveryAccount) return discoveryAccount;
   if (url.pathname.startsWith('/api/access/') && request.method === 'POST') {
     assertMutationOrigin(request); const body = await readJson(request); const action = url.pathname.slice('/api/access/'.length);
     if (action === 'invite') { delete body.repositoryName; delete body.ownerName; }
@@ -492,8 +517,17 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
     return repositorySecretsApi(request, secretsApiContext(env, principal, repository, env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`)));
   }
-  const issues = await handleIssues(request, url, principal, access, catalog, (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`));
+  const issues = await handleIssues(request, url, principal, access, catalog, (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`), (repository) => issueServices(env, access, repository));
   if (issues) return issues;
+  const blocksRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/issue-blocks$/.exec(url.pathname);
+  if (blocksRoute) {
+    const repository = await catalog.getRepository(blocksRoute[1]!);
+    if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+    if (request.method === 'GET') return Response.json({ blocks: await access.blocks(principal, repository.id) });
+    if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET or POST.');
+    assertMutationOrigin(request);
+    return Response.json({ blocks: await access.setBlock(principal, repository.id, await readJson(request)) });
+  }
   const forks = await handleForks(request, url, { env, principal, access, catalog, catalogOf: (workspaceId) => env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId)), records: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
   if (forks) return forks;
   const outside: OutsideContext = { env, principal, access, catalogOf: (workspaceId) => env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId)), records: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) };
@@ -554,6 +588,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       assertMutationOrigin(request);
       requireIdempotencyKey(request);
       await changeVisibility(env, access, principal, repository, await readJson(request, 4096));
+      visibilityChanged(env, ctx, access, principal, repository, url.origin);
     } else if (request.method !== 'GET') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET or POST for visibility.');
     return Response.json(await visibilitySnapshot(env, access, principal, repository, siteOrigin(env, url.origin)));
   }
@@ -1014,7 +1049,7 @@ const application = {
     if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
-    if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env);
+    if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env, path);
     let response: Response;
     try {
       if (path === '/mcp') {
@@ -1031,7 +1066,7 @@ const application = {
         const bearer = request.headers.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
         const limited = bearer ? await consume(env, 'API_RATE_LIMIT', `token:${await hashToken(bearer)}`) : demoMode(env) ? await consume(env, 'API_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`) : null;
         const demoRoute = limited ? null : await handleDemoRoute(request, env);
-        response = limited ? rateLimitedResponse(limited, 'API requests') : demoRoute ?? await api(request, env, ctx);
+        response = limited ? rateLimitedResponse(limited, 'API requests') : demoRoute ?? (path.startsWith('/api/public/') ? await servePublicCached(request, env, ctx, () => api(request, env, ctx)) : await api(request, env, ctx));
       }
     } catch (error) {
       const failure = publicError(error);
@@ -1064,8 +1099,8 @@ export default {
       return withSignedInHint(request, await application.fetch(request, env, ctx), env);
     } catch (error) { const failure = publicError(error); return Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status, headers: { 'Cache-Control': 'no-store' } }); }
   },
-  async scheduled(_controller: ScheduledController, workerEnv: AppEnv): Promise<void> {
-    if (!demoMode(workerEnv)) return;
-    await runDemoReset(await withStoreSecrets(workerEnv));
+  async scheduled(controller: ScheduledController, workerEnv: AppEnv): Promise<void> {
+    if (demoMode(workerEnv)) { await runDemoReset(await withStoreSecrets(workerEnv)); return; }
+    if (controller.cron === PUBLIC_INDEX_CRON && publicIndex(workerEnv) && workerEnv.GITFLARE_SECURITY) console.log(JSON.stringify({ event: 'public_index_reconciled', ...await reconcilePublicIndex(await withStoreSecrets(workerEnv)) }));
   },
 } satisfies ExportedHandler<AppEnv>;

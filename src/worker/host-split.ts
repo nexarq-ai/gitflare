@@ -1,5 +1,5 @@
 import { hostOrigins, type HostOrigins } from '../shared/hosts';
-import { isAppPath, isKnownAppRoute, isPublicProductRoute, isSiteRoute, routeFromLocation, SIGNED_IN_PRODUCT_ROUTES } from '../ui/router';
+import { followsSavedTheme, isAppPath, isKnownAppRoute, isPublicProductRoute, isSiteRoute, routeFromLocation, SIGNED_IN_PRODUCT_ROUTES } from '../ui/router';
 import { CLOUDFLARE_CALLBACK_PATH, CLOUDFLARE_CONNECT_STATE_COOKIE, CLOUDFLARE_SIGNIN_STATE_COOKIE, requestCookie } from './cloudflare';
 import type { AppEnv } from './env';
 
@@ -40,12 +40,12 @@ export async function hostRedirect(request: Request, env: AppEnv, signedIn: (req
   return isKnownAppRoute(route) && !isSiteRoute(route) ? redirect(toApp, 302) : null;
 }
 
-export async function withHostOrigins(response: Response, env: AppEnv): Promise<Response> {
+export async function withHostOrigins(response: Response, env: AppEnv, pathname = ''): Promise<Response> {
   const origins = envHostOrigins(env);
   if (!origins || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
   const html = await response.text();
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
   headers.delete('ETag');
-  return new Response(html.replace('</head>', `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}"></head>`), { status: response.status, statusText: response.statusText, headers });
+  return new Response(html.replace('</head>', `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}">${pathname && followsSavedTheme(routeFromLocation(pathname, '')) ? '<meta name="gitflare-theme" content="system">' : ''}</head>`), { status: response.status, statusText: response.statusText, headers });
 }

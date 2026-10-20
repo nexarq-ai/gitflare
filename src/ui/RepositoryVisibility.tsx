@@ -82,7 +82,7 @@ export default function RepositoryVisibilityCard({ repository, onChanged, onNoti
     if (!state.handle) { setError("Set a handle for this workspace first."); await requireHandle(); return; }
     const ok = await confirm({
       title: `Make ${name} public?`,
-      description: "Anyone can read and clone its code, commits, streams and releases. Issues, proposals, missions, secrets and previews stay private.",
+      description: "Anyone can read and clone its code, commits, streams and releases, read its issues, and open issues once signed in. Proposals, missions, secrets and previews stay private.",
       facts: [...(address ? [{ label: "Address", value: displayAddress(address), code: true }] : []), { label: "License", value: licenseLabel(state.license) }],
       tone: "danger",
       confirmLabel: "Make public",

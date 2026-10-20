@@ -4,6 +4,7 @@ import type { Workspace } from "../shared/types";
 import { request, RequestError } from "./api";
 import { ErrorNotice, Status } from "./components";
 import InstallationCredential, { type WorkspaceConnection } from "./InstallationCredential";
+import ContentReports from "./ContentReports";
 import { RouteProgress } from "./WorkspaceLoader";
 import "./people-settings.css";
 
@@ -35,6 +36,7 @@ export default function InstallationAdmin({ workspace, notFound }: { workspace: 
       <div className="panel-body"><p className="people-muted">People who become Owners of the operator workspace when they sign in with a verified Cloudflare email. Change the list with <code>SUPER_ADMIN_EMAILS</code> in the deployment.</p></div>
       {status.superAdmins.length ? <ul className="people-list">{status.superAdmins.map(email => <li key={email}><div><strong>{email}</strong></div></li>)}</ul> : <div className="panel-body"><p className="people-muted">None configured.</p></div>}
     </section>}
+    {hosted && <ContentReports />}
     <section className="panel">
       <div className="panel-header"><h2>Edition and configuration</h2><span className="people-role-text">{hosted ? "Hosted" : "Self-hosted"}</span></div>
       <dl className="general-facts admin-facts">

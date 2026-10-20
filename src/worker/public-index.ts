@@ -1,0 +1,241 @@
+import schema from '../../migrations/public-index/0001_init.sql?raw';
+import type { ExploreSort, PublicExplore, PublicHandleKind, PublicPathMatch, PublicPerson, PublicRepositoryCard, PublicSearch, PublicSearchType } from '../shared/types';
+import { publicRepositoryPath } from '../shared/handles';
+import { repositoryLabel } from '../shared/repository-names';
+import { ApiError } from './domain';
+import type { AppEnv } from './env';
+import { scanRepository } from './deploy-detect';
+import { detectLicense, publicTargetById } from './public-repositories';
+import { securityClient, type PublicListing, type SecurityService } from './security';
+
+export const PUBLIC_INDEX_PATH_LIMIT = 20_000;
+export const PUBLIC_INDEX_PAGE = 20;
+export const PUBLIC_INDEX_CURSOR_MAX = 1000;
+export const PUBLIC_INDEX_CRON = '30 4 * * *';
+const PATH_CHUNK = 1000;
+const LANGUAGE_LIMIT = 12;
+const RECONCILE_CONCURRENCY = 4;
+const ready = new WeakSet<D1Database>();
+
+const LANGUAGES: Record<string, string> = {
+  ts: 'TypeScript', tsx: 'TypeScript', mts: 'TypeScript', cts: 'TypeScript', js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript', py: 'Python', rs: 'Rust', go: 'Go', rb: 'Ruby',
+  java: 'Java', kt: 'Kotlin', swift: 'Swift', c: 'C', h: 'C', cc: 'C++', cpp: 'C++', hpp: 'C++', cs: 'C#', php: 'PHP', scala: 'Scala', ex: 'Elixir', exs: 'Elixir', erl: 'Erlang', hs: 'Haskell',
+  lua: 'Lua', dart: 'Dart', zig: 'Zig', sh: 'Shell', bash: 'Shell', css: 'CSS', scss: 'SCSS', html: 'HTML', vue: 'Vue', svelte: 'Svelte', sql: 'SQL', r: 'R', jl: 'Julia', ml: 'OCaml', clj: 'Clojure',
+};
+
+type RepositoryRow = { repository_id: string; workspace_id: string; handle: string; name: string; description: string; topics: string; language: string | null; license: string | null; stars: number; updated_at: string; published_at: string };
+type PathRow = { repository_id: string; workspace_id: string; handle: string; name: string; path: string };
+type HandleRow = { handle: string; kind: string; display_name: string };
+export type IndexEnv = Pick<AppEnv, 'PUBLIC_INDEX' | 'EDITION' | 'DEMO_MODE'>;
+export interface IndexedPage<T> { value: T; repositoryIds: string[]; stale: string[] }
+
+export function publicIndex(env: IndexEnv): D1Database | null {
+  return env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true' ? null : env.PUBLIC_INDEX ?? null;
+}
+
+export async function preparedIndex(db: D1Database): Promise<D1Database> {
+  if (ready.has(db)) return db;
+  await db.batch(schema.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => db.prepare(statement)));
+  ready.add(db);
+  return db;
+}
+
+export function dominantLanguage(paths: Iterable<string>): string | null {
+  const counts = new Map<string, number>();
+  for (const path of paths) {
+    const extension = /\.([A-Za-z0-9]+)$/.exec(path)?.[1]?.toLowerCase();
+    const language = extension ? LANGUAGES[extension] : undefined;
+    if (language) counts.set(language, (counts.get(language) ?? 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
+}
+
+export function likePattern(query: string): string {
+  return `%${query.replace(/[\\%_]/g, character => `\\${character}`)}%`;
+}
+
+export function searchQuery(value: string | null): string {
+  const query = (value ?? '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (query.length < 2 || query.length > 100) throw new ApiError(400, 'INVALID_QUERY', 'Search for 2 to 100 characters.');
+  return query;
+}
+
+export function pageCursor(value: string | null): number {
+  const cursor = Number(value ?? 0);
+  if (!Number.isInteger(cursor) || cursor < 0 || cursor > PUBLIC_INDEX_CURSOR_MAX) throw new ApiError(400, 'INVALID_CURSOR', 'The page cursor is not valid.');
+  return cursor;
+}
+
+function card(row: RepositoryRow): PublicRepositoryCard {
+  return {
+    handle: row.handle, name: row.name, description: row.description, language: row.language, topics: row.topics ? row.topics.split(',').filter(Boolean) : [], license: row.license,
+    stars: row.stars, updatedAt: row.updated_at, publishedAt: row.published_at, url: publicRepositoryPath(row.handle, row.name),
+  };
+}
+
+async function stillPublic(access: SecurityService, rows: { repository_id: string; workspace_id: string }[]): Promise<{ live: Set<string>; stale: string[] }> {
+  const ids = [...new Set(rows.map(row => row.repository_id))];
+  const listings = await access.publicListed(ids);
+  const owner = new Map(rows.map(row => [row.repository_id, row.workspace_id]));
+  const live = new Set(ids.filter((id, index) => listings[index]?.workspaceId === owner.get(id)));
+  return { live, stale: ids.filter(id => !live.has(id)) };
+}
+
+function nextCursor(cursor: number, rows: unknown[]): number | null {
+  return rows.length > PUBLIC_INDEX_PAGE && cursor + PUBLIC_INDEX_PAGE <= PUBLIC_INDEX_CURSOR_MAX ? cursor + PUBLIC_INDEX_PAGE : null;
+}
+
+export async function explorePublic(env: IndexEnv, access: SecurityService, sort: ExploreSort, language: string | null, cursor: number): Promise<IndexedPage<PublicExplore>> {
+  const db = publicIndex(env);
+  if (!db) return { value: { sort, language, items: [], languages: [], nextCursor: null, indexed: false }, repositoryIds: [], stale: [] };
+  await preparedIndex(db);
+  const order = sort === 'new' ? 'published_at DESC' : sort === 'updated' ? 'updated_at DESC' : 'stars DESC, updated_at DESC';
+  const filter = language ? 'WHERE language = ?1' : '';
+  const statement = db.prepare(`SELECT * FROM repositories ${filter} ORDER BY ${order}, repository_id LIMIT ${PUBLIC_INDEX_PAGE + 1} OFFSET ${cursor}`);
+  const [rows, languages] = await Promise.all([
+    (language ? statement.bind(language) : statement).all<RepositoryRow>(),
+    db.prepare(`SELECT language FROM repositories WHERE language IS NOT NULL GROUP BY language ORDER BY COUNT(*) DESC, language LIMIT ${LANGUAGE_LIMIT}`).all<{ language: string }>(),
+  ]);
+  const { live, stale } = await stillPublic(access, rows.results);
+  const items = rows.results.slice(0, PUBLIC_INDEX_PAGE).filter(row => live.has(row.repository_id));
+  return {
+    value: { sort, language, items: items.map(card), languages: languages.results.map(row => row.language), nextCursor: nextCursor(cursor, rows.results), indexed: true },
+    repositoryIds: items.map(row => row.repository_id), stale,
+  };
+}
+
+export async function searchPublic(env: IndexEnv, access: SecurityService, query: string, type: PublicSearchType, cursor: number): Promise<IndexedPage<PublicSearch>> {
+  const empty: PublicSearch = { query, type, repositories: [], paths: [], people: [], nextCursor: null, indexed: false };
+  const db = publicIndex(env);
+  if (!db) return { value: empty, repositoryIds: [], stale: [] };
+  await preparedIndex(db);
+  const pattern = likePattern(query);
+  const page = `LIMIT ${PUBLIC_INDEX_PAGE + 1} OFFSET ${cursor}`;
+  if (type === 'people') {
+    const rows = await db.prepare(`SELECT handle, kind, display_name FROM handles WHERE handle LIKE ?1 ESCAPE '\\' OR display_name LIKE ?1 ESCAPE '\\' ORDER BY handle = ?2 DESC, handle ${page}`).bind(pattern, query.toLowerCase()).all<HandleRow>();
+    const people: PublicPerson[] = rows.results.slice(0, PUBLIC_INDEX_PAGE).map(row => ({ handle: row.handle, kind: (row.kind === 'user' ? 'user' : 'workspace') as PublicHandleKind, displayName: row.display_name || row.handle, url: `/${row.handle}` }));
+    return { value: { ...empty, people, nextCursor: nextCursor(cursor, rows.results), indexed: true }, repositoryIds: [], stale: [] };
+  }
+  if (type === 'paths') {
+    const rows = await db.prepare(`SELECT p.repository_id, r.workspace_id, r.handle, r.name, p.path FROM paths p JOIN repositories r ON r.repository_id = p.repository_id WHERE p.path LIKE ?1 ESCAPE '\\' ORDER BY r.stars DESC, length(p.path), p.path ${page}`).bind(pattern).all<PathRow>();
+    const { live, stale } = await stillPublic(access, rows.results);
+    const matches = rows.results.slice(0, PUBLIC_INDEX_PAGE).filter(row => live.has(row.repository_id));
+    const paths: PublicPathMatch[] = matches.map(row => ({ handle: row.handle, repository: row.name, path: row.path, url: publicRepositoryPath(row.handle, row.name, 'blob', row.path) }));
+    return { value: { ...empty, paths, nextCursor: nextCursor(cursor, rows.results), indexed: true }, repositoryIds: [...new Set(matches.map(row => row.repository_id))], stale };
+  }
+  const rows = await db.prepare(`SELECT * FROM repositories WHERE name LIKE ?1 ESCAPE '\\' OR description LIKE ?1 ESCAPE '\\' OR topics LIKE ?1 ESCAPE '\\' OR handle LIKE ?1 ESCAPE '\\' ORDER BY lower(name) = ?2 DESC, stars DESC, updated_at DESC, repository_id ${page}`).bind(pattern, query.toLowerCase()).all<RepositoryRow>();
+  const { live, stale } = await stillPublic(access, rows.results);
+  const items = rows.results.slice(0, PUBLIC_INDEX_PAGE).filter(row => live.has(row.repository_id));
+  return { value: { ...empty, repositories: items.map(card), nextCursor: nextCursor(cursor, rows.results), indexed: true }, repositoryIds: items.map(row => row.repository_id), stale };
+}
+
+export async function indexedDetails(env: IndexEnv, repositoryIds: string[]): Promise<Map<string, Pick<PublicRepositoryCard, 'language' | 'license' | 'topics'>>> {
+  const db = publicIndex(env);
+  if (!db || !repositoryIds.length) return new Map();
+  await preparedIndex(db);
+  const rows = await db.prepare('SELECT repository_id, language, license, topics FROM repositories WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(repositoryIds)).all<Pick<RepositoryRow, 'repository_id' | 'language' | 'license' | 'topics'>>();
+  return new Map(rows.results.map(row => [row.repository_id, { language: row.language, license: row.license, topics: row.topics ? row.topics.split(',').filter(Boolean) : [] }]));
+}
+
+export async function removeIndexedRepositories(env: IndexEnv, repositoryIds: string[]): Promise<void> {
+  const db = publicIndex(env);
+  if (!db || !repositoryIds.length) return;
+  await preparedIndex(db);
+  const ids = JSON.stringify(repositoryIds);
+  await db.batch([
+    db.prepare('DELETE FROM paths WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
+    db.prepare('DELETE FROM repositories WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
+  ]);
+}
+
+export async function updateIndexedStars(env: IndexEnv, repositoryId: string, stars: number): Promise<void> {
+  const db = publicIndex(env);
+  if (!db) return;
+  await preparedIndex(db);
+  await db.prepare('UPDATE repositories SET stars = ?1 WHERE repository_id = ?2').bind(stars, repositoryId).run();
+}
+
+async function indexHandle(db: D1Database, access: SecurityService, workspaceId: string, handle: string): Promise<void> {
+  const [resolved, profile] = await Promise.all([access.resolveHandle(handle), access.profileOf(workspaceId)]);
+  const kind = resolved && 'kind' in resolved ? resolved.kind : 'workspace';
+  await db.batch([
+    db.prepare('DELETE FROM handles WHERE workspace_id = ?1 AND handle <> ?2').bind(workspaceId, handle),
+    db.prepare('INSERT INTO handles (handle, kind, workspace_id, display_name, updated_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (handle) DO UPDATE SET kind = excluded.kind, workspace_id = excluded.workspace_id, display_name = excluded.display_name, updated_at = excluded.updated_at')
+      .bind(handle, kind, workspaceId, profile?.displayName ?? '', new Date().toISOString()),
+  ]);
+}
+
+export async function indexPublicRepository(env: AppEnv, repositoryId: string, access: SecurityService = securityClient(env)): Promise<'indexed' | 'removed' | 'skipped'> {
+  const db = publicIndex(env);
+  if (!db || !env.ARTIFACTS) return 'skipped';
+  await preparedIndex(db);
+  const target = await publicTargetById(env, access, repositoryId);
+  if (!target) { await removeIndexedRepositories(env, [repositoryId]); return 'removed'; }
+  const { repository, handle, workspaceId, listing } = target;
+  using source = await env.ARTIFACTS.get(repository.name);
+  const head = (await source.log({ ref: repository.defaultBranch, limit: 1 }).catch(() => []))[0];
+  const existing = await db.prepare('SELECT head_sha, language, paths_truncated FROM repositories WHERE repository_id = ?1').bind(repositoryId).first<{ head_sha: string | null; language: string | null; paths_truncated: number }>();
+  let language = existing?.language ?? null;
+  let truncated = existing?.paths_truncated ?? 0;
+  const writes: D1PreparedStatement[] = [];
+  if (!head) {
+    language = null; truncated = 0;
+    writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId));
+  } else if (head.hash !== existing?.head_sha) {
+    const scan = await scanRepository(source, head.hash, PUBLIC_INDEX_PATH_LIMIT);
+    const paths = [...scan.files.keys()].sort().slice(0, PUBLIC_INDEX_PATH_LIMIT);
+    language = dominantLanguage(paths); truncated = scan.truncated ? 1 : 0;
+    writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId));
+    for (let start = 0; start < paths.length; start += PATH_CHUNK) writes.push(db.prepare('INSERT OR IGNORE INTO paths (repository_id, path) SELECT ?1, value FROM json_each(?2)').bind(repositoryId, JSON.stringify(paths.slice(start, start + PATH_CHUNK))));
+  }
+  const [license, [stats]] = await Promise.all([head ? detectLicense(source, head.hash).catch(() => null) : Promise.resolve(null), access.repositoryStats([repositoryId])]);
+  writes.push(db.prepare(`INSERT INTO repositories (repository_id, workspace_id, handle, name, description, topics, language, license, stars, head_sha, paths_truncated, published_at, updated_at, indexed_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, '', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+    ON CONFLICT (repository_id) DO UPDATE SET workspace_id = excluded.workspace_id, handle = excluded.handle, name = excluded.name, description = excluded.description, language = excluded.language, license = excluded.license,
+      stars = excluded.stars, head_sha = excluded.head_sha, paths_truncated = excluded.paths_truncated, published_at = excluded.published_at, updated_at = excluded.updated_at, indexed_at = excluded.indexed_at`)
+    .bind(repositoryId, workspaceId, handle, repositoryLabel(repository), repository.description.slice(0, 500), language, license?.spdx ?? null, stats?.stars ?? 0, head?.hash ?? null, truncated, listing.publishedAt, repository.updatedAt || listing.publishedAt, new Date().toISOString()));
+  await db.batch(writes);
+  await indexHandle(db, access, workspaceId, handle);
+  return 'indexed';
+}
+
+export async function indexWorkspaceRepositories(env: AppEnv, workspaceId: string, access: SecurityService = securityClient(env)): Promise<void> {
+  const db = publicIndex(env);
+  if (!db) return;
+  await preparedIndex(db);
+  const listed = (await access.publicListings()).filter(listing => listing.workspaceId === workspaceId);
+  const indexed = await db.prepare('SELECT repository_id FROM repositories WHERE workspace_id = ?1').bind(workspaceId).all<{ repository_id: string }>();
+  for (const id of new Set([...listed.map(listing => listing.repositoryId), ...indexed.results.map(row => row.repository_id)])) await indexPublicRepository(env, id, access);
+  if (!listed.length) await db.prepare('DELETE FROM handles WHERE workspace_id = ?1').bind(workspaceId).run();
+}
+
+export async function refreshIndexedHandle(env: AppEnv, workspaceId: string, access: SecurityService = securityClient(env)): Promise<void> {
+  const db = publicIndex(env);
+  if (!db) return;
+  await preparedIndex(db);
+  const [handle, listed] = await Promise.all([access.handleOf(workspaceId), access.publicListings()]);
+  if (handle && listed.some(listing => listing.workspaceId === workspaceId)) await indexHandle(db, access, workspaceId, handle);
+}
+
+export async function reconcilePublicIndex(env: AppEnv, access: SecurityService = securityClient(env)): Promise<{ indexed: number; removed: number; failed: number }> {
+  const db = publicIndex(env);
+  if (!db) return { indexed: 0, removed: 0, failed: 0 };
+  await preparedIndex(db);
+  const listings: PublicListing[] = await access.publicListings();
+  const listed = new Set(listings.map(listing => listing.repositoryId));
+  const result = { indexed: 0, removed: 0, failed: 0 };
+  const queue = [...listings];
+  await Promise.all(Array.from({ length: RECONCILE_CONCURRENCY }, async () => {
+    for (let listing = queue.shift(); listing; listing = queue.shift()) {
+      try { const outcome = await indexPublicRepository(env, listing.repositoryId, access); if (outcome === 'indexed') result.indexed++; else if (outcome === 'removed') result.removed++; }
+      catch (error) { result.failed++; console.warn(JSON.stringify({ event: 'public_index_reconcile_failed', repositoryId: listing.repositoryId, name: error instanceof Error ? error.name : 'unknown' })); }
+    }
+  }));
+  const rows = await db.prepare('SELECT repository_id FROM repositories').all<{ repository_id: string }>();
+  const stale = rows.results.map(row => row.repository_id).filter(id => !listed.has(id));
+  await removeIndexedRepositories(env, stale);
+  result.removed += stale.length;
+  const workspaces = [...new Set(listings.map(listing => listing.workspaceId))];
+  await db.prepare('DELETE FROM handles WHERE workspace_id NOT IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(workspaces)).run();
+  return result;
+}
