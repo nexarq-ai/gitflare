@@ -17,6 +17,10 @@ export function licenseLabel(license: RepositoryLicense | null): string {
   return license.spdx ?? (license.path ? `${license.path} (unrecognized)` : "Unrecognized");
 }
 
+export function unsavedVisibility(requested: RepositoryVisibilityKind, saved: RepositoryVisibility, name: string): string | null {
+  return saved.visibility === requested ? null : `Gitflare did not save this change. ${name} is still ${saved.visibility}. Try again.`;
+}
+
 export function displayAddress(url: string): string {
   return url.replace(/^https?:\/\//, "");
 }
@@ -32,14 +36,20 @@ export default function RepositoryVisibilityCard({ repository, onChanged, onNoti
   const [busy, setBusy] = useState(false);
   const [confirm, dialog] = useConfirm();
 
+  const path = `/api/repositories/${encodeURIComponent(repository.id)}/visibility`;
+
   useEffect(() => {
     let active = true;
-    request<RepositoryVisibility>(`/api/repositories/${encodeURIComponent(repository.id)}/visibility`).then(
+    request<RepositoryVisibility>(path).then(
       data => { if (active) { setState(data); setLoadError(""); } },
       (failure: unknown) => { if (active) setLoadError(failure instanceof Error ? failure.message : "Visibility could not be loaded."); },
     );
     return () => { active = false; };
-  }, [repository.id]);
+  }, [path]);
+
+  async function resync() {
+    try { setState(await request<RepositoryVisibility>(path)); } catch {}
+  }
 
   async function requireHandle() {
     let target = "/settings";
@@ -50,14 +60,17 @@ export default function RepositoryVisibilityCard({ repository, onChanged, onNoti
   async function change(visibility: RepositoryVisibilityKind) {
     setBusy(true); setError(""); setHandleSettings("");
     try {
-      const next = await request<RepositoryVisibility>(`/api/repositories/${encodeURIComponent(repository.id)}/visibility`, { visibility, ...(visibility === "public" && acknowledged ? { acknowledgeNoLicense: true } : {}) });
-      setState(next); setLicenseRequired(false); setAcknowledged(false);
+      const next = await request<RepositoryVisibility>(path, { visibility, ...(visibility === "public" && acknowledged ? { acknowledgeNoLicense: true } : {}) });
+      setState(next);
+      const unsaved = unsavedVisibility(visibility, next, name);
+      if (unsaved) { setError(unsaved); return; }
+      setLicenseRequired(false); setAcknowledged(false);
       onNotify(visibility === "public" ? `${name} is public.` : `${name} is private.`);
       await onChanged();
     } catch (failure) {
       if (failure instanceof RequestError && failure.code === "LICENSE_REQUIRED") { setLicenseRequired(true); setError(failure.message); }
       else if (failure instanceof RequestError && failure.code === "HANDLE_REQUIRED") { setError(failure.message); await requireHandle(); }
-      else setError(failure instanceof Error ? failure.message : "Visibility could not be changed.");
+      else { setError(failure instanceof Error ? failure.message : "Visibility could not be changed."); await resync(); }
     } finally { setBusy(false); }
   }
 
