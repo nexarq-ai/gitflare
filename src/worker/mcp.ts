@@ -12,7 +12,7 @@ import type { DocMetadata, ProductDoc } from './docs';
 import { ISSUE_BODY_MAX, ISSUE_COMMENT_MAX, ISSUE_REQUEST_MAX_BYTES } from './issues';
 import { CONTENT_REPORT_REASONS, ISSUE_HIDE_REASONS, ISSUE_LOCK_REASONS } from '../shared/types';
 import { mutableSkillPath, SKILL_CONTENT_MAX_BYTES, SKILL_REQUEST_MAX_BYTES } from './skill-edit';
-import { pullRequestState } from '../shared/pull-requests';
+import { pullRequestState, waitingForMaintainer } from '../shared/pull-requests';
 import { activeLandingMessage, COMMIT_MESSAGE_MAX, COMMIT_SUBJECT_MAX } from '../shared/commit-message';
 import { isOutdatedReview } from './proposal-review';
 import { ACCESS_HEADER, ACCESS_LABELS, accessFromHeader, accessScope, allows, type AccessLevel } from './client-access';
@@ -48,6 +48,7 @@ export const mcpToolNames = [
   'gitflare_moderate_issue', 'gitflare_issue_blocks', 'gitflare_block_user', 'gitflare_content_reports', 'gitflare_dismiss_content_report',
   'gitflare_explore', 'gitflare_search', 'gitflare_profile', 'gitflare_set_profile', 'gitflare_stars', 'gitflare_star',
   'gitflare_fork_repository', 'gitflare_fork_status', 'gitflare_sync_fork',
+  'gitflare_run_checks', 'gitflare_upstream_proposals', 'gitflare_update_upstream_proposal',
 ] as const;
 
 const identifier = z.string().min(1).max(100).regex(/^[a-zA-Z0-9-]+$/);
@@ -86,7 +87,7 @@ function agentOverridesBody(input: AgentLimitInput): Record<string, unknown> {
   const { editScope, overrides } = agentLimitBody(input);
   return { ...overrides, ...(editScope ? { editScope } : {}) };
 }
-const LAND_TOOLS = new Set(['gitflare_set_check_settings', 'gitflare_set_agent_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
+const LAND_TOOLS = new Set(['gitflare_run_checks', 'gitflare_set_check_settings', 'gitflare_set_agent_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
 const ADMIN_TOOLS = new Set(['gitflare_manage_sessions', 'gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access', 'gitflare_set_handle', 'gitflare_set_visibility', 'gitflare_set_profile', 'gitflare_dismiss_content_report']);
 
 export function requiredAccess(name: string, annotations: { readOnlyHint?: boolean } | undefined, input: Record<string, unknown>): AccessLevel {
@@ -131,7 +132,7 @@ function missionSummary(mission: Mission) {
     approvedAt: mission.approvedAt, approvedBy: mission.approvedBy,
     commitMessage: activeLandingMessage(mission), landedSha: mission.landedSha,
     dependencyChanges: mission.dependencyChanges ?? [], dependencyApproval: mission.dependencyApproval,
-    pullRequest: mission.branchChange ? { ...mission.branchChange, description: mission.branchChange.description ? excerpt(mission.branchChange.description, 0, 1600) : undefined, state: pullRequestState(mission) } : undefined,
+    pullRequest: mission.branchChange ? { ...mission.branchChange, description: mission.branchChange.description ? excerpt(mission.branchChange.description, 0, 1600) : undefined, state: pullRequestState(mission), ...(mission.branchChange.source ? { outside: true, executionProfile: 'untrusted', waitingForMaintainer: waitingForMaintainer(mission) } : {}) } : undefined,
     review: 'Owner UI and authenticated owner MCP clients share exact-candidate approval and integration checks.',
   };
 }
@@ -641,9 +642,12 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     inputSchema: z.object({ repository_id: repositoryId, name: z.string().min(1).max(200).describe('Branch to delete.'), expected_head_sha: commit.optional().describe('Refuse if the branch head differs.'), idempotency_key: requestKey }).strict(), annotations: destructive,
   }, input => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/branches/delete`, { name: input.name, ...(input.expected_head_sha ? { expectedHeadSha: input.expected_head_sha } : {}) }, input.idempotency_key)));
   server.registerTool('gitflare_create_pull_request', {
-    title: 'Open a pull request from a branch', description: 'Open a pull request (proposal) from a pushed branch: records its head, merges it onto the default branch in an isolated fork and runs the repository checks. Conflicts (collisions) show as a failed check. Nothing reaches the default branch until approved and landed. Needs contribute permission and write access.',
-    inputSchema: z.object({ repository_id: repositoryId, branch: z.string().min(1).max(200).describe('Pushed source branch.'), title: z.string().min(1).max(120), description: z.string().max(8000).optional().describe('Markdown description.'), idempotency_key: requestKey }).strict(), annotations: mutation,
-  }, input => guarded(async () => missionSummary(await call<Mission>(`/api/repositories/${input.repository_id}/pulls`, { branch: input.branch, title: input.title, ...(input.description ? { description: input.description } : {}) }, input.idempotency_key))));
+    title: 'Open a pull request from a branch', description: 'Open a pull request (proposal) from a pushed branch: records its head, merges it onto the default branch in an isolated fork and runs the repository checks. Conflicts (collisions) show as a failed check. Nothing reaches the default branch until approved and landed. On a fork, target upstream proposes it upstream instead; checks wait for a maintainer. Needs contribute permission and write access.',
+    inputSchema: z.object({ repository_id: repositoryId, branch: z.string().min(1).max(200).describe('Pushed source branch.'), title: z.string().min(1).max(120), description: z.string().max(8000).optional().describe('Markdown description.'), target: z.enum(['self', 'upstream']).default('self').describe('self: this repository. upstream: the repository this fork came from.'), idempotency_key: requestKey }).strict(), annotations: mutation,
+  }, input => guarded(async () => {
+    const body = { branch: input.branch, title: input.title, ...(input.description ? { description: input.description } : {}), ...(input.target === 'upstream' ? { target: 'upstream' } : {}) };
+    return input.target === 'upstream' ? call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/pulls`, body, input.idempotency_key) : missionSummary(await call<Mission>(`/api/repositories/${input.repository_id}/pulls`, body, input.idempotency_key));
+  }));
   server.registerTool('gitflare_update_pull_request', {
     title: 'Update, close or reopen a pull request', description: 'Update (re-record the branch head and rerun checks), close (cancel checks and withdraw approval) or reopen a pull request. Update invalidates earlier approvals; landed pull requests cannot change. Needs write access.',
     inputSchema: z.object({ mission_id: missionId, action: z.enum(['update', 'close', 'reopen']), idempotency_key: requestKey }).strict(), annotations: destructive,
@@ -918,6 +922,22 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     title: 'Sync a fork from upstream', description: 'Fast-forward the fork’s default branch to the upstream default branch. Refused when the fork has commits upstream doesn’t (work on a stream instead), when upstream is no longer public, or past the storage limit. Needs land permission on the fork and write access.',
     inputSchema: z.object({ repository_id: repositoryId, idempotency_key: requestKey }).strict(), annotations: mutation,
   }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/fork/sync`, {}, input.idempotency_key)));
+  server.registerTool('gitflare_run_checks', {
+    title: 'Run checks on a proposal', description: 'Record the proposal stream’s current head and run the repository checks. For a proposal from a fork this is the maintainer gate: checks run without secrets, previews or Cloudflare bindings, with gitflare.json read from the upstream base. Uses billed compute. Needs the Owner or Maintainer role and land access.',
+    inputSchema: z.object({ mission_id: missionId, idempotency_key: requestKey }).strict(), annotations: external,
+  }, (input) => guarded(async () => missionSummary(await call<Mission>(`/api/missions/${input.mission_id}/run-checks`, {}, input.idempotency_key))));
+  server.registerTool('gitflare_upstream_proposals', {
+    title: 'Read proposals sent upstream from a fork', description: 'List the proposals this fork opened in its upstream repository, or read one, with state, whether it waits for a maintainer, check results and review comments. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId, mission_id: missionId.optional().describe('Proposal ID from the list; omit to list.'), offset, limit: pageLimit }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => {
+    if (input.mission_id) return call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/upstream-proposals/${input.mission_id}`);
+    const { proposals, ...rest } = await call<{ proposals: unknown[] } & Record<string, unknown>>(`/api/repositories/${input.repository_id}/upstream-proposals`);
+    return { ...rest, ...page(proposals, input.offset, input.limit) };
+  }));
+  server.registerTool('gitflare_update_upstream_proposal', {
+    title: 'Update, close or reopen a proposal sent upstream', description: 'For a proposal this fork opened upstream: update records the stream’s new head (earlier approvals no longer apply and checks wait for a maintainer unless you are a known contributor), close withdraws it, reopen opens it again. Needs contribute permission on the fork and write access.',
+    inputSchema: z.object({ repository_id: repositoryId, mission_id: missionId, action: z.enum(['update', 'close', 'reopen']), idempotency_key: requestKey }).strict(), annotations: destructive,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/upstream-proposals/${input.mission_id}`, { action: input.action }, input.idempotency_key)));
   return server;
 }
 

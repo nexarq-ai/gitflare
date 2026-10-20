@@ -61,6 +61,12 @@ Signed in, choose **Fork** on a public repository to copy its default branch int
 
 The fork's Code tab shows where it came from and whether its default branch is up to date. **Sync** moves the default branch forward to the upstream head; it never merges, so a fork whose default branch has its own commits must keep working on streams. Each fork holds up to 1 GiB. Gitflare counts the bytes pushed into a fork and synced from upstream, because Artifacts does not report a repository's size, and refuses a push or sync past the limit. Forking is rate-limited per account: 10 forks an hour and 5 of the same repository a day.
 
-A private repository cannot be forked; it answers the same not-found as an unknown one. If an upstream is made private later, its forks keep their code but lose the link's address and sync.
+A private repository cannot be forked; it answers the same not-found as an unknown one.
+
+## Proposals from forks
+
+On a fork, **Propose upstream** (or New proposal with the upstream target) opens a proposal in the upstream repository from any stream of the fork, including its default branch. You need to be signed in with your account; task credentials cannot propose. The upstream maintainers see it with their other proposals, marked with the fork it came from, and you follow it from the fork's Proposals tab under **Sent upstream**, where you can update it after pushing, close it or reopen it.
+
+A first-time contributor's checks wait until an upstream Owner or Maintainer chooses **Run checks**. Once a maintainer has landed one of your proposals in that repository, your later proposals and updates start their checks automatically under that maintainer's authority while they keep the role. Checks of a proposal from a fork run in a fresh sandbox from the fork's exact commit, read `gitflare.json` from the upstream base rather than the proposal, and never receive the repository's secrets. Its preview runs only in an isolated container for at most an hour, never as a Worker Preview on a Cloudflare account, so it gets no secrets, preview databases or bindings. Approval still pins the exact candidate and base, the proposal's author cannot approve, and nothing reaches the upstream until a maintainer lands it. Proposals from forks are rate-limited per account and to 20 a day per upstream repository. If an upstream is made private later, its forks keep their code but lose the link's address and sync.
 
 Public repositories are part of hosted Gitflare; the self-hosted and demo editions keep every repository private.

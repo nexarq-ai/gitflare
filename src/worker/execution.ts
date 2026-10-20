@@ -975,6 +975,11 @@ async function verifyRevert(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: s
   } finally { await sandbox.destroy(); }
 }
 
+async function outsideSource(artifacts: ArtifactsBinding, name: string): Promise<ArtifactInfo> {
+  using fork = await artifacts.get(name);
+  return fork.info();
+}
+
 export async function executeMission(input: ExecutionInput, env: ExecutionEnv, report: ReportExecution = async () => {}, isActive: () => Promise<boolean> = async () => true, assertAuthority: AuthorityGuard = unrestricted): Promise<ExecutionResult> {
   if (input.mission.authorization && assertAuthority === unrestricted) throw new Error('Execution authority guard is required');
   await assertAuthority();
@@ -996,7 +1001,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
   using skillSource = await ARTIFACTS.get(repository.name);
   if (skillChange && (await skillSource.log({ ref: repository.defaultBranch, limit: 1 }))[0]?.hash !== baseSha) throw new Error('Repository changed after the skill proposal was created');
   const repositorySkills = await loadRepositorySkillContext(skillSource, baseSha);
-  const canonical = branchChange ? await skillSource.info() : undefined;
+  const canonical = branchChange?.source ? await outsideSource(ARTIFACTS, branchChange.source.repositoryName) : branchChange ? await skillSource.info() : undefined;
   const race = mission.mode === 'race';
   const reusing = (run: AgentRun) => !trusted && run.status === 'completed' && run.reusedFromEpoch !== undefined && !!run.commitSha && !!run.forkName;
   const carried = new Set(mission.runs.filter(reusing).map((run) => run.id));
@@ -1091,7 +1096,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
         await publish();
         await installDependencies(sandbox, policy.install, assertAuthority, isActive);
       }
-      run.summary = skillChange ? 'Repository ready. Writing the exact requested skill' : branchChange ? `Repository ready. Merging ${branchChange.branch} into ${branchChange.targetBranch}` : revertChange ? 'Repository ready. Applying the exact inverse of the landed change' : `Repository ready. Loaded ${repositorySkills.skills.length} pinned skills${repositorySkills.warnings.length ? ` with ${repositorySkills.warnings.length} discovery warnings` : ''}. Requesting the agent’s first action`;
+      run.summary = skillChange ? 'Repository ready. Writing the exact requested skill' : branchChange ? `Repository ready. Merging ${branchChange.source ? `${branchChange.source.label}:` : ''}${branchChange.branch} into ${branchChange.targetBranch}${branchChange.source ? ' without secrets' : ''}` : revertChange ? 'Repository ready. Applying the exact inverse of the landed change' : `Repository ready. Loaded ${repositorySkills.skills.length} pinned skills${repositorySkills.warnings.length ? ` with ${repositorySkills.warnings.length} discovery warnings` : ''}. Requesting the agent’s first action`;
       await publish();
       const attachments = ((mission as { attachments?: { name: string; content: string }[] }).attachments ?? []).filter((file) => file && typeof file.name === 'string' && typeof file.content === 'string');
       const agentBrief = {

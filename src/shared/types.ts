@@ -419,7 +419,27 @@ export interface AiSettings { enabled: boolean; locked: boolean }
 
 export interface AgentTask { name: string; role: string; task: string; model?: string; coordinator?: boolean; editScope?: string[]; overrides?: AgentOverrides }
 export interface RevertChange { missionId: string; title: string; landedSha: string; previousSha: string }
-export interface BranchChange { branch: string; headSha: string; targetBranch: string; description?: string; closedAt?: string; closedBy?: string }
+export interface BranchChange { branch: string; headSha: string; targetBranch: string; description?: string; closedAt?: string; closedBy?: string; source?: BranchChangeSource; gate?: OutsideChecksGate }
+export interface BranchChangeSource { workspaceId: string; repositoryId: string; repositoryName: string; label: string; authorId: string }
+export type OutsideChecksGate = 'first-time' | 'returning';
+export interface UpstreamProposal {
+  id: string;
+  title: string;
+  description?: string;
+  state: PullRequestState;
+  status: MissionStatus;
+  branch: string;
+  headSha: string;
+  targetBranch: string;
+  upstream: { label: string; url: string | null };
+  waitingForMaintainer: boolean;
+  candidateSha: string | null;
+  landedSha?: string;
+  checks: { name: string; status: CheckStatus; output?: string }[];
+  reviews: { kind: string; body: string; path?: string; line?: number; resolved: boolean; createdAt: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
 export type PullRequestState = 'open' | 'needs_review' | 'approved' | 'landed' | 'closed';
 export type LanderRole = 'Maintainer' | 'Owner';
 export interface BranchRule { pattern: string; requirePullRequest: boolean; requiredApprovals: number; requirePassingChecks: true; requiredCheckNames: string[]; preventSelfApproval: boolean; dismissApprovalsOnNewCommits: true; restrictLanders: LanderRole[]; allowForcePush: false }
@@ -428,7 +448,7 @@ export interface BranchProtection { repositoryId: string; defaultBranch: string;
 export interface BranchInfo { name: string; headSha: string; protected: boolean; default: boolean; ahead?: number; behind?: number }
 export interface BranchChangeResult { name: string; headSha: string; created?: true; deleted?: true }
 export interface BranchList { repositoryId: string; defaultBranch: string; gitUrl: string; branches: BranchInfo[] }
-export interface CreatePullRequestInput { title: string; description?: string; branch: string }
+export interface CreatePullRequestInput { title: string; description?: string; branch: string; target?: 'self' | 'upstream' }
 export interface RepositorySkillChange { action: 'create' | 'update'; path: string; content: string; baseSha: string }
 export interface CreateMissionInput { attachments?: MissionAttachment[]; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
 export interface CreateRepositoryInput { name: string; description?: string }

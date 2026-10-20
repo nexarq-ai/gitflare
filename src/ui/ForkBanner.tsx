@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
-import { ArrowsClockwiseIcon, GitForkIcon } from "@phosphor-icons/react";
+import { ArrowsClockwiseIcon, GitForkIcon, GitPullRequestIcon } from "@phosphor-icons/react";
 import type { ForkStatus, ForkSyncResult, ForkSyncState, Repository } from "../shared/types";
 import { request } from "./api";
 import { useConfirm } from "./ConfirmDialog";
 import InfoTip from "./InfoTip";
+import { navigate } from "./router";
 import "./forks.css";
 
 const SYNC_LABELS: Record<ForkSyncState, string> = { "up-to-date": "Up to date", behind: "Behind upstream", ahead: "Ahead of upstream", diverged: "Diverged", unknown: "Upstream unavailable" };
@@ -57,6 +58,7 @@ export default function ForkBanner({ repository, onNotify, onChanged }: { reposi
     {error && <span className="fork-banner-error" role="alert">{error}</span>}
     <div className="fork-banner-actions">
       {status?.sync === "behind" && <Button variant="secondary" size="sm" icon={ArrowsClockwiseIcon} loading={busy} disabled={busy || !status.canSync} onClick={() => void sync()}>Sync</Button>}
+      {status?.canPropose && <Button variant="secondary" size="sm" icon={GitPullRequestIcon} onClick={() => navigate(`repository/${repository.id}/pulls/new?target=upstream`)}>Propose upstream</Button>}
     </div>
     {dialog}
   </section>;
