@@ -1,4 +1,4 @@
-import { AnthropicOutputError, AnthropicStream, anthropicInput, anthropicOutput, isSonnet55, nativeModelId, type AnthropicIssue } from './anthropic-adapter';
+import { AnthropicOutputError, AnthropicStream, anthropicInput, anthropicOutput, catalogModelId, isSonnet55, nativeModelId, type AnthropicIssue } from './anthropic-adapter';
 import type { ModelConnection, ModelUsage } from '../shared/types';
 import { gatewayMetadata, gatewayUrl, providerRequest, type ModelRoute } from './gateway-routing';
 import { outcomeError, outcomeResponse, sendModelCall, StreamTimeoutError, streamText, type ModelCall, type ModelTransportEnv, type RelayedOutcome } from './model-transport';
@@ -113,6 +113,16 @@ export function classifyModelFailure(error: unknown): ModelFailure {
   const status = raw.status ?? raw.statusCode;
   const code = raw.code;
   return { operation: 'inference', errorName, ...(typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599 ? { providerStatus: status } : {}), ...(typeof code === 'number' && Number.isInteger(code) && code >= 0 && code <= 100_000 ? { providerCode: code } : {}) };
+}
+
+export function redactedProviderMessage(error: unknown): string | null {
+  const raw = error && typeof error === 'object' ? (error as { message?: unknown }).message : undefined;
+  if (typeof raw !== 'string') return null;
+  const message = raw
+    .replace(/(sk-|key-|Bearer\s+)[\w-]{6,}/gi, '$1[redacted]')
+    .replace(/[A-Za-z0-9_\-+/=]{32,}/g, '[redacted]')
+    .replace(/\s+/g, ' ').trim().slice(0, 240);
+  return message || null;
 }
 
 export function modelOutputShape(body: unknown): Record<string, string | number | boolean | string[]> {
@@ -335,12 +345,13 @@ export async function inferenceMessage(env: ModelEnv, model: ModelConnection, in
         stream,
       }, model));
     } else if (model.source === 'gateway') {
-      ({ body, detail } = await callOutcome(env, { kind: 'run', gatewayId: env.AI_GATEWAY_ID, model: model.id, input: parameters, ...(metadata ? { metadata } : {}), extraHeaders: { 'cf-aig-no-wholesale': 'true' }, timeoutMs: callTimeout, stream }, model));
+      ({ body, detail } = await callOutcome(env, { kind: 'run', gatewayId: env.AI_GATEWAY_ID, model: model.protocol === 'anthropic' ? catalogModelId(model.id) : model.id, input: parameters, ...(metadata ? { metadata } : {}), extraHeaders: { 'cf-aig-no-wholesale': 'true' }, timeoutMs: callTimeout, stream }, model));
     } else {
       body = await env.AI.run(model.id, parameters, { gateway: { id: env.AI_GATEWAY_ID, ...(metadata ? { metadata } : {}) }, signal: AbortSignal.timeout(callTimeout) });
     }
   } catch (error) {
-    console.warn(JSON.stringify({ event: 'model_call_failed', model: model.id, stream, durationMs: Date.now() - started, timeoutMs: callTimeout, ...classifyModelFailure(error) }));
+    const providerMessage = error instanceof ModelHttpError ? null : redactedProviderMessage(error);
+    console.warn(JSON.stringify({ event: 'model_call_failed', model: model.id, stream, durationMs: Date.now() - started, timeoutMs: callTimeout, ...classifyModelFailure(error), ...(providerMessage ? { providerMessage } : {}) }));
     if (error instanceof StreamTimeoutError && error.idle) throw new ModelTimeoutError(model.label, error.afterMs, undefined, true);
     if (isTimeoutError(error)) throw new ModelTimeoutError(model.label, callTimeout);
     throw error;

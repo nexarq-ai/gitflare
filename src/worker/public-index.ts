@@ -15,7 +15,9 @@ export const PUBLIC_INDEX_CRON = '30 4 * * *';
 const PATH_CHUNK = 1000;
 const LANGUAGE_LIMIT = 12;
 const RECONCILE_CONCURRENCY = 4;
+const BACKFILL_INTERVAL_MS = 10 * 60_000;
 const ready = new WeakSet<D1Database>();
+const backfilled = new WeakMap<D1Database, number>();
 
 const LANGUAGES: Record<string, string> = {
   ts: 'TypeScript', tsx: 'TypeScript', mts: 'TypeScript', cts: 'TypeScript', js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript', py: 'Python', rs: 'Rust', go: 'Go', rb: 'Ruby',
@@ -228,7 +230,7 @@ export async function reconcilePublicIndex(env: AppEnv, access: SecurityService 
   await Promise.all(Array.from({ length: RECONCILE_CONCURRENCY }, async () => {
     for (let listing = queue.shift(); listing; listing = queue.shift()) {
       try { const outcome = await indexPublicRepository(env, listing.repositoryId, access); if (outcome === 'indexed') result.indexed++; else if (outcome === 'removed') result.removed++; }
-      catch (error) { result.failed++; console.warn(JSON.stringify({ event: 'public_index_reconcile_failed', repositoryId: listing.repositoryId, name: error instanceof Error ? error.name : 'unknown' })); }
+      catch (error) { result.failed++; console.warn(JSON.stringify({ event: 'public_index_reconcile_failed', repositoryId: listing.repositoryId, name: error instanceof Error ? error.name : 'unknown', message: error instanceof Error ? error.message.slice(0, 200) : '' })); }
     }
   }));
   const rows = await db.prepare('SELECT repository_id FROM repositories').all<{ repository_id: string }>();
@@ -238,4 +240,22 @@ export async function reconcilePublicIndex(env: AppEnv, access: SecurityService 
   const workspaces = [...new Set(listings.map(listing => listing.workspaceId))];
   await db.prepare('DELETE FROM handles WHERE workspace_id NOT IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(workspaces)).run();
   return result;
+}
+
+export async function indexedRepositoryCount(env: IndexEnv): Promise<number | null> {
+  const db = publicIndex(env);
+  if (!db) return null;
+  await preparedIndex(db);
+  return (await db.prepare('SELECT COUNT(*) AS n FROM repositories').first<{ n: number }>())?.n ?? 0;
+}
+
+export async function backfillEmptyIndex(env: AppEnv, access: SecurityService = securityClient(env), now = Date.now()): Promise<boolean> {
+  const db = publicIndex(env);
+  if (!db || now - (backfilled.get(db) ?? -Infinity) < BACKFILL_INTERVAL_MS) return false;
+  backfilled.set(db, now);
+  await preparedIndex(db);
+  if (await db.prepare('SELECT 1 FROM repositories LIMIT 1').first()) return false;
+  if (!(await access.publicListings()).length) return false;
+  console.log(JSON.stringify({ event: 'public_index_backfilled', ...await reconcilePublicIndex(env, access) }));
+  return true;
 }

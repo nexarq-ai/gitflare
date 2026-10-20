@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button } from "@cloudflare/kumo/components/button";
 import { CubeIcon, GitBranchIcon, LockKeyIcon, RobotIcon } from "@phosphor-icons/react";
 import type { Workspace } from "../shared/types";
 import { request, RequestError } from "./api";
@@ -9,7 +10,8 @@ import OperatorAi from "./OperatorAi";
 import { RouteProgress } from "./WorkspaceLoader";
 import "./people-settings.css";
 
-export type AdminStatus = { edition: "hosted" | "self-hosted"; superAdmins: string[]; cloudflareOAuth: boolean; email: boolean; previewsWorker: string | null; scopes: { signin: string[]; connect: string[]; access: string[] } };
+export type AdminStatus = { edition: "hosted" | "self-hosted"; superAdmins: string[]; cloudflareOAuth: boolean; email: boolean; previewsWorker: string | null; scopes: { signin: string[]; connect: string[]; access: string[] }; publicIndex: { configured: boolean; repositories: number | null } };
+type Rebuild = { indexed: number; removed: number; failed: number; repositories: number };
 
 export function loadAdminStatus(): Promise<AdminStatus | null> {
   return request<AdminStatus>("/api/admin/status").catch((failure: unknown) => { if (failure instanceof RequestError && [403, 404].includes(failure.status)) return null; throw failure; });
@@ -39,6 +41,7 @@ export default function InstallationAdmin({ workspace, notFound }: { workspace: 
     </section>}
     {hosted && <ContentReports />}
     {hosted && <OperatorAi />}
+    {status.publicIndex.configured && <PublicIndexPanel repositories={status.publicIndex.repositories} />}
     <section className="panel">
       <div className="panel-header"><h2>Edition and configuration</h2><span className="people-role-text">{hosted ? "Hosted" : "Self-hosted"}</span></div>
       <dl className="general-facts admin-facts">
@@ -61,6 +64,28 @@ export default function InstallationAdmin({ workspace, notFound }: { workspace: 
       <div className="notice-inline">These are configured in the deployment. Reload the page after changing them.</div>
     </section>
   </>;
+}
+
+function PublicIndexPanel({ repositories }: { repositories: number | null }) {
+  const [count, setCount] = useState(repositories);
+  const [result, setResult] = useState<Rebuild | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function rebuild() {
+    setBusy(true); setError("");
+    try { const value = await request<Rebuild>("/api/admin/public-index/rebuild", {}); setResult(value); setCount(value.repositories); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : "The public index could not be rebuilt."); }
+    finally { setBusy(false); }
+  }
+  return <section className="panel">
+    <div className="panel-header"><h2>Public index</h2>{count !== null && <span className="number-tag">{count}</span>}</div>
+    <div className="panel-body">
+      <p className="people-muted">Explore, search and profile details read this index. It updates when repositories change and is rebuilt every night. Rebuild it now if public repositories are missing.</p>
+      {error && <div className="error-notice" role="alert">{error}</div>}
+      {result && <p role="status">{result.indexed} indexed, {result.removed} removed{result.failed ? `, ${result.failed} failed` : ""}.</p>}
+      <Button variant="secondary" loading={busy} disabled={busy} onClick={() => { void rebuild(); }}>Rebuild public index</Button>
+    </div>
+  </section>;
 }
 
 function ScopeList({ scopes }: { scopes: string[] }) {

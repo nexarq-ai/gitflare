@@ -51,7 +51,7 @@
     {
       "path": "docs/public/mcp.md",
       "size": 15864,
-      "sha256": "9d0b2e47e9ec2b10fae230a9e43a7d195cee012356d24108499316dbcde2739a"
+      "sha256": "fd13bad0d1f7d0e647012552f4cecfce59d1f1db3d795279f92ff72e47ca8a34"
     },
     {
       "path": "docs/public/overview.md",
@@ -131,7 +131,7 @@
     {
       "path": "README.md",
       "size": 5250,
-      "sha256": "8c9bc256ff0d3fdc3182e111193812460b2253c530cbce005cf8d09adac90cee"
+      "sha256": "91352710acfd677557fa182c35431bcad5d0f4322d1bdb3d5dffc55336f52163"
     },
     {
       "path": "runner/Dockerfile",
@@ -675,8 +675,8 @@
     },
     {
       "path": "src/ui/InstallationAdmin.tsx",
-      "size": 5350,
-      "sha256": "54c0467269eedaee3d81d0f4d5305d4c60c6ad02fe56d178fc7ad95aec10a2a9"
+      "size": 7085,
+      "sha256": "a9c7cc51eeea3140d15501702b0c33e936b7d55f75c44f9ab332f4a9878a8f76"
     },
     {
       "path": "src/ui/InstallationCredential.tsx",
@@ -1055,8 +1055,8 @@
     },
     {
       "path": "src/worker/anthropic-adapter.ts",
-      "size": 14441,
-      "sha256": "4fb00eec5dfe97224f65534cb433b10884e80921a182435617da7523595673dd"
+      "size": 14883,
+      "sha256": "a61801042a1812fd43ca423bd2c06c338d903a2c19ac359637f5d74cf09a448d"
     },
     {
       "path": "src/worker/artifacts.ts",
@@ -1310,13 +1310,13 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 103791,
-      "sha256": "80108f997703722fdff079f7a82eea2e5794d2b5dd0779bc22f86cbfb80a7243"
+      "size": 104063,
+      "sha256": "5da99407e3af14c4d1d1a78025a39e9b36530bdedcd344899b95f09f5cfd6950"
     },
     {
       "path": "src/worker/installation-admin.ts",
-      "size": 2203,
-      "sha256": "d2b8afb4816d84c967bf45718ad2f0549061979cd83d4677112b52b5e2da981c"
+      "size": 3502,
+      "sha256": "29b8d8e42db2a6a719b9556aa1b654ee4c499855ec47a0ea41055e11666ba322"
     },
     {
       "path": "src/worker/installation-credential.ts",
@@ -1335,8 +1335,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 159705,
-      "sha256": "288a1a3ea983716a84787a748e2021ee258c8ae2b1a2eec730409f3b339b59d2"
+      "size": 160325,
+      "sha256": "daa2e08189ef5f69ba3e112923212205d932ba7c429695719189bb61719ee0e9"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -1360,13 +1360,13 @@
     },
     {
       "path": "src/worker/model-adapter.ts",
-      "size": 26693,
-      "sha256": "9909379454b2d7bbef332a69fe0b031cd34edb4c64f1290877bf6ca99fa6c8de"
+      "size": 27358,
+      "sha256": "3c2d6dbceadcb98f75c632e49d18a9ecc603d758cd25f7e73b5d0a861da9cadc"
     },
     {
       "path": "src/worker/model-config.ts",
-      "size": 6752,
-      "sha256": "2fc2b198afbf71d761f272f51e9d4e8511083a399e65f6868376a2a5ccc03a6b"
+      "size": 7233,
+      "sha256": "a40f8948e77472e57fe44a7775e1380001cf8049615ca878414646abdae0c5c2"
     },
     {
       "path": "src/worker/model-relay.ts",
@@ -1445,8 +1445,8 @@
     },
     {
       "path": "src/worker/public-discovery.ts",
-      "size": 16705,
-      "sha256": "984731d6f7c9851efea6b576ab6e7306972fd4520c70cd1a5694c86ce4fd8e75"
+      "size": 16842,
+      "sha256": "da8484a6bac86a85074b6db7f0469934a21ba413ad86b9a1f7f92b2854e71521"
     },
     {
       "path": "src/worker/public-git.ts",
@@ -1455,8 +1455,8 @@
     },
     {
       "path": "src/worker/public-index.ts",
-      "size": 17338,
-      "sha256": "dd3abd31f7220d097ba6f809962f3f1dec23b6528b5b84e5451d4d6c0c85e151"
+      "size": 18366,
+      "sha256": "d6156c62e7d2bcd1b8e62d24fee3340ad55babafebd02394486246cb321538ce"
     },
     {
       "path": "src/worker/public-issues.ts",
@@ -1520,8 +1520,8 @@
     },
     {
       "path": "src/worker/security.ts",
-      "size": 211239,
-      "sha256": "6dd029099f4878f6bdabcbe362dad3f2ecad4bcdd4f99ee18221e3839f661e34"
+      "size": 211571,
+      "sha256": "a58323236e05ca25c1521847de351a3c15fc0c90068c98d178416649470ba60c"
     },
     {
       "path": "src/worker/session-meta.ts",
