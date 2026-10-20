@@ -15,11 +15,6 @@
 .fork-empty { margin: 0 0 12px; color: var(--gf-color-text-secondary); font-size: 13px; }
 .fork-empty a, .fork-signin { color: var(--gf-color-accent); }
 .fork-signin { display: inline-flex; align-items: center; font-weight: 600; font-size: 13px; }
-.repo-fork-button { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 5px 12px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); background: transparent; color: var(--gf-color-text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: none; }
-.repo-fork-button:hover { border-color: var(--gf-color-border-strong); background: var(--gf-color-surface-hover); text-decoration: none; }
-.repo-fork-button:focus-visible { outline: 2px solid var(--gf-color-focus); outline-offset: 2px; }
-.repo-fork-count { padding-left: 8px; border-left: 1px solid var(--gf-color-border); color: var(--gf-color-text-secondary); font-weight: 500; }
-.repo-heading-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 @media (max-width: 600px) {
   .fork-banner { padding: 10px 12px; }
   .fork-banner-actions { width: 100%; margin-left: 0; }

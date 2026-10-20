@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
+import type { AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueLabelDefinition, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependenciesAcknowledged, assertDependencyApprover } from './dependency-changes';
 import { activeLandingMessage } from '../shared/commit-message';
@@ -18,7 +18,7 @@ import { skillMissionInput, validateRepositorySkillChange } from './skill-edit';
 import type { ImportReceipt, ImportResult } from './repository-import';
 import { applyReleaseChange, type ReleaseChange, type ReleaseReceipt } from './releases';
 import { defaultModelConnections, pinMissionModels, validateModelConnection } from './model-config';
-import { applyIssueChange, issueFingerprint, linkIssueMission, listIssues, readIssue, recordIssueOutcome, type IssueActor, type IssueChange, type IssueQuery } from './issues';
+import { applyIssueChange, applyLabelChange, issueFingerprint, linkIssueMission, listIssues, listLabelDefinitions, readIssue, recordIssueOutcome, type IssueActor, type IssueChange, type IssueLabelChange, type IssueQuery } from './issues';
 import { branchName, normalizeBranchRules, type StoredBranchProtection } from './branch-protection';
 import { capacityError, catalogName, liveSlots, MISSION_SLOT_GRACE_MS, slotKey, WORKSPACE_MISSION_LIMIT, WORKSPACE_PREVIEW_LIMIT, type CapacitySlot } from './capacity';
 import { missionStepTimeoutMs } from './budgets';
@@ -221,6 +221,10 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   getIssue(number: number): IssueDetail | undefined { return readIssue(this.store, number); }
 
   changeIssue(key: string, change: IssueChange, actor: IssueActor): IssueDetail { return readIssue(this.store, this.mutate(key, issueFingerprint(change, actor), () => applyIssueChange(this.store, change, actor)))!; }
+
+  issueLabels(): IssueLabelDefinition[] { return listLabelDefinitions(this.store); }
+
+  changeIssueLabels(key: string, change: IssueLabelChange): IssueLabelDefinition[] { this.mutate(key, JSON.stringify(['issue-label', change]), () => applyLabelChange(this.store, change).length); return listLabelDefinitions(this.store); }
   getBranchRequest(key: string, fingerprint: string): BranchChangeResult | undefined {
     const receipt = this.store.get<Receipt<BranchChangeResult>>(`branch-request:${key}`);
     if (receipt) assertReplayFingerprint(receipt.fingerprint, fingerprint);

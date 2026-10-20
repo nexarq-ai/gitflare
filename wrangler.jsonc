@@ -96,6 +96,14 @@
       }
     },
     {
+      "name": "PUBLIC_WRITE_RATE_LIMIT",
+      "namespace_id": "4108",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    {
       "name": "FORK_RATE_LIMIT",
       "namespace_id": "4120",
       "simple": {

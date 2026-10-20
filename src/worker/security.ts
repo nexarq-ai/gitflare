@@ -8,16 +8,16 @@ import { normalizeProjectMapping, type ProjectMapping, type MigrationPlan, type 
 import { authenticatorUri, decryptAuth, encryptAuth, mfaSecret, randomCapability, verifyTotp } from './mfa';
 import { renewedExpiry, SESSION_ABSOLUTE_MS, slidingExpiry } from './session-policy';
 import { HANDLE_REDIRECT_DAYS, handleProblem, normalizeHandle, suggestedHandle } from '../shared/handles';
-import type { HandleAvailability, HandleStatus, RepositoryLicense } from '../shared/types';
+import { CONTENT_REPORT_REASONS, type ContentReport, type HandleAvailability, type HandleStatus, type IssuePerson, type RepositoryBlock, type RepositoryLicense } from '../shared/types';
 
-export const ROLES = ['Viewer', 'Contributor', 'Reviewer', 'Maintainer', 'Deployer', 'Owner'] as const;
+export const ROLES = ['Viewer', 'Triager', 'Contributor', 'Reviewer', 'Maintainer', 'Deployer', 'Owner'] as const;
 export type Role = typeof ROLES[number];
-export type Action = 'read' | 'contribute' | 'execute' | 'review' | 'land' | 'deploy' | 'migrate' | 'manage';
+export type Action = 'read' | 'participate' | 'triage' | 'contribute' | 'execute' | 'review' | 'land' | 'deploy' | 'migrate' | 'manage';
 export const ROLE_ACTIONS: Record<Role, Action[]> = {
-  Viewer: ['read'], Contributor: ['read', 'contribute', 'execute'], Reviewer: ['read', 'review'],
-  Maintainer: ['read', 'contribute', 'execute', 'review', 'land'], Deployer: ['read', 'deploy'], Owner: ['read', 'contribute', 'execute', 'review', 'land', 'deploy', 'migrate', 'manage'],
+  Viewer: ['read'], Triager: ['read', 'participate', 'triage'], Contributor: ['read', 'participate', 'contribute', 'execute'], Reviewer: ['read', 'participate', 'triage', 'review'],
+  Maintainer: ['read', 'participate', 'triage', 'contribute', 'execute', 'review', 'land'], Deployer: ['read', 'deploy'], Owner: ['read', 'participate', 'triage', 'contribute', 'execute', 'review', 'land', 'deploy', 'migrate', 'manage'],
 };
-interface User { id: string; name: string; email: string; salt: string; hash: string; machine?: boolean; emailVerified?: boolean; cloudflareId?: string; revision?: number; reviewer?: { workspaceId: string }; disabled?: boolean }
+interface User { id: string; name: string; email: string; salt: string; hash: string; machine?: boolean; emailVerified?: boolean; cloudflareId?: string; revision?: number; reviewer?: { workspaceId: string }; disabled?: boolean; createdAt?: number }
 interface Member { userId: string; workspaceId: string; role: Role; repositoryIds?: string[]; superAdmin?: { previousRole?: Role; previousRepositoryIds?: string[] } }
 interface Session { id: string; userId: string; workspaceId: string; hash: string; expiresAt: number; authenticatedAt?: number; revoked?: boolean; client?: string; sliding?: boolean; kind?: 'browser' | 'token'; device?: string; country?: string; method?: SignInMethod; lastActiveAt?: number }
 export const SIGN_IN_METHODS = ['cloudflare', 'password', 'authenticator', 'owner-token'] as const;
@@ -55,7 +55,7 @@ export interface MfaChallengeResult { mfaRequired: true; challengeId: string; ex
 interface State { cloudflareConnections: Record<string, CloudflareConnection>; cloudflareStates: Record<string, CloudflareOAuthState>; cloudflareSignins: Record<string, CloudflareSigninState>; cloudflareLinks: Record<string, CloudflareLink>; cloudflareProjects: Record<string, ProjectRecord>; mfa: MfaRecord[]; challenges: AuthChallenge[]; emailTokens: EmailToken[]; loginFailures: Record<string, LoginFailures>; installations: Record<string, Installation>; machines: MachineRegistration[]; users: User[]; members: Member[]; sessions: Session[]; workspaces: WorkspaceRecord[]; invitations: Invitation[]; teams: Team[]; grants: Grant[]; credentials: Credential[]; audit: Audit[]; protections: Record<string, Protection>; approvals: Record<string, string[]>; limits: Record<string, { count: number; until: number }> }
 interface ProjectRecord { mapping: ProjectMapping | null; plans: MigrationPlan[]; accounts?: RepositoryAccountSelection }
 export interface DemoInstallInput { workspaceId: string; workspaceName: string; users: { id: string; name: string; email: string; role: Role }[]; visitorId: string }
-export interface Principal { userId: string; workspaceId: string; role: Role; sessionId?: string; credentialId?: string; bootstrap?: boolean; kind?: 'public' }
+export interface Principal { userId: string; workspaceId: string; role: Role; sessionId?: string; credentialId?: string; bootstrap?: boolean; kind?: 'public' | 'community' }
 export const PUBLIC_USER_ID = 'public';
 export function publicPrincipal(workspaceId: string): Principal { return { kind: 'public', userId: PUBLIC_USER_ID, workspaceId, role: 'Viewer' }; }
 export function personalWorkspaceId(userId: string): string {
@@ -69,9 +69,23 @@ export interface ResolvedHandle { handle: string; kind: HandleKind; workspaceId:
 export type HandleResolution = ResolvedHandle | { redirect: string } | null;
 export interface PublicListing { repositoryId: string; workspaceId: string; name: string; publishedAt: string }
 export interface VisibilityRecord { visibility: 'public'; publishedAt: string; publishedBy: string; license: RepositoryLicense | null; acknowledgedNoLicense?: boolean }
+interface BlockRecord { repositoryId: string; userId: string; blockedBy: string; blockedAt: string; reason: string }
+export interface AccountStanding { limited: boolean; until: string | null }
+export const LIMITED_ACCOUNT_DAYS = 7;
+export const LIMITED_DAILY_WRITES = 100;
+const BLOCKS_PER_REPOSITORY = 500;
+const REPORTS_KEPT = 1000;
+const REPORTS_PER_USER_PER_DAY = 20;
 const HANDLE_REDIRECT_MS = HANDLE_REDIRECT_DAYS * 86_400_000;
 const HANDLE_CHANGES_PER_DAY = 5;
 const PUBLIC_LISTING_LIMIT = 500;
+const FOLLOW_CHANGES_PER_HOUR = 120;
+const FOLLOW_LIST_LIMIT = 500;
+const PROFILE_CHANGES_PER_DAY = 30;
+export type FollowKind = 'star' | 'watch';
+export interface RepositoryStats { stars: number; watchers: number }
+export interface FollowState extends RepositoryStats { starred: boolean; watching: boolean }
+export interface ProfileRecord { displayName: string; bio: string; links: string[]; pinned: string[]; updatedAt: string; updatedBy: string }
 export interface LegacyWorkspaceSlice { workspace: WorkspaceRecord | null; members: Member[]; sessions: Session[]; teams: Team[]; invitations: Invitation[]; grants: Grant[]; credentials: Credential[]; protection: Protection | null; approvals: Record<string, string[]>; connection: CloudflareConnection | null; cloudflareStates: CloudflareOAuthState[]; projects: Record<string, ProjectRecord>; audit: Audit[] }
 interface IndexEntry { workspaceId: string; expiresAt: number }
 interface Outbox { id: string; userId: string; revision: number; workspaces: string[]; at: number }
@@ -171,7 +185,7 @@ const key = {
   failures: (id: string) => `id:fail:${enc(id)}`, limit: (id: string) => `id:limit:${enc(id)}`, installation: (id: string) => `id:install:${enc(id)}`, machine: (id: string) => `id:machine:${enc(id)}`, machineClaim: (hash: string) => `id:mclaim:${enc(hash)}`,
   signin: (id: string) => `id:cfsignin:${enc(id)}`, link: (id: string) => `id:cflink:${enc(id)}`, linkEmail: (email: string) => `id:cflinkemail:${enc(email)}`,
   route: (hash: string) => `id:route:${enc(hash)}`, sessionHome: (id: string) => `id:sesshome:${enc(id)}`, invite: (hash: string) => `id:invite:${enc(hash)}`, oauthState: (id: string) => `id:cfstate:${enc(id)}`,
-  outbox: (id: string) => `id:outbox:${enc(id)}`, handle: (handle: string) => `id:handle:${enc(handle)}`, workspaceHandle: (workspaceId: string) => `id:wshandle:${enc(workspaceId)}`, publicListing: (repositoryId: string) => `id:pubrepo:${enc(repositoryId)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
+  outbox: (id: string) => `id:outbox:${enc(id)}`, handle: (handle: string) => `id:handle:${enc(handle)}`, workspaceHandle: (workspaceId: string) => `id:wshandle:${enc(workspaceId)}`, publicListing: (repositoryId: string) => `id:pubrepo:${enc(repositoryId)}`, report: (id: string) => `id:report:${id}`, follow: (kind: FollowKind, userId: string, repositoryId: string) => `id:${kind}:${enc(userId)}:${repositoryId ? enc(repositoryId) : ''}`, repositoryStats: (repositoryId: string) => `id:rstat:${enc(repositoryId)}`, profile: (workspaceId: string) => `id:profile:${enc(workspaceId)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
 };
 
 class Records {
@@ -445,7 +459,7 @@ export class IdentityStore {
     return this.write(async unit => {
       if (await this.user(unit, input.user.id)) fail();
       if (await this.userByEmail(unit, input.user.email) || input.user.cloudflareId && await unit.get<string>(key.cloudflare(input.user.cloudflareId))) return false;
-      await this.putUser(unit, input.user);
+      await this.putUser(unit, { ...input.user, createdAt: input.user.createdAt ?? Date.now() });
       if (input.workspaceId) await this.addHintTo(unit, input.user.id, input.workspaceId);
       if (input.emailToken) await this.replaceEmailTokens(unit, input.user.id, () => true, input.emailToken);
       return true;
@@ -588,6 +602,75 @@ export class IdentityStore {
   publicListing(repositoryId: string) { return this.read(async unit => await unit.get<PublicListing>(key.publicListing(repositoryId)) ?? null); }
   publicListings() { return this.read(async unit => [...(await unit.list<PublicListing>({ prefix: 'id:pubrepo:', limit: PUBLIC_LISTING_LIMIT })).values()]); }
   changePublicListing(repositoryId: string, listing: PublicListing | null) { return this.write(unit => { if (listing) unit.put(key.publicListing(repositoryId), listing); else unit.delete(key.publicListing(repositoryId)); }); }
+  profiles(ids: string[]) {
+    return this.read(async unit => {
+      const result: Record<string, IssuePerson> = {};
+      for (const id of [...new Set(ids)].slice(0, 200)) {
+        const user = await this.user(unit, id);
+        if (!user || user.machine) continue;
+        const handle = /^[A-Za-z0-9-]{1,54}$/.test(id) ? await unit.get<string>(key.workspaceHandle(`personal-${id}`)) ?? null : null;
+        result[id] = { name: user.name, handle };
+      }
+      return result;
+    });
+  }
+  userByHandle(value: string) {
+    return this.read(async unit => { const record = await unit.get<HandleRecord>(key.handle(normalizeHandle(value))); return record?.kind === 'user' && record.redirectTo === undefined ? record.id : null; });
+  }
+  standing(userId: string) {
+    return this.read(async (unit): Promise<AccountStanding> => {
+      const createdAt = (await this.user(unit, userId))?.createdAt;
+      const until = createdAt === undefined ? 0 : createdAt + LIMITED_ACCOUNT_DAYS * 86_400_000;
+      return until > Date.now() ? { limited: true, until: new Date(until).toISOString() } : { limited: false, until: null };
+    });
+  }
+  limitAllowed(id: string, max: number, windowMs: number) { return this.write(unit => this.limitAllows(unit, id, max, windowMs)); }
+  addReport(report: ContentReport) {
+    return this.write(async unit => {
+      if (!await this.limitAllows(unit, `report:${report.reporterId}`, REPORTS_PER_USER_PER_DAY, 86_400_000)) throw new ApiError(429, 'RATE_LIMITED', 'You sent many reports today. Try again tomorrow.');
+      unit.put(key.report(`${report.createdAt}:${report.id}`), report);
+      const kept = await unit.list<ContentReport>({ prefix: 'id:report:', reverse: true, limit: REPORTS_KEPT + 50 });
+      [...kept.keys()].slice(REPORTS_KEPT - 1).forEach(id => unit.delete(id));
+      return report;
+    });
+  }
+  reports(limit = 200) { return this.read(async unit => [...(await unit.list<ContentReport>({ prefix: 'id:report:', reverse: true, limit })).values()]); }
+  dismissReport(id: string) {
+    return this.write(async unit => {
+      const found = [...(await unit.list<ContentReport>({ prefix: 'id:report:', limit: REPORTS_KEPT + 50 })).entries()].find(([, value]) => value.id === id);
+      if (!found) throw new ApiError(404, 'REPORT_NOT_FOUND', 'This report was already dismissed.');
+      unit.delete(found[0]);
+      return found[1];
+    });
+  }
+  publicListed(repositoryIds: string[]) { return this.read(unit => Promise.all(repositoryIds.slice(0, PUBLIC_LISTING_LIMIT).map(async id => await unit.get<PublicListing>(key.publicListing(id)) ?? null))); }
+  private async followRecord(unit: Unit, userId: string, repositoryId: string): Promise<FollowState> {
+    const [stats, starred, watching] = await Promise.all([unit.get<RepositoryStats>(key.repositoryStats(repositoryId)), unit.get(key.follow('star', userId, repositoryId)), unit.get(key.follow('watch', userId, repositoryId))]);
+    return { stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0, starred: !!starred, watching: !!watching };
+  }
+  followState(userId: string, repositoryId: string) { return this.read(unit => this.followRecord(unit, userId, repositoryId)); }
+  follow(input: { userId: string; repositoryId: string; kind: FollowKind; on: boolean }) {
+    return this.write(async unit => {
+      const current = await this.followRecord(unit, input.userId, input.repositoryId);
+      if ((input.kind === 'star' ? current.starred : current.watching) === input.on) return current;
+      if (!await this.limitAllows(unit, `follow:${input.userId}`, FOLLOW_CHANGES_PER_HOUR, 3_600_000)) throw new ApiError(429, 'RATE_LIMITED', 'You starred or watched many repositories in the last hour. Try again later.');
+      const id = key.follow(input.kind, input.userId, input.repositoryId);
+      if (input.on) unit.put(id, { at: new Date().toISOString() }); else unit.delete(id);
+      const next = { ...current, ...(input.kind === 'star' ? { starred: input.on, stars: Math.max(0, current.stars + (input.on ? 1 : -1)) } : { watching: input.on, watchers: Math.max(0, current.watchers + (input.on ? 1 : -1)) }) };
+      unit.put(key.repositoryStats(input.repositoryId), { stars: next.stars, watchers: next.watchers } satisfies RepositoryStats);
+      return next;
+    });
+  }
+  follows(userId: string, kind: FollowKind) { return this.read(async unit => [...(await unit.list<{ at: string }>({ prefix: key.follow(kind, userId, ''), limit: FOLLOW_LIST_LIMIT })).entries()].map(([id, value]) => ({ repositoryId: decodeURIComponent(id.slice(key.follow(kind, userId, '').length)), at: value.at })).sort((a, b) => b.at.localeCompare(a.at))); }
+  repositoryStats(repositoryIds: string[]) { return this.read(unit => Promise.all(repositoryIds.slice(0, PUBLIC_LISTING_LIMIT).map(async id => await unit.get<RepositoryStats>(key.repositoryStats(id)) ?? { stars: 0, watchers: 0 }))); }
+  profile(workspaceId: string) { return this.read(async unit => await unit.get<ProfileRecord>(key.profile(workspaceId)) ?? null); }
+  setProfile(workspaceId: string, record: ProfileRecord, actor: string) {
+    return this.write(async unit => {
+      if (!await this.limitAllows(unit, `profile:${actor}`, PROFILE_CHANGES_PER_DAY, 86_400_000)) throw new ApiError(429, 'RATE_LIMITED', 'You changed this profile many times today. Try again tomorrow.');
+      unit.put(key.profile(workspaceId), record);
+      return record;
+    });
+  }
   async pushLegacy(): Promise<void> {
     const status = await this.migrationStatus();
     const failures: unknown[] = [];
@@ -644,15 +727,16 @@ function splitIdentity(legacy: State, unit: Unit, now: number): string[] {
   return [...workspaces];
 }
 
-type ShardGroup = 'meta' | 'workspace' | 'member' | 'session' | 'team' | 'invitation' | 'grant' | 'credential' | 'protection' | 'approval' | 'connection' | 'cfstate' | 'project' | 'revision' | 'cfaccount' | 'visibility';
-const SHARD_GROUPS: ShardGroup[] = ['meta', 'workspace', 'member', 'session', 'team', 'invitation', 'grant', 'credential', 'protection', 'approval', 'connection', 'cfstate', 'project', 'revision', 'cfaccount', 'visibility'];
-interface ShardData { meta: Map<string, { workspaceId: string; source: string; version: number; at: string }>; workspace: Map<string, WorkspaceRecord>; member: Map<string, Member>; session: Map<string, Session>; team: Map<string, Team>; invitation: Map<string, Invitation>; grant: Map<string, Grant>; credential: Map<string, Credential>; protection: Map<string, Protection>; approval: Map<string, string[]>; connection: Map<string, CloudflareConnection>; cfstate: Map<string, CloudflareOAuthState>; project: Map<string, ProjectRecord>; revision: Map<string, number>; cfaccount: Map<string, ConnectedCloudflareAccount>; visibility: Map<string, VisibilityRecord> }
+type ShardGroup = 'meta' | 'workspace' | 'member' | 'session' | 'team' | 'invitation' | 'grant' | 'credential' | 'protection' | 'approval' | 'connection' | 'cfstate' | 'project' | 'revision' | 'cfaccount' | 'visibility' | 'block';
+const SHARD_GROUPS: ShardGroup[] = ['meta', 'workspace', 'member', 'session', 'team', 'invitation', 'grant', 'credential', 'protection', 'approval', 'connection', 'cfstate', 'project', 'revision', 'cfaccount', 'visibility', 'block'];
+interface ShardData { meta: Map<string, { workspaceId: string; source: string; version: number; at: string }>; workspace: Map<string, WorkspaceRecord>; member: Map<string, Member>; session: Map<string, Session>; team: Map<string, Team>; invitation: Map<string, Invitation>; grant: Map<string, Grant>; credential: Map<string, Credential>; protection: Map<string, Protection>; approval: Map<string, string[]>; connection: Map<string, CloudflareConnection>; cfstate: Map<string, CloudflareOAuthState>; project: Map<string, ProjectRecord>; revision: Map<string, number>; cfaccount: Map<string, ConnectedCloudflareAccount>; visibility: Map<string, VisibilityRecord>; block: Map<string, BlockRecord> }
 function emptyShard(): ShardData { return Object.fromEntries(SHARD_GROUPS.map(group => [group, new Map()])) as unknown as ShardData; }
 function connectionRepository(value: unknown): string | undefined { if (value === undefined) return undefined; if (typeof value !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(value)) fail(); return value; }
 function connectionGrant(value: unknown): string | undefined { if (value === undefined) return undefined; if (typeof value !== 'string' || !/^[a-f0-9-]{36}$/.test(value)) fail(); return value; }
 const CLOUDFLARE_ACCOUNT = /^[a-f0-9]{32}$/;
 const CONNECTED_ACCOUNTS_MAX = 50;
 function accountNotConnected(accountId: string): never { throw new ApiError(409, 'ACCOUNT_NOT_CONNECTED', `Cloudflare account ${accountId} is not connected to this workspace. An Owner must add it in Settings → Cloudflare first.`); }
+function blockKey(repositoryId: string, userId: string): string { return `${repositoryId}:${userId}`; }
 function shardKey(group: ShardGroup, id: string): string { return `ws:${group}:${enc(id)}`; }
 function auditKey(sequence: number): string { return `wa:${String(sequence).padStart(12, '0')}`; }
 interface Context { session?: PublicSession | null; trusted?: Set<string> }
@@ -741,7 +825,22 @@ export class WorkspaceStore {
     return false;
   }
   private roleAllows(p: Principal, action: Action, type: string, resourceId: string) { const member = this.data.member.get(p.userId); const scoped = !member?.repositoryIds || type === 'repository' && member.repositoryIds.includes(resourceId) || !['repository', 'stream'].includes(type); return !(action === 'execute' && this.record()?.agentPending) && scoped && ROLE_ACTIONS[p.role].includes(action) && (['workspace', 'repository', 'stream'].includes(type) || p.role === 'Owner' || p.role === 'Deployer' && type === 'environment' && action === 'deploy'); }
-  private authorityAllows(p: Principal, action: Action, resourceType: string, resourceId: string, missionId?: string) { return this.roleAllows(p, action, resourceType, resourceId) || this.grantAllows(p, action, resourceType, resourceId, missionId); }
+  private publicParticipation(p: Principal, action: Action, resourceType: string, resourceId: string, missionId?: string) {
+    const member = this.data.member.get(p.userId);
+    return action === 'participate' && resourceType === 'repository' && missionId === undefined && !p.credentialId && !p.bootstrap && !!member && (!member.repositoryIds || member.repositoryIds.includes(resourceId)) && this.data.visibility.get(resourceId)?.visibility === 'public';
+  }
+  private authorityAllows(p: Principal, action: Action, resourceType: string, resourceId: string, missionId?: string) { return this.roleAllows(p, action, resourceType, resourceId) || this.grantAllows(p, action, resourceType, resourceId, missionId) || this.publicParticipation(p, action, resourceType, resourceId, missionId); }
+  private validateCommunity(p: Principal, context: Context) {
+    if (p.kind !== 'community' || this.options.EDITION === 'self-hosted' || this.options.DEMO_MODE === 'true') fail();
+    if (p.workspaceId !== this.workspaceId || p.role !== 'Viewer' || p.userId === PUBLIC_USER_ID || p.credentialId || p.bootstrap || !p.sessionId || !this.initialized) fail();
+    if (this.data.member.has(p.userId)) fail();
+    const session = this.session(p.sessionId, context);
+    if (!session || session.userId !== p.userId || !activeSession(session, Date.now())) fail();
+  }
+  private communityAllows(p: Principal, action: Action, resourceType: string, resourceId: string, missionId?: string) {
+    return (action === 'read' || action === 'participate') && resourceType === 'repository' && missionId === undefined
+      && this.data.visibility.get(resourceId)?.visibility === 'public' && !this.data.block.has(blockKey(resourceId, p.userId));
+  }
   private checkAllows(p: Principal, action: Action, resourceType: string, resourceId: string, missionId?: string): boolean {
     if (p.credentialId) { const c = this.data.credential.get(p.credentialId)!; return !(!this.authorityAllows(p, action, resourceType, resourceId, missionId) || !c.actions.includes(action) || resourceType !== 'repository' || c.scope !== 'workspace-read' && c.repositoryId !== resourceId || c.missionId && (missionId ? c.missionId !== missionId : action !== 'read')); }
     return this.authorityAllows(p, action, resourceType, resourceId, missionId);
@@ -864,6 +963,13 @@ export class WorkspaceStore {
   }
   async authorize(p: Principal, action: Action, resourceType = 'workspace', resourceId = p.workspaceId, missionId?: string): Promise<void> {
     const context = await this.prepare(p);
+    if (p.kind === 'community') {
+      return this.change(change => {
+        this.validateCommunity(p, context);
+        if (!this.communityAllows(p, action, resourceType, resourceId, missionId)) fail();
+        change.audit.push({ actorId: p.userId, action: `community.${action}`, resourceId });
+      }, { full: false });
+    }
     await this.change(change => {
       this.validate(p, context);
       if (p.credentialId) {
@@ -893,11 +999,13 @@ export class WorkspaceStore {
       && action === 'read' && resourceType === 'repository' && missionId === undefined && this.initialized && this.data.visibility.get(resourceId)?.visibility === 'public';
   }
   async check(p: Principal, action: Action, resourceType = 'workspace', resourceId = p.workspaceId, missionId?: string): Promise<void> {
+    if (p.kind === 'community') { const context = await this.prepare(p); return this.guarded(() => { this.validateCommunity(p, context); if (!this.communityAllows(p, action, resourceType, resourceId, missionId)) fail(); }); }
     if (p.kind !== undefined) { await this.load(); return this.guarded(() => { if (!this.publicAllows(p, action, resourceType, resourceId, missionId)) fail(); }); }
     const context = await this.prepare(p);
     await this.guarded(() => { this.validate(p, context); if (!this.checkAllows(p, action, resourceType, resourceId, missionId)) fail(); });
   }
   async checkMany(p: Principal, action: Action, resources: { resourceType: string; resourceId: string; missionId?: string }[]): Promise<boolean[]> {
+    if (p.kind === 'community') { const context = await this.prepare(p); return this.guarded(() => { this.validateCommunity(p, context); return resources.map(r => this.communityAllows(p, action, r.resourceType, r.resourceId, r.missionId)); }); }
     if (p.kind !== undefined) { await this.load(); return this.guarded(() => resources.map(r => this.publicAllows(p, action, r.resourceType, r.resourceId, r.missionId))); }
     const context = await this.prepare(p);
     return this.guarded(() => { this.validate(p, context); return resources.map(r => this.checkAllows(p, action, r.resourceType, r.resourceId, r.missionId)); });
@@ -917,6 +1025,28 @@ export class WorkspaceStore {
       change.keys!.push(['visibility', repositoryId]);
       if (!!before !== !!record) change.audit.push({ actorId: p.userId, action: record ? 'repository.visibility.public' : 'repository.visibility.private', resourceId: repositoryId });
       return record;
+    }, { full: false });
+  }
+  async blocks(p: Principal, repositoryId: string): Promise<BlockRecord[]> {
+    const context = await this.prepare(p);
+    return this.guarded(() => { this.validate(p, context); if (p.credentialId || !this.authorityAllows(p, 'triage', 'repository', repositoryId)) fail(); return [...this.data.block.values()].filter(block => block.repositoryId === repositoryId).sort((a, b) => b.blockedAt.localeCompare(a.blockedAt)); });
+  }
+  async setBlock(p: Principal, repositoryId: string, userId: string, blocked: boolean, reason = ''): Promise<BlockRecord | null> {
+    const context = await this.prepare(p);
+    return this.change(change => {
+      this.validate(p, context);
+      if (p.credentialId || !this.authorityAllows(p, 'triage', 'repository', repositoryId)) fail();
+      if (userId === p.userId) throw new ApiError(400, 'INVALID_BLOCK', 'You cannot block yourself.');
+      if (this.data.member.has(userId)) throw new ApiError(409, 'MEMBER_BLOCK', 'This person is a workspace member. Remove them in Settings → People instead.');
+      const id = blockKey(repositoryId, userId);
+      const before = this.data.block.get(id);
+      if (blocked) {
+        if (!before && [...this.data.block.values()].filter(block => block.repositoryId === repositoryId).length >= BLOCKS_PER_REPOSITORY) throw new ApiError(409, 'BLOCK_LIMIT', `A repository can block at most ${BLOCKS_PER_REPOSITORY} people.`);
+        this.data.block.set(id, { repositoryId, userId, blockedBy: p.userId, blockedAt: before?.blockedAt ?? new Date().toISOString(), reason: reason.slice(0, 200) });
+      } else this.data.block.delete(id);
+      change.keys!.push(['block', id]);
+      if (!!before !== blocked) change.audit.push({ actorId: p.userId, action: blocked ? 'repository.block' : 'repository.unblock', resourceId: id });
+      return this.data.block.get(id) ?? null;
     }, { full: false });
   }
   async workspace(p: Principal) { const context = await this.prepare(p); return this.guarded(() => { this.validate(p, context); const workspace = this.record(); if (!workspace) fail(); return { id: workspace.id, name: workspace.name }; }); }
@@ -1430,8 +1560,8 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
-const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing']);
-const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand', 'visibility', 'setVisibility']);
+const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing', 'publicListed', 'followState', 'follow', 'follows', 'repositoryStats', 'profile', 'setProfile', 'profiles', 'userByHandle', 'standing', 'limitAllowed', 'addReport', 'reports', 'dismissReport']);
+const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand', 'visibility', 'setVisibility', 'blocks', 'setBlock']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
     get: (_target, op) => typeof op !== 'string' || op === 'then' ? undefined : async (...args: unknown[]) => {
@@ -1740,6 +1870,54 @@ export class SecurityService {
     return this.handles(p, origin);
   }
   visibility(p: Principal, repositoryId: string): Promise<VisibilityRecord | null> { return this.shard(p.workspaceId).visibility(p, repositoryId); }
+  async participant(p: Principal, workspaceId: string): Promise<Principal> {
+    if (!p.kind && p.workspaceId === workspaceId) return p;
+    this.publicLayerAvailable();
+    if (p.kind || p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to take part in public repositories.');
+    await this.shard(p.workspaceId).validatePrincipal(p, { account: true });
+    if (await this.shard(workspaceId).isMember(p.userId)) return this.shard(workspaceId).sessionPrincipal(p.userId, p.sessionId);
+    return { kind: 'community', userId: p.userId, workspaceId, role: 'Viewer', sessionId: p.sessionId };
+  }
+  standing(userId: string): Promise<AccountStanding> { return this.identity().standing(userId); }
+  async dailyPublicWrite(userId: string): Promise<void> {
+    if (!await this.identity().limitAllowed(`public-write:${userId}`, LIMITED_DAILY_WRITES, 86_400_000)) throw new ApiError(429, 'DAILY_LIMIT', `New accounts can post ${LIMITED_DAILY_WRITES} times a day on public repositories. Try again tomorrow.`);
+  }
+  profiles(ids: string[]): Promise<Record<string, IssuePerson>> { return ids.length ? this.identity().profiles(ids) : Promise.resolve({}); }
+  async blocks(p: Principal, repositoryId: string): Promise<RepositoryBlock[]> {
+    const records = await this.shard(p.workspaceId).blocks(p, repositoryId);
+    const people = await this.profiles(records.map(block => block.userId));
+    return records.map(block => ({ userId: block.userId, person: people[block.userId] ?? null, blockedBy: block.blockedBy, blockedAt: block.blockedAt, reason: block.reason }));
+  }
+  async setBlock(p: Principal, repositoryId: string, body: Record<string, unknown>): Promise<RepositoryBlock[]> {
+    this.publicLayerAvailable();
+    if (body.action !== 'block' && body.action !== 'unblock') throw new ApiError(400, 'INVALID_INPUT', 'Choose block or unblock.');
+    const handle = body.handle === undefined ? undefined : requireString(body.handle, 'Handle', 100);
+    const userId = handle ? await this.identity().userByHandle(handle) : body.userId === undefined ? null : requireString(body.userId, 'Person', 100);
+    if (!userId) throw new ApiError(404, 'PERSON_NOT_FOUND', 'No account has this handle.');
+    const reason = body.reason === undefined ? '' : requireString(body.reason, 'Reason', 200, 0);
+    await this.shard(p.workspaceId).setBlock(p, repositoryId, userId, body.action === 'block', reason);
+    return this.blocks(p, repositoryId);
+  }
+  async reportContent(p: Principal, report: Omit<ContentReport, 'id' | 'createdAt' | 'reporterId' | 'reason' | 'detail'>, body: Record<string, unknown>): Promise<ContentReport> {
+    this.publicLayerAvailable();
+    if (p.kind === 'public' || p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to report content.');
+    if (!(CONTENT_REPORT_REASONS as readonly string[]).includes(body.reason as string)) throw new ApiError(400, 'INVALID_INPUT', `Choose a reason: ${CONTENT_REPORT_REASONS.join(', ')}.`);
+    const detail = body.detail === undefined ? '' : requireString(body.detail, 'Details', 1000, 0);
+    const saved = await this.identity().addReport({ ...report, id: crypto.randomUUID(), reporterId: p.userId, reason: body.reason as ContentReport['reason'], detail, createdAt: new Date().toISOString() });
+    await this.shard(report.workspaceId).audit([{ actorId: p.userId, action: 'content.report', resourceId: `${report.repositoryId}:${report.issueNumber}${report.commentId ? `:${report.commentId}` : ''}` }]);
+    return saved;
+  }
+  async reports(p: Principal): Promise<{ reports: ContentReport[]; people: Record<string, IssuePerson> }> {
+    if (!await this.installationCredentialAdmin(p).catch(() => false)) throw new ApiError(404, 'NOT_FOUND', 'This API route could not be found.');
+    const reports = await this.identity().reports();
+    return { reports, people: await this.profiles(reports.map(report => report.reporterId)) };
+  }
+  async dismissReport(p: Principal, id: string): Promise<{ reports: ContentReport[]; people: Record<string, IssuePerson> }> {
+    if (!await this.installationCredentialAdmin(p).catch(() => false)) throw new ApiError(404, 'NOT_FOUND', 'This API route could not be found.');
+    const report = await this.identity().dismissReport(requireString(id, 'Report', 100));
+    await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: 'content.report.dismissed', resourceId: report.id }]);
+    return this.reports(p);
+  }
   async setVisibility(p: Principal, repository: { id: string; name: string }, record: VisibilityRecord | null): Promise<VisibilityRecord | null> {
     this.publicLayerAvailable();
     if (record) {
@@ -1751,6 +1929,64 @@ export class SecurityService {
     await this.shard(p.workspaceId).validatePrincipal(p, { owner: true });
     await this.identity().changePublicListing(repository.id, null);
     return this.shard(p.workspaceId).setVisibility(p, repository.id, null);
+  }
+  publicListed(repositoryIds: string[]): Promise<(PublicListing | null)[]> { return repositoryIds.length ? this.identity().publicListed(repositoryIds) : Promise.resolve([]); }
+  repositoryStats(repositoryIds: string[]): Promise<RepositoryStats[]> { return repositoryIds.length ? this.identity().repositoryStats(repositoryIds) : Promise.resolve([]); }
+  profileOf(workspaceId: string): Promise<ProfileRecord | null> { return this.identity().profile(workspaceId); }
+  private async followPrincipal(p: Principal): Promise<void> {
+    if (p.kind !== undefined || p.credentialId || p.bootstrap || !/^[A-Za-z0-9-]{1,54}$/.test(p.userId)) fail('ACCOUNT_REQUIRED', 'Sign in with an account to star or watch repositories.');
+    await this.shard(p.workspaceId).validatePrincipal(p);
+  }
+  private async publiclyReadable(repositoryId: string): Promise<boolean> {
+    const listing = await this.identity().publicListing(repositoryId);
+    return !!listing && await this.shard(listing.workspaceId).check(publicPrincipal(listing.workspaceId), 'read', 'repository', repositoryId).then(() => true, () => false);
+  }
+  async followState(p: Principal, repositoryId: string): Promise<FollowState> {
+    await this.followPrincipal(p);
+    return this.identity().followState(p.userId, repositoryId);
+  }
+  async follow(p: Principal, repositoryId: string, kind: FollowKind, on: boolean): Promise<FollowState> {
+    this.publicLayerAvailable();
+    if (kind !== 'star' && kind !== 'watch') throw new ApiError(400, 'INVALID_INPUT', 'Choose star or watch.');
+    if (typeof on !== 'boolean') throw new ApiError(400, 'INVALID_INPUT', 'on must be true or false.');
+    await this.followPrincipal(p);
+    if (!await this.publiclyReadable(repositoryId)) throw new ApiError(404, 'NOT_FOUND', 'This repository does not exist or is not public.');
+    return this.identity().follow({ userId: p.userId, repositoryId, kind, on });
+  }
+  async follows(p: Principal): Promise<Record<FollowKind, { repositoryId: string; at: string }[]>> {
+    await this.followPrincipal(p);
+    const [star, watch] = await Promise.all([this.identity().follows(p.userId, 'star'), this.identity().follows(p.userId, 'watch')]);
+    return { star, watch };
+  }
+  async userFollows(workspaceId: string): Promise<{ repositoryId: string; at: string }[]> {
+    if (!isPersonalWorkspace(workspaceId)) return [];
+    return this.identity().follows(workspaceId.slice('personal-'.length), 'star');
+  }
+  private async profileTarget(p: Principal, scope: HandleKind, change: boolean): Promise<{ workspaceId: string; canChange: boolean }> {
+    if (p.kind !== undefined || p.credentialId) fail();
+    if (scope === 'user') {
+      if (p.bootstrap || !/^[A-Za-z0-9-]{1,54}$/.test(p.userId) || (change && !p.sessionId)) fail('ACCOUNT_REQUIRED', 'Sign in with an account to edit your profile.');
+      await this.shard(p.workspaceId).validatePrincipal(p, { account: change });
+      return { workspaceId: personalWorkspaceId(p.userId), canChange: !!p.sessionId };
+    }
+    await this.shard(p.workspaceId).validatePrincipal(p, { owner: change });
+    if (change && isPersonalWorkspace(p.workspaceId)) fail('PERSONAL_WORKSPACE', 'This personal workspace uses your account profile. Change it in Account → Profile.');
+    return { workspaceId: p.workspaceId, canChange: p.role === 'Owner' && !isPersonalWorkspace(p.workspaceId) };
+  }
+  async profileSettings(p: Principal, scope: HandleKind): Promise<{ workspaceId: string; handle: string | null; profile: ProfileRecord | null; canChange: boolean }> {
+    const target = await this.profileTarget(p, scope, false);
+    const [handle, profile] = await Promise.all([this.identity().handleOf(target.workspaceId), this.identity().profile(target.workspaceId)]);
+    return { ...target, handle, profile };
+  }
+  async setProfile(p: Principal, scope: HandleKind, input: Omit<ProfileRecord, 'updatedAt' | 'updatedBy'>, validate: (workspaceId: string) => Promise<void>): Promise<{ workspaceId: string; handle: string; profile: ProfileRecord }> {
+    this.publicLayerAvailable();
+    const target = await this.profileTarget(p, scope, true);
+    const handle = await this.identity().handleOf(target.workspaceId);
+    if (!handle) throw new ApiError(409, 'HANDLE_REQUIRED', scope === 'user' ? 'Choose your handle in Account → Profile first.' : 'Choose a handle for this workspace in Settings → General first.');
+    await validate(target.workspaceId);
+    const profile = await this.identity().setProfile(target.workspaceId, { ...input, updatedAt: new Date().toISOString(), updatedBy: p.userId }, `${scope}:${scope === 'user' ? p.userId : target.workspaceId}`);
+    await this.shard(target.workspaceId).audit([{ actorId: p.userId, action: scope === 'user' ? 'account.profile.update' : 'workspace.profile.update', resourceId: handle }]);
+    return { workspaceId: target.workspaceId, handle, profile };
   }
   private async inviteAccepted(invite: { scope?: InvitationScope; role: Role; workspaceId: string }, userId: string) {
     if (invite.scope?.kind !== 'organization') return;

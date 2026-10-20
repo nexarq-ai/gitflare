@@ -81,7 +81,7 @@ export function workerDeployer(client: CloudflareDeployClient, workerName: strin
       return result?.deployments?.[0] ?? null;
     },
     async deploy(versions, message) {
-      const result = await client.call<{ id?: string }>(`${script}/deployments`, { method: 'POST', json: { strategy: 'percentage', versions, annotations: { 'workers/message': message.slice(0, 1000), 'workers/triggered_by': 'gitflare' } } }).catch(missing);
+      const result = await client.call<{ id?: string }>(`${script}/deployments`, { method: 'POST', json: { strategy: 'percentage', versions, annotations: { 'workers/message': message.slice(0, 1000) } } }).catch(missing);
       return { id: String(result?.id ?? '') };
     },
   };

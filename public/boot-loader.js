@@ -10,7 +10,8 @@
     } catch {
       theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
-    if (site && app && site !== app && location.origin === site) theme = "dark";
+    const followsTheme = document.querySelector?.('meta[name="gitflare-theme"]')?.content === "system";
+    if (site && app && site !== app && location.origin === site && !followsTheme) theme = "dark";
     root.dataset.theme = theme;
     root.dataset.gfTheme = theme;
     root.dataset.mode = theme;

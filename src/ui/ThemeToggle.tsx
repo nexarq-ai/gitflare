@@ -33,15 +33,16 @@ export function initializeTheme(darkOnly = false) {
   });
 }
 
-export function useDarkOnlySurface() {
+export function useDarkOnlySurface(enabled = true) {
   useLayoutEffect(() => {
+    if (!enabled) return;
     darkOnlySurfaces += 1;
     applyTheme("dark");
     return () => {
       darkOnlySurfaces -= 1;
       if (darkOnlySurfaces === 0) applyTheme(preferredTheme());
     };
-  }, []);
+  }, [enabled]);
 }
 
 export function setTheme(theme: Theme) {

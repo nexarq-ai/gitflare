@@ -25,6 +25,7 @@ import type { ProjectSnapshot } from './cloudflare-projects';
 import { declaresRoutes, detectDeploySetup, environmentBlock, parseWranglerConfig, scanRepository, withAccountFacts, type DetectedSetup, type EnvironmentAccount } from './deploy-detect';
 import type { Repository } from '../shared/types';
 import { triggerMirrorSync } from './github-mirror-runtime';
+import { refreshPublicRepository } from './public-discovery';
 import { previewSecretBindings } from './repository-secrets';
 
 export interface LandingParams { kind: 'land'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimId: string; principal: Principal }
@@ -121,6 +122,10 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
   });
   await step.do('schedule GitHub mirror sync', { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '1 minute' }, async () => {
     await triggerMirrorSync(env, repositoryId, principal.workspaceId, 'land');
+    return true;
+  });
+  await step.do('refresh public index', { retries: { limit: 3, delay: '10 seconds', backoff: 'exponential' }, timeout: '5 minutes' }, async () => {
+    await refreshPublicRepository(env, repositoryId);
     return true;
   });
 }

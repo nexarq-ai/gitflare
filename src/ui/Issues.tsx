@@ -3,11 +3,14 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
-import { ArrowLeftIcon, ChatCircleIcon, CheckCircleIcon, CircleIcon, GitBranchIcon, PlusIcon, ProhibitIcon, SparkleIcon } from "@phosphor-icons/react";
-import type { AccessSnapshot, IssueCloseReason, IssueDetail, IssueList, MissionSummary, Repository } from "../shared/types";
+import { ArrowLeftIcon, ChatCircleIcon, CheckCircleIcon, CircleIcon, EyeSlashIcon, FileTextIcon, GitBranchIcon, LockSimpleIcon, LockSimpleOpenIcon, PlusIcon, ProhibitIcon, SparkleIcon, UserMinusIcon } from "@phosphor-icons/react";
+import { ISSUE_HIDE_REASONS, ISSUE_LOCK_REASONS, type AccessSnapshot, type IssueCloseReason, type IssueDetail, type IssueLabelDefinition, type IssueList, type IssuePerson, type IssueTemplate, type IssueTemplates, type MissionSummary, type Repository } from "../shared/types";
 import { request, RequestError } from "./api";
 import { BranchCreated, createBranch } from "./BranchProtection";
 import { EmptyState, relativeTime } from "./components";
+import { useConfirm } from "./ConfirmDialog";
+import InfoTip from "./InfoTip";
+import { Labels, personLabel, ReasonDialog } from "./IssueLabels";
 import { navigate } from "./router";
 import { RouteProgress } from "./WorkspaceLoader";
 
@@ -22,7 +25,7 @@ function StateBadge({ state, reason }: { state: string; reason?: IssueCloseReaso
   return <span className={`issue-state ${state === "open" ? "open" : reason === "not_planned" ? "not-planned" : "closed"}`}><Icon size={14} weight="bold" />{state === "open" ? "Open" : reason === "not_planned" ? "Closed as not planned" : "Closed"}</span>;
 }
 
-const Labels = ({ labels }: { labels: string[] }) => labels.length ? <span className="issue-labels">{labels.map((label) => <span key={label} className="issue-label">{label}</span>)}</span> : null;
+const reasonLabel = (value: string) => value.replace(/-/g, " ");
 export const issueBranchName = (number: number, title: string) => `issue-${number}${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40).replace(/^-+|-+$/g, "").replace(/^(.)/, "-$1")}`;
 const splitLabels = (value: string) => value.split(",").map((label) => label.trim()).filter(Boolean);
 
@@ -56,12 +59,13 @@ function IssueIndex({ repository, viewer, base }: { repository: Repository; view
     if (query) params.set("q", query);
     try {
       const page = await request<IssueList>(`/api/repositories/${encodeURIComponent(repository.id)}/issues?${params}`);
-      setData((current) => offset && current ? { ...page, items: [...current.items, ...page.items] } : page);
+      setData((current) => offset && current ? { ...page, items: [...current.items, ...page.items], people: { ...current.people, ...page.people } } : page);
       setError("");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Issues could not be loaded."); }
   }, [repository.id, state, label, query]);
   useEffect(() => { setData(null); void load(); }, [load]);
-  const canCreate = viewer.permissions.includes("contribute");
+  const canCreate = viewer.permissions.includes("participate");
+  const name = (id: string) => personLabel(id, data?.people, viewer.names, viewer.userId);
   return (
     <>
       <div className="repository-work-heading">
@@ -91,8 +95,9 @@ function IssueIndex({ repository, viewer, base }: { repository: Repository; view
                   <StateIcon state={issue.state} reason={issue.closedReason} />
                   <div>
                     <a className="issue-title" href={`/${base}/${issue.number}`}>{issue.title}</a>
-                    <Labels labels={issue.labels} />
-                    <small>#{issue.number} opened {relativeTime(issue.createdAt)} by {viewer.names.get(issue.authorId) ?? "a former member"}{issue.assignees.length ? ` · Assigned to ${issue.assignees.map((id) => viewer.names.get(id) ?? id.slice(0, 8)).join(", ")}` : ""}</small>
+                    <Labels labels={issue.labels} definitions={data.labelDefinitions} />
+                    {issue.locked && <LockSimpleIcon className="issue-locked-icon" size={13} aria-label="Locked" />}
+                    <small>#{issue.number} opened {relativeTime(issue.createdAt)} by {name(issue.authorId)}{issue.assignees.length ? ` · Assigned to ${issue.assignees.map(name).join(", ")}` : ""}</small>
                   </div>
                   {issue.commentCount > 0 && <span className="issue-comment-count" aria-label={`${issue.commentCount} comments`}><ChatCircleIcon size={15} />{issue.commentCount}</span>}
                 </li>
@@ -110,32 +115,76 @@ function StateIcon({ state, reason }: { state: string; reason?: IssueCloseReason
   return <span className={`issue-state-icon ${state === "open" ? "open" : reason === "not_planned" ? "not-planned" : "closed"}`} aria-label={state === "open" ? "Open" : "Closed"}>{state === "open" ? <CircleIcon size={17} weight="bold" /> : reason === "not_planned" ? <ProhibitIcon size={17} weight="bold" /> : <CheckCircleIcon size={17} weight="bold" />}</span>;
 }
 
+function useLabelDefinitions(repositoryId: string) {
+  const [definitions, setDefinitions] = useState<IssueLabelDefinition[]>([]);
+  useEffect(() => {
+    let active = true;
+    request<{ labels: IssueLabelDefinition[] }>(`/api/repositories/${encodeURIComponent(repositoryId)}/issue-labels`).then((value) => { if (active) setDefinitions(value.labels); }).catch(() => {});
+    return () => { active = false; };
+  }, [repositoryId]);
+  return definitions;
+}
+
+function LabelPicker({ id, value, definitions, disabled, onChange }: { id: string; value: string[]; definitions: IssueLabelDefinition[]; disabled?: boolean; onChange: (labels: string[]) => void }) {
+  const [text, setText] = useState(value.join(", "));
+  if (!definitions.length) return <Input id={id} aria-label="Labels, comma separated" maxLength={450} disabled={disabled} value={text} onChange={(event) => { setText(event.target.value); onChange(splitLabels(event.target.value)); }} placeholder="bug, checkout" />;
+  const extra = value.filter((label) => !definitions.some((item) => item.name.toLowerCase() === label.toLowerCase()));
+  const toggle = (name: string) => onChange(value.some((label) => label.toLowerCase() === name.toLowerCase()) ? value.filter((label) => label.toLowerCase() !== name.toLowerCase()) : [...value, name].slice(0, 10));
+  return <div className="issue-label-picker" id={id} role="group" aria-label="Labels">
+    {[...definitions.map((item) => item.name), ...extra].map((name) => {
+      const selected = value.some((label) => label.toLowerCase() === name.toLowerCase());
+      return <button key={name} type="button" aria-pressed={selected} disabled={disabled || (!selected && value.length >= 10)} onClick={() => toggle(name)}><Labels labels={[name]} definitions={definitions} /></button>;
+    })}
+  </div>;
+}
+
+function TemplateChooser({ templates, onChoose }: { templates: IssueTemplate[]; onChoose: (template: IssueTemplate | null) => void }) {
+  return <ul className="issue-templates">
+    {templates.map((template) => <li key={template.file}><button type="button" onClick={() => onChoose(template)}><FileTextIcon size={18} aria-hidden="true" /><span><strong>{template.name}</strong>{template.about && <small>{template.about}</small>}</span></button></li>)}
+    <li><button type="button" onClick={() => onChoose(null)}><PlusIcon size={18} aria-hidden="true" /><span><strong>Blank issue</strong><small>Start from an empty description.</small></span></button></li>
+  </ul>;
+}
+
 function NewIssue({ repository, viewer, base }: { repository: Repository; viewer: Viewer; base: string }) {
+  const [templates, setTemplates] = useState<IssueTemplates | null>(null);
+  const [template, setTemplate] = useState<IssueTemplate | null | undefined>(undefined);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [labels, setLabels] = useState("");
+  const [labels, setLabels] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const key = useRef(crypto.randomUUID());
-  const canModerate = viewer.permissions.includes("review");
+  const canModerate = viewer.permissions.includes("triage");
+  const definitions = useLabelDefinitions(repository.id);
+  useEffect(() => {
+    let active = true;
+    request<IssueTemplates>(`/api/repositories/${encodeURIComponent(repository.id)}/issue-templates`).then((value) => { if (active) { setTemplates(value); if (!value.templates.length) setTemplate(null); } }).catch(() => { if (active) { setTemplates({ directory: null, commitSha: null, templates: [] }); setTemplate(null); } });
+    return () => { active = false; };
+  }, [repository.id]);
+  function choose(next: IssueTemplate | null) { setTemplate(next); setTitle(next?.title ?? ""); setBody(next?.body ?? ""); }
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setError("");
     try {
-      const issue = await request<IssueDetail>(`/api/repositories/${encodeURIComponent(repository.id)}/issues`, { title, body, ...(canModerate && labels.trim() ? { labels: splitLabels(labels) } : {}) }, key.current);
+      const issue = await request<IssueDetail>(`/api/repositories/${encodeURIComponent(repository.id)}/issues`, { title, body, ...(template ? { template: template.file } : {}), ...(canModerate && labels.length ? { labels } : {}) }, key.current);
       navigate(`${base}/${issue.number}`);
     } catch (failure) { setError(failure instanceof Error ? failure.message : "The issue could not be created."); key.current = crypto.randomUUID(); }
     finally { setBusy(false); }
   }
+  if (!templates || template === undefined) return <div className="issue-new">
+    <a className="header-back" href={`/${base}`}><ArrowLeftIcon size={13} />All issues</a>
+    {!templates ? <RouteProgress /> : <section className="panel"><div className="panel-header"><h2>New issue</h2><InfoTip label="issue templates">Templates come from {templates.directory} on {repository.defaultBranch}.</InfoTip></div><TemplateChooser templates={templates.templates} onChoose={choose} /></section>}
+  </div>;
   return (
     <form className="issue-new" onSubmit={(event) => void submit(event)}>
       <a className="header-back" href={`/${base}`}><ArrowLeftIcon size={13} />All issues</a>
       <section className="panel">
-        <div className="panel-header"><h2>New issue</h2></div>
+        <div className="panel-header"><h2>{template ? template.name : "New issue"}</h2>{templates.templates.length > 0 && <button type="button" className="text-link" disabled={busy} onClick={() => setTemplate(undefined)}>Change template</button>}</div>
         <div className="panel-body">
           <div className="form-field"><label htmlFor="issue-title">Title</label><Input id="issue-title" required maxLength={200} disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Checkout fails when the payment is retried" /></div>
           <div className="form-field"><label htmlFor="issue-body">Description <span className="proposal-optional">(Markdown, optional)</span></label><textarea id="issue-body" rows={8} maxLength={20000} disabled={busy} value={body} onChange={(event) => setBody(event.target.value)} placeholder="What happened, what you expected, and how to reproduce it…" /></div>
-          {canModerate && <div className="form-field"><label htmlFor="issue-labels">Labels <span className="proposal-optional">(comma separated, optional)</span></label><Input id="issue-labels" maxLength={450} disabled={busy} value={labels} onChange={(event) => setLabels(event.target.value)} placeholder="bug, checkout" /></div>}
+          {template && template.labels.length > 0 && <p className="issue-muted">Adds <Labels labels={template.labels} definitions={definitions} /></p>}
+          {canModerate && <div className="form-field"><label htmlFor="issue-labels">Labels <span className="proposal-optional">(optional)</span></label><LabelPicker id="issue-labels" value={labels} definitions={definitions} disabled={busy} onChange={setLabels} /></div>}
           {error && <div className="error-notice" role="alert">{error}</div>}
           <div className="issue-actions"><Button type="button" variant="secondary" disabled={busy} onClick={() => navigate(base)}>Cancel</Button><Button type="submit" variant="primary" loading={busy} disabled={busy || !title.trim()}>Create issue</Button></div>
         </div>
@@ -146,24 +195,32 @@ function NewIssue({ repository, viewer, base }: { repository: Repository; viewer
 
 function IssueView({ repository, number, viewer, base, missions }: { repository: Repository; number: string; viewer: Viewer; base: string; missions: MissionSummary[] }) {
   const [issue, setIssue] = useState<IssueDetail | null>(null);
+  const [people, setPeople] = useState<Record<string, IssuePerson>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [comment, setComment] = useState("");
   const [editing, setEditing] = useState<{ title: string; body: string } | null>(null);
   const [editingComment, setEditingComment] = useState<{ id: string; body: string } | null>(null);
-  const [labels, setLabels] = useState<string | null>(null);
+  const [labels, setLabels] = useState<string[] | null>(null);
   const [reason, setReason] = useState<IssueCloseReason>("completed");
   const [createdBranch, setCreatedBranch] = useState("");
+  const [locking, setLocking] = useState(false);
+  const [hiding, setHiding] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [blocked, setBlocked] = useState<Set<string>>(new Set());
+  const [confirm, confirmDialog] = useConfirm();
+  const definitions = useLabelDefinitions(repository.id);
   const branchKey = useRef(crypto.randomUUID());
   const path = `/api/repositories/${encodeURIComponent(repository.id)}/issues/${encodeURIComponent(number)}`;
+  const show = (value: IssueDetail) => { setIssue(value); if (value.people) setPeople((current) => ({ ...current, ...value.people })); };
   useEffect(() => {
     let active = true;
-    request<IssueDetail>(path).then((value) => { if (active) setIssue(value); }).catch((failure) => { if (active) setError(failure instanceof Error ? failure.message : "This issue could not be loaded."); });
+    request<IssueDetail>(path).then((value) => { if (active) show(value); }).catch((failure) => { if (active) setError(failure instanceof Error ? failure.message : "This issue could not be loaded."); });
     return () => { active = false; };
   }, [path]);
   async function act(name: string, action: string, body: Record<string, unknown>, done?: () => void) {
     setBusy(name); setError("");
-    try { setIssue(await request<IssueDetail>(`${path}/${action}`, body)); done?.(); }
+    try { show(await request<IssueDetail>(`${path}/${action}`, body)); done?.(); }
     catch (failure) { setError(failure instanceof Error ? failure.message : "The issue could not be updated."); }
     finally { setBusy(""); }
   }
@@ -175,12 +232,22 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
     catch (failure) { if (failure instanceof RequestError && failure.code === "BRANCH_EXISTS") setCreatedBranch(name); else setError(failure instanceof Error ? failure.message : "The stream could not be created."); }
     finally { setBusy(""); }
   }
+  async function block(userId: string) {
+    const label = personLabel(userId, people, viewer.names);
+    if (!await confirm({ title: `Block ${label}?`, description: "They will see this repository's issues as not found and cannot open issues or comment. Unblock them in Settings → Issues.", confirmLabel: "Block", tone: "danger" })) return;
+    setBusy("block"); setError("");
+    try { await request(`/api/repositories/${encodeURIComponent(repository.id)}/issue-blocks`, { action: "block", userId }); setBlocked((current) => new Set(current).add(userId)); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : "This person could not be blocked."); }
+    finally { setBusy(""); }
+  }
   if (!issue) return error ? <><a className="header-back" href={`/${base}`}><ArrowLeftIcon size={13} />All issues</a><div className="error-notice" role="alert">{error}</div></> : <RouteProgress />;
-  const canModerate = viewer.permissions.includes("review");
+  const canModerate = viewer.permissions.includes("triage");
   const canContribute = viewer.permissions.includes("contribute");
-  const canComment = canModerate || viewer.permissions.includes("contribute");
-  const canEdit = canModerate || (viewer.permissions.includes("contribute") && issue.authorId === viewer.userId);
-  const name = (id: string) => id === "gitflare" ? "Gitflare" : viewer.names.get(id) ?? (id === viewer.userId ? "You" : id.slice(0, 8));
+  const canParticipate = viewer.permissions.includes("participate");
+  const canComment = canParticipate && (!issue.locked || canModerate);
+  const canEdit = canModerate || (canParticipate && !issue.locked && issue.authorId === viewer.userId);
+  const name = (id: string) => personLabel(id, people, viewer.names, viewer.userId);
+  const outsider = (id: string) => id !== "gitflare" && id !== viewer.userId && !viewer.names.has(id);
   return (
     <div className="issue-detail">
       <a className="header-back" href={`/${base}`}><ArrowLeftIcon size={13} />All issues</a>
@@ -194,11 +261,14 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
         </form>
       ) : (
         <div className="issue-header">
-          <div><h2>{issue.title} <span>#{issue.number}</span></h2><p><StateBadge state={issue.state} reason={issue.closedReason} /> {name(issue.authorId)} opened this issue {relativeTime(issue.createdAt)} · {issue.commentCount} {issue.commentCount === 1 ? "comment" : "comments"}</p></div>
+          <div><h2>{issue.title} <span>#{issue.number}</span></h2><p><StateBadge state={issue.state} reason={issue.closedReason} />{issue.locked && <span className="issue-locked"><LockSimpleIcon size={13} weight="bold" />Locked · {reasonLabel(issue.locked.reason)}</span>} {name(issue.authorId)} opened this issue {relativeTime(issue.createdAt)} · {issue.commentCount} {issue.commentCount === 1 ? "comment" : "comments"}</p></div>
           <div className="issue-header-actions">
             {canContribute && issue.state === "open" && <Button className="ai-only" variant="primary" size="base" icon={SparkleIcon} onClick={() => navigate(`repository/${repository.id}/proposals/new?issue=${issue.number}`)}>Fix with AI</Button>}
             {canContribute && issue.state === "open" && <Button variant="secondary" size="base" icon={GitBranchIcon} loading={busy === "branch"} disabled={!!busy} onClick={() => void branch()}>Create stream</Button>}
             {canEdit && <Button variant="secondary" size="base" onClick={() => setEditing({ title: issue.title, body: issue.body })}>Edit</Button>}
+            {canModerate && (issue.locked
+              ? <Button variant="secondary" size="base" icon={LockSimpleOpenIcon} loading={busy === "unlock"} disabled={!!busy} onClick={() => void act("unlock", "unlock", {})}>Unlock</Button>
+              : <Button variant="secondary" size="base" icon={LockSimpleIcon} disabled={!!busy} onClick={() => setLocking(true)}>Lock</Button>)}
           </div>
         </div>
       )}
@@ -207,22 +277,36 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
       <div className="issue-layout">
         <div className="issue-thread">
           <article className="panel issue-comment">
-            <header><strong>{name(issue.authorId)}</strong> <small>{new Date(issue.createdAt).toLocaleString()}</small></header>
+            <header><strong>{name(issue.authorId)}</strong> <small>{new Date(issue.createdAt).toLocaleString()}</small>{canModerate && outsider(issue.authorId) && !blocked.has(issue.authorId) && <button type="button" className="text-link" disabled={!!busy} onClick={() => void block(issue.authorId)}><UserMinusIcon size={13} />Block</button>}</header>
             <div className="panel-body">{issue.body.trim() ? <SafeMarkdown>{issue.body}</SafeMarkdown> : <p className="issue-muted">No description provided.</p>}</div>
           </article>
-          {issue.comments.map((item) => (
-            <article className="panel issue-comment" key={item.id}>
-              <header><strong>{name(item.authorId)}</strong> <small>{new Date(item.createdAt).toLocaleString()}{item.editedAt ? " · edited" : ""}</small>{item.authorId === viewer.userId && canComment && editingComment?.id !== item.id && <button type="button" className="text-link" onClick={() => setEditingComment({ id: item.id, body: item.body })}>Edit</button>}</header>
-              <div className="panel-body">
-                {editingComment?.id === item.id ? (
-                  <form onSubmit={(event) => { event.preventDefault(); void act("comment-edit", "comment", { body: editingComment.body, commentId: item.id }, () => setEditingComment(null)); }}>
-                    <div className="form-field"><label htmlFor={`issue-comment-${item.id}`}>Edit comment</label><textarea id={`issue-comment-${item.id}`} required maxLength={10000} value={editingComment.body} onChange={(event) => setEditingComment({ id: item.id, body: event.target.value })} /></div>
-                    <div className="issue-actions"><Button type="button" variant="secondary" onClick={() => setEditingComment(null)}>Cancel</Button><Button type="submit" variant="primary" loading={busy === "comment-edit"} disabled={!!busy || !editingComment.body.trim()}>Save</Button></div>
-                  </form>
-                ) : <SafeMarkdown>{item.body}</SafeMarkdown>}
-              </div>
-            </article>
-          ))}
+          {issue.comments.map((item) => {
+            const hidden = !!item.hidden && !revealed.has(item.id);
+            return (
+              <article className={`panel issue-comment${item.hidden ? " issue-comment-hidden" : ""}`} key={item.id}>
+                <header>
+                  <strong>{name(item.authorId)}</strong> <small>{new Date(item.createdAt).toLocaleString()}{item.editedAt ? " · edited" : ""}</small>
+                  {item.hidden && <span className="issue-hidden-tag"><EyeSlashIcon size={13} />Hidden · {reasonLabel(item.hidden.reason)}</span>}
+                  <span className="issue-comment-actions">
+                    {item.hidden && canModerate && <button type="button" className="text-link" onClick={() => setRevealed((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })}>{hidden ? "Show" : "Collapse"}</button>}
+                    {item.authorId === viewer.userId && canComment && !item.hidden && editingComment?.id !== item.id && <button type="button" className="text-link" onClick={() => setEditingComment({ id: item.id, body: item.body })}>Edit</button>}
+                    {canModerate && item.authorId !== "gitflare" && (item.hidden
+                      ? <button type="button" className="text-link" disabled={!!busy} onClick={() => void act("unhide", "unhide", { commentId: item.id })}>Unhide</button>
+                      : <button type="button" className="text-link" disabled={!!busy} onClick={() => setHiding(item.id)}>Hide</button>)}
+                    {canModerate && outsider(item.authorId) && !blocked.has(item.authorId) && <button type="button" className="text-link" disabled={!!busy} onClick={() => void block(item.authorId)}>Block</button>}
+                  </span>
+                </header>
+                {!hidden && <div className="panel-body">
+                  {editingComment?.id === item.id ? (
+                    <form onSubmit={(event) => { event.preventDefault(); void act("comment-edit", "comment", { body: editingComment.body, commentId: item.id }, () => setEditingComment(null)); }}>
+                      <div className="form-field"><label htmlFor={`issue-comment-${item.id}`}>Edit comment</label><textarea id={`issue-comment-${item.id}`} required maxLength={10000} value={editingComment.body} onChange={(event) => setEditingComment({ id: item.id, body: event.target.value })} /></div>
+                      <div className="issue-actions"><Button type="button" variant="secondary" onClick={() => setEditingComment(null)}>Cancel</Button><Button type="submit" variant="primary" loading={busy === "comment-edit"} disabled={!!busy || !editingComment.body.trim()}>Save</Button></div>
+                    </form>
+                  ) : <SafeMarkdown>{item.body}</SafeMarkdown>}
+                </div>}
+              </article>
+            );
+          })}
           {issue.state === "closed" && issue.closedAt && <p className="issue-event"><StateBadge state="closed" reason={issue.closedReason} /> {relativeTime(issue.closedAt)}</p>}
           {canComment ? (
             <form className="panel issue-reply" onSubmit={(event) => { event.preventDefault(); void act("comment", "comment", { body: comment }, () => setComment("")); }}>
@@ -237,7 +321,8 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
                 </div>
               </div>
             </form>
-          ) : <p className="issue-muted">Your role can read this issue but cannot comment.</p>}
+          ) : issue.locked ? <p className="issue-muted issue-locked-note"><LockSimpleIcon size={14} />Locked · {reasonLabel(issue.locked.reason)}<InfoTip label="locked issues">Only people who triage this repository can comment.</InfoTip></p>
+            : <p className="issue-muted">Your role can read this issue but cannot comment.</p>}
         </div>
         <aside className="issue-sidebar">
           <section>
@@ -249,11 +334,11 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
           <section>
             <h3>Labels</h3>
             {labels !== null ? (
-              <form onSubmit={(event) => { event.preventDefault(); void act("labels", "update", { labels: splitLabels(labels) }, () => setLabels(null)); }}>
-                <Input aria-label="Labels, comma separated" maxLength={450} value={labels} onChange={(event) => setLabels(event.target.value)} />
+              <form onSubmit={(event) => { event.preventDefault(); void act("labels", "update", { labels }, () => setLabels(null)); }}>
+                <LabelPicker id="issue-edit-labels" value={labels} definitions={definitions} disabled={!!busy} onChange={setLabels} />
                 <div className="issue-actions"><Button type="button" variant="secondary" size="sm" onClick={() => setLabels(null)}>Cancel</Button><Button type="submit" variant="primary" size="sm" loading={busy === "labels"} disabled={!!busy}>Save</Button></div>
               </form>
-            ) : <>{issue.labels.length ? <Labels labels={issue.labels} /> : <p>None yet</p>}{canModerate && <button type="button" className="text-link" onClick={() => setLabels(issue.labels.join(", "))}>Edit labels</button>}</>}
+            ) : <>{issue.labels.length ? <Labels labels={issue.labels} definitions={definitions} /> : <p>None yet</p>}{canModerate && <button type="button" className="text-link" onClick={() => setLabels(issue.labels)}>Edit labels</button>}</>}
           </section>
           <section>
             <h3>Linked missions</h3>
@@ -262,6 +347,9 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
           </section>
         </aside>
       </div>
+      <ReasonDialog open={locking} title="Lock this issue?" description="Only people who triage this repository can comment or edit until it is unlocked." reasons={ISSUE_LOCK_REASONS} confirmLabel="Lock issue" busy={busy === "lock"} onCancel={() => setLocking(false)} onConfirm={(value) => void act("lock", "lock", { reason: value }, () => setLocking(false))} />
+      <ReasonDialog open={hiding !== null} title="Hide this comment?" description="Readers see only that it was hidden and why. You can unhide it later." reasons={ISSUE_HIDE_REASONS} confirmLabel="Hide comment" tone="danger" busy={busy === "hide"} onCancel={() => setHiding(null)} onConfirm={(value) => void act("hide", "hide", { commentId: hiding, reason: value }, () => setHiding(null))} />
+      {confirmDialog}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { RouteProgress } from "./WorkspaceLoader";
 import { ErrorNotice } from "./components";
 import DemoFeaturePanel from "./DemoFeaturePanel";
 import { UserHandleCard } from "./HandleSettings";
+import ProfileSettingsCard from "./ProfileSettings";
 import { needsRecentSignIn, signInAgain } from "./reauth";
 import { accountSections, browserSessions, clientSessions, describeSession, tokenSessions, type AccountSection } from "./account-data";
 import "./account-settings.css";
@@ -52,7 +53,7 @@ function Profile({ data, config, onSwitchWorkspace, onChanged }: { data: Account
         {email && <VerifyEmailNotice user={{ email, emailVerified: user.emailVerified }} />}
       </div>
     </section>
-    {email && config.edition === "hosted" && !config.demo && <UserHandleCard onChanged={onChanged} />}
+    {email && config.edition === "hosted" && !config.demo && <><UserHandleCard onChanged={onChanged} /><ProfileSettingsCard scope="user" /></>}
     {email && <section className="panel">
       <div className="panel-header"><h2>Sign-in methods</h2></div>
       <ul className="people-list">
