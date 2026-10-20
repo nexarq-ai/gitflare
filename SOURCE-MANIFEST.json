@@ -1370,8 +1370,8 @@
     },
     {
       "path": "src/worker/public-cache.ts",
-      "size": 5192,
-      "sha256": "421ffe437c7cc5f18ca734e36bfe7497a60a917464414d8f84ca0841e0b8806f"
+      "size": 5203,
+      "sha256": "4ae992b5f573fd7fdd29a9fe32cbdd8d2ca2a0e114f6ab1a6c73906e3311a831"
     },
     {
       "path": "src/worker/public-discovery.ts",
