@@ -45,7 +45,7 @@ export const mcpToolNames = [
   'gitflare_deploy_access', 'gitflare_manage_deploy_access',
   'gitflare_handles', 'gitflare_set_handle', 'gitflare_visibility', 'gitflare_set_visibility', 'gitflare_public_repository',
   'gitflare_public_issues', 'gitflare_public_issue_action', 'gitflare_issue_labels', 'gitflare_manage_issue_labels', 'gitflare_issue_templates',
-  'gitflare_moderate_issue', 'gitflare_issue_blocks', 'gitflare_block_user', 'gitflare_content_reports', 'gitflare_dismiss_content_report',
+  'gitflare_moderate_issue', 'gitflare_issue_blocks', 'gitflare_block_user', 'gitflare_content_reports', 'gitflare_dismiss_content_report', 'gitflare_rebuild_public_index',
   'gitflare_explore', 'gitflare_search', 'gitflare_profile', 'gitflare_set_profile', 'gitflare_stars', 'gitflare_star',
   'gitflare_fork_repository', 'gitflare_fork_status', 'gitflare_sync_fork',
   'gitflare_run_checks', 'gitflare_upstream_proposals', 'gitflare_update_upstream_proposal',
@@ -88,7 +88,7 @@ function agentOverridesBody(input: AgentLimitInput): Record<string, unknown> {
   return { ...overrides, ...(editScope ? { editScope } : {}) };
 }
 const LAND_TOOLS = new Set(['gitflare_run_checks', 'gitflare_set_check_settings', 'gitflare_set_agent_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
-const ADMIN_TOOLS = new Set(['gitflare_manage_sessions', 'gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access', 'gitflare_set_handle', 'gitflare_set_visibility', 'gitflare_set_profile', 'gitflare_dismiss_content_report']);
+const ADMIN_TOOLS = new Set(['gitflare_manage_sessions', 'gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access', 'gitflare_set_handle', 'gitflare_set_visibility', 'gitflare_set_profile', 'gitflare_dismiss_content_report', 'gitflare_rebuild_public_index']);
 
 export function requiredAccess(name: string, annotations: { readOnlyHint?: boolean } | undefined, input: Record<string, unknown>): AccessLevel {
   if (annotations?.readOnlyHint) return 'read';
@@ -877,6 +877,10 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     title: 'Dismiss a content report', description: 'Installation operators only: remove a handled report from the list. Audited. Needs admin access.',
     inputSchema: z.object({ report_id: z.string().uuid() }).strict(), annotations: destructive,
   }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/admin/reports/${input.report_id}/dismiss`, {})));
+  server.registerTool('gitflare_rebuild_public_index', {
+    title: 'Rebuild the public index', description: 'Installation operators only: rebuild Explore, search and profile details from the source of truth now, the same reconcile that runs nightly. Adds every public repository, drops ones no longer public and returns indexed, removed and failed counts. Audited. Needs admin access.',
+    inputSchema: z.object({}).strict(), annotations: mutation,
+  }, () => guarded(async () => call<Record<string, unknown>>('/api/admin/public-index/rebuild', {})));
   const cursor = z.number().int().min(0).max(1000).default(0).describe('Pass nextCursor from the previous page.');
   const profileScope = z.enum(['user', 'workspace']).describe('user: your account profile. workspace: the profile of the workspace this connection uses.');
   server.registerTool('gitflare_explore', {
