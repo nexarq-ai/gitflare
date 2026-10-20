@@ -33,7 +33,7 @@ export function suggestedHandle(name: string): string {
   return slug && !RESERVED_HANDLES.has(slug) ? slug : '';
 }
 
-export const PUBLIC_REPOSITORY_VIEWS = ['tree', 'blob', 'issues', 'commits', 'branches', 'releases', 'agents'] as const;
+export const PUBLIC_REPOSITORY_VIEWS = ['tree', 'blob', 'issues', 'commits', 'branches', 'releases', 'agents', 'security'] as const;
 export const PUBLIC_ISSUE_PATH = /^(?:new|[1-9]\d{0,5})$/;
 export type PublicRepositoryView = 'code' | typeof PUBLIC_REPOSITORY_VIEWS[number];
 
@@ -42,5 +42,6 @@ export function publicRepositoryPath(handle: string, repository: string, view: P
   if (view === 'code') return base;
   if ((view === 'tree' || view === 'blob') && path) return `${base}/${view}/${path.split('/').map(encodeURIComponent).join('/')}`;
   if (view === 'issues' && PUBLIC_ISSUE_PATH.test(path)) return `${base}/issues/${path}`;
+  if (view === 'security' && path) return `${base}/security/${encodeURIComponent(path)}`;
   return view === 'tree' ? base : `${base}/${view}`;
 }

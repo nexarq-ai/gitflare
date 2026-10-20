@@ -1,5 +1,5 @@
 import { INBOX_KINDS, NOTIFICATION_REASONS, threadKey, type InboxKind, type InboxRow, type InboxView, type NotificationItem, type NotificationList, type NotificationReason, type NotificationSettings, type NotificationSubject, type SubscriptionState } from '../shared/notifications';
-import type { Issue, MissionSummary, Repository } from '../shared/types';
+import type { Advisory, Issue, MissionSummary, Repository } from '../shared/types';
 import { proposalAuthor, waitingForMaintainer } from '../shared/pull-requests';
 import { repositoryLabel } from '../shared/repository-names';
 import { ApiError, assertMutationOrigin, readJson, requireString } from './domain';
@@ -133,6 +133,13 @@ export async function inboxRows(env: AppEnv, access: SecurityService, p: Princip
       const kind: InboxKind = mine.length ? 'review_requested' : 'needs_review';
       needsApprovals.push({ mission, requested: !!mine.length, row: { ...base, id: `${kind}:${mission.id}`, kind, version: `${mission.epoch}:${mission.candidateSha}`, route: inboxRoute(kind, repository.id, mission.id), actions: ['open'], ...(mine.length ? { owners: [...new Set(mine.flatMap(group => group.handles))] } : {}) } });
     }
+    if (land[index] && p.kind === undefined && !p.credentialId) {
+      const reports = await Promise.resolve().then(() => records.listAdvisories() as Promise<Advisory[]>).catch(() => [] as Advisory[]);
+      for (const advisory of reports) {
+        if (advisory.state !== 'draft' || advisory.source !== 'report' || advisory.acknowledgedAt) continue;
+        rows.push({ id: `security_report:${repository.id}:${advisory.id}`, kind: 'security_report', version: advisory.updatedAt, repositoryId: repository.id, repositoryName: name, title: advisory.title, advisoryId: advisory.id, ...(advisory.reporterId ? { authorId: advisory.reporterId } : {}), updatedAt: advisory.updatedAt, route: `repository/${repository.id}/security/${advisory.id}`, actions: ['open'] });
+      }
+    }
     for (const issue of issues) {
       if (issue.labels.length || issue.assignees.length || issue.authorId === p.userId) continue;
       rows.push({ id: `new_issue:${repository.id}:${issue.number}`, kind: 'new_issue', version: issue.updatedAt, repositoryId: repository.id, repositoryName: name, title: issue.title, number: issue.number, authorId: issue.authorId, updatedAt: issue.updatedAt, route: inboxRoute('new_issue', repository.id, issue.number), actions: ['open'] });
@@ -140,7 +147,7 @@ export async function inboxRows(env: AppEnv, access: SecurityService, p: Princip
   }));
   const approvals = await access.approvers(p, needsApprovals.map(({ mission }) => ({ missionId: mission.id, candidateSha: mission.candidateSha!, baseSha: mission.baseSha!, epoch: mission.epoch }))).catch(() => needsApprovals.map(() => [] as string[]));
   needsApprovals.forEach(({ row }, index) => { if (!approvals[index]?.includes(p.userId)) rows.push(row); });
-  const order: Record<InboxKind, number> = { review_requested: 0, awaiting_checks: 1, needs_review: 2, new_issue: 3 };
+  const order: Record<InboxKind, number> = { security_report: 0, review_requested: 1, awaiting_checks: 2, needs_review: 3, new_issue: 4 };
   return rows.sort((a, b) => order[a.kind] - order[b.kind] || b.updatedAt.localeCompare(a.updatedAt));
 }
 

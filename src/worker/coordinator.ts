@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion } from '../shared/types';
-import type { AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueLabelDefinition, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, OutsideChecksGate, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
+import type { Advisory, AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueLabelDefinition, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, OutsideChecksGate, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependenciesAcknowledged, assertDependencyApprover } from './dependency-changes';
 import { activeLandingMessage } from '../shared/commit-message';
@@ -18,6 +18,8 @@ import { assertLineInCandidate, assertReviewClear, currentReviewRequests, review
 import { skillMissionInput, validateRepositorySkillChange } from './skill-edit';
 import type { ImportReceipt, ImportResult } from './repository-import';
 import { applyReleaseChange, type ReleaseChange, type ReleaseReceipt } from './releases';
+import { assetUsage, chargeDownload, commitAsset, listAssets, removeAsset, removeReleaseAssets, type StoredAsset } from './release-assets';
+import { advisoryFingerprint, applyAdvisoryChange, listAdvisories, type AdvisoryChange } from './advisories';
 import { applyImportChange, importedPullMissions, importedReleaseIds, ORG_IMPORTS_KEPT, type ImportChange, type ImportChangeResult, type ImportRegistryEntry, type OrgImportRecord, type StoredImport } from './github-import';
 import { defaultModelConnections, pinMissionModels, validateModelConnection } from './model-config';
 import { readAssist, readPool, requesterRemaining, reservePool, poolUsage, publicPool, writeAssist, writePool, type PoolKind, type StoredPool } from './community-pool';
@@ -638,6 +640,24 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       return { receipt: outcome.receipt, fresh: true };
     });
   }
+
+  listReleaseAssets(releaseId?: string): StoredAsset[] { return listAssets(this.store, releaseId); }
+
+  releaseAssetUsage(): number { return assetUsage(this.store); }
+
+  commitReleaseAsset(key: string, asset: StoredAsset): StoredAsset { return this.mutate(key, JSON.stringify(['release-asset', asset.id, asset.releaseId, asset.name, asset.size, asset.sha256]), () => commitAsset(this.store, asset)); }
+
+  removeReleaseAsset(key: string, releaseId: string, assetId: string): StoredAsset { return this.mutate(key, JSON.stringify(['release-asset-delete', releaseId, assetId]), () => removeAsset(this.store, releaseId, assetId)); }
+
+  removeReleaseAssets(releaseId: string): StoredAsset[] { return this.ctx.storage.transactionSync(() => this.store.get(`release:${releaseId}`) ? [] : removeReleaseAssets(this.store, releaseId)); }
+
+  chargeAssetDownload(bytes: number): boolean { return this.ctx.storage.transactionSync(() => chargeDownload(this.store, bytes)); }
+
+  listAdvisories(): Advisory[] { return listAdvisories(this.store); }
+
+  getAdvisory(id: string): Advisory | undefined { return this.store.get<Advisory>(`advisory:${id}`); }
+
+  changeAdvisory(key: string, change: AdvisoryChange): Advisory { return this.mutate(key, advisoryFingerprint(change), () => applyAdvisoryChange(this.store, change)); }
 
   getImportRequest(key: string, fingerprint: string): ImportReceipt | undefined {
     const receipt = this.store.get<ImportReceipt>(`repository-import:${key}`);

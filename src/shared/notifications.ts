@@ -50,7 +50,7 @@ export interface NotificationList { items: NotificationItem[]; unread: number; t
 export interface NotificationEmailStatus { address: string | null; verified: boolean; configured: boolean; nextDigestAt: string | null; sentToday: number; dailyLimit: number }
 export interface NotificationSettings { preferences: NotificationPreferences; email: NotificationEmailStatus }
 
-export const INBOX_KINDS = ['awaiting_checks', 'review_requested', 'needs_review', 'new_issue'] as const;
+export const INBOX_KINDS = ['awaiting_checks', 'review_requested', 'needs_review', 'new_issue', 'security_report'] as const;
 export type InboxKind = typeof INBOX_KINDS[number];
 export interface InboxRow {
   id: string;
@@ -61,6 +61,7 @@ export interface InboxRow {
   title: string;
   missionId?: string;
   number?: number;
+  advisoryId?: string;
   authorId?: string;
   author?: NotificationPerson | null;
   outside?: boolean;

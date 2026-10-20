@@ -44,7 +44,11 @@ import { issueServices, publicIssuesApi } from './public-issues';
 import { notificationsApi, unsubscribeApi } from './inbox';
 import { codeownerRequirement, notifyProposal, proposalOpened, proposalReviewed } from './proposal-notifications';
 import { REVIEW_VERDICTS } from './proposal-review';
-import { releaseApi } from './releases';
+import { releaseApi, type ReleaseExtras } from './releases';
+import { assetView, releaseAssetsApi, usage as assetUsage, type StoredAsset } from './release-assets';
+import { advisoriesApi, publicAdvisoriesApi, releaseAdvisories } from './advisories';
+import { feedResponse } from './feeds';
+import { publicDownloadResponse } from './public-downloads';
 import { effectiveDefaultModel, modelConnectionsSnapshot, modelIdentifier, resolveModelConnection, validateModelConnection, verifyModelConnection } from './model-config';
 import { aiKeyProvider, aiKeysSnapshot, assertModelAccess, assertWorkspaceAi, createModelAccess, encryptAiGateway, encryptAiKey, ownGatewayInput, providerKey, reserveOperatorUsage, storedOwnGateway, storedProviderKey, verificationModel, verifyProviderKey, type AiCredentials } from './ai-keys';
 import { IMPORT_REQUEST_MAX_BYTES, RepositoryImportFailure, buildImportPack, importFingerprint, inspectRepositoryImport, parseImportArchive, pushRepositoryImport, validateImportInput } from './repository-import';
@@ -63,7 +67,7 @@ import { demoDisabledApi, demoVisitor, handleDemoRoute, runDemoReset } from './d
 import { assertCookieRequestOrigin, CLEAR_SESSION_COOKIE, sessionCookie, sessionCookieValue } from './session-policy';
 import { withSignedInHint } from './signed-in-hint';
 import { browseRepository } from './source-browse';
-import { changeVisibility, publicRepositoryApi, publicRepositoryIndex, siteOrigin, visibilitySnapshot } from './public-repositories';
+import { changeVisibility, publicRepositoryApi, publicRepositoryIndex, publicUrls, siteOrigin, visibilitySnapshot } from './public-repositories';
 import { handlePublicGit, isPublicGitPath } from './public-git';
 import { accountDiscoveryApi, handleChanged, publicDiscoveryApi, refreshPublicRepository, visibilityChanged } from './public-discovery';
 import { servePublicCached } from './public-cache';
@@ -94,6 +98,27 @@ async function tokenMatches(token: string, expected: string): Promise<boolean> {
     crypto.subtle.digest('SHA-256', encoder.encode(expected)),
   ]);
   return timingSafeEqual(new Uint8Array(actualHash), new Uint8Array(expectedHash));
+}
+
+async function publicRepositoryBase(env: AppEnv, access: { publicListing(id: string): Promise<unknown>; handleOf(workspaceId: string): Promise<string | null> }, repository: Repository, origin: string): Promise<string | null> {
+  const [listing, handle] = await Promise.all([access.publicListing(repository.id).catch(() => null), access.handleOf(repository.workspaceId ?? 'legacy').catch(() => null)]);
+  return listing && handle ? publicUrls(siteOrigin(env, origin), handle, repository).url : null;
+}
+
+async function releaseExtras(env: AppEnv, access: Parameters<typeof publicRepositoryBase>[1], repository: Repository, origin: string): Promise<ReleaseExtras> {
+  const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
+  const publicBase = await publicRepositoryBase(env, access, repository, origin);
+  return {
+    decorate: async releases => {
+      const [assets, advisories] = await Promise.all([records.listReleaseAssets(), records.listAdvisories()]);
+      return releases.map(release => ({ ...release, assets: (assets as StoredAsset[]).filter(asset => asset.releaseId === release.id).map(asset => assetView(asset, repository.id, publicBase, release)), advisories: releaseAdvisories(advisories, release.id) }));
+    },
+    usage: async () => assetUsage(env.RELEASE_ASSETS, await records.releaseAssetUsage()),
+    deleted: async release => {
+      const removed = await records.removeReleaseAssets(release.id) as StoredAsset[];
+      if (env.RELEASE_ASSETS && removed.length) await env.RELEASE_ASSETS.delete(removed.map(asset => asset.objectKey));
+    },
+  };
 }
 
 function security(env: AppEnv) { if (!env.GITFLARE_SECURITY) throw new ApiError(503, 'AUTH_NOT_CONFIGURED', 'The security service is not configured.'); return securityClient(env); }
@@ -260,6 +285,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (fixRequests) return fixRequests;
   const publicIssues = await publicIssuesApi(request, env, signedInPrincipal(env), ctx);
   if (publicIssues) return triageCreated(request, publicIssues, env, ctx);
+  const publicAdvisories = await publicAdvisoriesApi(request, env, signedInPrincipal(env));
+  if (publicAdvisories) return publicAdvisories;
   const publicRepository = await publicRepositoryApi(request, env);
   if (publicRepository) return publicRepository;
   const discovery = await publicDiscoveryApi(request, env, ctx);
@@ -577,11 +604,24 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
     return githubMirrorApi(request, env, { repository: { ...repository, workspaceId: repository.workspaceId ?? principal.workspaceId }, principal, ctx, bootstrapSha: () => coordinatorRead('repositoryBootstrapSha', () => coordinator.repositoryBootstrapSha()) }, mirrorRoute[2]);
   }
+  const assetRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/releases\/([a-zA-Z0-9-]+)\/assets(?:\/([a-f0-9]{32})(?:\/(delete))?)?$/.exec(url.pathname);
+  if (assetRoute) {
+    const repository = await catalog.getRepository(assetRoute[1]!);
+    if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+    return releaseAssetsApi(request, { bucket: env.RELEASE_ASSETS, repository, records: env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`), principal, access, publicBase: await publicRepositoryBase(env, access, repository, url.origin) }, assetRoute[2]!, assetRoute[3], assetRoute[4]);
+  }
+  const advisoryRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/advisories(?:\/([A-Za-z0-9-]{1,40})(?:\/(update|publish|close|reopen|comment|collaborators))?)?$/.exec(url.pathname);
+  if (advisoryRoute) {
+    const repository = await catalog.getRepository(advisoryRoute[1]!);
+    if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+    return advisoriesApi(request, { repository, principal, access, records: env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`) }, advisoryRoute[2], advisoryRoute[3]);
+  }
   const releaseRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/releases(?:\/([a-zA-Z0-9-]+)(?:\/(publish|update|delete))?)?$/.exec(url.pathname);
   if (releaseRoute) {
     const repository = await catalog.getRepository(releaseRoute[1]);
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
-    const released = await releaseApi(request, { artifacts: env.ARTIFACTS, repository, coordinator: env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`), principal, access }, releaseRoute[2], releaseRoute[3]);
+    const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
+    const released = await releaseApi(request, { artifacts: env.ARTIFACTS, repository, coordinator: records, principal, access, extras: await releaseExtras(env, access, repository, url.origin) }, releaseRoute[2], releaseRoute[3]);
     if (request.method === 'POST' && released.ok) ctx?.waitUntil(triggerMirrorSync(env, repository.id, principal.workspaceId, 'release', undefined, ctx));
     return released;
   }
@@ -1113,6 +1153,10 @@ const application = {
     if (publicPage && path === '/llms.txt' && request.method === 'GET' && publicPage.ok) return new Response(`${await publicPage.text()}${await publicRepositoryIndex(env, siteOrigin(env, new URL(request.url).origin), request.headers.get('CF-Connecting-IP') ?? 'local')}`, { headers: publicPage.headers });
     if (publicPage) return publicPage;
     if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    const feed = await feedResponse(request, env);
+    if (feed) return feed;
+    const download = await publicDownloadResponse(request, env);
+    if (download) return download;
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
     if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env, path);

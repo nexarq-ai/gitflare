@@ -114,6 +114,8 @@ const IssueSettings = lazy(() => import("./IssueSettings"));
 const CommunityAiSettings = lazy(() => import("./CommunityAiSettings"));
 const loadReleases = () => import("./Releases");
 const Releases = lazy(loadReleases);
+const loadAdvisories = () => import("./Advisories");
+const Advisories = lazy(loadAdvisories);
 const loadPullRequests = () => import("./PullRequests");
 const PullRequests = lazy(loadPullRequests);
 const loadPullRequestCreate = () => import("./PullRequestCreate");
@@ -131,7 +133,7 @@ const loadSecretSettings = () => import("./SecretSettings");
 const SecretSettings = lazy(loadSecretSettings);
 const loadGitAccess = () => import("./GitAccess");
 const GitAccess = lazy(loadGitAccess);
-const workspacePages = [loadMissionDetail, loadRepositoryBrowser, loadDocumentation, loadRepositorySkills, loadCloudflareConnection, loadMcpConnections, loadPeopleSettings, loadRepositoryWork, loadProposalCreate, loadModelConnections, loadIssues, loadReleases, loadPullRequests, loadPullRequestCreate, loadBranchProtection, loadSecretSettings, loadGitAccess];
+const workspacePages = [loadMissionDetail, loadRepositoryBrowser, loadDocumentation, loadRepositorySkills, loadCloudflareConnection, loadMcpConnections, loadPeopleSettings, loadRepositoryWork, loadProposalCreate, loadModelConnections, loadIssues, loadReleases, loadAdvisories, loadPullRequests, loadPullRequestCreate, loadBranchProtection, loadSecretSettings, loadGitAccess];
 // Start the homepage chunk alongside the main bundle instead of after it
 if (currentRoute() === "home") void loadHomepage();
 
@@ -1499,11 +1501,12 @@ function RepositoryDetail({
             { value: "checks", label: `Checks (${missions.reduce((count, mission) => count + mission.checks.length, 0)})` },
             { value: "skills", label: "Skills", ai: true },
             { value: "releases", label: "Checkpoints" },
+            { value: "security", label: "Security" },
             { value: "settings", label: "Settings" },
           ].map((item) => <button key={item.value} className={"ai" in item && item.ai ? "ai-only" : undefined} aria-current={tab === item.value || (tab === "proposals" && item.value === "pulls") ? "page" : undefined} onClick={() => onTabChange(item.value)}>{item.label}</button>)}
       </nav>
       <DeployStatusPill repositoryId={repository.id} location={`${tab}/${subroute}`} href={routeUrl(`repository/${repository.id}/settings/deploys`)} onOpen={() => onTabChange("settings/deploys")} />
-      {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} fork={!!repository.fork} /> : tab === "settings" ? <RepositorySettingsLayout repositoryId={repository.id} page={subroute} extra={publicRepositories ? [{ path: "community", label: "Community AI" }] : []}>
+      {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "security" ? <Advisories key={repository.id} repository={repository} advisoryId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} fork={!!repository.fork} /> : tab === "settings" ? <RepositorySettingsLayout repositoryId={repository.id} page={subroute} extra={publicRepositories ? [{ path: "community", label: "Community AI" }] : []}>
         {subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} approvers={access ? eligibleApprovers(access.members, repository.id) : undefined} knownChecks={knownCheckNames(missions)} onNotify={onNotify} />
           : subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
           : subroute === "deploys" ? <Deployments key={repository.id} repository={repository} canManage={canManage} onNotify={onNotify} />
