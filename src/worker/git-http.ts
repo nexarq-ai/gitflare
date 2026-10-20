@@ -10,7 +10,8 @@ export const GIT_COMMANDS_MAX_BYTES = 65_536;
 const MAX_REF_UPDATES = 100;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const challenge = { 'WWW-Authenticate': 'Basic realm="Gitflare", charset="UTF-8"' };
+export const GIT_CHALLENGE = { 'WWW-Authenticate': 'Basic realm="Gitflare", charset="UTF-8"' };
+const challenge = GIT_CHALLENGE;
 
 export interface GitHttpDependencies {
   authenticate(token: string): Promise<Principal>;
@@ -25,7 +26,7 @@ export interface GitHttpDependencies {
 
 export class GitProtocolError extends Error {}
 
-function text(status: number, message: string, headers: Record<string, string> = {}): Response {
+export function text(status: number, message: string, headers: Record<string, string> = {}): Response {
   return new Response(`${message}\n`, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
 }
 
@@ -246,6 +247,18 @@ async function forward(source: ArtifactRepo, service: 'git-upload-pack' | 'git-r
   return new Response(advertised, { status: 200, headers: { 'Content-Type': expected, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
+export async function serveUploadPack(source: ArtifactRepo, repository: Repository, request: Request, kind: 'refs' | 'rpc', fetcher: typeof fetch = fetch): Promise<Response> {
+  // Artifacts has no API to move HEAD, so clients see Repository.defaultBranch instead
+  if (kind === 'refs') return await forward(source, 'git-upload-pack', 'refs', request, undefined, fetcher, repository.defaultBranch);
+  if (request.headers.get('Content-Type')?.split(';')[0]?.trim() !== 'application/x-git-upload-pack-request') return text(415, 'Use a Git client for this request.');
+  if (Number(request.headers.get('Content-Length') ?? '0') > GIT_FETCH_REQUEST_MAX_BYTES) return text(413, 'This fetch request is too large.');
+  try {
+    const commands = await boundedBytes(decodedBody(request), GIT_FETCH_REQUEST_MAX_BYTES);
+    return await forward(source, 'git-upload-pack', 'rpc', request, commands, fetcher, isLsRefsRequest(commands) ? repository.defaultBranch : undefined);
+  }
+  catch (error) { if (error instanceof GitProtocolError) return text(400, `Invalid Git request: ${error.message}.`); throw error; }
+}
+
 export async function handleGitRequest(request: Request, deps: GitHttpDependencies): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith('/git/')) return null;
@@ -277,18 +290,10 @@ export async function handleGitRequest(request: Request, deps: GitHttpDependenci
   catch { return text(403, writing ? 'Your Gitflare role cannot push to this repository. Ask an Owner for Contributor access.' : 'Your Gitflare role cannot read this repository.'); }
   const fetcher = deps.fetcher ?? fetch;
   using source = await deps.artifacts.get(repository.name);
-  // Artifacts has no API to move HEAD, so clients see Repository.defaultBranch instead
-  if (kind === 'refs') return await forward(source, service, 'refs', request, undefined, fetcher, writing ? undefined : repository.defaultBranch);
+  if (!writing) return await serveUploadPack(source, repository, request, kind, fetcher);
+  if (kind === 'refs') return await forward(source, service, 'refs', request, undefined, fetcher);
   if (request.headers.get('Content-Type')?.split(';')[0]?.trim() !== `application/x-${service}-request`) return text(415, 'Use a Git client for this request.');
   const declared = Number(request.headers.get('Content-Length') ?? '0');
-  if (!writing) {
-    if (declared > GIT_FETCH_REQUEST_MAX_BYTES) return text(413, 'This fetch request is too large.');
-    try {
-      const commands = await boundedBytes(decodedBody(request), GIT_FETCH_REQUEST_MAX_BYTES);
-      return await forward(source, service, 'rpc', request, commands, fetcher, isLsRefsRequest(commands) ? repository.defaultBranch : undefined);
-    }
-    catch (error) { if (error instanceof GitProtocolError) return text(400, `Invalid Git request: ${error.message}.`); throw error; }
-  }
   if (declared > GIT_PUSH_MAX_BYTES) return text(413, `Pushes are limited to ${GIT_PUSH_MAX_BYTES / 1_048_576} MiB. Push fewer commits at once.`);
   let reader: ReadableStreamDefaultReader<Uint8Array>;
   let parsed: Awaited<ReturnType<typeof readReceivePackCommands>>;

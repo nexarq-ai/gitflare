@@ -164,6 +164,22 @@ async function publicSource(response: Response): Promise<Response> {
   return Response.json(rest);
 }
 
+export async function publicRepositoryIndex(env: AppEnv, origin: string, client: string, limit = 50): Promise<string> {
+  if (!env.GITFLARE_SECURITY || await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${client}`)) return '';
+  const access = securityClient(env);
+  const listings = (await access.publicListings().catch(() => [])).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)).slice(0, limit);
+  const lines = await Promise.all(listings.map(async listing => {
+    const repository = await env.GITFLARE_COORDINATOR.getByName(catalogName(listing.workspaceId)).getRepository(listing.repositoryId).catch(() => undefined);
+    if (!repository || !await access.check(publicPrincipal(listing.workspaceId), 'read', 'repository', repository.id).then(() => true, () => false)) return null;
+    const handle = await access.handleOf(listing.workspaceId);
+    if (!handle) return null;
+    const description = repository.description.replace(/\s+/g, ' ').trim().slice(0, 200);
+    return `- [${handle}/${repositoryLabel(repository)}](${publicUrls(origin, handle, repository).url})${description ? `: ${description}` : ''}`;
+  }));
+  const found = lines.filter((line): line is string => !!line);
+  return found.length ? `\n## Public repositories\n\n${found.join('\n')}\n` : '';
+}
+
 const PUBLIC_VIEWS = new Set(['', 'tree', 'file', 'history', 'branches', 'releases', 'readme']);
 
 export async function publicRepositoryApi(request: Request, env: AppEnv): Promise<Response | null> {

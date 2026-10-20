@@ -86,6 +86,14 @@
         "limit": 300,
         "period": 60
       }
+    },
+    {
+      "name": "PUBLIC_GIT_RATE_LIMIT",
+      "namespace_id": "4107",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {
