@@ -98,7 +98,7 @@ export async function changeVisibility(env: AppEnv, access: SecurityService, pri
   if (body.visibility !== 'public' && body.visibility !== 'private') throw new ApiError(400, 'INVALID_VISIBILITY', 'Choose public or private.');
   if (body.acknowledgeNoLicense !== undefined && typeof body.acknowledgeNoLicense !== 'boolean') throw new ApiError(400, 'INVALID_INPUT', 'acknowledgeNoLicense must be true or false.');
   await access.authorize(principal, 'manage', 'repository', repository.id);
-  if (body.visibility === 'private') { await access.setVisibility(principal, repository, null); return; }
+  if (body.visibility === 'private') { await access.setVisibility(principal, repository, null); await assertSaved(access, principal, repository.id, false); return; }
   if (!env.ARTIFACTS || repository.provider !== 'artifacts') throw new ApiError(409, 'REPOSITORY_NOT_CONNECTED', 'Only repositories with Git storage can be public.');
   using source = await env.ARTIFACTS.get(repository.name);
   if (!(await source.log({ ref: repository.defaultBranch, limit: 1 }).catch(() => []))[0]) throw new ApiError(409, 'EMPTY_REPOSITORY', 'Push a first commit before making this repository public.');
@@ -107,6 +107,11 @@ export async function changeVisibility(env: AppEnv, access: SecurityService, pri
   const current = await access.visibility(principal, repository.id);
   const record: VisibilityRecord = { visibility: 'public', publishedAt: current?.publishedAt ?? new Date().toISOString(), publishedBy: current?.publishedBy ?? principal.userId, license, ...(license ? {} : { acknowledgedNoLicense: true }) };
   await access.setVisibility(principal, repository, record);
+  await assertSaved(access, principal, repository.id, true);
+}
+
+async function assertSaved(access: SecurityService, principal: Principal, repositoryId: string, published: boolean): Promise<void> {
+  if (!!(await access.visibility(principal, repositoryId)) !== published) throw new ApiError(500, 'VISIBILITY_NOT_SAVED', 'The visibility change was not saved. Try again.');
 }
 
 async function publicRef(source: SourceHandle, repository: Repository, value: string | null): Promise<string> {
