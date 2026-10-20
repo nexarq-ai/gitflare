@@ -48,7 +48,6 @@ import { resumePreview, type PreviewProgress, type PreviewStatusLike } from "../
 import { isPreviewSetupCode, type PreviewSetupCode } from "../shared/preview-setup";
 import { PreviewFailedCard, PreviewReadyCard, PreviewStartingCard, type PreviewAccess, type PreviewHost, type PreviewState } from "./PreviewPanel";
 import CommitMessageField, { type CommitDraft } from "./CommitMessageField";
-import InfoTip from "./InfoTip";
 import { commitMessageProblem, normalizeCommitMessage, suggestedCommitMessage } from "../shared/commit-message";
 
 type PreviewResult = { status?: "starting" | "ready"; message?: string; kind?: "worker" | "container"; previewUrl?: string; deploymentUrl?: string | null; notes?: string[]; candidateSha: string; expiresAt?: string; linkExpiresAt?: string; host?: PreviewHost; access?: PreviewAccess; extended?: boolean; setup?: string };
