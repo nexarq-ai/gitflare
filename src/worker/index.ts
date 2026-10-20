@@ -32,7 +32,7 @@ import { publicPageResponse } from './public-pages';
 import { hostRedirect, withHostOrigins } from './host-split';
 import { publicGitResponse } from './hosted-source';
 import { deliverInvitation } from './email';
-import { ADMIN_STATUS_PATH, installationAdminStatus } from './installation-admin';
+import { ADMIN_PUBLIC_INDEX_PATH, ADMIN_STATUS_PATH, installationAdminStatus, rebuildPublicIndex } from './installation-admin';
 import { requestSessionMeta } from './session-meta';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare, handleRepositoryCloudflare, cloudflareAccount, cloudflareApiRequest, cloudflareAnalyticsRequest, cloudflareDeployAccess } from './cloudflare';
 import { dispatchCloudflareProject, projectDependencies, type ProjectOperation } from './cloudflare-projects';
@@ -267,6 +267,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (url.pathname === '/api/account' && request.method === 'GET') return Response.json(await access.account(principal), { headers: { 'Cache-Control': 'no-store' } });
   if (url.pathname === '/api/account/sessions/revoke-others' && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.revokeOtherSessions(principal)); }
   if (url.pathname === ADMIN_STATUS_PATH && request.method === 'GET') return Response.json(await installationAdminStatus(env, principal), { headers: { 'Cache-Control': 'no-store' } });
+  if (url.pathname === ADMIN_PUBLIC_INDEX_PATH && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await rebuildPublicIndex(env, principal), { headers: { 'Cache-Control': 'no-store' } }); }
   if (url.pathname === '/api/admin/reports' && request.method === 'GET') return Response.json(await access.reports(principal));
   const dismissReport = /^\/api\/admin\/reports\/([a-f0-9-]{36})\/dismiss$/.exec(url.pathname);
   if (dismissReport && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.dismissReport(principal, dismissReport[1]!)); }
@@ -1059,7 +1060,7 @@ const application = {
           headers.set('Authorization', request.headers.get('Authorization') ?? '');
           const workspace = request.headers.get('X-Gitflare-Workspace'); if (workspace) headers.set('X-Gitflare-Workspace', workspace);
           const client = request.headers.get('CF-Connecting-IP'); if (client) headers.set('CF-Connecting-IP', client);
-          return api(new Request(internal, { headers }), env);
+          return api(new Request(internal, { headers }), env, ctx);
         }, kind => consume(env, kind === 'read' ? 'MCP_READ_RATE_LIMIT' : 'MCP_WRITE_RATE_LIMIT', subject), demoMode(env));
       } else {
         assertCookieRequestOrigin(request);

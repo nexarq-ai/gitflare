@@ -16,8 +16,17 @@ function getText(content: unknown): string {
 // Claude 5-generation models reject thinking.type 'disabled'; they take 'adaptive' plus output_config.effort
 const ADAPTIVE_THINKING = /(^|\/)claude-(?:opus|sonnet|haiku|fable)-5(?:[-.]|$)/;
 
+const CLAUDE_VERSION = /^(claude-[a-z]+-\d+)[-.](\d+)$/;
+
+// Anthropic's Messages API names versions with dashes (claude-opus-5-5); the AI binding catalog uses dots (anthropic/claude-opus-5.5)
 export function nativeModelId(modelId: string): string {
-  return modelId.startsWith('anthropic/') ? modelId.slice('anthropic/'.length) : modelId;
+  const id = modelId.startsWith('anthropic/') ? modelId.slice('anthropic/'.length) : modelId;
+  return id.replace(CLAUDE_VERSION, '$1-$2');
+}
+
+export function catalogModelId(modelId: string): string {
+  if (!modelId.startsWith('anthropic/')) return modelId;
+  return `anthropic/${nativeModelId(modelId).replace(CLAUDE_VERSION, '$1.$2')}`;
 }
 
 export function isSonnet55(modelId: string): boolean {
