@@ -510,8 +510,10 @@ export type IssueHideReason = typeof ISSUE_HIDE_REASONS[number];
 export const CONTENT_REPORT_REASONS = ['spam', 'abuse', 'harassment', 'illegal', 'other'] as const;
 export type ContentReportReason = typeof CONTENT_REPORT_REASONS[number];
 export interface IssueModeration { by?: string; at: string }
-export interface IssueComment { id: string; authorId: string; body: string; createdAt: string; editedAt?: string; hidden?: IssueModeration & { reason: IssueHideReason } }
-export interface Issue { repositoryId: string; number: number; title: string; body: string; state: IssueState; closedReason?: IssueCloseReason; labels: string[]; assignees: string[]; missionIds: string[]; authorId: string; createdAt: string; updatedAt: string; closedAt?: string; commentCount: number; locked?: IssueModeration & { reason: IssueLockReason } }
+export interface ImportedComment { source: 'github'; url: string; author: string }
+export interface ImportedIssue extends ImportedComment { number: number; pullRequest?: { merged: boolean } }
+export interface IssueComment { id: string; authorId: string; body: string; createdAt: string; editedAt?: string; hidden?: IssueModeration & { reason: IssueHideReason }; importedFrom?: ImportedComment }
+export interface Issue { repositoryId: string; number: number; title: string; body: string; state: IssueState; closedReason?: IssueCloseReason; labels: string[]; assignees: string[]; missionIds: string[]; authorId: string; createdAt: string; updatedAt: string; closedAt?: string; commentCount: number; locked?: IssueModeration & { reason: IssueLockReason }; importedFrom?: ImportedIssue }
 export interface IssuePerson { name: string; handle: string | null }
 export interface IssueDetail extends Issue { comments: IssueComment[]; people?: Record<string, IssuePerson> }
 export interface IssueLabelDefinition { name: string; color: string; description: string }
@@ -549,6 +551,7 @@ export interface Release {
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
+  importedFrom?: ImportedComment;
 }
 
 export interface ReleaseList {

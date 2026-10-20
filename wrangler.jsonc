@@ -134,6 +134,14 @@
         "limit": 10,
         "period": 60
       }
+    },
+    {
+      "name": "GITHUB_IMPORT_RATE_LIMIT",
+      "namespace_id": "4150",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {

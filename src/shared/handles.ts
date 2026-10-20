@@ -10,7 +10,7 @@ export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
   'about', 'access', 'account', 'accounts', 'activity', 'admin', 'administrator', 'agent', 'agents', 'ai', 'ai-clients', 'anonymous', 'api', 'app', 'apps', 'assets',
   'auth', 'billing', 'blog', 'boot-loader', 'changelog', 'cloudflare', 'connect', 'connectors', 'contact', 'cookies', 'dashboard', 'demo', 'deploy', 'developer', 'developers',
   'docs', 'download', 'downloads', 'edit', 'enterprise', 'explore', 'favicon', 'features', 'fonts', 'forgot-password', 'git', 'github', 'gitlab', 'gitflare', 'help', 'home',
-  'inbox', 'install', 'invite', 'invitations', 'issues', 'join', 'legal', 'llms', 'login', 'logout', 'logo', 'marketplace', 'mcp', 'me', 'mission', 'missions', 'new',
+  'import', 'imports', 'inbox', 'install', 'invite', 'invitations', 'issues', 'join', 'legal', 'llms', 'login', 'logout', 'logo', 'marketplace', 'mcp', 'me', 'mission', 'missions', 'new',
   'nexarq', 'notifications', 'oauth', 'open-source', 'org', 'organization', 'organizations', 'orgs', 'overview', 'pricing', 'privacy', 'product', 'profile', 'proposal',
   'proposals', 'public', 'pulls', 'repositories', 'repository', 'repos', 'reset-password', 'robots', 'root', 'search', 'security', 'settings', 'signin', 'signout',
   'signup', 'site', 'sitemap', 'social', 'source', 'sponsors', 'staff', 'stars', 'status', 'support', 'system', 'team', 'teams', 'terms', 'topics', 'trending',

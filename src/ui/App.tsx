@@ -120,6 +120,8 @@ const BranchProtection = lazy(loadBranchProtection);
 const PreviewSettings = lazy(() => import("./PreviewSettings"));
 const AgentSettings = lazy(() => import("./AgentSettings"));
 const GitHubMirror = lazy(() => import("./GitHubMirror"));
+const GitHubImport = lazy(() => import("./GitHubImport"));
+const GitHubOrgImport = lazy(() => import("./GitHubOrgImport"));
 const RepositoryVisibilityCard = lazy(() => import("./RepositoryVisibility"));
 const ForkBanner = lazy(() => import("./ForkBanner"));
 const loadSecretSettings = () => import("./SecretSettings");
@@ -702,7 +704,7 @@ function Workspace() {
             <ErrorNotice message={error} onRetry={() => void refresh()} />
           )}
           <Suspense fallback={<RouteProgress />}>
-            {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify(proposal.status === "draft" ? "Mission draft created." : "Mission started."); }} /> : page === "settings" ? (
+            {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : route === "import/github" ? <GitHubOrgImport canManage={permissions.includes("manage")} onOpen={id => navigate(`repository/${id}/code`)} onImported={() => void load()} /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify(proposal.status === "draft" ? "Mission draft created." : "Mission started."); }} /> : page === "settings" ? (
               <WorkspaceSettingsLayout route={route}>
                 {route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} />
                   : route === "settings/cloudflare" ? <CloudflareAccounts canManage={permissions.includes("manage")} repositories={workspace.repositories} workspaceName={workspace.name} />
@@ -1201,6 +1203,7 @@ function Workspace() {
         demo={!!authConfig.demo}
         cloudflareAvailable={authConfig.cloudflareSignin === true}
         onClose={() => setModal(null)}
+        onImportOrganization={() => { setModal(null); navigate("import/github"); }}
         workspace={workspace}
         onCreated={async (item, importCode) => {
           await load();
@@ -1302,10 +1305,11 @@ function RepositoryDetailsPanel({ repository, onNotify }: { repository: Reposito
 
 function RepositoryGeneral({ repository, publicRepositories, onNotify, onRefresh }: { repository: Repository; publicRepositories: boolean; onNotify: (message: string) => void; onRefresh: () => void }) {
   return <>
-    <div className="page-heading"><div><h1>General</h1><p>Details, clone address and GitHub mirror for {repositoryLabel(repository)}.</p></div></div>
+    <div className="page-heading"><div><h1>General</h1><p>Details, clone address and GitHub for {repositoryLabel(repository)}.</p></div></div>
     <RepositoryDetailsPanel repository={repository} onNotify={onNotify} />
     {publicRepositories && <RepositoryVisibilityCard key={repository.id} repository={repository} onNotify={onNotify} onChanged={onRefresh} />}
     <GitHubMirror key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
+    <GitHubImport key={`import-${repository.id}`} repositoryId={repository.id} onNotify={onNotify} />
   </>;
 }
 
@@ -1554,6 +1558,7 @@ function RepositoryDetail({
 function CreationDialog({
   modal,
   onClose,
+  onImportOrganization,
   workspace,
   onCreated,
   onSignedIn,
@@ -1564,6 +1569,7 @@ function CreationDialog({
   demo?: boolean;
   cloudflareAvailable: boolean;
   onClose: () => void;
+  onImportOrganization: () => void;
   workspace: Workspace;
   onCreated: (item: Repository, importCode?: boolean) => Promise<void>;
   onSignedIn: () => Promise<void>;
@@ -1770,7 +1776,7 @@ function CreationDialog({
                     onChange={(event) => setDescription(event.target.value)}
                   />
                 </div>
-                {modal === "repository" && <div className="form-field"><label htmlFor="repository-start">Start this repository</label><select id="repository-start" value={start} onChange={event => setStart(event.target.value as "new" | "zip" | "url")}><option value="new">Start a new project</option><option value="zip">Import existing code from a ZIP</option><option value="url">Import from a Git URL with history</option></select><small>{start === "zip" ? "Create an empty repository, then choose your project ZIP on the import page." : start === "url" ? "Copies every stream and tag with full history." : "Choose initial setup files for your repository."}</small></div>}
+                {modal === "repository" && <div className="form-field"><label htmlFor="repository-start">Start this repository</label><select id="repository-start" value={start} onChange={event => setStart(event.target.value as "new" | "zip" | "url")}><option value="new">Start a new project</option><option value="zip">Import existing code from a ZIP</option><option value="url">Import from a Git URL with history</option></select><small>{start === "zip" ? "Create an empty repository, then choose your project ZIP on the import page." : start === "url" ? <>Copies every stream and tag with full history. <button type="button" className="text-link" onClick={onImportOrganization}>Import a GitHub organization</button></> : "Choose initial setup files for your repository."}</small></div>}
                 {modal === "repository" && start === "url" && <div className="form-field"><label htmlFor="repository-source-url">Repository URL</label><Input id="repository-source-url" type="url" required placeholder="https://github.com/owner/repository" value={sourceUrl} maxLength={2048} onChange={event => { const value = event.target.value; const derived = (url: string) => (url.trim().replace(/\/+$/, "").split("/").pop() ?? "").replace(/\.git$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64); if (!name || name === derived(sourceUrl)) setName(derived(value)); setSourceUrl(value); }} /><label htmlFor="repository-source-token">Access token <span style={{ color: "#929dab", fontWeight: 400 }}>(private repositories only)</span></label><Input id="repository-source-token" type="password" autoComplete="off" value={sourceToken} maxLength={1024} onChange={event => setSourceToken(event.target.value)} />{sourceToken && <><label htmlFor="repository-source-username">Token username <span style={{ color: "#929dab", fontWeight: 400 }}>(optional)</span></label><Input id="repository-source-username" autoComplete="off" value={sourceUsername} maxLength={100} onChange={event => setSourceUsername(event.target.value)} /></>}<small>Used once, never stored.<InfoTip label="the access token">Read-only token recommended. Up to 256 MiB, 500 streams, 2,000 tags.</InfoTip></small></div>}
                 {modal === "repository" && start === "new" && <div className="form-field"><label className="access-checkbox"><input type="checkbox" checked={initializeReadme} onChange={event => setInitializeReadme(event.target.checked)}/>Initialize with a README</label><label htmlFor="repository-gitignore">.gitignore template</label><select id="repository-gitignore" value={gitignore} onChange={event => setGitignore(event.target.value)}>{["none", "Node", "Python"].map(value => <option key={value} value={value}>{value === "none" ? "None" : value}</option>)}</select><label htmlFor="repository-license">License</label><select id="repository-license" value={license} onChange={event => setLicense(event.target.value)}>{["none", "MIT", "Apache-2.0"].map(value => <option key={value} value={value}>{value === "none" ? "No license" : value}</option>)}</select>{license === "MIT" && <><label htmlFor="repository-copyright">Copyright holder</label><Input id="repository-copyright" value={copyrightHolder} onChange={event => setCopyrightHolder(event.target.value)} required maxLength={200}/></>}</div>}
                 {modal === "repository" && start !== "url" &&

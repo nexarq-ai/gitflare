@@ -17,6 +17,7 @@ import { activeLandingMessage, COMMIT_MESSAGE_MAX, COMMIT_SUBJECT_MAX } from '..
 import { isOutdatedReview } from './proposal-review';
 import { ACCESS_HEADER, ACCESS_LABELS, accessFromHeader, accessScope, allows, type AccessLevel } from './client-access';
 import { URL_IMPORT_LIMITS } from './url-import';
+import { ORG_IMPORT_MAX } from './github-import';
 import { rateLimitMessage, type RateLimited } from './rate-limits';
 import { DEFAULT_MAX_AGENTS, DRAFT_GOAL_MAX, DRAFT_GOAL_MIN, MAX_ALLOWED_MODELS, MAX_MISSION_AGENTS } from '../shared/mission-draft';
 import { DEFAULT_MODEL } from './model-config';
@@ -42,6 +43,7 @@ export const mcpToolNames = [
   'gitflare_list_branches', 'gitflare_create_branch', 'gitflare_delete_branch', 'gitflare_create_pull_request', 'gitflare_update_pull_request', 'gitflare_branch_protection', 'gitflare_set_branch_protection',
   'gitflare_check_settings', 'gitflare_set_check_settings', 'gitflare_retry_checks', 'gitflare_agent_settings', 'gitflare_set_agent_settings', 'gitflare_preview_settings', 'gitflare_set_preview_settings',
   'gitflare_github_mirror', 'gitflare_manage_github_mirror',
+  'gitflare_github_import', 'gitflare_import_github', 'gitflare_github_organization', 'gitflare_import_github_organization',
   'gitflare_deploy_access', 'gitflare_manage_deploy_access',
   'gitflare_handles', 'gitflare_set_handle', 'gitflare_visibility', 'gitflare_set_visibility', 'gitflare_public_repository',
   'gitflare_public_issues', 'gitflare_public_issue_action', 'gitflare_issue_labels', 'gitflare_manage_issue_labels', 'gitflare_issue_templates',
@@ -90,7 +92,7 @@ function agentOverridesBody(input: AgentLimitInput): Record<string, unknown> {
   return { ...overrides, ...(editScope ? { editScope } : {}) };
 }
 const LAND_TOOLS = new Set(['gitflare_run_checks', 'gitflare_set_check_settings', 'gitflare_set_agent_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
-const ADMIN_TOOLS = new Set(['gitflare_manage_sessions', 'gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access', 'gitflare_set_handle', 'gitflare_set_visibility', 'gitflare_set_profile', 'gitflare_dismiss_content_report', 'gitflare_manage_community_pool', 'gitflare_set_triage', 'gitflare_rebuild_public_index']);
+const ADMIN_TOOLS = new Set(['gitflare_manage_sessions', 'gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_import_github', 'gitflare_import_github_organization', 'gitflare_manage_deploy_access', 'gitflare_set_handle', 'gitflare_set_visibility', 'gitflare_set_profile', 'gitflare_dismiss_content_report', 'gitflare_manage_community_pool', 'gitflare_set_triage', 'gitflare_rebuild_public_index']);
 
 export function requiredAccess(name: string, annotations: { readOnlyHint?: boolean } | undefined, input: Record<string, unknown>): AccessLevel {
   if (annotations?.readOnlyHint) return 'read';
@@ -769,6 +771,60 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     const action = input.action === 'app-installation' ? 'credential' : input.action;
     return call<Record<string, unknown>>(`${path}/${action}`, body, input.idempotency_key);
   }));
+  const githubOwner = z.string().min(1).max(39).describe('GitHub user or organization.');
+  const importOptions = {
+    issues: z.boolean().optional().describe('Import issues, labels and comments (default true).'),
+    pull_requests: z.boolean().optional().describe('Import open pull requests as proposals and closed ones as history (default true).'),
+    releases: z.boolean().optional().describe('Import release notes for tags already in the repository (default true).'),
+  };
+  server.registerTool('gitflare_github_import', {
+    title: 'Read a repository’s GitHub import', description: 'Read the GitHub data import for a repository: source, phase, counts, skipped items with reasons, rate-limit wait, credential kind (never its value), hourly issue pull and whether Gitflare is canonical. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/github-import`)));
+  server.registerTool('gitflare_import_github', {
+    title: 'Import issues, pull requests and releases from GitHub', description: 'Owner-only. start imports labels, issues, comments, open pull requests (as draft proposals) and releases from GitHub; private repositories need the mirror credential or a token added in the browser (credential-setup returns the URL; tokens never pass through MCP). resume, cancel, transition-on/off (hourly issue pull), pull (now), canonical (notify opens a GitHub notice). Needs admin access.',
+    inputSchema: z.object({
+      repository_id: repositoryId,
+      action: z.enum(['start', 'resume', 'cancel', 'pull', 'transition-on', 'transition-off', 'canonical', 'credential-setup', 'remove-credential']),
+      owner: githubOwner.optional().describe('GitHub user or organization, for start.'),
+      name: z.string().min(1).max(100).optional().describe('GitHub repository name, for start.'),
+      ...importOptions,
+      credential: z.enum(['none', 'mirror', 'stored']).optional().describe('For start: none (public repositories), mirror (the linked GitHub mirror credential) or stored (a token added earlier in the browser).'),
+      keep_credential: z.boolean().optional().describe('For start: keep the token after the import for the hourly issue pull.'),
+      notify: z.boolean().optional().describe('For canonical: open an issue on GitHub pointing to Gitflare. Needs a token with Issues write access.'),
+      idempotency_key: requestKey,
+    }).strict(), annotations: { ...external, destructiveHint: true, idempotentHint: false },
+  }, (input) => guarded(async () => {
+    const path = `/api/repositories/${input.repository_id}/github-import`;
+    if (input.action === 'credential-setup') {
+      const status = await call<{ canManage?: boolean; job?: unknown }>(path);
+      return { browserStartUrl: `${origin}/repository/${encodeURIComponent(input.repository_id)}/settings#github-import`, browserEntryRequired: true, canManage: status.canManage, started: !!status.job };
+    }
+    const body = input.action === 'start' ? { owner: input.owner, name: input.name, issues: input.issues, pullRequests: input.pull_requests, releases: input.releases, credential: input.credential ?? 'none', keepCredential: input.keep_credential }
+      : input.action === 'transition-on' || input.action === 'transition-off' ? { enabled: input.action === 'transition-on' }
+      : input.action === 'canonical' ? { notify: input.notify ?? false }
+      : {};
+    const action = input.action.startsWith('transition-') ? 'transition' : input.action;
+    return call<Record<string, unknown>>(`${path}/${action}`, body, input.idempotency_key);
+  }));
+  server.registerTool('gitflare_github_organization', {
+    title: 'List GitHub organization repositories and imports', description: 'repositories lists a GitHub organization’s or user’s public repositories (100 a page; private ones need a token in the browser at /import/github). imports lists this workspace’s recent organization imports; import reads one with each repository’s code and data progress. Owner-only for repositories. Read-only.',
+    inputSchema: z.object({ view: z.enum(['repositories', 'imports', 'import']), owner: githubOwner.optional().describe('For repositories.'), page: z.number().int().min(1).max(100).optional(), import_id: identifier.optional().describe('For import.') }).strict(), annotations: { ...readOnly, openWorldHint: true },
+  }, (input) => guarded(async () => {
+    if (input.view === 'repositories') {
+      if (!input.owner) throw new ApiError(400, 'INVALID_INPUT', 'Pass owner.');
+      return call<Record<string, unknown>>('/api/github-import/organizations/repositories', { owner: input.owner, page: input.page ?? 1 });
+    }
+    if (input.view === 'import') {
+      if (!input.import_id) throw new ApiError(400, 'INVALID_INPUT', 'Pass import_id.');
+      return call<Record<string, unknown>>(`/api/github-import/organizations/${input.import_id}`);
+    }
+    return call<Record<string, unknown>>('/api/github-import/organizations');
+  }));
+  server.registerTool('gitflare_import_github_organization', {
+    title: 'Import repositories from a GitHub organization', description: `Owner-only. Creates one Gitflare repository per chosen GitHub repository (up to ${ORG_IMPORT_MAX}), imports its code with full history, then its issues, pull requests and releases. Public repositories only over MCP; private ones need a token added in the browser at /import/github. Follow progress with gitflare_github_organization. Needs admin access.`,
+    inputSchema: z.object({ owner: githubOwner, repositories: z.array(z.string().min(1).max(100)).min(1).max(ORG_IMPORT_MAX), ...importOptions, idempotency_key: requestKey }).strict(), annotations: { ...external, idempotentHint: true },
+  }, (input) => guarded(async () => call<Record<string, unknown>>('/api/github-import/organizations', { owner: input.owner, repositories: input.repositories, issues: input.issues, pullRequests: input.pull_requests, releases: input.releases }, input.idempotency_key)));
   const handleValue = z.string().min(1).max(39).regex(/^[a-z0-9-]+$/).describe('Handle: 1–39 lowercase letters, numbers or single hyphens.');
   const handleScope = z.enum(['user', 'workspace']).describe('user: your account handle, used by your personal workspace. workspace: the handle of the workspace this connection uses.');
   server.registerTool('gitflare_handles', {
