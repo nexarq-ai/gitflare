@@ -40,6 +40,7 @@ import { validateRepositoryInitialization, initializeArtifactsRepository } from 
 import { SKILL_REQUEST_MAX_BYTES, validateRepositorySkillChange, verifyRepositorySkillChange } from './skill-edit';
 import { autoDraftRequest, draftMission, draftRequest, planMission, repositorySnapshot } from './mission-draft';
 import { handleIssues } from './issues';
+import { issueServices, publicIssuesApi } from './public-issues';
 import { releaseApi } from './releases';
 import { effectiveDefaultModel, modelConnectionsSnapshot, modelIdentifier, resolveModelConnection, validateModelConnection, verifyModelConnection } from './model-config';
 import { aiKeyProvider, aiKeysSnapshot, assertModelAccess, assertWorkspaceAi, createModelAccess, encryptAiGateway, encryptAiKey, ownGatewayInput, providerKey, reserveOperatorUsage, storedOwnGateway, storedProviderKey, verificationModel, verifyProviderKey, type AiCredentials } from './ai-keys';
@@ -119,6 +120,14 @@ async function authorize(request: Request, env: AppEnv, bearerOnly = false): Pro
     return principal;
   }
   throw new ApiError(401, 'AUTH_REQUIRED', 'Sign in to Gitflare.');
+}
+
+function signedInPrincipal(env: AppEnv) {
+  return async (request: Request): Promise<Principal | null> => {
+    if (demoMode(env) || !request.headers.get('Authorization') && !cookieValue(request)) return null;
+    try { return await authorize(request, env); }
+    catch (error) { if (publicError(error).status === 401) return null; throw error; }
+  };
 }
 
 async function landingReviewRule(env: AppEnv, repository: Repository) { return landingRule(await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).getBranchProtection(), repository.defaultBranch); }
@@ -223,6 +232,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     return markdown ? documentationMarkdown(doc, listPublicDocs(), request.url, true) : Response.json(doc);
   }
   if (url.pathname.startsWith('/api/public/source')) return publicSourceResponse(request, env.ASSETS);
+  const publicIssues = await publicIssuesApi(request, env, signedInPrincipal(env));
+  if (publicIssues) return publicIssues;
   const publicRepository = await publicRepositoryApi(request, env);
   if (publicRepository) return publicRepository;
   const discovery = await publicDiscoveryApi(request, env, ctx);
@@ -251,6 +262,9 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (url.pathname === '/api/account' && request.method === 'GET') return Response.json(await access.account(principal), { headers: { 'Cache-Control': 'no-store' } });
   if (url.pathname === '/api/account/sessions/revoke-others' && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.revokeOtherSessions(principal)); }
   if (url.pathname === ADMIN_STATUS_PATH && request.method === 'GET') return Response.json(await installationAdminStatus(env, principal), { headers: { 'Cache-Control': 'no-store' } });
+  if (url.pathname === '/api/admin/reports' && request.method === 'GET') return Response.json(await access.reports(principal));
+  const dismissReport = /^\/api\/admin\/reports\/([a-f0-9-]{36})\/dismiss$/.exec(url.pathname);
+  if (dismissReport && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.dismissReport(principal, dismissReport[1]!)); }
   if (url.pathname === '/api/workspaces' && request.method === 'GET') {
     const [items, name] = await Promise.all([access.workspaces(principal), workspaceName(env, access, principal)]);
     return Response.json({ workspaces: items.map(item => item.current ? { ...item, name } : item) });
@@ -498,8 +512,17 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
     return repositorySecretsApi(request, secretsApiContext(env, principal, repository, env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`)));
   }
-  const issues = await handleIssues(request, url, principal, access, catalog, (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`));
+  const issues = await handleIssues(request, url, principal, access, catalog, (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`), (repository) => issueServices(env, access, repository));
   if (issues) return issues;
+  const blocksRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/issue-blocks$/.exec(url.pathname);
+  if (blocksRoute) {
+    const repository = await catalog.getRepository(blocksRoute[1]!);
+    if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+    if (request.method === 'GET') return Response.json({ blocks: await access.blocks(principal, repository.id) });
+    if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET or POST.');
+    assertMutationOrigin(request);
+    return Response.json({ blocks: await access.setBlock(principal, repository.id, await readJson(request)) });
+  }
   const urlImport = await handleUrlImport(request, url, { env, principal, access, catalog, repositoryRecords: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
   if (urlImport) return urlImport;
   const mirrorRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/github-mirror(?:\/([a-z-]+))?$/.exec(url.pathname);

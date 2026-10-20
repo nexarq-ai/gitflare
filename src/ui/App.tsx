@@ -106,6 +106,7 @@ const loadModelConnections = () => import("./ModelConnections");
 const ModelConnections = lazy(loadModelConnections);
 const loadIssues = () => import("./Issues");
 const Issues = lazy(loadIssues);
+const IssueSettings = lazy(() => import("./IssueSettings"));
 const loadReleases = () => import("./Releases");
 const Releases = lazy(loadReleases);
 const loadPullRequests = () => import("./PullRequests");
@@ -1489,6 +1490,7 @@ function RepositoryDetail({
           : subroute === "previews" ? <PreviewSettings key={repository.id} repositoryId={repository.id} canManage={canManage} onNotify={onNotify} />
           : subroute === "agents" ? <AgentSettings key={repository.id} repositoryId={repository.id} canChange={canLand} onNotify={onNotify} />
           : subroute === "cloudflare" ? <CloudflareConnection key={repository.id} canManage={canManage} repository={repository} repositoryId={repository.id} />
+          : subroute === "issues" ? <IssueSettings key={repository.id} repository={repository} canTriage={!!access?.permissions.includes("triage")} publicRepositories={publicRepositories} onNotify={onNotify} />
           : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <RouteProgress />
           : <RepositoryGeneral repository={repository} publicRepositories={publicRepositories} onNotify={onNotify} onRefresh={onRefresh} />}
       </RepositorySettingsLayout> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "code" ? (

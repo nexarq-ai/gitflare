@@ -7,7 +7,7 @@ import { securityClient } from './security';
 export const CACHE_DEPENDENCIES = 'X-Gitflare-Cache-Repositories';
 export const PUBLIC_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=600';
 const CACHE_PREFIX = '/__gitflare-public-cache/v1';
-const CACHEABLE = /^\/api\/public\/(?:repos\/[^/]+\/[^/]+(?:\/[a-z]+)?|explore|search|profiles\/[^/]+)$/;
+const CACHEABLE = /^\/api\/public\/(?:repos\/[^/]+\/[^/]+(?:\/(?!issues$)[a-z]+)?|explore|search|profiles\/[^/]+)$/;
 const DEPENDENCY_MAX = 100;
 
 type CacheEnv = Pick<AppEnv, 'EDITION' | 'DEMO_MODE' | 'SITE_ORIGIN' | 'APP_ORIGIN' | 'GITFLARE_SECURITY'> & Partial<Pick<AppEnv, 'PUBLIC_READ_RATE_LIMIT'>>;

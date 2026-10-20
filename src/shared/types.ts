@@ -465,10 +465,24 @@ export interface ModelConnectionsSnapshot {
 
 export type IssueState = 'open' | 'closed';
 export type IssueCloseReason = 'completed' | 'not_planned';
-export interface IssueComment { id: string; authorId: string; body: string; createdAt: string; editedAt?: string }
-export interface Issue { repositoryId: string; number: number; title: string; body: string; state: IssueState; closedReason?: IssueCloseReason; labels: string[]; assignees: string[]; missionIds: string[]; authorId: string; createdAt: string; updatedAt: string; closedAt?: string; commentCount: number }
-export interface IssueDetail extends Issue { comments: IssueComment[] }
-export interface IssueList { items: Issue[]; total: number; openCount: number; closedCount: number; labels: string[]; offset: number; nextOffset: number | null }
+export const ISSUE_LOCK_REASONS = ['off-topic', 'too-heated', 'resolved', 'spam'] as const;
+export type IssueLockReason = typeof ISSUE_LOCK_REASONS[number];
+export const ISSUE_HIDE_REASONS = ['spam', 'abuse', 'off-topic', 'outdated', 'resolved'] as const;
+export type IssueHideReason = typeof ISSUE_HIDE_REASONS[number];
+export const CONTENT_REPORT_REASONS = ['spam', 'abuse', 'harassment', 'illegal', 'other'] as const;
+export type ContentReportReason = typeof CONTENT_REPORT_REASONS[number];
+export interface IssueModeration { by?: string; at: string }
+export interface IssueComment { id: string; authorId: string; body: string; createdAt: string; editedAt?: string; hidden?: IssueModeration & { reason: IssueHideReason } }
+export interface Issue { repositoryId: string; number: number; title: string; body: string; state: IssueState; closedReason?: IssueCloseReason; labels: string[]; assignees: string[]; missionIds: string[]; authorId: string; createdAt: string; updatedAt: string; closedAt?: string; commentCount: number; locked?: IssueModeration & { reason: IssueLockReason } }
+export interface IssuePerson { name: string; handle: string | null }
+export interface IssueDetail extends Issue { comments: IssueComment[]; people?: Record<string, IssuePerson> }
+export interface IssueLabelDefinition { name: string; color: string; description: string }
+export interface IssueList { items: Issue[]; total: number; openCount: number; closedCount: number; labels: string[]; offset: number; nextOffset: number | null; labelDefinitions?: IssueLabelDefinition[]; people?: Record<string, IssuePerson> }
+export interface IssueTemplate { file: string; name: string; about: string; title: string; labels: string[]; body: string }
+export interface IssueTemplates { directory: string | null; commitSha: string | null; templates: IssueTemplate[] }
+export interface IssueViewer { signedIn: boolean; userId: string | null; member: boolean; repositoryId: string | null; canParticipate: boolean; canTriage: boolean; limited: boolean; turnstileSiteKey: string | null }
+export interface RepositoryBlock { userId: string; person: IssuePerson | null; blockedBy: string; blockedAt: string; reason: string }
+export interface ContentReport { id: string; workspaceId: string; repositoryId: string; address: string; issueNumber: number; commentId?: string; reason: ContentReportReason; detail: string; reporterId: string; createdAt: string }
 export interface Release {
   id: string;
   repositoryId: string;
