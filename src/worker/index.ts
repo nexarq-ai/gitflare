@@ -51,6 +51,8 @@ import { branchApi } from './branches';
 import { branchName, effectiveRules, landingRule, protectionSnapshot } from './branch-protection';
 import { handleUrlImport } from './url-import';
 import { githubMirrorApi, triggerMirrorSync } from './github-mirror-runtime';
+import { githubImportApi, handleGithubOrgImport, runGithubImportCron } from './github-import-runtime';
+import { GITHUB_IMPORT_CRON } from './github-import';
 import { capabilityHash, mintPreviewToken, PREVIEW_CAPABILITY_MS, previewCapabilityStore, previewTarget, relayPreview } from './preview-capability';
 import { withStoreSecrets } from './store-secrets';
 import { DEMO_WRITE_LIMIT, demoGitRestriction, demoMode, demoRestrictionError, demoRouteRestriction } from './demo';
@@ -553,6 +555,14 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (communityAi) return communityAi;
   const urlImport = await handleUrlImport(request, url, { env, principal, access, catalog, repositoryRecords: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
   if (urlImport) return urlImport;
+  const importRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/github-import(?:\/([a-z-]+))?$/.exec(url.pathname);
+  if (importRoute) {
+    const repository = await catalog.getRepository(importRoute[1]);
+    if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
+    return githubImportApi(request, env, { repository: { ...repository, workspaceId: repository.workspaceId ?? principal.workspaceId }, principal, origin: url.origin, ctx }, importRoute[2]);
+  }
+  const orgImport = await handleGithubOrgImport(request, url, env, principal, ctx);
+  if (orgImport) return orgImport;
   const mirrorRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/github-mirror(?:\/([a-z-]+))?$/.exec(url.pathname);
   if (mirrorRoute) {
     const repository = await catalog.getRepository(mirrorRoute[1]);
@@ -1126,5 +1136,6 @@ export default {
   async scheduled(controller: ScheduledController, workerEnv: AppEnv): Promise<void> {
     if (demoMode(workerEnv)) { await runDemoReset(await withStoreSecrets(workerEnv)); return; }
     if (controller.cron === PUBLIC_INDEX_CRON && publicIndex(workerEnv) && workerEnv.GITFLARE_SECURITY) console.log(JSON.stringify({ event: 'public_index_reconciled', ...await reconcilePublicIndex(await withStoreSecrets(workerEnv)) }));
+    if (controller.cron === GITHUB_IMPORT_CRON && workerEnv.GITFLARE_SECURITY) console.log(JSON.stringify({ event: 'github_import_cron', ...await runGithubImportCron(await withStoreSecrets(workerEnv)) }));
   },
 } satisfies ExportedHandler<AppEnv>;

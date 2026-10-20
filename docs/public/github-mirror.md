@@ -2,7 +2,7 @@
 
 A Gitflare repository is the source of truth. A GitHub mirror is a downstream copy: Gitflare pushes to it, and nothing on GitHub flows back unless an Owner imports it. Use it to keep a public or backup copy on GitHub, to feed GitHub-only tooling, or while moving an existing project onto Gitflare.
 
-Status: source and unit tests only. The protocol code is tested against real `git upload-pack` and `git receive-pack` processes; it has not yet been run against github.com from a deployed Gitflare.
+Status: source and unit tests only. The protocol code is tested against real `git upload-pack` and `git receive-pack` processes; it has not yet been run against github.com from a deployed Gitflare. Import from GitHub is tested against a mocked GitHub REST API and real Git processes only.
 
 ## Set it up
 
@@ -39,7 +39,38 @@ If someone pushes to GitHub directly, the mirror does not overwrite it. The ref 
 
 To move an existing GitHub project onto Gitflare, create an empty repository (or one with only its setup commit), link the mirror and add the credential, then choose **Adopt from GitHub**. Gitflare copies the mirrored refs once and records the adoption. From then on Gitflare is the source of truth and pushes to GitHub. Adopt is refused once the repository has its own history; use Import from GitHub instead. To import every branch with full history into a new repository, use **Import from URL**.
 
+## Import issues, pull requests and releases
+
+The mirror moves code. **Import from GitHub** (Settings → General, below the mirror) copies the rest, so a project can move without losing its history. Only workspace Owners can run it.
+
+1. Import the code first: **New repository → Import from a Git URL** (every branch and tag with full history) or **Adopt from GitHub**.
+2. Enter the GitHub owner and repository, choose issues, pull requests and releases, and choose access:
+   - **Public, no token** for public repositories, within GitHub's limit of 60 API requests an hour.
+   - **Mirror credential** when the mirror links the same GitHub repository.
+   - **Fine-grained token** with read access to Contents, Issues, Pull requests and Metadata. It raises the rate limit and reads private repositories. Like the mirror token, it is accepted only in a signed-in browser, stored encrypted and never returned. It is deleted when the import finishes unless you keep it for the hourly pull.
+3. Choose **Import from GitHub** and follow the counts.
+
+What arrives:
+
+- **Labels** with their colours and descriptions (up to 100).
+- **Issues and comments** in their original order. When the repository has no issues yet, GitHub numbers are kept; otherwise issues get the next free numbers and link back to GitHub. GitHub people appear as `github:<login>`; they are never matched to Gitflare accounts. Bodies are kept as Markdown and shown with Gitflare's safe renderer (no HTML, no images, external links only).
+- **Open pull requests** become draft proposals from a stream named `github-pr/<n>`, fetched from GitHub's `refs/pull/<n>/head` at its exact commit. Checks do not start until a Maintainer starts them.
+- **Closed pull requests** become closed issues for history, marked as merged or not.
+- **Releases** for tags that are already in the repository, with their notes and links to the assets on GitHub. Drafts and releases whose tag is missing are skipped.
+
+Anything that cannot be imported is listed under **Skipped** with the reason. Running the import again picks up edits and new items and never duplicates what is already there. When GitHub's rate limit is reached, the import waits until it resets and continues; **Resume** restarts a stopped import where it left off.
+
+### While you move
+
+Turn on **Pull GitHub issues hourly** to keep copying new GitHub issues and comments while GitHub stays open. Comments made in Gitflare are not sent to GitHub; imported issues link back so people know where the conversation started. When you are done, choose **Make Gitflare canonical**: the hourly pull stops, the stored token is deleted and, if you keep **Notice on GitHub** on and the token may write issues, Gitflare opens an issue on GitHub pointing here.
+
+### A whole organization
+
+**New repository → Import from a Git URL → Import a GitHub organization** lists an organization's or user's repositories. Choose up to 20: each becomes a Gitflare repository with its code and then its issues, pull requests and releases. Private repositories need a token, which is stored separately for each repository.
+
 ## MCP
+
+`gitflare_github_import` reads an import's progress and `gitflare_import_github` starts, resumes, cancels and controls it. `gitflare_github_organization` lists organization repositories and imports, and `gitflare_import_github_organization` imports several at once. They use the same Owner checks as the UI and never accept a token: `credential-setup` returns the browser URL.
 
 `gitflare_github_mirror` reads the status. `gitflare_manage_github_mirror` links, unlinks, syncs, imports, overwrites and adopts with the same Owner checks and audit records as the UI. Its `credential-setup` action returns the browser URL, because tokens never pass through MCP. No tool returns the credential.
 
@@ -48,4 +79,5 @@ To move an existing GitHub project onto Gitflare, create an empty repository (or
 - GitHub over HTTPS only, SHA-1 repositories, and packs up to 512 MiB per sync.
 - Divergence checks look back 1,000 commits from Gitflare's tip. A GitHub commit older than that counts as diverged.
 - GitHub branch protection still applies: a protected GitHub branch that rejects the push shows the ref as Failed with GitHub's reason.
-- Git LFS objects, GitHub issues, pull requests and releases are not mirrored; only Git refs and their objects.
+- Git LFS objects are not mirrored. GitHub issues, pull requests and releases come over with Import from GitHub, not the mirror.
+- Imports keep at most 50,000 issues and 500 comments per issue, 500 releases and 100 labels per repository. Milestones, reactions, review comments on code and release asset files are not imported.

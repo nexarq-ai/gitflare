@@ -352,7 +352,7 @@ async function saveEverywhere(context: UrlImportContext, repository: Repository)
   await context.repositoryRecords(repository.id).saveRepository(repository);
 }
 
-async function dispatch(context: UrlImportContext, repository: Repository, authorization?: string): Promise<Response> {
+async function dispatch(context: UrlImportContext, repository: Repository, authorization?: string): Promise<Repository> {
   const job: UrlImportJob = { id: `${repository.id}:${repository.urlImport!.attempt}`, repositoryId: repository.id, workspaceId: context.principal.workspaceId, artifactName: repository.name, remote: repository.remote!, defaultBranch: repository.defaultBranch, source: parseImportUrl(repository.urlImport!.source), attempt: repository.urlImport!.attempt, authenticated: !!authorization, principal: context.principal };
   let started = false;
   try { started = (await context.env.SANDBOX!.getByName(`url-import:${repository.id}`).beginUrlImport(job, authorization)).started; }
@@ -360,9 +360,39 @@ async function dispatch(context: UrlImportContext, repository: Repository, autho
   if (!started) {
     const failed: Repository = { ...repository, urlImport: { ...repository.urlImport!, status: 'failed', phase: 'complete', error: { code: 'IMPORT_START_FAILED', message: 'The import job could not start. Retry the import.' }, updatedAt: new Date().toISOString() } };
     await saveEverywhere(context, failed);
-    return Response.json(failed, { status: 202 });
+    return failed;
   }
-  return Response.json(repository, { status: 202 });
+  return repository;
+}
+
+export async function createUrlImportRepository(context: UrlImportContext, key: string, input: UrlImportInput): Promise<Repository> {
+  const { principal, access, catalog, env } = context;
+  if (!env.ARTIFACTS || !env.SANDBOX) throw new ApiError(503, 'IMPORT_NOT_CONFIGURED', 'Connect Artifacts and the container sandbox before importing from a URL.');
+  await access.authorize(principal, 'manage');
+  if (principal.workspaceId === 'legacy' && /^w-[a-f0-9]{32}-/.test(input.name)) throw new ApiError(403, 'RESERVED_NAMESPACE', 'This repository prefix is reserved for isolated workspaces.');
+  await access.rateLimit(`url-import:${principal.userId}`, 20, 3_600_000);
+  const refs = await discoverSource(input.source, input.authorization, context.fetcher);
+  const name = await storageRepositoryName(principal.workspaceId, input.name);
+  const now = new Date().toISOString();
+  let repository = await catalog.createRepository(key, {
+    id: crypto.randomUUID(), workspaceId: principal.workspaceId, name, ...(name === input.name ? {} : { displayName: input.name }), description: input.description, defaultBranch: refs.defaultBranch, headSha: null, provider: 'artifacts', createdAt: now, updatedAt: now,
+    urlImport: { source: input.source.url, provider: input.source.provider, status: 'importing', phase: 'queued', attempt: 1, requestId: key, authenticated: !!input.authorization, startedAt: now, updatedAt: now },
+  });
+  repository = await catalog.getRepository(repository.id) ?? repository;
+  const pending = repository.urlImport;
+  if (!pending) throw new ApiError(409, 'IDEMPOTENCY_KEY_REUSED', 'This request key belongs to another repository creation.');
+  if (repository.remote) return repository;
+  if (!await catalog.claimProvision(repository.id)) throw new ApiError(409, 'PROVISIONING_PENDING', 'This repository is being provisioned or needs reconciliation after an interrupted request. Its creation will not be repeated.');
+  try {
+    const provisioned = await createArtifactsRepository(env, { name, description: input.description, defaultBranch: repository.defaultBranch });
+    repository = { ...repository, remote: provisioned.remote, updatedAt: new Date().toISOString() };
+  } catch {
+    const failed: Repository = { ...repository, urlImport: { ...pending, status: 'failed', phase: 'complete', error: { code: 'PROVISIONING_INTERRUPTED', message: 'Repository storage could not be created.' }, updatedAt: new Date().toISOString() } };
+    await saveEverywhere(context, failed);
+    throw new ApiError(503, 'PROVISIONING_INTERRUPTED', 'Repository provisioning did not finish. Inspect its Artifacts state before retrying to avoid creating duplicate resources.');
+  }
+  await saveEverywhere(context, repository);
+  return dispatch(context, repository, input.authorization);
 }
 
 export async function handleUrlImport(request: Request, url: URL, context: UrlImportContext): Promise<Response | null> {
@@ -397,32 +427,7 @@ export async function handleUrlImport(request: Request, url: URL, context: UrlIm
     const now = new Date().toISOString();
     const next: Repository = { ...repository, urlImport: { ...current, status: 'importing', phase: 'queued', attempt: current.attempt + 1, requestId: key, authenticated: !!authorization, startedAt: now, updatedAt: now, completedAt: undefined, error: undefined }, updatedAt: now };
     await saveEverywhere(context, next);
-    return dispatch(context, next, authorization);
+    return Response.json(await dispatch(context, next, authorization), { status: 202 });
   }
-  await access.authorize(principal, 'manage');
-  const input = urlImportInput(body, [url.hostname]);
-  if (principal.workspaceId === 'legacy' && /^w-[a-f0-9]{32}-/.test(input.name)) throw new ApiError(403, 'RESERVED_NAMESPACE', 'This repository prefix is reserved for isolated workspaces.');
-  await access.rateLimit(`url-import:${principal.userId}`, 20, 3_600_000);
-  const refs = await discoverSource(input.source, input.authorization, context.fetcher);
-  const name = await storageRepositoryName(principal.workspaceId, input.name);
-  const now = new Date().toISOString();
-  let repository = await catalog.createRepository(key, {
-    id: crypto.randomUUID(), workspaceId: principal.workspaceId, name, ...(name === input.name ? {} : { displayName: input.name }), description: input.description, defaultBranch: refs.defaultBranch, headSha: null, provider: 'artifacts', createdAt: now, updatedAt: now,
-    urlImport: { source: input.source.url, provider: input.source.provider, status: 'importing', phase: 'queued', attempt: 1, requestId: key, authenticated: !!input.authorization, startedAt: now, updatedAt: now },
-  });
-  repository = await catalog.getRepository(repository.id) ?? repository;
-  const pending = repository.urlImport;
-  if (!pending) throw new ApiError(409, 'IDEMPOTENCY_KEY_REUSED', 'This request key belongs to another repository creation.');
-  if (repository.remote) return Response.json(repository, { status: 202 });
-  if (!await catalog.claimProvision(repository.id)) throw new ApiError(409, 'PROVISIONING_PENDING', 'This repository is being provisioned or needs reconciliation after an interrupted request. Its creation will not be repeated.');
-  try {
-    const provisioned = await createArtifactsRepository(env, { name, description: input.description, defaultBranch: repository.defaultBranch });
-    repository = { ...repository, remote: provisioned.remote, updatedAt: new Date().toISOString() };
-  } catch {
-    const failed: Repository = { ...repository, urlImport: { ...pending, status: 'failed', phase: 'complete', error: { code: 'PROVISIONING_INTERRUPTED', message: 'Repository storage could not be created.' }, updatedAt: new Date().toISOString() } };
-    await saveEverywhere(context, failed);
-    throw new ApiError(503, 'PROVISIONING_INTERRUPTED', 'Repository provisioning did not finish. Inspect its Artifacts state before retrying to avoid creating duplicate resources.');
-  }
-  await saveEverywhere(context, repository);
-  return dispatch(context, repository, input.authorization);
+  return Response.json(await createUrlImportRepository(context, key, urlImportInput(body, [url.hostname])), { status: 202 });
 }
