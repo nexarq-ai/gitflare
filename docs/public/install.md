@@ -1,46 +1,44 @@
-# Install from GitHub in your Cloudflare account
+# Install on Cloudflare
 
-Gitflare's self-hosted core is licensed under Apache-2.0 and published in a public GitHub repository. The native Cloudflare Deploy button starts installation from that repository into your own Cloudflare account. It does not connect the hosted Gitflare service or use Nexarq account resources.
+Gitflare's self-hosted edition is Apache-2.0 and published at [nexarq-ai/gitflare](https://github.com/nexarq-ai/gitflare). The Deploy button installs it from that repository into your own Cloudflare account. Nothing connects to hosted Gitflare.
 
 [![Deploy Gitflare to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fnexarq-ai%2Fgitflare)
 
-The Cloudflare deployment flow uses a shared provisioning helper to prepare the main and preview Workers and account resources. A fresh-account install through the button has not yet been verified end to end.
+Status: a fresh install through the Deploy button has not yet been tested end to end. If something breaks, open an issue on the repository.
 
 ![Cloudflare deploys the GitHub source into your account; account-owned services and secrets are configured there, with preview deployed separately](gitflare-diagram:architecture)
 
 ## Before you start
 
-- A GitHub account that can access the public repository and a Cloudflare account with access to Workers, Artifacts, Containers, Durable Objects, Workflows, KV, and AI Gateway, subject to your plan and account entitlements.
-- The provisioning helper creates or reuses the `gitflare` AI Gateway and an Artifacts namespace named after your Worker (`gitflare` by default) in the account you select. It leaves existing resources and gateway provider settings unchanged.
-- A Cloudflare Build credential with Workers, Containers, Workflows, and KV access, plus **AI Gateway Read/Write** and **Artifacts Read/Edit**. The default Build credential may lack the last two permissions; grant them in Cloudflare dashboard under the Worker’s **Settings → Builds** before deployment. The helper stops at preflight if it receives a permissions error. Never paste the Build credential into Gitflare; the only token Gitflare accepts is the separate, narrowly scoped Worker Previews token described below.
-- A configured `gitflare` AI Gateway with provider credentials or the Gateway's Unified Billing enabled. Gitflare routes every runtime inference request through this Gateway. After sign-in, a Workspace Owner can enable compatible Gateway models or the supported Workers AI catalog model on **AI models**. The default is `anthropic/claude-sonnet-5-5` (Claude Sonnet 5.5); selected connections are pinned per task. A verified Cloudflare Email Sending sender is optional; configure your own `EMAIL_FROM` only if you want invitation emails.
+- A Cloudflare account with Workers, Artifacts, Containers, Durable Objects, Workflows, KV and AI Gateway. Containers require the Workers Paid plan.
+- A Build credential for the Worker with Workers, Containers, Workflows and KV access plus **AI Gateway Read/Write** and **Artifacts Read/Edit**. The default Build credential lacks the last two; grant them under the Worker's **Settings → Builds** before deploying, or provisioning stops at preflight with a permission error. Never paste this credential into Gitflare.
+- Provider credentials, or Unified Billing, on the `gitflare` AI Gateway. Every model call goes through it. Provisioning creates the Gateway and an Artifacts namespace named after your Worker (`gitflare` by default) if they do not exist, and leaves existing ones unchanged.
+- Optional: a verified Cloudflare Email Sending sender as `EMAIL_FROM`, if you want invitation emails.
 
-## Deploy the main Worker
+## Deploy
 
-1. Select **Deploy to Cloudflare** above and authorize Cloudflare to access the public GitHub repository. Review the repository and deployment settings before confirming.
-2. Choose your Cloudflare account and Worker name. In the deployment settings, provide `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` of at least 12 characters. These become the credentials for the first administrator; the first visit also asks for a display name and workspace name.
-3. Grant the Build credential the permissions listed above. Before changing Worker resources, provisioning checks permissions and creates or reuses the AI Gateway and Artifacts namespace. It then provisions OAuth KV, generates `AUTH_ENCRYPTION_KEY` if none exists, and deploys the main and separate preview Workers. The encryption key is retained across subsequent deployments; back it up securely and do not replace it casually.
-4. After provisioning, configure provider credentials or Unified Billing in the `gitflare` AI Gateway. Sign in and use **AI models** to add compatible provider/model identifiers or enable supported Workers AI. A text verification checks basic inference only; run an authorized proposal to verify coding and tool support. Configure `EMAIL_FROM` only if you have a verified sender and want invitation delivery. No provider key or sender is supplied for you.
-5. Open the main Worker URL, sign in with the same `ADMIN_EMAIL` and `ADMIN_PASSWORD`, provide the requested display and workspace names, then enroll a TOTP authenticator. Verify a current code and store the ten one-time recovery codes securely. Confirm the preview URL is separate from the main Worker URL.
-6. Turn on Worker Previews without a terminal: open **Settings → Cloudflare**. The **Previews and deploys on this installation** card (also shown as a first-run prompt on Settings) opens Cloudflare's token page with **Workers Scripts: Edit** and **D1: Edit** prefilled for your account. Create the token, paste it into the card, and Gitflare verifies it, creates the `<name>-previews` Worker if needed, and stores the token encrypted. It is never shown again. Without D1: Edit, previews of apps that bind D1 fail and the card says which permission is missing. Alternatively supply the token once as `GITFLARE_CLOUDFLARE_TOKEN` when deploying. This flow is unit-tested only.
+1. Choose **Deploy to Cloudflare** above and authorize Cloudflare to read the public repository.
+2. Pick the account and Worker name. Set `ADMIN_EMAIL` and an `ADMIN_PASSWORD` of at least 12 characters. These are the first administrator's credentials.
+3. Grant the Build credential the permissions listed above. Provisioning then checks them, creates or reuses the Gateway and Artifacts namespace, creates OAuth KV, generates `AUTH_ENCRYPTION_KEY` if none exists, and deploys the main Worker and a separate preview Worker. The key is kept on later deployments; back it up, because stored tokens and connections cannot be decrypted without it.
+4. Add provider credentials or Unified Billing to the `gitflare` Gateway. Sign in and, on **AI models**, add the Gateway or Workers AI models you want. **Verify** sends one small request; start a small Mission to confirm the model can use tools.
+5. Open the Worker URL, sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, enter a display name and workspace name, enroll a TOTP authenticator, and store the ten recovery codes. The preview URL is a different origin from the main one.
+6. Turn on Worker Previews from **Settings → Cloudflare → Previews and deploys on this installation**. The card opens Cloudflare's token page with **Workers Scripts: Edit** and **D1: Edit** prefilled; paste the token back and Gitflare verifies it, creates the `<name>-previews` Worker if needed, and stores it encrypted. Without D1: Edit, previews of apps that bind D1 fail and the card says so. You can instead pass the token once as `GITFLARE_CLOUDFLARE_TOKEN` when deploying.
 
-The repository includes `.dev.vars.example` with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` fields used by the deployment flow. `AUTH_ENCRYPTION_KEY` is generated by provisioning when absent and is not a prompt value. Keep all credentials in Cloudflare's secret manager or a protected local environment file. Never commit them, put them in an issue, or paste them into an AI prompt.
+`.dev.vars.example` lists `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Keep every credential in Cloudflare's secret store or a local env file that is never committed, put in an issue, or pasted into a prompt.
 
-## Alternate local installer
+## Install from a terminal instead
 
-If you prefer to configure the account from your terminal, download and verify the source archive and manifest from Gitflare's Source view, extract it, then run the included Node.js 24 installer:
+Download the source archive and manifest from the Source page, verify them, then with Node.js 24 and a Wrangler login:
 
 ```sh
 npm ci
 node scripts/install-self-hosted.mjs
 ```
 
-The installer uses your local Wrangler login and the same provisioning helper as the native button path. It writes account-specific main and preview configurations, and lets you review them before deployment. It provisions the gateway, namespace, OAuth KV, encryption key, runner, and both Workers through your account. Existing resources are reused, and existing encryption keys are preserved. Fresh-account installation remains unverified.
+The installer writes account-specific main and preview configurations for you to review, then provisions the Gateway, namespace, OAuth KV, encryption key, runner and both Workers. Existing resources and an existing encryption key are reused.
 
 ![Your account owns the Worker, Artifacts namespace, AI Gateway, runner image, OAuth storage, email sender, and separate preview origin](gitflare-diagram:trust)
 
-## Complete first sign-in
+## After the first sign-in
 
-Open the main Worker URL and complete setup using the same `ADMIN_EMAIL` and `ADMIN_PASSWORD` supplied during deployment, plus a display name and workspace name. Enroll a TOTP authenticator, verify a current code, and save the one-time recovery codes securely. Then test sign-in, user creation or invitation, repository browsing, and MCP discovery. See [workspace administration](admin.md), [repository workflow](repositories.md), and [MCP setup](mcp.md).
-
-The provisioning helper and account-owned configuration are implemented, but a fresh installation through the native button remains unverified. The default Cloudflare Build credential may not have all required scopes; grant them in dashboard settings if preflight reports a permission error. A successful Worker deployment alone does not verify model inference, live repository execution, invitation email delivery, preview compatibility, or OAuth client behavior. Review billing, logging, backups, and account entitlements in your own Cloudflare account.
+Create or invite a second user, browse a repository, and connect an MCP client. Then read [workspace administration](admin.md), [repositories and changes](repositories.md) and the [MCP guide](mcp.md). Billing, logs and backups are yours to watch in your Cloudflare account.

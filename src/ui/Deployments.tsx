@@ -227,7 +227,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
         {setup.account && !setup.account.connected && <p className="cf-muted">{setup.account.reason}</p>}
         {setup.errors.map((item) => <ErrorNotice key={item} message={item} />)}
         {detection.blocking?.map((item) => <ErrorNotice key={item} message={item} />)}
-        {!environments.length && !setup.errors.length && <p className="cf-muted">No Wrangler config was found at the default branch head.</p>}
+        {!environments.length && !setup.errors.length && <p className="cf-muted">No Wrangler config was found at the default stream's latest revision.</p>}
         <div className="cf-environments">
           {environments.map((environment) => (
             <div key={environment} className="cf-environment">
@@ -285,7 +285,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
           <>
             <p className="cf-state">{settings.enabled ? (production ? (settings.trigger === "auto" ? "Deploys automatically after staging (Owner opt-in)" : "Promote or deploy with Owner confirmation") : settings.trigger === "auto" ? "Deploys automatically on land" : "Deploy on land waits for confirmation") : "Manual only"}{settings.mode === "upload-only" ? " · upload versions only" : ""}</p>
             <dl className="cf-environment-facts">
-              <dt>Current commit</dt><dd>{view.current?.commitSha ? <Sha sha={view.current.commitSha} /> : "—"}{view.current ? ` · ${labels[view.current.status]}` : ""}</dd>
+              <dt>Current revision</dt><dd>{view.current?.commitSha ? <Sha sha={view.current.commitSha} /> : "—"}{view.current ? ` · ${labels[view.current.status]}` : ""}</dd>
               <dt>Workers</dt><dd>{view.current?.workers.length ? <ul className="cf-target-runs">{view.current.workers.map((worker) => <li key={worker.workerName}><strong>{worker.workerName}</strong> · <code>{worker.versionId.slice(0, 8)}</code>{worker.percentage < 100 ? ` · ${worker.percentage}%` : ""}<WorkerUrls urls={worker.urls} /></li>)}</ul> : "—"}</dd>
               <dt>Last change</dt><dd>{view.lastChange ? <>{labels[view.lastChange.status]} · {triggers[view.lastChange.trigger]} · {relativeTime(view.lastChange.updatedAt)}{view.lastChange.error ? ` · ${view.lastChange.error}` : ""}</> : "—"}</dd>
             </dl>
@@ -302,7 +302,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
               {promotions.map((promotable) => <Button key={promotable.from} variant="primary" size="base" disabled={!!busy || view.running || !view.canDeploy} loading={busy === `promote-${promotable.from}`} onClick={async () => { if (confirmWithOwner && !await confirmProduction("promote", promotable.commitSha, targets.map((target) => target.workerName), promotable.from)) return; void perform(`promote-${promotable.from}`, { action: "promote", deploymentId: promotable.deploymentId, ...(confirmWithOwner ? { confirm: true } : {}) }, "Promotion to production started.", environment); }}>Promote <span title={promotable.commitSha}>{promotable.commitSha.slice(0, 7)}</span> from {environmentLabel(promotable.from)}</Button>)}
               {repository.headSha && (deploying
                 ? <Button variant="primary" size="base" className="cf-deploying" disabled loading>Deploying…</Button>
-                : <Button variant="secondary" size="base" disabled={!!busy || !view.canDeploy || !chosen.length} title={repository.headSha} onClick={async () => { if (confirmWithOwner && !await confirmProduction("deploy", repository.headSha, chosen)) return; void perform(`${environment}-deploy`, deployBody, "Deployment started.", environment); }}>Deploy {repository.defaultBranch} ({repository.headSha.slice(0, 7)}){chosen.length < targets.length ? ` · ${chosen.length} of ${targets.length}` : ""}</Button>)}
+                : <Button variant="secondary" size="base" disabled={!!busy || !view.canDeploy || !chosen.length} title={view.canDeploy ? repository.headSha : "Needs the Owner or Deployer role"} onClick={async () => { if (confirmWithOwner && !await confirmProduction("deploy", repository.headSha, chosen)) return; void perform(`${environment}-deploy`, deployBody, "Deployment started.", environment); }}>Deploy {repository.defaultBranch} ({repository.headSha.slice(0, 7)}){chosen.length < targets.length ? ` · ${chosen.length} of ${targets.length}` : ""}</Button>)}
               {view.current && <Button variant="secondary" size="base" disabled={!!busy || !view.canDeploy} loading={busy === `${environment}-rollback`} onClick={async () => { if (production && !await confirmProduction("rollback", null, view.current?.workers.map((worker) => worker.workerName) ?? [])) return; void perform(`${environment}-rollback`, { action: "rollback", environment }, "Rollback started.", environment); }}>Roll back</Button>}
             </div>
           </>
@@ -317,7 +317,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
       <div className="panel-header"><h2>Deployments</h2></div>
       <div className="panel-body">
         <DeployProgressPanel ref={progressRef} items={progress} starting={starting} />
-        <p>Ship landed commits to this repository’s Workers with its Cloudflare connection. Every <code>env.&lt;name&gt;</code> block in the Wrangler configs is an environment, built as <code>wrangler deploy --env &lt;name&gt;</code> does; production uses the top level. Staging deploys on land, other environments wait for Deploy unless switched to automatic, and production is promoted from a successful deployment with an Owner’s confirmation. Requires the Owner or Deployer role.</p>
+        <p>Deploy landed revisions to this repository's Workers.<InfoTip label="deployments">Each env.&lt;name&gt; in your Wrangler config is an environment. Staging deploys on land. Production is promoted from a successful deploy and needs an Owner.</InfoTip></p>
         <DeployAccounts repositoryId={repository.id} environments={environmentNames} canManage={canManage} />
         {detectedPanel()}
         <div className="cf-environments">{environmentNames.map(environmentCard)}</div>
@@ -358,7 +358,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
         {confirmDialog}
         {state.deployments.length > 0 && (
           <table className="cf-deployments">
-            <thead><tr><th>Environment</th><th>Status</th><th>Commit</th><th>Workers</th><th>Traffic</th><th>When</th></tr></thead>
+            <thead><tr><th>Environment</th><th>Status</th><th>Revision</th><th>Workers</th><th>Traffic</th><th>When</th></tr></thead>
             <tbody>{state.deployments.map((item) => (
               <tr key={item.id} title={item.error}>
                 <td>{environmentLabel(item.environment)}</td>

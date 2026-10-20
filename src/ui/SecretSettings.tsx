@@ -144,7 +144,7 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
         <div className="secret-toggle" role="group" aria-label="Environment">
           {snapshot.environments.map((name) => <button key={name} type="button" aria-pressed={name === environment} onClick={() => { setEnvironment(name); setError(""); setRotating(null); }}>{environmentLabel(name)}{(snapshot.missing[name]?.length ?? 0) > 0 && <span className="secret-missing-count" aria-label={`${snapshot.missing[name].length} missing`}>{snapshot.missing[name].length}</span>}</button>)}
         </div>
-        {preview && <p className="branch-rule-note">Worker Previews receive only secrets linked here and allowed for previews. Use separate test credentials: production and staging links never reach previews, and coding agents never receive secrets.</p>}
+        {preview && <p className="branch-rule-note">Previews get only secrets allowed here.<InfoTip label="preview secrets">Use test credentials. Production and staging secrets never reach previews; agents never get secrets.</InfoTip></p>}
         {snapshot.requirementErrors.map((item) => <p key={item} className="cf-muted">{item}</p>)}
         {missing.length > 0 && <div className="error-notice" role="alert">{environmentLabel(environment)} deploys are blocked until {missing.join(", ")} {missing.length === 1 ? "is" : "are"} linked.</div>}
         {requirements.length > 0 && (

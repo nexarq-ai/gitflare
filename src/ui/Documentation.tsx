@@ -4,7 +4,7 @@ import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
-import { ArrowsOutIcon, BookOpenIcon, CheckIcon, CopyIcon, ArrowSquareOutIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowsOutIcon, BookOpenIcon, CheckIcon, CopyIcon, ArrowSquareOutIcon, PlugsConnectedIcon, XIcon } from "@phosphor-icons/react";
 import { request } from "./api";
 import { SESSION_CHECK_EVENT } from "./session-health";
 import { ErrorNotice } from "./components";
@@ -72,6 +72,12 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
   const [activeHeading, setActiveHeading] = useState("");
   const [guideQuery, setGuideQuery] = useState("");
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+
+  useEffect(() => {
+    const previous = window.document.title;
+    window.document.title = `${isIndex ? "Documentation" : document?.title ?? "Documentation"} · Gitflare`;
+    return () => { window.document.title = previous; };
+  }, [isIndex, document?.title]);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 760px)");
@@ -185,12 +191,11 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
         </aside>
         <article className="documentation-article" ref={article} aria-busy={loading}>
           {isIndex ? <>
-            <header className="documentation-index-header"><p className="documentation-eyebrow"><span />THE GITFLARE MANUAL</p><h1>A shared codebase.<br /><em>A clear way forward.</em></h1><p className="documentation-index-intro">From your first connection to your next revision.<br />Everything you need to work with Gitflare.</p><div className="documentation-index-actions"><a className="gfp-button gfp-button-primary" href="/docs/overview">Start with the basics <ArrowSquareOutIcon size={15} /></a><a className="gfp-button" href="/docs/install">Self-hosting guide <span aria-hidden="true">→</span></a></div></header>
-            <div className="documentation-guide-heading"><h2>Find your starting point</h2><span>{items.length ? `${String(items.length).padStart(2, "0")} ${publicMode ? "PUBLIC " : ""}GUIDES` : "LOADING GUIDES"}</span></div>
+            <header className="documentation-index-header"><p className="documentation-eyebrow"><span />DOCUMENTATION</p><h1>Gitflare<br /><em>documentation.</em></h1><p className="documentation-index-intro">How Missions, proposals and landing work. How to install, administer and connect an AI client.</p><div className="documentation-index-actions"><a className="gfp-button gfp-button-primary" href="/docs/overview">How Gitflare works <ArrowSquareOutIcon size={15} /></a><a className="gfp-button" href="/docs/install">Install on Cloudflare <span aria-hidden="true">→</span></a></div></header>
+            <div className="documentation-guide-heading"><h2>Guides</h2><span>{items.length ? `${String(items.length).padStart(2, "0")} ${publicMode ? "PUBLIC " : ""}GUIDES` : "LOADING GUIDES"}</span></div>
             {!items.length && !error && <RouteProgress />}
-            <div className="documentation-card-grid">{items.filter((item) => `${item.title} ${item.description}`.toLowerCase().includes(guideQuery.toLowerCase())).map((item, index) => <a className="documentation-card" href={`/docs/${item.id}`} key={item.id}><div className="documentation-card-top"><span>{String(index + 1).padStart(2, "0")} / {item.audience === "agent" ? "AGENT CONTEXT" : item.audience === "human" ? "THE WORKSPACE" : "REFERENCE"}</span><ArrowSquareOutIcon size={18} /></div><h3>{item.title}</h3><p>{item.description}</p><span className="documentation-card-bottom">Open guide <span aria-hidden="true">→</span></span></a>)}</div>
-            <section className="documentation-connect-banner" aria-labelledby="documentation-connect-title"><div className="documentation-connect-icon" aria-hidden="true">⌘</div><div><p className="documentation-eyebrow">YOUR CLIENT. YOUR WORKSPACE.</p><h2 id="documentation-connect-title">Bring your AI along.</h2><p>One authenticated MCP endpoint. The same permissions and review checks.</p><code>{new URL("/mcp", appOrigin()).href}</code></div><a href="/connectors">Connect a client <span aria-hidden="true">↗</span></a></section>
-            <p className="documentation-index-footnote">Guides from this installation's documentation library. Implementation and live verification are identified separately in each guide.</p>
+            <div className="documentation-card-grid">{items.filter((item) => `${item.title} ${item.description}`.toLowerCase().includes(guideQuery.toLowerCase())).map((item, index) => <a className="documentation-card" href={`/docs/${item.id}`} key={item.id}><div className="documentation-card-top"><span>{String(index + 1).padStart(2, "0")} / {item.audience === "agent" ? "FOR AI CLIENTS" : item.audience === "human" ? "FOR PEOPLE" : "REFERENCE"}</span><ArrowSquareOutIcon size={18} /></div><h3>{item.title}</h3><p>{item.description}</p><span className="documentation-card-bottom">Open guide <span aria-hidden="true">→</span></span></a>)}</div>
+            <section className="documentation-connect-banner" aria-labelledby="documentation-connect-title"><div className="documentation-connect-icon" aria-hidden="true"><PlugsConnectedIcon size={18} /></div><div><p className="documentation-eyebrow">MCP</p><h2 id="documentation-connect-title">Connect an AI client.</h2><p>Point any MCP client at this URL and sign in. It gets your role, nothing more.</p><code>{new URL("/mcp", appOrigin()).href}</code></div><a href="/connect">Setup by client <span aria-hidden="true">↗</span></a></section>
           </> : loading ? <p role="status">Opening document…</p> : document ? <>
             <nav className="documentation-breadcrumb" aria-label="Breadcrumb"><a href="/docs">Docs</a><span aria-hidden="true">/</span><span>{category}</span></nav>
             <header className="documentation-title"><div className="documentation-meta"><span>{category}</span><span>{readingMinutes} min read</span></div><h1>{document.title}</h1><p>{document.description}</p><div className="documentation-format-actions"><a href={`${publicMode ? "/api/public/docs" : "/api/docs"}/${encodeURIComponent(document.id)}.md`} target="_blank" rel="noopener noreferrer"><ArrowSquareOutIcon size={16} aria-hidden="true" />View Markdown</a><button type="button" onClick={() => void copyMarkdown()}><span aria-hidden="true">{copyState === "copied" ? <CheckIcon size={16} /> : <CopyIcon size={16} />}</span>{copyState === "copied" ? "Copied" : "Copy Markdown"}</button></div><span className="documentation-copy-status" role="status">{copyState === "copied" ? "Markdown copied to clipboard." : copyState === "failed" ? "Copy unavailable. Open View Markdown to copy the text." : ""}</span></header>

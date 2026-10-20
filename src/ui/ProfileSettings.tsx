@@ -75,7 +75,7 @@ export default function ProfileSettingsCard({ scope }: { scope: "user" | "worksp
   const header = <div className="panel-header"><h2 className="field-label">Public profile<InfoTip label="Public profile">{tip}</InfoTip></h2>{settings?.url && <a className="profile-settings-view" href={settings.url}>View<ArrowUpRightIcon size={13} aria-hidden="true" /></a>}</div>;
 
   if (loadError) return <section className="panel">{header}<div className="panel-body"><div className="form-error" role="alert">{loadError}</div></div></section>;
-  if (!settings || !draft) return <section className="panel">{header}<div className="panel-body"><p className="people-muted" role="status">Loading…</p></div></section>;
+  if (!settings || !draft) return <section className="panel">{header}<div className="panel-body"><p className="people-muted" role="status">Loading profile…</p></div></section>;
   if (!settings.handle) return <section className="panel">{header}<div className="panel-body"><p className="people-muted">Choose a handle first.</p></div></section>;
 
   if (!settings.canChange) return <section className="panel">{header}<div className="panel-body">
@@ -117,7 +117,7 @@ export default function ProfileSettingsCard({ scope }: { scope: "user" | "worksp
       </fieldset>
       <fieldset className="form-field">
         <legend className="profile-settings-label">Pinned repositories<small>{draft.pinned.length}/{PROFILE_LIMITS.pinned}</small></legend>
-        {repositories === null ? <p className="people-muted" role="status">Loading…</p>
+        {repositories === null ? <p className="people-muted" role="status">Loading repositories…</p>
           : !choices.length ? <p className="people-muted">No public repositories yet.</p>
           : <div className="check-chips" role="group" aria-label="Pinned repositories">{choices.map(name => {
             const on = draft.pinned.includes(name);

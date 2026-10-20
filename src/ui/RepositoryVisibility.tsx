@@ -82,7 +82,7 @@ export default function RepositoryVisibilityCard({ repository, onChanged, onNoti
     if (!state.handle) { setError("Set a handle for this workspace first."); await requireHandle(); return; }
     const ok = await confirm({
       title: `Make ${name} public?`,
-      description: "Anyone can read and clone its code, commits, streams and releases, read its issues, and open issues once signed in. Proposals, missions, secrets and previews stay private.",
+      description: "Anyone can read and clone its code, revisions, streams and checkpoints, read its issues, and open issues once signed in. Proposals, missions, secrets and previews stay private.",
       facts: [...(address ? [{ label: "Address", value: displayAddress(address), code: true }] : []), { label: "License", value: licenseLabel(state.license) }],
       tone: "danger",
       confirmLabel: "Make public",
@@ -102,7 +102,7 @@ export default function RepositoryVisibilityCard({ repository, onChanged, onNoti
     <div className="panel-header"><h2>Visibility</h2>{state && <span className={`visibility-pill${isPublic ? " is-public" : ""}`}>{isPublic ? <GlobeHemisphereWestIcon size={13} aria-hidden="true" /> : <LockSimpleIcon size={13} aria-hidden="true" />}{isPublic ? "Public" : "Private"}</span>}</div>
     <div className="panel-body">
       {loadError ? <div className="form-error" role="alert">{loadError}</div>
-        : !state ? <p className="people-muted" role="status">Loading…</p>
+        : !state ? <p className="people-muted" role="status">Loading visibility…</p>
         : <>
           <div className="visibility-row">
             <p className="visibility-state">{isPublic ? <>Public — anyone can read and clone.{address && <> <a href={address} target="_blank" rel="noopener noreferrer">{displayAddress(address)}</a></>}</> : "Private — only workspace members can see it."}</p>

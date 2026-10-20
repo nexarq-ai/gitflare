@@ -1,67 +1,70 @@
-# Connect an AI client through MCP
+# Connect through MCP
 
-Gitflare's MCP endpoint is `https://<your-worker-host>/mcp`. The Worker uses Cloudflare's official Agents SDK handler and routes tool operations through the same access checks as the UI. An MCP client receives the authority of the person who authorizes it; it does not receive a new Owner role.
+Gitflare's MCP endpoint is `https://<your-worker-host>/mcp`. It runs on Cloudflare's Agents SDK MCP handler and every tool goes through the same access checks as the UI. A client gets the authority of the person who authorizes it, never a new role.
 
 ![A remote MCP client completes OAuth authorization with the user, then calls bounded tools through the shared Gitflare authorization and API boundary](gitflare-diagram:mcp-connection)
 
-## OAuth connection
+## Connect with OAuth
 
-The deployed OAuth Provider supports dynamic client registration, authorization-code PKCE with S256, a browser consent page, short-lived access tokens, refresh tokens, and account-role checks on each request. A live protocol check completed client registration, consent, PKCE exchange, MCP initialization, and session revocation; the revoked session then returned 401. The consent page shows the client's claimed name/domain, redirect host, workspace, and role. No actual Claude or Codex application connection has been verified, so client-specific setup may differ.
+1. Add a remote MCP server in your client with your endpoint ending in `/mcp`.
+2. Start the client's sign-in. The consent page shows the client's name, its callback host, the workspace and your role. A client name is self-reported, so check the callback host.
+3. Choose an access level: **Read only** (`gitflare:read`), **Read and propose** (`gitflare:write`), **Approve and land** (`gitflare:land`) or **Full access** (`gitflare:admin`). Each level includes the ones before it and your workspace role still applies. A tool outside the level returns `INSUFFICIENT_SCOPE`.
+4. List repositories and read one file. Confirm the workspace is the one you meant before authorizing writes.
 
-To connect an OAuth-enabled deployment:
+Access tokens last one hour and refresh automatically; refresh tokens rotate on use. A connection lasts 30 days. Revoke it earlier in **Settings → Access → Account → Sessions**. Connections made before access levels existed keep full access until they expire.
 
-1. Add a remote MCP server in your AI client using your Gitflare endpoint ending in `/mcp`.
-2. Start the client's OAuth connection flow and review the browser consent page. Confirm the client identity and redirect destination carefully; a displayed client name may be self-reported.
-3. Sign in to the intended Gitflare workspace and choose an access level: **Read only** (`gitflare:read`), **Read and propose** (`gitflare:write`), **Approve and land** (`gitflare:land`) or **Full access** (`gitflare:admin`). Each level includes the ones before it, and your workspace role still applies. A tool outside the chosen level returns `INSUFFICIENT_SCOPE`.
-4. In the client, discover Gitflare tools, list repositories, and read a file at a returned commit SHA. Confirm the response belongs to the intended workspace before authorizing writes.
-
-Access tokens last one hour and refresh automatically; refresh tokens rotate on use. A connection lasts up to 30 days. Revoke it earlier from **Settings → Access → Account → Sessions**, which ends the client's grant. Connections approved before access levels existed keep full access until they expire. Client-specific steps for Claude, Claude Code, Codex, ChatGPT, Cursor, VS Code (GitHub Copilot agent mode), OpenCode, Windsurf, Zed and any other MCP client are on the `/connectors` page of your installation and on **Connect AI clients** in the workspace, with copyable configuration that already contains your server URL.
+Client-specific steps for Claude, Claude Code, Codex, ChatGPT, Cursor, VS Code, OpenCode, Windsurf, Zed and any other MCP client are on `/connect`, with configuration that already contains your server URL.
 
 ## Client callbacks
 
-During sign-in the client registers its callback addresses with Gitflare. Gitflare sends the authorization code only to:
+The authorization code is sent only to:
 
-- an `https` address, such as Claude's, ChatGPT's, `https://vscode.dev/redirect` or Cursor's web agents callback;
-- a loopback `http` address on your computer, such as Cursor's `http://localhost:8787/callback`, VS Code's `http://127.0.0.1:33418/`, OpenCode's `http://127.0.0.1:19876/mcp/oauth/callback` or Claude Code's local callback. The loopback port may differ from the registered one;
-- Cursor's app callback, `cursor://anysphere.cursor-mcp/oauth/callback` (and `cursor://anysphere.cursor-retrieval/oauth/<server>/callback` from older releases).
+- an `https` address, such as Claude's, ChatGPT's, `https://vscode.dev/redirect` or Cursor's web callback;
+- a loopback `http` address on your computer, such as `http://localhost:8787/callback` (Cursor), `http://127.0.0.1:33418/` (VS Code), `http://127.0.0.1:19876/mcp/oauth/callback` (OpenCode) or Claude Code's local callback, on any port;
+- Cursor's app callback, `cursor://anysphere.cursor-mcp/oauth/callback`.
 
-Other app-link schemes are refused, because any local app can claim one. Clients that cannot sign in with OAuth can use a personal MCP token, described below.
+Other app-link schemes are refused because any local app can claim one.
 
-For installations configured without OAuth storage, the server can also accept an account's personal bearer token. Use the client’s secure token store or environment-variable configuration; never paste the token into a prompt, repository file, or task assignment. The self-host installer is designed to create OAuth storage unless an existing namespace is supplied.
+Clients that cannot sign in with OAuth can use a personal MCP token from **Account → AI clients**. Keep it in the client's secure store or an environment variable; never paste it into a prompt, a repository file or a task.
 
-## Claude and ChatGPT directory listings
+## Claude and ChatGPT directories
 
-Gitflare is preparing listings in Anthropic's Claude connectors directory and OpenAI's plugin directory for ChatGPT and Codex. Neither listing is published yet. Until then, add the server by URL as a custom connector. A listed connector uses the same endpoint, sign-in and access levels.
+Gitflare is not yet listed in Anthropic's connectors directory or OpenAI's plugin directory. Until it is, add the server by URL as a custom connector. A listing will use the same endpoint, sign-in and access levels.
 
-- **Server URL**: the hosted listing will use `https://app.gitflare.io/mcp`. `https://gitflare.io` is the marketing site; its `/mcp`, `/oauth/*` and OAuth metadata URLs answer with a 308 redirect to `app.gitflare.io`, so configure clients with the app host. A self-hosted installation uses its own `/mcp` URL.
-- **Sign-in**: OAuth 2.1 with PKCE (S256). Clients identify themselves with a Client ID Metadata Document or dynamic client registration. Authorization responses carry `iss` (RFC 9207).
-- **Callbacks**: Gitflare accepts `https://claude.ai/api/mcp/auth_callback` (claude.ai, Claude Desktop, mobile and Cowork), Claude Code's loopback callback on any port, and ChatGPT's `https://chatgpt.com/connector_platform_oauth_redirect` or `https://chatgpt.com/connector/oauth/<callback-id>`.
-- **Tool metadata**: every tool has a title and explicit `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` annotations. Claude can run read-only tools without asking each time. It asks before any tool marked destructive: deleting, overwriting, cancelling, withdrawing an approval or changing a setting. Codex prompts only for tools that are not read-only when `default_tools_approval_mode = "writes"`.
-- **What you approve**: the consent page shows the client, its callback host, the workspace and your role. Choose the lowest access level that covers the task. A client cannot exceed your workspace role, and task coding agents never receive the client's credentials.
-- **Troubleshooting**: if a tool returns `INSUFFICIENT_SCOPE`, reconnect the client and choose a broader level. If it returns `RATE_LIMITED`, wait for the time given in the message. If sign-in fails with a revoked connection, remove the connector and add it again. Report problems through the [support page](/support).
+- **Server URL**: `https://app.gitflare.io/mcp` for hosted Gitflare. `https://gitflare.io/mcp` redirects there with a 308. A self-hosted installation uses its own `/mcp`.
+- **Sign-in**: OAuth 2.1 with PKCE (S256), Client ID Metadata Documents or dynamic registration, `iss` in authorization responses (RFC 9207).
+- **Callbacks**: `https://claude.ai/api/mcp/auth_callback` (claude.ai, Claude Desktop, mobile and Cowork), Claude Code's loopback on any port, and ChatGPT's `https://chatgpt.com/connector_platform_oauth_redirect` or `https://chatgpt.com/connector/oauth/<callback-id>`.
+- **Tool annotations**: every tool carries `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`. Claude runs read-only tools without asking and asks before anything destructive: deleting, overwriting, cancelling, withdrawing an approval or changing a setting. Codex asks only for non-read-only tools when `default_tools_approval_mode = "writes"`.
+- **Troubleshooting**: `INSUFFICIENT_SCOPE` means reconnect with a broader level. `RATE_LIMITED` gives a wait time. If sign-in fails on a revoked connection, remove the connector and add it again. Report other problems at `https://gitflare.io/support`.
 
-## Shared authority and limits
+## Tools
 
-The current source registers 107 tools, one for every product action in the UI, covering repository reads and imports, branches, issues, releases, model connections, Missions and race selection, task history, documentation, access administration, review, cancellation, preview, landing and deployment (source and unit-tested; the build journal records the latest live discovery count). Live checks passed for discovery, baseline repository and documentation reads, ZIP import with exact replay, and bounded text inference for Gateway Luna, Gateway `openai/gpt-4.1-mini` using compatible chat, native Anthropic Sonnet 5.5 and Workers AI Llama through Gateway `gitflare`. Coding Missions with a custom Gateway model and with native Anthropic landed exact checked candidates; approval and landing were owner-authorized agent actions, not independent human approval. A Workers AI Llama run produced a candidate that passed both check levels, but the requested guide was too incomplete for approval and was not landed.
+Every action in the UI has a tool, under the same authorization and state checks. Names are listed by your client's tool picker; the groups are:
 
-`gitflare_handles` and `gitflare_set_handle` read and set your account or workspace handle, `gitflare_visibility` and `gitflare_set_visibility` read and change whether a repository is public (Owner only, with the same license and handle checks as Settings), `gitflare_public_repository` reads any public repository as an anonymous visitor would, `gitflare_explore` and `gitflare_search` (repositories, file paths or people) read the public index, `gitflare_profile` and `gitflare_set_profile` read any profile and edit yours or the workspace's, and `gitflare_stars` and `gitflare_star` read and change your stars and watches. `gitflare_public_issues` and `gitflare_public_issue_action` read, open, comment on and report issues of any public repository with your own account; `gitflare_issue_labels`, `gitflare_manage_issue_labels`, `gitflare_issue_templates`, `gitflare_moderate_issue`, `gitflare_issue_blocks` and `gitflare_block_user` cover labels, templates, locking, hiding and blocking for people who triage. `gitflare_fork_repository` forks a public repository into the connection's workspace, `gitflare_fork_status` reads a fork's upstream link, sync state and storage, and `gitflare_sync_fork` fast-forwards its default branch from upstream. `gitflare_create_pull_request` with `target: upstream` proposes a fork's stream upstream, `gitflare_upstream_proposals` and `gitflare_update_upstream_proposal` read and update those proposals from the fork, and `gitflare_run_checks` is the maintainer's Run checks for a proposal from a fork.
+| Area | Tools |
+|---|---|
+| Repositories | create, list, import a ZIP or Git URL, read files at a revision, streams, checkpoints, skills (`gitflare_list_repository_skills`, `gitflare_create_repository_skill`, `gitflare_update_repository_skill`) |
+| Issues | list, open, comment, labels, templates, moderation (`gitflare_public_issues`, `gitflare_moderate_issue`, `gitflare_issue_labels`) |
+| Missions | `gitflare_create_mission` (`mode` is `combine` or `race`), start, cancel, retry, `gitflare_select_candidate` for races, attempt history |
+| Proposals and review | `gitflare_create_pull_request` (with `target: upstream` from a fork), `gitflare_review_mission`, approve, revoke approval, preview, land, `gitflare_run_checks` for a first-time contributor |
+| Public repositories | `gitflare_visibility`, `gitflare_public_repository`, `gitflare_explore`, `gitflare_search`, `gitflare_star`, `gitflare_fork_repository`, `gitflare_sync_fork`, `gitflare_upstream_proposals` |
+| Profiles | `gitflare_handles`, `gitflare_set_handle`, `gitflare_profile`, `gitflare_set_profile` |
+| Models | `gitflare_model_connections`; Owners: `gitflare_manage_model_connection` |
+| Cloudflare | `gitflare_cloudflare_project`, `gitflare_manage_cloudflare_project` (map up to 100 resources, usage, D1 migration plan and execute), `gitflare_deploy_access`, `gitflare_manage_deploy_access` |
+| Access | users, invitations, roles, teams, grants, sessions, audit log |
 
-`gitflare_deploy_access` reads whether each deploy environment (production, staging or any Wrangler environment) is behind Cloudflare Access, and `gitflare_manage_deploy_access` lets an Owner with admin access turn that protection on, change its allowed emails, email domains or Access group, or remove it. It needs the Access: Apps and Policies Write permission on the repository's Cloudflare connection. Removing protection deletes the Access application only when Gitflare created it. This is source and unit-tested; it has not been verified live.
+Public-repository, fork and profile tools work on hosted Gitflare only.
 
+A few details worth knowing:
 
+- Writes take an `idempotency_key`; replay the same request to reconcile an uncertain result.
+- Approval and landing name an exact candidate and base revision. A stale base returns `STALE_PROPOSAL_BASE`.
+- `gitflare_import_repository_archive` (Owner) accepts one base64 ZIP up to 5 MiB compressed, 500 files, 10 MiB expanded and 1 MiB per file, as the first revision of an empty repository. Secret, Git, dependency and build paths are skipped.
+- D1 migration planning records a SHA-256 checksum of the SQL. Review it before the destructive execute step, and inspect an unknown outcome instead of retrying.
+- Worker Builds triggers and Durable Object migrations are not available.
 
-`gitflare_create_mission` accepts `mode: "combine" | "race"` and defaults to combine. Race mode keeps each agent's candidate and check separate. After inspecting them, a reviewer with the required permission can call `gitflare_select_candidate` with the mission, run, current epoch, and idempotency key. Only the selected passing candidate can be approved and landed; selecting another candidate before approval clears prior approval. UI and MCP use the same authorization and state checks. This source version is deployed, but live discovery and race completion are pending. The first four-agent race attempt failed because npm-created untracked `node_modules/` was rejected as protected; the runner added a local `.git/info/exclude` entry and the retry is pending.
+## Two kinds of credentials
 
-`gitflare_create_repository_skill` and `gitflare_update_repository_skill` queue exact-base missions for `docs/skills/<lowercase-slug>/SKILL.md` (64 KiB maximum, required `name`/`description` frontmatter). They require repository contribute and execute permissions. A deterministic trusted editor applies the Markdown without a model call and runs repository checks. Exact candidate/base SHA checks and idempotency rules apply through MCP just as they do in the UI. Starting a Mission consumes cloud and model resources. An authenticated client can approve or land only when the user authorized the action and the current role and state checks allow it.
+A remote client acts as the person who authorized it. A coding agent started by a Mission gets its own scoped access to one fork. Never pass an Owner token, OAuth token, personal MCP token, deployment secret or setup token into an agent's sandbox.
 
-`gitflare_model_connections` reads enabled workspace models and Gateway status. Owner-only `gitflare_manage_model_connection` adds, removes, or verifies a model. Gateway entries use a provider/model identifier and support OpenAI Responses, compatible Chat Completions, and native Anthropic Messages for provider-prefixed `anthropic/` models; a documented Workers AI model is available through the configured Gateway binding. The Anthropic adapter disables extended thinking and maps native tool calls, results, and request replay. Every Gateway request sets `cf-aig-no-wholesale: true`. Keep provider credentials in AI Gateway `gitflare`; inference does not call providers directly or silently substitute another model. Gemini is not supported. Missions pin the selected enabled model per assignment. Verification is a bounded text inference and does not prove tool support. A bounded REST text check through the Anthropic adapter returned a successful response using 17 output tokens; Claude application connectivity, coding, and tool use remain unverified. Text inference was verified for the three earlier model configurations listed above. A custom Gateway model completed one live coding mission through checks and exact-candidate landing; the approval and landing were owner-authorized agent actions, not independent human approval. A Workers AI Llama run completed a real tool loop and produced a candidate that passed both check levels, but its one-line change did not adequately answer the task, so review blocked approval and it was not landed. This demonstrates tool use and candidate checks for that run, not successful delivery or general coding compatibility.
-
-`gitflare_repository_import_status` checks whether an Artifacts repository is empty or has only untouched setup files. Owner-only `gitflare_import_repository_archive` imports one base64 ZIP as the first code commit, with an exact expected HEAD and an idempotency key. It accepts up to 5 MiB compressed, 500 files, 10 MiB expanded, and 1 MiB per file. It preserves omitted platform setup files, skips common secret/Git/dependency/build paths, rejects unsafe paths and special files, and does not import Git history or overwrite established source. Replay the same request to reconcile an uncertain result. A live MCP import and replay returned the same commit; the resulting tree confirmed the intended files and omissions. A separate UI import passed ZIP selection, review, commit, and transition to mission creation.
-
-`gitflare_cloudflare_project` reads per-repository Cloudflare resources and `gitflare_manage_cloudflare_project` changes them. Its `map` action accepts up to 100 `{type, id, name, environment}` records. Resource types are `worker`, `d1`, `durable_object`, `container`, and `workflow`. Use IDs from the connected account catalog; only an Owner can change the map. `usage` returns per-resource Worker and D1 metrics; unsupported resource counters are returned as unavailable, not estimated. D1 migration planning requires a current commit and SQL migration path, and requires an explicit `databaseId` when multiple D1 resources are mapped. Review the SQL and checksum before the destructive execute action. An unknown outcome must be inspected, not automatically retried. Worker Builds triggers and Durable Object migrations are unavailable.
-
-The current development project map contains seven resources: two Workers, three Durable Object namespaces, one Workflow, and one Container, all labeled `development`. The UI save, resource API read (HTTP 200), and MCP `get` returned identical records. Only the dedicated Gitflare runner was associated from the three Container applications in the catalog. Container usage counters are unavailable. D1 migration was not exercised.
-
-External MCP clients and runtime task agents have different credentials. A remote Claude or Codex client acts as the human principal; a product coding task receives independently scoped access to its own fork. Never pass an Owner token, OAuth client token, personal MCP bearer, deployment secret, or setup token into a task sandbox.
-
-No actual Claude/Codex application OAuth session has been verified. A live three-agent fixture has completed individual and combined checks and landed at the exact approved commit; a separate two-agent fixture also passed, landed, and opened in a separate-origin preview. This does not establish client-specific compatibility or arbitrary repository readiness. See the [AI client guide](agents.md), [workspace administration](admin.md), and [repository workflow](repositories.md).
+See the [AI client guide](agents.md), [workspace administration](admin.md) and [repositories and changes](repositories.md).

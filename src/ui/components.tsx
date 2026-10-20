@@ -271,15 +271,14 @@ export function SetupSteps({
       label: "Create repository",
     },
     {
-      title: "Connect your execution tools",
-      description: "Link Git storage, a runner, and a model.",
+      title: "Connect Cloudflare and a model",
       done: ready,
       action: onSettings,
       label: "View connections",
     },
     {
-      title: "Give your agents a mission",
-      description: "Describe an outcome worth building.",
+      title: "Start a mission",
+      description: "Describe what should change.",
       done: workspace.missions.length > 0,
       action: onMission,
       label: "Create mission",
@@ -301,7 +300,7 @@ export function SetupSteps({
             </span>
             <div className="setup-step">
               <h3>{step.title}</h3>
-              <p>{step.description}</p>
+              {step.description && <p>{step.description}</p>}
               {!step.done && (
                 <button className="text-link" onClick={step.action}>
                   {step.label}
