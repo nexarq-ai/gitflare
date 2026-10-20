@@ -885,8 +885,8 @@
     },
     {
       "path": "src/ui/RepositoryVisibility.tsx",
-      "size": 6467,
-      "sha256": "207c43f702abccab9a12d696214d143569db5f9c04fa8de17718de3d391d5687"
+      "size": 6935,
+      "sha256": "4c6a82c1c9452b463f74a4f9ae8b6906335505e5a922501c2b407f5fc658490f"
     },
     {
       "path": "src/ui/RepositoryWork.tsx",
@@ -1360,8 +1360,8 @@
     },
     {
       "path": "src/worker/public-repositories.ts",
-      "size": 16828,
-      "sha256": "a8011f9b12d11c2384b289a94f86bcb94346fb9c9d41ced8f13887ca678d93df"
+      "size": 17259,
+      "sha256": "7dd7d7ab9af2fd5419257ca02f7b55de270ced1be394fd6864a4d113f00a3c9a"
     },
     {
       "path": "src/worker/rate-limits.ts",
