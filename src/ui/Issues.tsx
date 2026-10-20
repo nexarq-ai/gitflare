@@ -10,6 +10,7 @@ import { BranchCreated, createBranch } from "./BranchProtection";
 import { EmptyState, relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
 import InfoTip from "./InfoTip";
+import SubscribeButton from "./SubscribeButton";
 import TriageSuggestionPanel from "./TriageSuggestion";
 import { ImportedFrom, Labels, personLabel, ReasonDialog } from "./IssueLabels";
 import { navigate } from "./router";
@@ -264,6 +265,7 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
         <div className="issue-header">
           <div><h2>{issue.title} <span>#{issue.number}</span></h2><p><StateBadge state={issue.state} reason={issue.closedReason} />{issue.locked && <span className="issue-locked"><LockSimpleIcon size={13} weight="bold" />Locked · {reasonLabel(issue.locked.reason)}</span>} {name(issue.authorId)} opened this issue {relativeTime(issue.createdAt)} · {issue.commentCount} {issue.commentCount === 1 ? "comment" : "comments"} <ImportedFrom source={issue.importedFrom} /></p></div>
           <div className="issue-header-actions">
+            <SubscribeButton target={{ kind: "issue", repositoryId: repository.id, number: issue.number }} />
             {canContribute && issue.state === "open" && <Button className="ai-only" variant="primary" size="base" icon={SparkleIcon} onClick={() => navigate(`repository/${repository.id}/proposals/new?issue=${issue.number}`)}>Fix with AI</Button>}
             {canContribute && issue.state === "open" && <Button variant="secondary" size="base" icon={GitBranchIcon} loading={busy === "branch"} disabled={!!busy} onClick={() => void branch()}>Create stream</Button>}
             {canEdit && <Button variant="secondary" size="base" onClick={() => setEditing({ title: issue.title, body: issue.body })}>Edit</Button>}

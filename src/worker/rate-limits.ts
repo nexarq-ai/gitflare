@@ -1,7 +1,7 @@
 import type { Principal } from './security';
 
 export type RateLimitBinding = { limit(options: { key: string }): Promise<{ success: boolean }> };
-export type RateLimitEnv = { MCP_WRITE_RATE_LIMIT?: RateLimitBinding; MCP_READ_RATE_LIMIT?: RateLimitBinding; API_RATE_LIMIT?: RateLimitBinding; GIT_RATE_LIMIT?: RateLimitBinding; GIT_AUTH_FAILURE_RATE_LIMIT?: RateLimitBinding; PUBLIC_READ_RATE_LIMIT?: RateLimitBinding; PUBLIC_GIT_RATE_LIMIT?: RateLimitBinding; PUBLIC_WRITE_RATE_LIMIT?: RateLimitBinding; FORK_RATE_LIMIT?: RateLimitBinding; OUTSIDE_PROPOSAL_RATE_LIMIT?: RateLimitBinding; FIX_REQUEST_RATE_LIMIT?: RateLimitBinding; AGENT_ASSIST_RATE_LIMIT?: RateLimitBinding; GITHUB_IMPORT_RATE_LIMIT?: RateLimitBinding };
+export type RateLimitEnv = { MCP_WRITE_RATE_LIMIT?: RateLimitBinding; MCP_READ_RATE_LIMIT?: RateLimitBinding; API_RATE_LIMIT?: RateLimitBinding; GIT_RATE_LIMIT?: RateLimitBinding; GIT_AUTH_FAILURE_RATE_LIMIT?: RateLimitBinding; PUBLIC_READ_RATE_LIMIT?: RateLimitBinding; PUBLIC_GIT_RATE_LIMIT?: RateLimitBinding; PUBLIC_WRITE_RATE_LIMIT?: RateLimitBinding; FORK_RATE_LIMIT?: RateLimitBinding; OUTSIDE_PROPOSAL_RATE_LIMIT?: RateLimitBinding; FIX_REQUEST_RATE_LIMIT?: RateLimitBinding; AGENT_ASSIST_RATE_LIMIT?: RateLimitBinding; GITHUB_IMPORT_RATE_LIMIT?: RateLimitBinding; NOTIFICATION_RATE_LIMIT?: RateLimitBinding };
 export type RateLimitName = keyof RateLimitEnv;
 export type RateLimited = { limit: number; windowSeconds: number; retryAfterSeconds: number };
 
@@ -20,6 +20,7 @@ export const RATE_LIMITS: Record<RateLimitName, { namespaceId: string; limit: nu
   FIX_REQUEST_RATE_LIMIT: { namespaceId: '4140', limit: 3, period: 60 },
   AGENT_ASSIST_RATE_LIMIT: { namespaceId: '4141', limit: 10, period: 60 },
   GITHUB_IMPORT_RATE_LIMIT: { namespaceId: '4150', limit: 10, period: 60 },
+  NOTIFICATION_RATE_LIMIT: { namespaceId: '4130', limit: 30, period: 60 },
 };
 
 export function rateSubject(principal: Principal): string {

@@ -19,7 +19,7 @@ import "./branches.css";
 type DraftRule = BranchRuleInput & { id: string; checks: string };
 const landerRoles: LanderRole[] = ["Maintainer", "Owner"];
 const toDraft = (rule: BranchRuleInput): DraftRule => ({ ...rule, id: crypto.randomUUID(), checks: rule.requiredCheckNames.join("\n") });
-const toInput = ({ pattern, requirePullRequest, requiredApprovals, preventSelfApproval, restrictLanders, checks }: DraftRule): BranchRuleInput => ({ pattern: pattern.trim(), requirePullRequest, requiredApprovals, preventSelfApproval, restrictLanders, requiredCheckNames: checks.split(/[\n,]/).map(name => name.trim()).filter(Boolean) });
+const toInput = ({ pattern, requirePullRequest, requiredApprovals, preventSelfApproval, restrictLanders, codeowners, checks }: DraftRule): BranchRuleInput => ({ pattern: pattern.trim(), requirePullRequest, requiredApprovals, preventSelfApproval, restrictLanders, requiredCheckNames: checks.split(/[\n,]/).map(name => name.trim()).filter(Boolean), ...(codeowners ? { codeowners: true } : {}) });
 
 export const createBranch = (repositoryId: string, name: string, from: string | undefined, key: string) => request<BranchChangeResult>(`/api/repositories/${encodeURIComponent(repositoryId)}/branches`, { name, ...(from ? { from } : {}) }, key);
 
@@ -166,7 +166,7 @@ export default function BranchProtection({ repository, canManage: mayManage, dem
       <section className="panel branch-rules">
         <div className="panel-header">
           <h2>Protection rules</h2>
-          {canManage && <Button variant="secondary" size="base" icon={PlusIcon} disabled={busy || rules.length >= 20} onClick={() => setRules(current => [...current, toDraft({ pattern: "", requirePullRequest: true, requiredApprovals: 1, requiredCheckNames: [], preventSelfApproval: true, restrictLanders: [] })])}>Add rule</Button>}
+          {canManage && <Button variant="secondary" size="base" icon={PlusIcon} disabled={busy || rules.length >= 20} onClick={() => setRules(current => [...current, toDraft({ pattern: "", requirePullRequest: true, requiredApprovals: 1, requiredCheckNames: [], preventSelfApproval: true, restrictLanders: [], codeowners: false })])}>Add rule</Button>}
         </div>
         <div className="panel-body">
           {!protection.configured && <p className="branch-rule-note">No rules have been saved. The default rule below protects <code>{protection.defaultBranch}</code>.</p>}
@@ -182,6 +182,7 @@ export default function BranchProtection({ repository, canManage: mayManage, dem
               <div className="branch-rule-options">
                 <label><input type="checkbox" checked={rule.requirePullRequest} onChange={event => update(rule.id, { requirePullRequest: event.target.checked })} />Require a proposal before landing<InfoTip label="Require a proposal before landing">Changes reach this stream only through a proposal that passes its checks and approvals. Turn it off to allow direct pushes, for example on a scratch stream.</InfoTip></label>
                 <label><input type="checkbox" checked={rule.preventSelfApproval} onChange={event => update(rule.id, { preventSelfApproval: event.target.checked })} />Authors cannot approve their own changes<InfoTip label="Authors cannot approve their own changes">{selfApprovalNote(approvers ?? 2)}</InfoTip></label>
+                <label><input type="checkbox" checked={!!rule.codeowners} onChange={event => update(rule.id, { codeowners: event.target.checked })} />Require code owner approval<InfoTip label="Require code owner approval">Read from .gitflare/CODEOWNERS at the base commit; changes to owned paths need an approval from one of their owners.</InfoTip></label>
                 <span className="field-label">Who can land:<InfoTip label="Who can land">Only these roles may land into a matching stream. Leave both off to let anyone with land permission do it.</InfoTip></span>
                 {landerRoles.map(role => <label key={role}><input type="checkbox" checked={rule.restrictLanders.includes(role)} onChange={event => update(rule.id, { restrictLanders: event.target.checked ? [...rule.restrictLanders, role] : rule.restrictLanders.filter(item => item !== role) })} />{role}</label>)}
                 {!rule.restrictLanders.length && <small>Anyone with land permission</small>}

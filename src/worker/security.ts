@@ -35,6 +35,7 @@ interface Grant { id: string; workspaceId: string; subjectType: 'user' | 'team';
 interface Credential { id: string; workspaceId: string; userId: string; name: string; hash: string; repositoryId: string; missionId?: string; actions: Action[]; expiresAt: number; maxRequests: number; maxExecutions: number; requests: number; executions: number; revoked?: boolean; scope?: 'workspace-read' }
 interface Protection { requiredApprovals: number; requiredChecks: string[]; preventSelfApproval: boolean }
 export interface ReviewRule { requiredApprovals: number; requiredCheckNames: string[]; preventSelfApproval: boolean; restrictLanders: Role[] }
+export interface CodeownerRequirement { groups: string[][]; repositoryId: string; creatorId?: string }
 interface Audit { id: string; workspaceId: string; actorId: string; action: string; timestamp: string; resourceId?: string; sequence?: number }
 export interface SecurityOptions { EDITION?: 'hosted' | 'self-hosted'; SETUP_TOKEN?: string; ADMIN_EMAIL?: string; ADMIN_PASSWORD?: string; AUTH_ENCRYPTION_KEY?: string; INSTALLATION_OWNER_WORKSPACES?: string; SUPER_ADMIN_EMAILS?: string; DEMO_MODE?: string }
 export interface InstallationCredentialRecord { version: string; encrypted: string; accountId: string; workerName: string; permissions: string[]; missing: string[]; verifiedAt: string; setBy: string }
@@ -1027,6 +1028,24 @@ export class WorkspaceStore {
       return record;
     }, { full: false });
   }
+  async recipientAccess(userId: string, repositoryId: string, action: Action, allowPublic: boolean): Promise<'member' | 'public' | null> {
+    await this.load();
+    return this.guarded(() => {
+      if (!this.initialized) return null;
+      const member = this.data.member.get(userId);
+      if (member) return ROLE_ACTIONS[member.role].includes(action) && (!member.repositoryIds || member.repositoryIds.includes(repositoryId)) ? 'member' : null;
+      if (!allowPublic || action !== 'read' || this.options.EDITION === 'self-hosted' || this.options.DEMO_MODE === 'true') return null;
+      return this.data.visibility.get(repositoryId)?.visibility === 'public' && !this.data.block.has(blockKey(repositoryId, userId)) ? 'public' : null;
+    });
+  }
+  async membersWith(repositoryId: string, action: Action, limit = 50): Promise<string[]> {
+    await this.load();
+    return this.guarded(() => [...this.data.member.values()].filter(member => ROLE_ACTIONS[member.role].includes(action) && (!member.repositoryIds || member.repositoryIds.includes(repositoryId))).slice(0, limit).map(member => member.userId));
+  }
+  async approvers(p: Principal, entries: { missionId: string; candidateSha: string; baseSha: string; epoch: number }[]): Promise<string[][]> {
+    const context = await this.prepare(p);
+    return this.guarded(() => { this.validate(p, context); return entries.slice(0, 200).map(entry => this.data.approval.get(`${p.workspaceId}:${entry.missionId}:${entry.candidateSha}:${entry.baseSha}:${entry.epoch}`) ?? []); });
+  }
   async blocks(p: Principal, repositoryId: string): Promise<BlockRecord[]> {
     const context = await this.prepare(p);
     return this.guarded(() => { this.validate(p, context); if (p.credentialId || !this.authorityAllows(p, 'triage', 'repository', repositoryId)) fail(); return [...this.data.block.values()].filter(block => block.repositoryId === repositoryId).sort((a, b) => b.blockedAt.localeCompare(a.blockedAt)); });
@@ -1518,7 +1537,7 @@ export class WorkspaceStore {
     const context = await this.prepare(p);
     await this.change(() => { this.validate(p, context); for (const id of [...this.data.approval.keys()]) if (id.startsWith(`${p.workspaceId}:${missionId}:`)) this.data.approval.delete(id); });
   }
-  async recordApproval(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, checks: { name: string; status: string; candidateSha?: string }[], creatorId?: string, rule?: ReviewRule) {
+  async recordApproval(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, checks: { name: string; status: string; candidateSha?: string }[], creatorId?: string, rule?: ReviewRule, owners?: CodeownerRequirement) {
     const context = await this.prepare(p);
     return this.change(change => {
       this.validate(p, context); if (p.credentialId) fail();
@@ -1527,26 +1546,35 @@ export class WorkspaceStore {
       if (protection.requiredChecks.some(name => !checks.some(check => check.name === name && check.status === 'passed' && check.candidateSha === candidateSha))) throw new ApiError(409, 'CHECKS_REQUIRED', 'Required checks have not passed for this revision.');
       const id = `${p.workspaceId}:${missionId}:${candidateSha}:${baseSha}:${epoch}`; const reviewers = [...new Set([...(this.data.approval.get(id) ?? []), p.userId])];
       this.data.approval.set(id, reviewers); change.keys = [['approval', id]];
-      return { approvals: reviewers.length, requiredApprovals: protection.requiredApprovals, ready: reviewers.length >= protection.requiredApprovals };
+      const missingOwners = this.ownersMissing(p, missionId, reviewers, owners);
+      return { approvals: reviewers.length, requiredApprovals: protection.requiredApprovals, ready: reviewers.length >= protection.requiredApprovals && !missingOwners.length, ...(owners?.groups.length ? { missingOwners } : {}) };
     }, { full: false });
   }
-  async assertLand(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule) {
+  async assertLand(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule, owners?: CodeownerRequirement) {
     const context = await this.prepare(p);
-    await this.guarded(() => this.landable(p, context, missionId, candidateSha, baseSha, epoch, repositoryId, rule));
+    await this.guarded(() => this.landable(p, context, missionId, candidateSha, baseSha, epoch, repositoryId, rule, owners));
   }
-  private landable(p: Principal, context: Context, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule) {
+  private validReviewer(p: Principal, id: string, missionId: string, repositoryId?: string): boolean {
+    if (id === 'bootstrap-owner') return !this.record()?.bootstrapDisabled;
+    const member = this.data.member.get(id);
+    if (!member) return false;
+    if (ROLE_ACTIONS[member.role].includes('review') && (!member.repositoryIds || !!repositoryId && member.repositoryIds.includes(repositoryId))) return true;
+    return [...this.data.grant.values()].some(g => g.workspaceId === p.workspaceId && g.actions.includes('review') && (g.resourceType === 'stream' && g.resourceId === missionId || g.resourceType === 'repository' && g.resourceId === repositoryId) && (g.subjectType === 'user' ? g.subjectId === id : this.teamIncludes(g.subjectId, id)));
+  }
+  private ownersMissing(p: Principal, missionId: string, reviewers: string[], owners?: CodeownerRequirement): string[][] {
+    return (owners?.groups ?? []).filter(group => {
+      const eligible = group.filter(id => id !== owners!.creatorId && this.validReviewer(p, id, missionId, owners!.repositoryId));
+      return eligible.length > 0 && !eligible.some(id => reviewers.includes(id));
+    });
+  }
+  private landable(p: Principal, context: Context, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule, owners?: CodeownerRequirement) {
     this.validate(p, context);
     if (rule?.restrictLanders.length && !rule.restrictLanders.includes(p.role)) fail('LANDER_RESTRICTED', `Branch protection allows only ${rule.restrictLanders.join(' or ')} members to land this change.`);
     const required = rule ? rule.requiredApprovals : this.data.protection.get('rule')?.requiredApprovals ?? 1;
     const reviewers = this.data.approval.get(`${p.workspaceId}:${missionId}:${candidateSha}:${baseSha}:${epoch}`) ?? [];
-    const valid = reviewers.filter(id => {
-      if (id === 'bootstrap-owner') return !this.record()?.bootstrapDisabled;
-      const member = this.data.member.get(id);
-      if (!member) return false;
-      if (ROLE_ACTIONS[member.role].includes('review') && (!member.repositoryIds || !!repositoryId && member.repositoryIds.includes(repositoryId))) return true;
-      return [...this.data.grant.values()].some(g => g.workspaceId === p.workspaceId && g.actions.includes('review') && (g.resourceType === 'stream' && g.resourceId === missionId || g.resourceType === 'repository' && g.resourceId === repositoryId) && (g.subjectType === 'user' ? g.subjectId === id : this.teamIncludes(g.subjectId, id)));
-    });
+    const valid = reviewers.filter(id => this.validReviewer(p, id, missionId, repositoryId));
     if (valid.length < required) fail('APPROVALS_REQUIRED', 'This revision needs additional current approvals.');
+    if (this.ownersMissing(p, missionId, valid, owners).length) fail('CODEOWNER_APPROVAL_REQUIRED', 'A code owner of the changed files must approve this revision.');
   }
 }
 function invitationScope(p: Principal, body: Record<string, unknown>): InvitationScope | undefined {
@@ -1561,7 +1589,7 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
 const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing', 'publicListed', 'followState', 'follow', 'follows', 'repositoryStats', 'profile', 'setProfile', 'profiles', 'userByHandle', 'standing', 'limitAllowed', 'addReport', 'reports', 'dismissReport']);
-const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand', 'visibility', 'setVisibility', 'blocks', 'setBlock']);
+const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand', 'visibility', 'setVisibility', 'blocks', 'setBlock', 'recipientAccess', 'membersWith', 'approvers']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
     get: (_target, op) => typeof op !== 'string' || op === 'then' ? undefined : async (...args: unknown[]) => {
@@ -2217,8 +2245,21 @@ export class SecurityService {
     return { token: value, session };
   }
   async logout(p: Principal) { if (p.sessionId) await this.action(p, 'session-revoke', { id: p.sessionId }); }
-  recordApproval(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, checks: { name: string; status: string; candidateSha?: string }[], creatorId?: string, rule?: ReviewRule) { return this.shard(p.workspaceId).recordApproval(p, missionId, candidateSha, baseSha, epoch, checks, creatorId, rule); }
-  assertLand(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule) { return this.shard(p.workspaceId).assertLand(p, missionId, candidateSha, baseSha, epoch, repositoryId, rule); }
+  recordApproval(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, checks: { name: string; status: string; candidateSha?: string }[], creatorId?: string, rule?: ReviewRule, owners?: CodeownerRequirement) { return this.shard(p.workspaceId).recordApproval(p, missionId, candidateSha, baseSha, epoch, checks, creatorId, rule, owners); }
+  assertLand(p: Principal, missionId: string, candidateSha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule, owners?: CodeownerRequirement) { return this.shard(p.workspaceId).assertLand(p, missionId, candidateSha, baseSha, epoch, repositoryId, rule, owners); }
+  approvers(p: Principal, entries: { missionId: string; candidateSha: string; baseSha: string; epoch: number }[]): Promise<string[][]> { return entries.length ? this.shard(p.workspaceId).approvers(p, entries) : Promise.resolve([]); }
+  recipientAccess(userId: string, workspaceId: string, repositoryId: string, action: Action = 'read', allowPublic = false): Promise<'member' | 'public' | null> { return this.shard(workspaceId).recipientAccess(userId, repositoryId, action, allowPublic); }
+  membersWith(workspaceId: string, repositoryId: string, action: Action, limit = 50): Promise<string[]> { return this.shard(workspaceId).membersWith(repositoryId, action, limit); }
+  async notificationRecipient(userId: string): Promise<{ email: string; name: string; verified: boolean } | null> {
+    const user = await this.identity().account(userId);
+    if (!user || user.machine || user.disabled || !user.email) return null;
+    return { email: user.email, name: user.name, verified: user.emailVerified === true };
+  }
+  async userIdsByHandles(handles: string[]): Promise<Record<string, string>> {
+    const unique = [...new Set(handles.map(handle => handle.toLowerCase()))].slice(0, 40);
+    const ids = await Promise.all(unique.map(handle => this.identity().userByHandle(handle).catch(() => null)));
+    return Object.fromEntries(unique.flatMap((handle, index) => ids[index] ? [[handle, ids[index]!]] : []));
+  }
 }
 
 const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authenticateSession', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'account', 'revokeOtherSessions', 'workspaces', 'locateRepository', 'switchWorkspace', 'createWorkspace', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
@@ -2304,6 +2345,6 @@ export class GitflareSecurity extends DurableObject<AppEnv> {
   auditRepositoryChange(p: Principal, action: string, repositoryId: string) { return this.service.auditRepositoryChange(p, action, repositoryId); }
   clientSession(p: Principal, client: string, lifetimeMs: number) { return this.service.clientSession(p, client, lifetimeMs); }
   logout(p: Principal) { return this.service.logout(p); }
-  recordApproval(p: Principal, missionId: string, sha: string, baseSha: string, epoch: number, checks: { name: string; status: string; candidateSha?: string }[], creatorId?: string, rule?: ReviewRule) { return this.service.recordApproval(p, missionId, sha, baseSha, epoch, checks, creatorId, rule); }
-  assertLand(p: Principal, missionId: string, sha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule) { return this.service.assertLand(p, missionId, sha, baseSha, epoch, repositoryId, rule); }
+  recordApproval(p: Principal, missionId: string, sha: string, baseSha: string, epoch: number, checks: { name: string; status: string; candidateSha?: string }[], creatorId?: string, rule?: ReviewRule, owners?: CodeownerRequirement) { return this.service.recordApproval(p, missionId, sha, baseSha, epoch, checks, creatorId, rule, owners); }
+  assertLand(p: Principal, missionId: string, sha: string, baseSha: string, epoch: number, repositoryId?: string, rule?: ReviewRule, owners?: CodeownerRequirement) { return this.service.assertLand(p, missionId, sha, baseSha, epoch, repositoryId, rule, owners); }
 }

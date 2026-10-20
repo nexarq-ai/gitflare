@@ -164,7 +164,7 @@ export function isPublicDocumentationRoute(route: string): boolean {
 }
 
 export function isKnownAppRoute(route: string): boolean {
-  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "admin", "account/profile", "account/security", "account/sessions", "account/clients", "proposals/new", "import/github", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
+  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "admin", "inbox", "account/profile", "account/security", "account/sessions", "account/clients", "account/notifications", "proposals/new", "import/github", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
     || /^settings(?:\/(?:people|cloudflare|models|audit))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
@@ -194,7 +194,7 @@ export const REPOSITORY_SETTINGS_PAGES = [
 ] as const;
 
 export function keepsRouteAcrossWorkspaces(route: string): boolean {
-  return /^(?:settings(?:\/|$)|account\/|docs(?:\/|$)|admin$)/.test(route) || ["overview", "repositories", "missions", "activity"].includes(route);
+  return /^(?:settings(?:\/|$)|account\/|docs(?:\/|$)|admin$)/.test(route) || ["overview", "repositories", "missions", "activity", "inbox"].includes(route);
 }
 
 export function isSiteRoute(route: string): boolean {

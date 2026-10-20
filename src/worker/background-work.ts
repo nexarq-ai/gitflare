@@ -3,6 +3,7 @@ import { securityClient, type Principal } from './security';
 import type { AppEnv } from './env';
 import { repositoryHead } from './artifacts';
 import { landingRule } from './branch-protection';
+import { afterLanding, codeownerRequirement, deployFailed } from './proposal-notifications';
 import { LANDING_STEP_MS, PREVIEW_STEP_MS } from './budgets';
 import { catalogName } from './capacity';
 import { PREVIEW_HEARTBEAT_MS, type PreviewHost, type StoppedPreview, type WorkerPreviewRecord } from './coordinator';
@@ -79,7 +80,8 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
         beforePush: (landedSha) => coordinator.claimIntegrationPush(missionId, epoch, claimId, landedSha),
         assertAuthority: async () => {
           await access.check(principal, 'land', 'repository', repositoryId, missionId);
-          await access.assertLand(principal, missionId, candidateSha, baseSha, epoch, repositoryId, landingRule(await coordinator.getBranchProtection(), repository.defaultBranch));
+          const rule = landingRule(await coordinator.getBranchProtection(), repository.defaultBranch);
+          await access.assertLand(principal, missionId, candidateSha, baseSha, epoch, repositoryId, rule, await codeownerRequirement(env, access, repository, mission, rule));
         },
       });
       return { kind: 'pushed', sha: result.sha };
@@ -130,6 +132,10 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
   });
   await step.do('refresh public index', { retries: { limit: 3, delay: '10 seconds', backoff: 'exponential' }, timeout: '5 minutes' }, async () => {
     await refreshPublicRepository(env, repositoryId);
+    return true;
+  });
+  await step.do('notify participants of landing', { retries: { limit: 2, delay: '10 seconds', backoff: 'exponential' }, timeout: '2 minutes' }, async () => {
+    await afterLanding(env, repositoryId, missionId, principal.userId).catch(() => undefined);
     return true;
   });
 }
@@ -260,6 +266,16 @@ async function policyBase(env: AppEnv, repositoryName: string, record: Deploymen
 export async function deployLandedWorker(env: AppEnv, params: DeployParams, step: StepRunner & { sleep(name: string, duration: number): Promise<void> }): Promise<void> {
   const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${params.repositoryId}`);
   const access = securityClient(env);
+  try { await deploySteps(env, params, step, coordinator, access); }
+  finally {
+    await step.do('notify failed deploy', { retries: { limit: 2, delay: '10 seconds', backoff: 'exponential' }, timeout: '1 minute' }, async () => {
+      await deployFailed(env, params.repositoryId, params.deploymentId, params.principal.userId).catch(() => undefined);
+      return true;
+    }).catch(() => undefined);
+  }
+}
+
+async function deploySteps(env: AppEnv, params: DeployParams, step: StepRunner & { sleep(name: string, duration: number): Promise<void> }, coordinator: ReturnType<AppEnv['GITFLARE_COORDINATOR']['getByName']>, access: ReturnType<typeof securityClient>): Promise<void> {
   await runDeployment(params, step, {
     coordinator,
     self: selfWorker(env),

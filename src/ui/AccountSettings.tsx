@@ -10,6 +10,7 @@ import { ErrorNotice } from "./components";
 import DemoFeaturePanel from "./DemoFeaturePanel";
 import { UserHandleCard } from "./HandleSettings";
 import ProfileSettingsCard from "./ProfileSettings";
+import NotificationSettings from "./NotificationSettings";
 import { needsRecentSignIn, signInAgain } from "./reauth";
 import { accountSections, browserSessions, clientSessions, describeSession, tokenSessions, type AccountSection } from "./account-data";
 import "./account-settings.css";
@@ -28,11 +29,12 @@ export default function AccountSettings({ section, config, onChanged, onSwitchWo
     security: ["Security", "How you sign in."],
     sessions: ["Sessions", "Browsers signed in to your account."],
     clients: ["AI clients", "AI clients and personal tokens that act as you."],
+    notifications: ["Notifications", "Your inbox is always on. Choose what also reaches your email."],
   };
   return <SettingsLayout title="Your account" items={accountSections.map(item => ({ href: `/account/${item.id}`, label: item.label, current: item.id === section, ai: item.id === "clients" }))}>
     <div className="page-heading"><div><h1>{titles[section][0]}</h1><p>{titles[section][1]}</p></div></div>
     {error && <ErrorNotice message={error} onRetry={() => void load()} />}
-    {!data ? !error && <RouteProgress /> : section === "profile" ? <Profile data={data} config={config} onSwitchWorkspace={onSwitchWorkspace} onChanged={async () => { await load(); await onChanged(); }} />
+    {section === "notifications" ? <NotificationSettings /> : !data ? !error && <RouteProgress /> : section === "profile" ? <Profile data={data} config={config} onSwitchWorkspace={onSwitchWorkspace} onChanged={async () => { await load(); await onChanged(); }} />
       : config.demo && (section === "security" || section === "sessions") ? <DemoFeaturePanel feature="account-security" />
       : section === "security" ? <Security data={data} config={config} onChanged={async () => { await load(); await onChanged(); }} />
       : section === "sessions" ? <Sessions data={data} reload={load} onSignOut={onSignOut} />
