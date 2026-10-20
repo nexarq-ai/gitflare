@@ -1320,8 +1320,8 @@
     },
     {
       "path": "src/worker/public-git.ts",
-      "size": 3320,
-      "sha256": "ea22f0a64b10c436a2110eb583a6ab5b1288641b279c8a0e049a972a5821781a"
+      "size": 3326,
+      "sha256": "829cc76a84d860b12d2aad43d2625e263acb121b92c65df5d72ff32b84b09ac3"
     },
     {
       "path": "src/worker/public-pages.ts",

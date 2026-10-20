@@ -34,7 +34,7 @@ export async function handlePublicGit(request: Request, env: AppEnv, deps: GitHt
     if (target && 'redirect' in target) return new Response(null, { status: kind === 'refs' ? 302 : 308, headers: { Location: `/${target.redirect}/${name}.git/${operation}${url.search}`, 'Cache-Control': 'no-store' } });
     if (target) {
       using source = await env.ARTIFACTS!.get(target.repository.name);
-      return serveUploadPack(source, target.repository, request, kind, deps.fetcher ?? fetch);
+      return await serveUploadPack(source, target.repository, request, kind, deps.fetcher ?? fetch);
     }
     if (!request.headers.get('Authorization')) return text(404, NOT_FOUND);
   } else if (!request.headers.get('Authorization')) return text(401, 'Push with a Gitflare personal token as the password. Create one in Account → AI clients.', GIT_CHALLENGE);
