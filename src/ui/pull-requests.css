@@ -57,3 +57,24 @@
 @media (max-width: 700px) {
   .pull-create-branches, .branch-rule-row { grid-template-columns: 1fr; }
 }
+.pull-outside { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); color: var(--gf-color-text-secondary); font-size: 11px; }
+.upstream-proposals { margin-bottom: 16px; }
+.upstream-proposals .field-label { display: inline-flex; align-items: center; gap: 6px; }
+.upstream-proposal-list { margin: 0; padding: 0; list-style: none; }
+.upstream-proposal-list > li { border-top: 1px solid var(--gf-color-border); }
+.upstream-proposal-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 16px; }
+.upstream-proposal-toggle { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: var(--gf-color-text); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.upstream-proposal-toggle strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.upstream-proposal-row .pull-branches { flex-basis: 100%; padding-left: 19px; font-size: 12px; }
+.upstream-proposal-row .pull-branches a { display: inline-flex; align-items: center; gap: 3px; color: var(--gf-color-info); }
+.upstream-proposal-actions { display: flex; gap: 6px; margin-left: auto; }
+.upstream-proposal-detail { display: grid; gap: 10px; padding: 0 16px 14px 35px; font-size: 13px; color: var(--gf-color-text-secondary); }
+.upstream-proposal-detail p { margin: 0; }
+.upstream-proposal-reviews { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.upstream-proposal-reviews li { padding: 8px 10px; border: 1px solid var(--gf-color-border); border-radius: 8px; }
+.upstream-proposal-reviews li.is-resolved { opacity: .6; }
+.upstream-proposal-reviews span { font-size: 11px; color: var(--gf-color-text-tertiary); }
+.upstream-proposal-reviews p { color: var(--gf-color-text); white-space: pre-wrap; }
+.upstream-proposal-muted { color: var(--gf-color-text-tertiary); }
+@media (max-width: 600px) { .upstream-proposal-row { padding: 12px; } .upstream-proposal-actions { width: 100%; margin-left: 0; } .upstream-proposal-detail { padding: 0 12px 12px; } }
+.pull-target { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }

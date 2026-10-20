@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
+import type { AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, OutsideChecksGate, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependenciesAcknowledged, assertDependencyApprover } from './dependency-changes';
 import { activeLandingMessage } from '../shared/commit-message';
@@ -33,6 +33,8 @@ import { storedPreviewSettings, type PreviewSettings } from './preview-settings'
 import { applyMirrorChange, type MirrorChange, type MirrorChangeResult, type StoredMirror } from './github-mirror';
 
 interface Receipt<T> { fingerprint: string; result: T }
+export interface ContributorStanding { userId: string; landed: number; firstProposalAt: string; vouchedBy?: Principal }
+export interface OutgoingProposal { missionId: string; upstreamWorkspaceId: string; upstreamRepositoryId: string; branch: string; createdAt: string }
 export interface MissionSummaryCache { repositoryId: string; summaries: MissionSummary[]; cachedAt: string }
 export interface IntegrationClaim { claimId?: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimedAt?: number; phase?: 'preparing' | 'pushing'; landedSha?: string }
 const INTEGRATION_PREPARATION_MS = 600_000;
@@ -840,7 +842,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       if (revertChange && (!/^[a-f0-9]{40}$/.test(revertChange.landedSha) || !/^[a-f0-9]{40}$/.test(revertChange.previousSha))) throw new ApiError(400, 'INVALID_COMMIT', 'A revert needs the exact landed and previous commits.');
       if (input.issueNumber !== undefined && !readIssue(this.store, input.issueNumber)) throw new ApiError(404, 'ISSUE_NOT_FOUND', `Issue #${input.issueNumber} could not be found in this repository.`);
       const branchChange = input.branchChange ? { ...input.branchChange, branch: branchName(input.branchChange.branch), targetBranch: repository.defaultBranch } : undefined;
-      if (branchChange && (!/^[a-f0-9]{40}$/.test(branchChange.headSha) || branchChange.branch === repository.defaultBranch)) throw new ApiError(400, 'INVALID_PULL_REQUEST', 'A pull request needs the exact head commit of a branch other than the default branch.');
+      if (branchChange && (!/^[a-f0-9]{40}$/.test(branchChange.headSha) || (!branchChange.source && branchChange.branch === repository.defaultBranch))) throw new ApiError(400, 'INVALID_PULL_REQUEST', 'A pull request needs the exact head commit of a branch other than the default branch.');
       const race = input.mode === 'race' && !revertChange && !branchChange;
       const tasks = skillChange ? [{ name: 'Skill editor', role: 'Trusted skill editor', task: `Apply exactly the submitted Markdown to ${skillChange.path}.` }] : branchChange ? [{ name: 'Branch merger', role: 'Trusted branch merger', task: `Merge ${branchChange.branch} at ${branchChange.headSha.slice(0, 12)} into ${branchChange.targetBranch}, fast-forwarding when possible.` }] : revertChange ? [{ name: 'Revert editor', role: 'Trusted revert editor', task: `Undo exactly the change landed by "${revertChange.title}" (${revertChange.previousSha.slice(0, 12)} to ${revertChange.landedSha.slice(0, 12)}) with a new revert commit.` }] : input.tasks ?? (race ? [
         { name: 'Candidate A', role: 'Independent attempt', task: 'Complete the whole mission with the smallest change that satisfies every criterion.' },
@@ -917,7 +919,8 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       if (mission.skillChange && repository?.headSha !== mission.skillChange.baseSha) throw new ApiError(409, 'STALE_SKILL_BASE', 'The repository changed. Refresh the skill and submit a new edit proposal.');
       if (mission.branchChange?.closedAt) throw new ApiError(409, 'PULL_REQUEST_CLOSED', 'Reopen this pull request before running its checks.');
       if (mission.epoch > 0) this.archive(mission, 'retry');
-      if (authorization) mission.authorization = { ...authorization, creatorId: mission.authorization?.creatorId ?? authorization.creatorId };
+      if (authorization) mission.authorization = { ...authorization, creatorId: mission.authorization?.creatorId ?? mission.branchChange?.source?.authorId ?? authorization.creatorId };
+      if (mission.branchChange?.gate) { const { gate: _gate, ...open } = mission.branchChange; mission.branchChange = open; }
       mission.status = 'queued';
       mission.epoch += 1;
       mission.baseSha = repository?.headSha ?? null;
@@ -1356,7 +1359,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  beginIntegration(key: string, id: string, candidateSha: string, baseSha: string, commitMessage?: string, actorId = 'workspace-owner'): { mission: Mission; claimed: boolean; claimId?: string; landedSha?: string } {
+  beginIntegration(key: string, id: string, candidateSha: string, baseSha: string, commitMessage?: string, actorId = 'workspace-owner', vouch?: Principal): { mission: Mission; claimed: boolean; claimId?: string; landedSha?: string } {
     return this.ctx.storage.transactionSync(() => {
       const fingerprint = JSON.stringify(['integrate', id, candidateSha, baseSha, ...(commitMessage === undefined ? [] : [commitMessage])]);
       const receipt = this.store.get<Receipt<boolean>>(`request:${key}`);
@@ -1382,6 +1385,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const claimId = crypto.randomUUID();
       this.store.put('integration:claim', { claimId, missionId: id, epoch: mission.epoch, candidateSha, baseSha, claimedAt: Date.now(), phase: 'preparing' });
       this.store.put(`request:${key}`, { fingerprint, result: true });
+      if (vouch && mission.branchChange?.source) this.store.put(`vouch:${id}`, vouch);
       mission.status = 'integrating';
       delete mission.error;
       if (commitMessage !== undefined) mission.landingMessage = { message: commitMessage, candidateSha, baseSha, epoch: mission.epoch, setBy: actorId, setAt: new Date().toISOString() };
@@ -1405,9 +1409,46 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       this.saveMission(mission, sha === claim.candidateSha ? `Verified canonical branch at approved commit ${sha.slice(0, 12)}.` : `Verified canonical branch at commit ${sha.slice(0, 12)}, which carries the approved tree of ${claim.candidateSha.slice(0, 12)} with the chosen commit message.`, 'success');
       this.archive(mission, 'integrated');
       this.recordLinkedIssues(mission, sha);
+      this.recordContributorLanding(mission);
       return mission;
     });
   }
+
+  contributorStanding(userId: string): ContributorStanding | null { return this.store.get<ContributorStanding>(`contributor:${userId}`) ?? null; }
+
+  private recordContributorLanding(mission: Mission): void {
+    const source = mission.branchChange?.source;
+    if (!source) return;
+    const vouch = this.store.get<Principal>(`vouch:${mission.id}`);
+    this.store.delete(`vouch:${mission.id}`);
+    const current = this.contributorStanding(source.authorId);
+    this.store.put(`contributor:${source.authorId}`, { userId: source.authorId, landed: (current?.landed ?? 0) + 1, firstProposalAt: current?.firstProposalAt ?? mission.createdAt, ...(vouch ? { vouchedBy: vouch } : current?.vouchedBy ? { vouchedBy: current.vouchedBy } : {}) } satisfies ContributorStanding);
+  }
+
+  holdOutsideProposal(id: string, gate: OutsideChecksGate): Mission {
+    return this.ctx.storage.transactionSync(() => {
+      const mission = this.requiredMission(id);
+      if (!mission.branchChange?.source || mission.branchChange.closedAt || ['queued', 'running', 'checking', 'integrating', 'integrated'].includes(mission.status)) return mission;
+      if (mission.epoch > 0 && mission.status !== 'draft') this.archive(mission, 'retry');
+      mission.branchChange = { ...mission.branchChange, gate };
+      mission.status = 'draft';
+      mission.candidateSha = null;
+      mission.checks = [];
+      mission.changes = [];
+      delete mission.error;
+      delete mission.approvedAt;
+      delete mission.approvedBy;
+      delete mission.dependencyApproval;
+      delete mission.integrationForkName;
+      return this.saveMission(mission, 'Waiting for a maintainer to run checks.');
+    });
+  }
+
+  recordOutgoingProposal(entry: OutgoingProposal): void { this.store.put(`outgoing:${entry.missionId}`, entry); }
+
+  outgoingProposal(missionId: string): OutgoingProposal | null { return this.store.get<OutgoingProposal>(`outgoing:${missionId}`) ?? null; }
+
+  listOutgoingProposals(): OutgoingProposal[] { return this.store.list<OutgoingProposal>('outgoing:').sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
 
   private recordLinkedIssues(mission: Mission, sha: string): void {
     if (mission.issueNumber !== undefined) recordIssueOutcome(this.store, mission.issueNumber, 'closed', `Closed by mission ${mission.title} (${sha.slice(0, 7)}).`);

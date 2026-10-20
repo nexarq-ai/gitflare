@@ -60,6 +60,8 @@ import { browseRepository } from './source-browse';
 import { changeVisibility, publicRepositoryApi, publicRepositoryIndex, siteOrigin, visibilitySnapshot } from './public-repositories';
 import { handlePublicGit, isPublicGitPath } from './public-git';
 import { FORK_STORAGE_LIMIT_BYTES, handleForks } from './forks';
+import { handleUpstreamProposals, proposeUpstream, type OutsideContext } from './outside-proposals';
+import { isOutsideProposal, proposalAuthor } from '../shared/pull-requests';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -494,6 +496,9 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (issues) return issues;
   const forks = await handleForks(request, url, { env, principal, access, catalog, catalogOf: (workspaceId) => env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId)), records: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
   if (forks) return forks;
+  const outside: OutsideContext = { env, principal, access, catalogOf: (workspaceId) => env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId)), records: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) };
+  const upstreamProposals = await handleUpstreamProposals(request, url, { ...outside, catalog });
+  if (upstreamProposals) return upstreamProposals;
   const urlImport = await handleUrlImport(request, url, { env, principal, access, catalog, repositoryRecords: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
   if (urlImport) return urlImport;
   const mirrorRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/github-mirror(?:\/([a-z-]+))?$/.exec(url.pathname);
@@ -612,6 +617,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     assertMutationOrigin(request);
     const key = requireIdempotencyKey(request), body = await readJson(request, 65_536);
     if (branchRoute[2] === 'branch-protection') { await coordinator.setBranchProtection(key, body.rules, principal.userId); return Response.json(protectionSnapshot(repository.id, repository.defaultBranch, await coordinator.getBranchProtection())); }
+    if (body.target !== undefined && body.target !== 'upstream' && body.target !== 'self') throw new ApiError(400, 'INVALID_TARGET', 'Choose upstream or self as the target.');
+    if (body.target === 'upstream') return proposeUpstream(outside, repository, key, body, siteOrigin(env, url.origin));
     await access.authorize(principal, 'execute', 'repository', repository.id);
     if (!env.MISSION_WORKFLOW || !executionReadiness(env, 'skill-edit').ready) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', 'Connect the required services before opening a pull request.');
     const title = requireString(body.title, 'Title', 120), branch = branchName(body.branch);
@@ -627,7 +634,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const draft = await coordinator.createMission(key, { repositoryId: repository.id, expectedBaseSha: current.headSha, title, prompt: description ?? `Merge ${branch} into ${repository.defaultBranch}.`, branchChange: { branch, headSha, targetBranch: repository.defaultBranch, ...(description ? { description } : {}) } }, authorization, models);
     return Response.json(await startWithDurableDispatch(coordinator, `${key.slice(0, 120)}-start`, draft.id, authorization, models), { status: 202 });
   }
-  const match = /^\/api\/missions\/([a-zA-Z0-9-]+)(?:\/(start|cancel|approve|revoke|integrate|preview|preview-extend|preview-stop|attempts|review|select|revert|pull|retry-checks|retry-agents|drop-failed-agents|address-review))?$/.exec(url.pathname);
+  const match = /^\/api\/missions\/([a-zA-Z0-9-]+)(?:\/(start|cancel|approve|revoke|integrate|preview|preview-extend|preview-stop|attempts|review|select|revert|pull|retry-checks|run-checks|retry-agents|drop-failed-agents|address-review))?$/.exec(url.pathname);
   if (request.method === 'GET' && match && !match[2]) { const {mission,repository} = await findMission(env, match[1], principal.workspaceId); await access.authorize(principal, 'read', 'repository', repository.id, mission.id); return Response.json(mission); }
   if (request.method === 'GET' && match?.[2] === 'attempts') {
     const { repository, mission } = await findMission(env, match[1], principal.workspaceId);
@@ -800,8 +807,15 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     match[2] = mission.branchChange ? 'pull' : 'start';
     if (mission.branchChange) body.action = 'update';
   }
+  if (match?.[2] === 'run-checks') {
+    const { mission } = await findMission(env, match[1], principal.workspaceId);
+    if (!mission.branchChange) throw new ApiError(409, 'NOT_A_PULL_REQUEST', 'Only a proposal from a stream has checks to run.');
+    match[2] = 'pull';
+    body.action = mission.branchChange.closedAt ? 'reopen' : 'update';
+  }
   if (match?.[2] && match[2] !== 'attempts') {
     const { mission, repository } = await findMission(env, match[1], principal.workspaceId);
+    if (isOutsideProposal(mission) && ['start', 'retry-agents', 'drop-failed-agents', 'address-review'].includes(match[2])) { match[2] = 'pull'; body.action = 'update'; }
     const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
     const reviewInput = match[2] === 'review' ? reviewMissionInput(body) : undefined;
     const pullAction = match[2] === 'pull' ? body.action : undefined;
@@ -822,13 +836,14 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       if (!mission.branchChange) throw new ApiError(409, 'NOT_A_PULL_REQUEST', 'This mission is not a pull request.');
       if (pullAction === 'close') { const closed = await coordinator.pullRequestAction(key, mission.id, 'close', principal.userId, undefined, principal); await coordinator.settleApprovalClears(mission.id, principal); await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(closed); }
       await access.authorize(principal, 'contribute', 'repository', repository.id, mission.id);
+      if (isOutsideProposal(mission)) await access.authorize(principal, 'land', 'repository', repository.id, mission.id);
       if (!env.MISSION_WORKFLOW || !executionReadiness(env, 'skill-edit').ready || !env.ARTIFACTS) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', 'Connect the required services before running pull request checks.');
       await currentRepository(env, repository);
-      const headSha = await repositoryHead(env.ARTIFACTS, repository.name, mission.branchChange.branch).catch(() => null);
-      if (!headSha) throw new ApiError(404, 'BRANCH_NOT_FOUND', `Branch ${mission.branchChange.branch} no longer exists.`);
+      const headSha = await repositoryHead(env.ARTIFACTS, mission.branchChange.source?.repositoryName ?? repository.name, mission.branchChange.branch).catch(() => null);
+      if (!headSha) throw new ApiError(404, 'BRANCH_NOT_FOUND', `Branch ${mission.branchChange.branch} no longer exists${isOutsideProposal(mission) ? ' in the contributor’s fork' : ''}.`);
       await coordinator.pullRequestAction(key, mission.id, pullAction as 'update' | 'reopen', principal.userId, headSha, principal);
       await coordinator.settleApprovalClears(mission.id, principal);
-      const authorization = { principal, workspaceId: principal.workspaceId, creatorId: mission.authorization?.creatorId ?? principal.userId };
+      const authorization = { principal, workspaceId: principal.workspaceId, creatorId: proposalAuthor(mission) ?? principal.userId };
       return Response.json(await startWithDurableDispatch(coordinator, `${key.slice(0, 120)}-start`, mission.id, authorization, await coordinatorRead('getModelConnections', () => catalog.getModelConnections())), { status: 202 });
     }
     if (match[2] === 'select') {
@@ -907,7 +922,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       if (!readiness.ready || !env.MISSION_WORKFLOW) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', `Connect the required services before running agents: ${[...readiness.missing, ...(!env.MISSION_WORKFLOW ? ['Mission Workflow'] : [])].join(', ')}.`);
       const current = await currentRepository(env, repository);
       if (!current.headSha) throw new ApiError(409, 'EMPTY_REPOSITORY', 'Push an initial commit before starting a mission.');
-      const authorization = { principal, workspaceId: principal.workspaceId, creatorId: mission.authorization?.creatorId ?? principal.userId };
+      const authorization = { principal, workspaceId: principal.workspaceId, creatorId: proposalAuthor(mission) ?? principal.userId };
       const models = await coordinatorRead('getModelConnections', () => catalog.getModelConnections());
       const started = match[2] === 'start' ? await startWithDurableDispatch(coordinator, key, mission.id, authorization, models) : await coordinator.retryAgents(key, mission.id, match[2] === 'retry-agents' ? 'retry' : match[2] === 'address-review' ? 'review' : 'drop', runIds, authorization, models, guidance, overrides);
       return Response.json(started, { status: 202 });
@@ -923,7 +938,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       if (!env.SANDBOX || !env.ARTIFACTS || !env.MISSION_WORKFLOW) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', 'Connect Artifacts, Sandbox and the Mission Workflow before integrating.');
       const rule = await landingReviewRule(env, repository);
       await access.assertLand(principal, mission.id, candidateSha, baseSha, mission.epoch, repository.id, rule);
-      const claim = await coordinator.beginIntegration(key, mission.id, candidateSha, baseSha, commitMessage, principal.userId);
+      const claim = await coordinator.beginIntegration(key, mission.id, candidateSha, baseSha, commitMessage, principal.userId, isOutsideProposal(mission) && !principal.credentialId && !principal.bootstrap ? backgroundPrincipal(principal) : undefined);
       if (claim.mission.status === 'integrated') return Response.json(claim.mission);
       if (!claim.claimId) throw new ApiError(500, 'INTEGRATION_CLAIM_MISSING', 'The integration claim could not be established.');
       if (!claim.claimed) {
@@ -943,7 +958,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const approveDependencies = body.approveDependencies === true;
     assertDependencyApproval(mission, principal.role, approveDependencies);
     await coordinator.settleApprovalClears(mission.id, principal);
-    const approval = await access.recordApproval(principal, mission.id, candidateSha, baseSha, mission.epoch, mission.checks, mission.authorization?.creatorId, await landingReviewRule(env, repository));
+    const approval = await access.recordApproval(principal, mission.id, candidateSha, baseSha, mission.epoch, mission.checks, proposalAuthor(mission), await landingReviewRule(env, repository));
     if (mission.dependencyChanges?.length) await access.auditRepositoryChange(principal, 'mission.dependencies.approved', mission.id);
     if (!approval.ready) return Response.json({ ...(commitMessage === undefined ? mission : await coordinator.setLandingMessage(mission.id, candidateSha, baseSha, commitMessage, principal.userId)), approval });
     return Response.json(await coordinator.approveMission(key, mission.id, candidateSha, baseSha, principal.userId, principal.role === 'Owner' && approveDependencies, commitMessage));

@@ -16,7 +16,8 @@ import { cloudflareDeployClient, type CloudflareDeployAccess } from './cloudflar
 import { bindPreviewD1, deletePreviewD1 } from './preview-d1';
 import { cloudflareDeployAccess, cloudflareWorkerDeployer } from './cloudflare';
 import { previewLifetimeMs } from './preview-settings';
-import { candidateWorkerTarget, previewTarget, resolvePreviewHost, usedContainerFallback, workerPreviewSetup, type PreviewTarget, type ProjectWorkers } from './preview-host';
+import { candidateWorkerTarget, previewTarget, resolvePreviewHost, usedContainerFallback, workerPreviewSetup, type PreviewHostPlan, type PreviewTarget, type ProjectWorkers } from './preview-host';
+import { isOutsideProposal } from '../shared/pull-requests';
 import { isPreviewSetupCode, type PreviewSetupCode } from '../shared/preview-setup';
 import { ensurePreviewAccess } from './preview-access';
 import { previewAccessIncludes } from './preview-settings-api';
@@ -40,6 +41,9 @@ type LandingOutcome = { kind: 'stale' } | { kind: 'pushed'; sha: string } | { ki
 export type BackgroundState = 'running' | 'finished' | 'missing';
 
 const ACTIVE = ['queued', 'running', 'paused', 'waiting', 'waitingForPause'];
+
+const UNTRUSTED_PREVIEW_MS = 3_600_000;
+const UNTRUSTED_PREVIEW_REASON = 'this proposal comes from a fork, so it previews without secrets, databases or Cloudflare bindings';
 
 export const landingWorkflowId = (claimId: string) => `land-${claimId}`;
 export const previewWorkflowId = (claimId: string) => `preview-${claimId}`;
@@ -332,12 +336,11 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       if (!mission || !repository || mission.epoch !== epoch || mission.candidateSha !== candidateSha) throw new PreviewFailure('The candidate changed before its preview started.');
       if (!env.SANDBOX) { setup = 'PREVIEW_NOT_CONFIGURED'; throw new PreviewFailure('The preview runner is unavailable.'); }
       const settings = await coordinator.getPreviewSettings();
-      const lifetimeMs = previewLifetimeMs(settings, env);
+      const untrusted = isOutsideProposal(mission);
+      const lifetimeMs = untrusted ? Math.min(previewLifetimeMs(settings, env), UNTRUSTED_PREVIEW_MS) : previewLifetimeMs(settings, env);
       const lifetime = { lifetimeMs, extendMs: lifetimeMs };
-      const { settings: deploy } = await coordinator.deployState();
-      const target = previewTarget(settings, deploy, await projectWorkers(env, principal, repositoryId)) ?? await candidateTarget(env, mission.integrationForkName, candidateSha);
       let installationProblem: string | undefined;
-      const plan = await resolvePreviewHost(env, settings, target, {
+      const plan: PreviewHostPlan = untrusted ? { host: null, config: null, notes: [], containerReason: UNTRUSTED_PREVIEW_REASON } : await resolvePreviewHost(env, settings, previewTarget(settings, (await coordinator.deployState()).settings, await projectWorkers(env, principal, repositoryId)) ?? await candidateTarget(env, mission.integrationForkName, candidateSha), {
         connection: (wanted: PreviewTarget) => connectionAccess(env, principal, repositoryId, wanted.accountId),
         installation: () => resolveWorkerPreviewsConfig(env).catch((error: unknown) => {
           if (!(error instanceof ApiError)) throw error;
