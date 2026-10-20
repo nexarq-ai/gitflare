@@ -1,6 +1,9 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import { securityClient, type GitflareSecurity } from './security';
-import type { AgentRun, CheckPlan, CheckSettings, Mission, ModelConnection, Repository } from '../shared/types';
+import type { AgentRun, CheckPlan, CheckSettings, CommunityPool, Mission, ModelConnection, Repository } from '../shared/types';
+import { fixModelAccess } from './community-pool';
+import { autoAgentReview } from './agent-assist';
+import { isUntrustedMission } from '../shared/pull-requests';
 import type { LearnedLimits } from './check-settings';
 import { assertPinnedModel } from './model-config';
 import { executeMission, type ExecutionEnv, type ExecutionResult } from './execution';
@@ -26,6 +29,7 @@ interface Coordinator {
   isMissionActive(missionId: string, epoch: number): Promise<boolean>;
   recordExecution(missionId: string, epoch: number, result: ExecutionResult, complete?: boolean): Promise<unknown>;
   releaseMissionSlot(missionId: string, epoch: number): Promise<void>;
+  communityPool?(): Promise<CommunityPool | null>;
 }
 interface WorkflowEnv extends ExecutionEnv, AiAccessOptions {
   GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity>;
@@ -74,10 +78,11 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
         const assertAuthority = () => securityClient(this.env).check(authorization.principal, 'execute', 'repository', repositoryId, missionId);
         await assertAuthority();
         const catalog = this.env.GITFLARE_COORDINATOR.getByName(authorization.workspaceId === 'legacy' ? 'catalog:owner' : `catalog:${authorization.workspaceId}`);
-        const modelConnections = await catalog.getModelConnections();
+        const funded = mission.fixRequest ? fixModelAccess(this.env, mission.fixRequest, this.env.GITFLARE_COORDINATOR.getByName(catalogName(mission.fixRequest.fundingWorkspaceId)), async () => (await coordinator.communityPool?.()) ?? null) : null;
+        const modelConnections = funded ? await funded.models() : await catalog.getModelConnections();
         const result = await executeMission(
           { repository, mission, modelConnections, checkSettings, testCommand: this.env.TEST_COMMAND ?? 'node --test --test-reporter=tap tests/*.test.mjs' },
-          { ...this.env, assertModelAllowed: async model => assertPinnedModel(await catalog.getModelConnections(), model), modelAccess: createModelAccess(this.env, authorization.workspaceId, catalog) },
+          funded ? { ...this.env, assertModelAllowed: funded.assertModelAllowed, modelAccess: funded.modelAccess } : { ...this.env, assertModelAllowed: async model => assertPinnedModel(await catalog.getModelConnections(), model), modelAccess: createModelAccess(this.env, authorization.workspaceId, catalog) },
           async (progress) => { await coordinator.recordExecution(missionId, epoch, progress, false); },
           () => coordinator.isMissionActive(missionId, epoch),
           assertAuthority,
@@ -89,6 +94,7 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
           } catch (error) { console.error(JSON.stringify({ event: 'check_limits_learning_failed', repositoryId, missionId, epoch, message: error instanceof Error ? error.message : 'unknown' })); }
         }
       });
+      if (planned && isUntrustedMission(planned)) await step.do('agent review of the checked candidate', { retries: { limit: 0, delay: '1 second' }, timeout: '3 minutes' }, async () => { await autoAgentReview(this.env as unknown as AppEnv, repositoryId, missionId); }).catch(() => {});
     } catch (error) {
       const mission = await coordinator.getMission(missionId);
       const platform = platformInterruption(error);

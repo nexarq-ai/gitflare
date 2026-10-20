@@ -17,7 +17,7 @@ export interface AiAccessOptions { AUTH_ENCRYPTION_KEY?: string; EDITION?: 'host
 const keyContext = (workspaceId: string, provider: AiKeyProvider) => `ai-key:${workspaceId}:${provider}`;
 const gatewayContext = (workspaceId: string) => `ai-gateway:${workspaceId}`;
 
-function deploymentOperatorAccess(env: AiAccessOptions, workspaceId: string): boolean {
+export function deploymentOperatorAccess(env: AiAccessOptions, workspaceId: string): boolean {
   if (workspaceId === 'legacy' || env.EDITION === 'self-hosted') return true;
   return (env.OPERATOR_MODEL_WORKSPACES ?? '').split(',').map(value => value.trim()).filter(Boolean).includes(workspaceId);
 }
@@ -26,7 +26,7 @@ export function operatorModelAccess(env: AiAccessOptions, workspaceId: string, c
   return deploymentOperatorAccess(env, workspaceId) || env.EDITION !== 'self-hosted' && !!credentials?.operatorModels;
 }
 
-function ownModelAccess(credentials: AiCredentials, model: ModelConnection): boolean {
+export function ownModelAccess(credentials: AiCredentials, model: ModelConnection): boolean {
   const provider = modelProvider(model);
   return (!!provider && credentials.keys.some(key => key.provider === provider)) || (!!credentials.gateway && model.source === 'gateway');
 }
@@ -92,14 +92,19 @@ export function assertWorkspaceAi(env: AiAccessOptions, workspaceId: string, cre
   if (!operatorModelAccess(env, workspaceId, credentials) && !credentials.keys.length && !credentials.gateway) throw new ApiError(412, 'AI_KEY_REQUIRED', 'Add your AI key in Settings > AI models to start missions.');
 }
 
-export async function modelRoute(env: AiAccessOptions, workspaceId: string, credentials: AiCredentials, model: ModelConnection): Promise<ModelRoute> {
+export async function modelRoute(env: AiAccessOptions, workspaceId: string, credentials: AiCredentials, model: ModelConnection, operator = true): Promise<ModelRoute> {
   const provider = modelProvider(model);
   const stored = provider ? credentials.keys.find(key => key.provider === provider) : undefined;
   const gateway = model.source === 'gateway' ? await ownGateway(env, workspaceId, credentials.gateway) : undefined;
   if (stored && provider) return { workspaceId, credential: { provider, key: await decryptAuth(stored.encrypted, env.AUTH_ENCRYPTION_KEY, keyContext(workspaceId, provider)) }, ...(gateway ? { gateway } : {}) };
   if (gateway) return { workspaceId, gateway };
-  if (operatorModelAccess(env, workspaceId, credentials)) return { workspaceId };
+  if (operator && operatorModelAccess(env, workspaceId, credentials)) return { workspaceId };
   throw aiKeyRequired(model);
+}
+
+export async function ownModelRoute(env: AiAccessOptions, workspaceId: string, credentials: AiCredentials, model: ModelConnection): Promise<ModelRoute> {
+  if (!ownModelAccess(credentials, model)) throw aiKeyRequired(model);
+  return modelRoute(env, workspaceId, credentials, model, false);
 }
 
 export function createModelAccess(env: AiAccessOptions, workspaceId: string, store: AiCredentialStore): (model: ModelConnection) => Promise<ModelRoute> {

@@ -118,6 +118,22 @@
         "limit": 10,
         "period": 60
       }
+    },
+    {
+      "name": "FIX_REQUEST_RATE_LIMIT",
+      "namespace_id": "4140",
+      "simple": {
+        "limit": 3,
+        "period": 60
+      }
+    },
+    {
+      "name": "AGENT_ASSIST_RATE_LIMIT",
+      "namespace_id": "4141",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {

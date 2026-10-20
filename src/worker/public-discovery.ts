@@ -7,7 +7,7 @@ import { catalogName } from './capacity';
 import { consume, rateLimitedResponse } from './rate-limits';
 import { personalWorkspaceId, publicPrincipal, securityClient, type FollowKind, type HandleKind, type Principal, type ProfileRecord, type SecurityService } from './security';
 import { CACHE_DEPENDENCIES, discoveryCachePaths, purgePublicCache, repositoryCachePaths } from './public-cache';
-import { explorePublic, indexedDetails, indexPublicRepository, indexWorkspaceRepositories, pageCursor, publicIndex, refreshIndexedHandle, removeIndexedRepositories, searchPublic, searchQuery, updateIndexedStars } from './public-index';
+import { backfillEmptyIndex, explorePublic, indexedDetails, indexPublicRepository, indexWorkspaceRepositories, pageCursor, publicIndex, refreshIndexedHandle, removeIndexedRepositories, searchPublic, searchQuery, updateIndexedStars } from './public-index';
 import { publicTargetById, resolvePublicRepository, siteOrigin, PUBLIC_NOT_FOUND } from './public-repositories';
 
 type Waiter = { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -94,6 +94,7 @@ export async function publicDiscoveryApi(request: Request, env: AppEnv, ctx?: Wa
     if (language !== null && !LANGUAGE.test(language)) throw new ApiError(400, 'INVALID_LANGUAGE', 'This language filter is not valid.');
     const page = await explorePublic(env, access, sort, language, cursor);
     if (page.stale.length) background(ctx, removeIndexedRepositories(env, page.stale));
+    if (page.value.indexed && !page.value.items.length && !cursor) background(ctx, backfillEmptyIndex(env, access));
     return withDependencies(page.value, page.repositoryIds);
   }
   const type = (url.searchParams.get('type') ?? 'repositories') as PublicSearchType;

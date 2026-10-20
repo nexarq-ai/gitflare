@@ -108,6 +108,7 @@ const ModelConnections = lazy(loadModelConnections);
 const loadIssues = () => import("./Issues");
 const Issues = lazy(loadIssues);
 const IssueSettings = lazy(() => import("./IssueSettings"));
+const CommunityAiSettings = lazy(() => import("./CommunityAiSettings"));
 const loadReleases = () => import("./Releases");
 const Releases = lazy(loadReleases);
 const loadPullRequests = () => import("./PullRequests");
@@ -1459,13 +1460,14 @@ function RepositoryDetail({
           ].map((item) => <button key={item.value} className={"ai" in item && item.ai ? "ai-only" : undefined} aria-current={tab === item.value || (tab === "proposals" && item.value === "pulls") ? "page" : undefined} onClick={() => onTabChange(item.value)}>{item.label}</button>)}
       </nav>
       <DeployStatusPill repositoryId={repository.id} location={`${tab}/${subroute}`} href={routeUrl(`repository/${repository.id}/settings/deploys`)} onOpen={() => onTabChange("settings/deploys")} />
-      {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} fork={!!repository.fork} /> : tab === "settings" ? <RepositorySettingsLayout repositoryId={repository.id} page={subroute}>
+      {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} fork={!!repository.fork} /> : tab === "settings" ? <RepositorySettingsLayout repositoryId={repository.id} page={subroute} extra={publicRepositories ? [{ path: "community", label: "Community AI" }] : []}>
         {subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} approvers={access ? eligibleApprovers(access.members, repository.id) : undefined} knownChecks={knownCheckNames(missions)} onNotify={onNotify} />
           : subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
           : subroute === "deploys" ? <Deployments key={repository.id} repository={repository} canManage={canManage} onNotify={onNotify} />
           : subroute === "previews" ? <PreviewSettings key={repository.id} repositoryId={repository.id} canManage={canManage} onNotify={onNotify} />
           : subroute === "agents" ? <AgentSettings key={repository.id} repositoryId={repository.id} canChange={canLand} onNotify={onNotify} />
           : subroute === "cloudflare" ? <CloudflareConnection key={repository.id} canManage={canManage} repository={repository} repositoryId={repository.id} />
+          : subroute === "community" && publicRepositories ? <CommunityAiSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
           : subroute === "issues" ? <IssueSettings key={repository.id} repository={repository} canTriage={!!access?.permissions.includes("triage")} publicRepositories={publicRepositories} onNotify={onNotify} />
           : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <RouteProgress />
           : <RepositoryGeneral repository={repository} publicRepositories={publicRepositories} onNotify={onNotify} onRefresh={onRefresh} />}

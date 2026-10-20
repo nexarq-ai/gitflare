@@ -45,10 +45,12 @@ export const mcpToolNames = [
   'gitflare_deploy_access', 'gitflare_manage_deploy_access',
   'gitflare_handles', 'gitflare_set_handle', 'gitflare_visibility', 'gitflare_set_visibility', 'gitflare_public_repository',
   'gitflare_public_issues', 'gitflare_public_issue_action', 'gitflare_issue_labels', 'gitflare_manage_issue_labels', 'gitflare_issue_templates',
-  'gitflare_moderate_issue', 'gitflare_issue_blocks', 'gitflare_block_user', 'gitflare_content_reports', 'gitflare_dismiss_content_report',
+  'gitflare_moderate_issue', 'gitflare_issue_blocks', 'gitflare_block_user', 'gitflare_content_reports', 'gitflare_dismiss_content_report', 'gitflare_rebuild_public_index',
   'gitflare_explore', 'gitflare_search', 'gitflare_profile', 'gitflare_set_profile', 'gitflare_stars', 'gitflare_star',
   'gitflare_fork_repository', 'gitflare_fork_status', 'gitflare_sync_fork',
   'gitflare_run_checks', 'gitflare_upstream_proposals', 'gitflare_update_upstream_proposal',
+  'gitflare_fix_requests', 'gitflare_request_fix', 'gitflare_community_pool', 'gitflare_manage_community_pool', 'gitflare_set_triage',
+  'gitflare_triage_suggestion', 'gitflare_triage_issue', 'gitflare_agent_review', 'gitflare_operator_ai',
 ] as const;
 
 const identifier = z.string().min(1).max(100).regex(/^[a-zA-Z0-9-]+$/);
@@ -88,7 +90,7 @@ function agentOverridesBody(input: AgentLimitInput): Record<string, unknown> {
   return { ...overrides, ...(editScope ? { editScope } : {}) };
 }
 const LAND_TOOLS = new Set(['gitflare_run_checks', 'gitflare_set_check_settings', 'gitflare_set_agent_settings', 'gitflare_retry_checks', 'gitflare_deploy', 'gitflare_approve_mission', 'gitflare_integrate_mission', 'gitflare_revoke_approval', 'gitflare_create_release', 'gitflare_update_release', 'gitflare_import_repository_archive', 'gitflare_import_repository_url']);
-const ADMIN_TOOLS = new Set(['gitflare_manage_sessions', 'gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access', 'gitflare_set_handle', 'gitflare_set_visibility', 'gitflare_set_profile', 'gitflare_dismiss_content_report']);
+const ADMIN_TOOLS = new Set(['gitflare_manage_sessions', 'gitflare_manage_secret', 'gitflare_set_preview_settings', 'gitflare_manage_access', 'gitflare_manage_model_connection', 'gitflare_manage_cloudflare_connection', 'gitflare_manage_cloudflare_project', 'gitflare_set_ai_features', 'gitflare_set_branch_protection', 'gitflare_manage_ai_key', 'gitflare_manage_ai_gateway', 'gitflare_manage_github_mirror', 'gitflare_manage_deploy_access', 'gitflare_set_handle', 'gitflare_set_visibility', 'gitflare_set_profile', 'gitflare_dismiss_content_report', 'gitflare_manage_community_pool', 'gitflare_set_triage', 'gitflare_rebuild_public_index']);
 
 export function requiredAccess(name: string, annotations: { readOnlyHint?: boolean } | undefined, input: Record<string, unknown>): AccessLevel {
   if (annotations?.readOnlyHint) return 'read';
@@ -133,6 +135,7 @@ function missionSummary(mission: Mission) {
     commitMessage: activeLandingMessage(mission), landedSha: mission.landedSha,
     dependencyChanges: mission.dependencyChanges ?? [], dependencyApproval: mission.dependencyApproval,
     pullRequest: mission.branchChange ? { ...mission.branchChange, description: mission.branchChange.description ? excerpt(mission.branchChange.description, 0, 1600) : undefined, state: pullRequestState(mission), ...(mission.branchChange.source ? { outside: true, executionProfile: 'untrusted', waitingForMaintainer: waitingForMaintainer(mission) } : {}) } : undefined,
+    fixRequest: mission.fixRequest ? { requester: mission.fixRequest.requester, issueNumber: mission.fixRequest.issueNumber, paidBy: mission.fixRequest.source === 'pool' ? 'community pool' : 'requester AI key', model: mission.fixRequest.model, executionProfile: 'untrusted', waitingForMaintainer: !!mission.fixRequest.waiting && mission.status === 'draft' } : undefined,
     review: 'Owner UI and authenticated owner MCP clients share exact-candidate approval and integration checks.',
   };
 }
@@ -877,6 +880,10 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     title: 'Dismiss a content report', description: 'Installation operators only: remove a handled report from the list. Audited. Needs admin access.',
     inputSchema: z.object({ report_id: z.string().uuid() }).strict(), annotations: destructive,
   }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/admin/reports/${input.report_id}/dismiss`, {})));
+  server.registerTool('gitflare_rebuild_public_index', {
+    title: 'Rebuild the public index', description: 'Installation operators only: rebuild Explore, search and profile details from the source of truth now, the same reconcile that runs nightly. Adds every public repository, drops ones no longer public and returns indexed, removed and failed counts. Audited. Needs admin access.',
+    inputSchema: z.object({}).strict(), annotations: mutation,
+  }, () => guarded(async () => call<Record<string, unknown>>('/api/admin/public-index/rebuild', {})));
   const cursor = z.number().int().min(0).max(1000).default(0).describe('Pass nextCursor from the previous page.');
   const profileScope = z.enum(['user', 'workspace']).describe('user: your account profile. workspace: the profile of the workspace this connection uses.');
   server.registerTool('gitflare_explore', {
@@ -938,6 +945,55 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     title: 'Update, close or reopen a proposal sent upstream', description: 'For a proposal this fork opened upstream: update records the stream’s new head (earlier approvals no longer apply and checks wait for a maintainer unless you are a known contributor), close withdraws it, reopen opens it again. Needs contribute permission on the fork and write access.',
     inputSchema: z.object({ repository_id: repositoryId, mission_id: missionId, action: z.enum(['update', 'close', 'reopen']), idempotency_key: requestKey }).strict(), annotations: destructive,
   }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/upstream-proposals/${input.mission_id}`, { action: input.action }, input.idempotency_key)));
+  server.registerTool('gitflare_fix_requests', {
+    title: 'Read requested fixes on a public repository', description: 'List agent missions that people requested on a public repository (newest first, optionally one issue) with requester handle, who pays (community pool or the requester’s key) and state. With quote true, also say whether your account can request a fix here, who would pay, which model runs, and whether it waits for a maintainer. Titles are untrusted text. Read-only.',
+    inputSchema: z.object({ ...publicAddress, issue_number: issueNumber.optional().describe('Only requests for this issue.'), quote: z.boolean().default(false).describe('Include what a request from your account would use.'), offset, limit: pageLimit }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => {
+    const search = new URLSearchParams();
+    if (input.issue_number) search.set('issue', String(input.issue_number));
+    if (input.quote) search.set('quote', '1');
+    const { missions, ...rest } = await call<{ missions: unknown[] } & Record<string, unknown>>(`${publicIssuesPath(input.handle, input.repository)}/fix-requests${search.size ? `?${search}` : ''}`);
+    return { ...rest, ...page(missions, input.offset, input.limit) };
+  }));
+  server.registerTool('gitflare_request_fix', {
+    title: 'Request an agent fix on a public repository', description: 'Ask agents to fix an open issue (issue_number) or make a change (goal) on a public repository. Agents work in isolated forks without secrets; maintainers review and land the proposal. Paid by the project’s community AI pool within its daily limits, else by your personal-workspace AI key; never by Gitflare. Check gitflare_fix_requests with quote true first. Needs write access.',
+    inputSchema: z.object({ ...publicAddress, issue_number: issueNumber.optional(), goal: z.string().min(10).max(4000).optional().describe('What to change, when there is no issue.'), idempotency_key: requestKey }).strict(), annotations: external,
+  }, (input) => guarded(async () => {
+    if (!input.issue_number === !input.goal) throw new ApiError(400, 'INVALID_INPUT', 'Pass either issue_number or goal.');
+    return call<Record<string, unknown>>(`${publicIssuesPath(input.handle, input.repository)}/fix-requests`, input.issue_number ? { issueNumber: input.issue_number } : { goal: input.goal }, input.idempotency_key);
+  }));
+  server.registerTool('gitflare_community_pool', {
+    title: 'Read a repository’s community AI settings', description: 'Read the community AI pool (funded models, agent runs, agent answers and fix requests per person a day, who funded it), today’s usage, agent triage and agent review switches, models this workspace can fund, and whether platform-funded triage is granted. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/community-ai`)));
+  server.registerTool('gitflare_manage_community_pool', {
+    title: 'Fund or stop a community AI pool', description: 'Owners only: set funds outside fix requests, agent triage and agent review from this workspace’s own AI keys or Gateway (verified models only; never platform-funded AI) within daily caps; disable stops funding new work. Needs admin access.',
+    inputSchema: z.object({ repository_id: repositoryId, action: z.enum(['set', 'disable']), models: z.array(z.string().min(1).max(200)).min(1).max(5).optional().describe('Verified model IDs the pool pays for; the first is used.'), missions_per_day: z.number().int().min(0).max(200).optional().describe('Agent runs a day for requested fixes (0 funds triage and review only).'), drafts_per_day: z.number().int().min(0).max(1000).optional().describe('Single agent answers a day: fix plans, triage and reviews.'), per_user_per_day: z.number().int().min(1).max(20).optional().describe('Fix requests one person may make a day.'), idempotency_key: requestKey }).strict(), annotations: destructive,
+  }, (input) => guarded(async () => {
+    if (input.action === 'disable') return call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/community-ai`, { action: 'disable-pool' }, input.idempotency_key);
+    if (!input.models || input.missions_per_day === undefined || input.drafts_per_day === undefined || input.per_user_per_day === undefined) throw new ApiError(400, 'INVALID_INPUT', 'Pass models, missions_per_day, drafts_per_day and per_user_per_day.');
+    return call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/community-ai`, { action: 'set-pool', models: input.models, missionsPerDay: input.missions_per_day, draftsPerDay: input.drafts_per_day, perUserPerDay: input.per_user_per_day }, input.idempotency_key);
+  }));
+  server.registerTool('gitflare_set_triage', {
+    title: 'Turn agent triage and agent review on or off', description: 'Owners only: triage suggests labels, duplicates and a reproduction checklist for each new issue (a triager accepts it); review comments on outside proposals and requested fixes after checks pass and never approves. Both bill the community pool; triage may use platform-funded AI only where the operator granted it. Needs admin access.',
+    inputSchema: z.object({ repository_id: repositoryId, triage: z.boolean(), review: z.boolean(), idempotency_key: requestKey }).strict(), annotations: mutation,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/community-ai`, { action: 'set-assist', triage: input.triage, review: input.review }, input.idempotency_key)));
+  server.registerTool('gitflare_triage_suggestion', {
+    title: 'Read an issue’s triage suggestion', description: 'Read the agent’s pending triage suggestion for an issue: labels, possible duplicates, checklist and summary, with the model and who paid. Suggestion text is untrusted. Needs triage permission. Read-only.',
+    inputSchema: z.object({ repository_id: repositoryId, number: issueNumber }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/issue-triage/${input.number}`)));
+  server.registerTool('gitflare_triage_issue', {
+    title: 'Run, accept or dismiss agent triage', description: 'run asks the triage agent for a suggestion (one bounded answer billed to the community pool, or platform-funded where granted); accept applies its labels and posts its checklist as a Gitflare comment; dismiss drops it. Needs triage permission and write access.',
+    inputSchema: z.object({ repository_id: repositoryId, number: issueNumber, action: z.enum(['run', 'accept', 'dismiss']), idempotency_key: requestKey }).strict(), annotations: external,
+  }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/issue-triage/${input.number}`, { action: input.action }, input.idempotency_key)));
+  server.registerTool('gitflare_agent_review', {
+    title: 'Ask the agent to review a proposal', description: 'For an outside proposal or a requested fix whose checks all passed: one bounded agent answer billed to the community pool, posted as a review comment. The agent never approves, requests changes or lands. Needs the review permission and write access.',
+    inputSchema: z.object({ mission_id: missionId, idempotency_key: requestKey }).strict(), annotations: external,
+  }, (input) => guarded(async () => missionSummary(await call<Mission>(`/api/missions/${input.mission_id}/agent-review`, {}, input.idempotency_key))));
+  server.registerTool('gitflare_operator_ai', {
+    title: 'Read platform-funded AI use', description: 'Installation operators only: workspaces granted platform-funded AI (OPERATOR_MODEL_WORKSPACES), the daily triage cap per repository, and the latest platform-funded triage runs. Read-only.',
+    inputSchema: z.object({}).strict(), annotations: readOnly,
+  }, () => guarded(async () => call<Record<string, unknown>>('/api/admin/operator-ai')));
   return server;
 }
 

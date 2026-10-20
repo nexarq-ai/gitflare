@@ -32,6 +32,14 @@ The **Agents** view shows each run with its fork, revision, state and errors. **
 
 Approval applies to one exact candidate and base. Landing is a separate call. If either revision moved, review again. An MCP client acts as the person who authorized it: approval through MCP is that person's approval, so give a client the lowest access level that covers the task.
 
+## Requested fixes, triage and review on public repositories
+
+On hosted Gitflare, anyone signed in can press **Request fix** on an open issue of a public repository, or **Request a change** on its home page. One planning answer runs first; the planned agents then work in isolated forks of the repository with no secrets and no write access to it, with checks and `gitflare.json` taken from the repository's base. The result is a proposal: the requester cannot approve or land it, and maintainers review it as usual.
+
+Who pays is a rule, in order: the repository's **community AI pool**, if an Owner funded one in Settings → Community AI and the requester is within its daily caps; otherwise the requester's own AI key in their personal workspace; otherwise the button says to add a key. Gitflare never pays for fix requests or agent reviews. Accounts younger than seven days can request fixes only where a pool exists. Each fix is pinned to the model it was funded with, and every model call rechecks the funding workspace's model list and, for the pool, that the pool still pays for that model. A pool-funded request starts at once under the Owner who funded the pool; a request paid by the requester waits until a maintainer starts it, unless the requester is a known contributor.
+
+With a pool, Owners can also turn on **agent triage** (a suggested set of labels, duplicates and a reproduction checklist on each new issue, which a triager accepts or dismisses) and **agent review** (one comment on outside proposals and requested fixes after every check passes). Agent reviews are comments from `gitflare-agent` and never approve. Triage alone may be funded by the operator for featured projects listed in `OPERATOR_MODEL_WORKSPACES`; those runs are capped per repository, audited and listed on the Installation page. Everything here is available over MCP with the same checks.
+
 ## Hosted agent registration
 
 Hosted Gitflare exposes `POST /api/agent-signup` (rate-limited) and `POST /api/agent-claim`. Registration takes an agent name, a workspace name and an idempotency key, and returns one-time machine and claim capabilities. Protect both; never log or repeat them.
