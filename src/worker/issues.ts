@@ -1,8 +1,8 @@
-import { ISSUE_HIDE_REASONS, ISSUE_LOCK_REASONS, type Issue, type IssueCloseReason, type IssueComment, type IssueDetail, type IssueHideReason, type IssueLabelDefinition, type IssueList, type IssueLockReason, type IssuePerson, type IssueState, type IssueTemplates, type Repository } from '../shared/types';
+import { ISSUE_HIDE_REASONS, ISSUE_LOCK_REASONS, type ImportedComment, type ImportedIssue, type Issue, type IssueCloseReason, type IssueComment, type IssueDetail, type IssueHideReason, type IssueLabelDefinition, type IssueList, type IssueLockReason, type IssuePerson, type IssueState, type IssueTemplates, type Repository } from '../shared/types';
 import { ApiError, assertMutationOrigin, publicError, readJson, requireIdempotencyKey, requireString } from './domain';
 import type { Action, Principal } from './security';
 
-export const ISSUE_LIMIT = 5_000;
+export const ISSUE_LIMIT = 50_000;
 export const ISSUE_COMMENT_LIMIT = 500;
 export const ISSUE_REQUEST_MAX_BYTES = 131_072;
 export const ISSUE_BODY_MAX = 20_000;
@@ -15,6 +15,9 @@ const PAGE_LIMIT = 50;
 const identifier = /^[a-zA-Z0-9-]{1,100}$/;
 const TEMPLATE_FILE = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,99}\.md$/;
 const LABEL_DEFINITIONS_KEY = 'issue-label-definitions';
+const INDEX_READY_KEY = 'issue-index-ready';
+const INDEXED_BODY_CHARS = 500;
+export const GITHUB_AUTHOR_PREFIX = 'github:';
 
 export interface IssueStore { get<T>(key: string): T | undefined; put<T>(key: string, value: T): void; list<T>(prefix: string): T[] }
 export interface IssueActor { userId: string; moderator: boolean }
@@ -39,6 +42,24 @@ export type IssueLabelChange =
 const pad = (value: number) => String(value).padStart(6, '0');
 const issueKey = (number: number) => `issue:${pad(number)}`;
 const commentPrefix = (number: number) => `issue-comment:${pad(number)}:`;
+const indexKey = (number: number) => `issue-index:${pad(number)}`;
+const githubIssueKey = (source: string, number: number) => `github-issue:${source}:${number}`;
+const githubCommentKey = (source: string, id: number) => `github-comment:${source}:${id}`;
+
+interface IssueIndexEntry { number: number; state: IssueState; labels: string[]; title: string; body: string }
+
+function saveIssue(store: IssueStore, issue: Issue): void {
+  store.put(issueKey(issue.number), issue);
+  store.put(indexKey(issue.number), { number: issue.number, state: issue.state, labels: issue.labels, title: issue.title.toLowerCase(), body: issue.body.slice(0, INDEXED_BODY_CHARS).toLowerCase() } satisfies IssueIndexEntry);
+}
+
+function issueIndex(store: IssueStore): IssueIndexEntry[] {
+  if (!store.get<boolean>(INDEX_READY_KEY)) {
+    for (const issue of store.list<Issue>('issue:')) saveIssue(store, issue);
+    store.put(INDEX_READY_KEY, true);
+  }
+  return store.list<IssueIndexEntry>('issue-index:');
+}
 
 function text(value: unknown, field: string, max: number, min = 0): string {
   if (value === undefined && min === 0) return '';
@@ -129,10 +150,11 @@ function assertMissions(store: IssueStore, ids: string[]): void {
   for (const id of ids) if (!store.get(`mission:${id}`)) throw new ApiError(404, 'MISSION_NOT_FOUND', 'Every linked mission must belong to this repository.');
 }
 
-function addComment(store: IssueStore, issue: Issue, authorId: string, body: string, now: string): void {
+function addComment(store: IssueStore, issue: Issue, authorId: string, body: string, now: string, importedFrom?: ImportedComment): string {
   const key = `${commentPrefix(issue.number)}${pad(issue.commentCount + 1)}`;
-  store.put(key, { key, id: crypto.randomUUID(), authorId, body, createdAt: now });
+  store.put(key, { key, id: crypto.randomUUID(), authorId, body, createdAt: now, ...(importedFrom ? { importedFrom } : {}) });
   issue.commentCount++;
+  return key;
 }
 
 function findComment(store: IssueStore, number: number, id: string): IssueComment & { key: string } {
@@ -147,7 +169,7 @@ export function linkIssueMission(store: IssueStore, number: number, missionId: s
   if (issue.missionIds.length >= 20) throw new ApiError(409, 'ISSUE_MISSION_LIMIT', 'An issue can link at most 20 missions. Unlink one first.');
   issue.missionIds.push(missionId);
   issue.updatedAt = now;
-  store.put(issueKey(number), issue);
+  saveIssue(store, issue);
 }
 
 export function recordIssueOutcome(store: IssueStore, number: number, state: IssueState, body: string, now = new Date().toISOString()): boolean {
@@ -157,7 +179,7 @@ export function recordIssueOutcome(store: IssueStore, number: number, state: Iss
   else { issue.state = 'open'; delete issue.closedReason; delete issue.closedAt; }
   if (issue.commentCount < ISSUE_COMMENT_LIMIT) addComment(store, issue, ISSUE_SYSTEM_AUTHOR, body, now);
   issue.updatedAt = now;
-  store.put(issueKey(number), issue);
+  saveIssue(store, issue);
   return true;
 }
 
@@ -184,7 +206,7 @@ export function applyIssueChange(store: IssueStore, change: IssueChange, actor: 
     if (number > ISSUE_LIMIT) throw new ApiError(409, 'ISSUE_LIMIT', `A repository can hold at most ${ISSUE_LIMIT} issues.`);
     assertMissions(store, change.missionIds);
     store.put('issue-count', number);
-    store.put(issueKey(number), { repositoryId: change.repositoryId, number, title: change.title, body: change.body, state: 'open', labels: mergedLabels(change.labels, change.templateLabels), assignees: change.assignees, missionIds: change.missionIds, authorId: actor.userId, createdAt: now, updatedAt: now, commentCount: 0 } satisfies Issue);
+    saveIssue(store, { repositoryId: change.repositoryId, number, title: change.title, body: change.body, state: 'open', labels: mergedLabels(change.labels, change.templateLabels), assignees: change.assignees, missionIds: change.missionIds, authorId: actor.userId, createdAt: now, updatedAt: now, commentCount: 0 } satisfies Issue);
     return number;
   }
   const current = issue!;
@@ -220,7 +242,7 @@ export function applyIssueChange(store: IssueStore, change: IssueChange, actor: 
     Object.assign(current, fields);
   }
   current.updatedAt = now;
-  store.put(issueKey(current.number), current);
+  saveIssue(store, current);
   return current.number;
 }
 
@@ -233,14 +255,14 @@ export function readIssue(store: IssueStore, number: number): IssueDetail | unde
 export function listLabelDefinitions(store: IssueStore): IssueLabelDefinition[] { return store.get<IssueLabelDefinition[]>(LABEL_DEFINITIONS_KEY) ?? []; }
 
 export function listIssues(store: IssueStore, query: IssueQuery = {}): IssueList {
-  const all = store.list<Issue>('issue:').reverse();
+  const all = issueIndex(store).reverse();
   const term = query.q?.trim().toLowerCase();
   const label = query.label?.trim().toLowerCase();
-  const matching = all.filter((issue) => (!label || issue.labels.some((item) => item.toLowerCase() === label)) && (!term || issue.title.toLowerCase().includes(term) || issue.body.toLowerCase().includes(term) || `#${issue.number}` === term || String(issue.number) === term));
+  const matching = all.filter((issue) => (!label || issue.labels.some((item) => item.toLowerCase() === label)) && (!term || issue.title.includes(term) || issue.body.includes(term) || `#${issue.number}` === term || String(issue.number) === term));
   const state = query.state ?? 'open';
   const filtered = state === 'all' ? matching : matching.filter((issue) => issue.state === state);
   const offset = query.offset ?? 0, limit = Math.min(query.limit ?? PAGE_LIMIT, PAGE_LIMIT);
-  const items = filtered.slice(offset, offset + limit);
+  const items = filtered.slice(offset, offset + limit).flatMap((entry) => { const issue = store.get<Issue>(issueKey(entry.number)); return issue ? [issue] : []; });
   const definitions = listLabelDefinitions(store);
   const labels = [...new Map([...definitions.map((item) => item.name), ...all.flatMap((issue) => issue.labels)].map((item) => [item.toLowerCase(), item])).values()].sort((a, b) => a.localeCompare(b));
   return { items, total: filtered.length, openCount: matching.filter((issue) => issue.state === 'open').length, closedCount: matching.filter((issue) => issue.state === 'closed').length, labels, labelDefinitions: definitions, offset, nextOffset: offset + items.length < filtered.length ? offset + items.length : null };
@@ -267,10 +289,12 @@ export function applyLabelChange(store: IssueStore, change: IssueLabelChange): I
   const definitions = listLabelDefinitions(store);
   const index = definitions.findIndex((item) => item.name.toLowerCase() === change.name.toLowerCase());
   const relabel = (from: string, to: string | null) => {
-    for (const issue of store.list<Issue>('issue:')) {
-      if (!issue.labels.some((label) => label.toLowerCase() === from.toLowerCase())) continue;
+    for (const entry of issueIndex(store)) {
+      if (!entry.labels.some((label) => label.toLowerCase() === from.toLowerCase())) continue;
+      const issue = store.get<Issue>(issueKey(entry.number));
+      if (!issue) continue;
       issue.labels = mergedLabels(issue.labels.flatMap((label) => label.toLowerCase() !== from.toLowerCase() ? [label] : to === null ? [] : [to]));
-      store.put(issueKey(issue.number), issue);
+      saveIssue(store, issue);
     }
   };
   if (change.action === 'create') {
@@ -305,7 +329,76 @@ export function issueForViewer(issue: IssueDetail, moderator: boolean, publicVie
 export function issuePeopleIds(issue: Issue | IssueDetail, moderator = true): string[] {
   const ids = [issue.authorId, ...issue.assignees, ...('comments' in issue ? issue.comments.map((comment) => comment.authorId) : [])];
   if (moderator) ids.push(...('comments' in issue ? issue.comments.flatMap((comment) => comment.hidden?.by ? [comment.hidden.by] : []) : []), ...(issue.locked?.by ? [issue.locked.by] : []));
-  return [...new Set(ids.filter((id) => id !== ISSUE_SYSTEM_AUTHOR))];
+  return [...new Set(ids.filter((id) => id !== ISSUE_SYSTEM_AUTHOR && !id.startsWith(GITHUB_AUTHOR_PREFIX)))];
+}
+
+export interface IssueImport { title: string; body: string; state: IssueState; closedReason?: IssueCloseReason; closedAt?: string; labels: string[]; authorId: string; createdAt: string; updatedAt: string; importedFrom: ImportedIssue }
+export interface CommentImport { githubId: number; githubIssue: number; authorId: string; body: string; createdAt: string; updatedAt: string; importedFrom: ImportedComment }
+export interface ImportSkip { ref: string; reason: string }
+export interface ImportOutcome { created: number; updated: number; skipped: ImportSkip[] }
+
+const sameIssue = (issue: Issue, item: IssueImport) => issue.title === item.title && issue.body === item.body && issue.state === item.state && issue.closedReason === item.closedReason && issue.labels.join('\n') === item.labels.join('\n');
+
+export function importIssues(store: IssueStore, repositoryId: string, source: string, items: IssueImport[], preserveNumbers: boolean): ImportOutcome {
+  const outcome: ImportOutcome = { created: 0, updated: 0, skipped: [] };
+  for (const item of items) {
+    const githubNumber = item.importedFrom.number;
+    const mapped = store.get<number>(githubIssueKey(source, githubNumber));
+    const closed = item.state === 'closed' ? { closedReason: item.closedReason ?? 'completed', closedAt: item.closedAt ?? item.updatedAt } : {};
+    const existing = mapped === undefined ? undefined : store.get<Issue>(issueKey(mapped));
+    if (existing) {
+      if (sameIssue(existing, item)) continue;
+      const { closedReason: _reason, closedAt: _at, ...open } = existing;
+      saveIssue(store, { ...(item.state === 'open' ? open : existing), title: item.title, body: item.body, state: item.state, labels: item.labels, ...closed, updatedAt: item.updatedAt > existing.updatedAt ? item.updatedAt : existing.updatedAt, importedFrom: item.importedFrom });
+      outcome.updated++;
+      continue;
+    }
+    const count = store.get<number>('issue-count') ?? 0;
+    const number = preserveNumbers && githubNumber <= ISSUE_LIMIT && !store.get(issueKey(githubNumber)) ? githubNumber : count + 1;
+    if (number > ISSUE_LIMIT) { outcome.skipped.push({ ref: `#${githubNumber}`, reason: `The repository already holds ${ISSUE_LIMIT.toLocaleString('en-US')} issues.` }); continue; }
+    store.put('issue-count', Math.max(count, number));
+    store.put(githubIssueKey(source, githubNumber), number);
+    saveIssue(store, { repositoryId, number, title: item.title, body: item.body, state: item.state, ...closed, labels: item.labels, assignees: [], missionIds: [], authorId: item.authorId, createdAt: item.createdAt, updatedAt: item.updatedAt, commentCount: 0, importedFrom: item.importedFrom });
+    outcome.created++;
+  }
+  return outcome;
+}
+
+export function importedIssueNumber(store: IssueStore, source: string, githubNumber: number): number | undefined { return store.get<number>(githubIssueKey(source, githubNumber)); }
+
+export function importComments(store: IssueStore, source: string, items: CommentImport[]): ImportOutcome {
+  const outcome: ImportOutcome = { created: 0, updated: 0, skipped: [] };
+  for (const item of items) {
+    const mapped = store.get<{ number: number; key: string }>(githubCommentKey(source, item.githubId));
+    if (mapped) {
+      const comment = store.get<IssueComment & { key: string }>(mapped.key);
+      if (comment && comment.body !== item.body) { store.put(mapped.key, { ...comment, body: item.body, editedAt: item.updatedAt }); outcome.updated++; }
+      continue;
+    }
+    const number = store.get<number>(githubIssueKey(source, item.githubIssue));
+    const issue = number === undefined ? undefined : store.get<Issue>(issueKey(number));
+    if (!issue) { outcome.skipped.push({ ref: `#${item.githubIssue} comment ${item.githubId}`, reason: 'Its issue was not imported.' }); continue; }
+    if (issue.commentCount >= ISSUE_COMMENT_LIMIT) { outcome.skipped.push({ ref: `#${item.githubIssue} comment ${item.githubId}`, reason: `An issue holds at most ${ISSUE_COMMENT_LIMIT} comments.` }); continue; }
+    const key = addComment(store, issue, item.authorId, item.body, item.createdAt, item.importedFrom);
+    store.put(githubCommentKey(source, item.githubId), { number: issue.number, key });
+    saveIssue(store, issue);
+    outcome.created++;
+  }
+  return outcome;
+}
+
+export function importLabelDefinitions(store: IssueStore, labels: IssueLabelDefinition[]): ImportOutcome {
+  const outcome: ImportOutcome = { created: 0, updated: 0, skipped: [] };
+  const definitions = listLabelDefinitions(store);
+  for (const label of labels) {
+    if (definitions.some((item) => item.name.toLowerCase() === label.name.toLowerCase())) continue;
+    if (definitions.length >= ISSUE_LABEL_DEFINITIONS_MAX) { outcome.skipped.push({ ref: label.name, reason: `A repository defines at most ${ISSUE_LABEL_DEFINITIONS_MAX} labels.` }); continue; }
+    definitions.push(label);
+    outcome.created++;
+  }
+  definitions.sort((a, b) => a.name.localeCompare(b.name));
+  store.put(LABEL_DEFINITIONS_KEY, definitions);
+  return outcome;
 }
 
 export interface IssueAccess {

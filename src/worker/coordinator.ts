@@ -18,6 +18,7 @@ import { assertLineInCandidate, assertReviewClear, currentReviewRequests, review
 import { skillMissionInput, validateRepositorySkillChange } from './skill-edit';
 import type { ImportReceipt, ImportResult } from './repository-import';
 import { applyReleaseChange, type ReleaseChange, type ReleaseReceipt } from './releases';
+import { applyImportChange, importedPullMissions, importedReleaseIds, ORG_IMPORTS_KEPT, type ImportChange, type ImportChangeResult, type ImportRegistryEntry, type OrgImportRecord, type StoredImport } from './github-import';
 import { defaultModelConnections, pinMissionModels, validateModelConnection } from './model-config';
 import { readAssist, readPool, requesterRemaining, reservePool, poolUsage, publicPool, writeAssist, writePool, type PoolKind, type StoredPool } from './community-pool';
 import { applyIssueChange, applyLabelChange, applyTriage, issueFingerprint, linkIssueMission, listIssues, listLabelDefinitions, readIssue, recordIssueOutcome, type IssueActor, type IssueChange, type IssueLabelChange, type IssueQuery } from './issues';
@@ -1680,6 +1681,33 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   githubMirror(): StoredMirror | null { return this.store.get<StoredMirror>('github-mirror') ?? null; }
 
   changeGithubMirror(change: MirrorChange): MirrorChangeResult { return this.ctx.storage.transactionSync(() => applyMirrorChange(this.store, change)); }
+
+  githubImport(): StoredImport | null { return this.store.get<StoredImport>('github-import') ?? null; }
+
+  changeGithubImport(change: ImportChange): ImportChangeResult { return this.ctx.storage.transactionSync(() => applyImportChange(this.store, change)); }
+
+  importedGithubPulls(source: string, numbers: number[]): Record<number, string> { return importedPullMissions(this.store, source, numbers); }
+
+  importedGithubReleases(source: string, ids: number[]): number[] { return importedReleaseIds(this.store, source, ids); }
+
+  githubOrgImports(): OrgImportRecord[] { return this.store.list<OrgImportRecord>('github-org-import:').sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
+
+  githubOrgImport(id: string): OrgImportRecord | null { return this.store.get<OrgImportRecord>(`github-org-import:${id}`) ?? null; }
+
+  githubOrgImportRequest(requestId: string): OrgImportRecord | null { return this.githubOrgImports().find(record => record.requestId === requestId) ?? null; }
+
+  saveGithubOrgImport(record: OrgImportRecord): void {
+    this.ctx.storage.transactionSync(() => {
+      this.store.put(`github-org-import:${record.id}`, record);
+      for (const stale of this.githubOrgImports().slice(ORG_IMPORTS_KEPT)) this.store.delete(`github-org-import:${stale.id}`);
+    });
+  }
+
+  githubImportRegistry(): ImportRegistryEntry[] { return this.store.list<ImportRegistryEntry>('github-import-entry:'); }
+
+  registerGithubImport(entry: ImportRegistryEntry, enabled: boolean): void {
+    if (enabled) this.store.put(`github-import-entry:${entry.repositoryId}`, entry); else this.store.delete(`github-import-entry:${entry.repositoryId}`);
+  }
 
   secretLinks(): SecretLink[] { return new SecretLinkBook(this.store).links(); }
 
