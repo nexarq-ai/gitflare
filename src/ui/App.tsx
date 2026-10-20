@@ -65,11 +65,13 @@ import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLay
 import { workspaceChord } from "./workspace-chord";
 import { accountSection } from "./account-data";
 import { eligibleApprovers, knownCheckNames } from "./approvals";
-import { crossHostTarget, pageHostOrigins, siteSignedInHint } from "./hosts";
+import { crossHostTarget, pageHostOrigins, siteHref, siteSignedInHint } from "./hosts";
+import { publicRepositoryPath } from "../shared/handles";
 import AccountMenu from "./AccountMenu";
 
 import ConnectionError from "./ConnectionError";
 import "./policy-pages.css";
+import "./public-settings.css";
 import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
 import { BrandMark } from "./BrandMark";
 
@@ -115,6 +117,7 @@ const BranchProtection = lazy(loadBranchProtection);
 const PreviewSettings = lazy(() => import("./PreviewSettings"));
 const AgentSettings = lazy(() => import("./AgentSettings"));
 const GitHubMirror = lazy(() => import("./GitHubMirror"));
+const RepositoryVisibilityCard = lazy(() => import("./RepositoryVisibility"));
 const loadSecretSettings = () => import("./SecretSettings");
 const SecretSettings = lazy(loadSecretSettings);
 const loadGitAccess = () => import("./GitAccess");
@@ -279,8 +282,19 @@ function Workspace() {
 
   useEffect(() => {
     if (authState !== "required" || isPublicRoute(route)) return;
-    try { sessionStorage.setItem(RETURN_ROUTE_KEY, route); } catch {}
-    goTo("signin", true);
+    let active = true;
+    const signIn = () => {
+      if (!active) return;
+      try { sessionStorage.setItem(RETURN_ROUTE_KEY, route); } catch {}
+      goTo("signin", true);
+    };
+    const repositoryId = /^repository\/([^/]+)/.exec(route)?.[1];
+    if (!repositoryId) { signIn(); return; }
+    request<{ url: string }>(`/api/public/repository/${encodeURIComponent(repositoryId)}`).then(
+      result => { if (active) window.location.replace(result.url.startsWith("/") ? siteHref(result.url) : result.url); },
+      signIn,
+    );
+    return () => { active = false; };
   }, [authState, route]);
 
   useEffect(() => {
@@ -726,6 +740,7 @@ function Workspace() {
                 onImport={() => navigate(`repository/${route.split("/")[1]}/import`)}
                 canManage={permissions.includes("manage")}
                 demo={!!authConfig.demo}
+                publicRepositories={authConfig.edition === "hosted" && !authConfig.demo}
                 onNotify={notify}
                 canContribute={permissions.includes("contribute")}
                 canExecute={permissions.includes("execute")}
@@ -1307,10 +1322,11 @@ function RepositoryDetailsPanel({ repository, onNotify }: { repository: Reposito
   );
 }
 
-function RepositoryGeneral({ repository, onNotify }: { repository: Repository; onNotify: (message: string) => void }) {
+function RepositoryGeneral({ repository, publicRepositories, onNotify, onRefresh }: { repository: Repository; publicRepositories: boolean; onNotify: (message: string) => void; onRefresh: () => void }) {
   return <>
     <div className="page-heading"><div><h1>General</h1><p>Details, clone address and GitHub mirror for {repositoryLabel(repository)}.</p></div></div>
     <RepositoryDetailsPanel repository={repository} onNotify={onNotify} />
+    {publicRepositories && <RepositoryVisibilityCard key={repository.id} repository={repository} onNotify={onNotify} onChanged={onRefresh} />}
     <GitHubMirror key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
   </>;
 }
@@ -1384,6 +1400,7 @@ function RepositoryDetail({
   releaseId,
   canLand,
   demo = false,
+  publicRepositories = false,
   access,
   onAccessChanged,
 }: {
@@ -1405,6 +1422,7 @@ function RepositoryDetail({
   releaseId?: string;
   canLand: boolean;
   demo?: boolean;
+  publicRepositories?: boolean;
   access: AccessSnapshot | null;
   onAccessChanged: () => Promise<void>;
 }) {
@@ -1433,6 +1451,7 @@ function RepositoryDetail({
           <h1 style={{ display: "flex", alignItems: "center", gap: 11 }}>
             <FolderSimpleIcon size={25} color="#7d8b9e" />
             {repositoryLabel(repository)}
+            {publicRepositories && repository.visibility === "public" && workspace.handle && <a className="repository-public-pill" href={siteHref(publicRepositoryPath(workspace.handle, repositoryLabel(repository)))} target="_blank" rel="noopener noreferrer" title="Open the public page">Public</a>}
           </h1>
           <p>
             {repository.description ||
@@ -1471,7 +1490,7 @@ function RepositoryDetail({
           : subroute === "agents" ? <AgentSettings key={repository.id} repositoryId={repository.id} canChange={canLand} onNotify={onNotify} />
           : subroute === "cloudflare" ? <CloudflareConnection key={repository.id} canManage={canManage} repository={repository} repositoryId={repository.id} />
           : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <RouteProgress />
-          : <RepositoryGeneral repository={repository} onNotify={onNotify} />}
+          : <RepositoryGeneral repository={repository} publicRepositories={publicRepositories} onNotify={onNotify} onRefresh={onRefresh} />}
       </RepositorySettingsLayout> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "code" ? (
         <><RepositoryImportOnboarding key={repository.id} repository={repository} canManage={canManage} onImport={onImport} onRefresh={onRefresh} /><RepositoryBrowser key={repository.id} repository={repository} />{repository.provider === "artifacts" && <GitAccess key={`git-${repository.id}`} repository={repository} onNotify={onNotify} />}</>
       ) : tab === "overview" ? (

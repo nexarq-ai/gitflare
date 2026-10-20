@@ -37,3 +37,13 @@ A mission runs two to four agents in one of two modes. **Combine** gives each ag
 A repository may commit a root `gitflare.json` to set its test command, the paths agents may edit, an npm dependency install, a preview command, a test timeout of up to 900 seconds and a runner size. It is read from the pinned base commit and agents cannot change it, tests, manifests or lockfiles. Dependency install runs with network access limited to read-only requests to the npm registry and without package install scripts.
 
 These capabilities are covered by automated tests. They have not yet been run end to end on Cloudflare; the live evidence above still describes a two-agent combine mission on the dependency-free fixture.
+
+## Public repositories and handles
+
+Every account can choose a **handle** in Account → Profile, and a workspace Owner can choose one for the workspace in Settings → General. A handle is 1–39 lowercase letters, numbers or single hyphens; names used by Gitflare's own pages (such as `api`, `docs`, `settings` or `repository`) are reserved. Choosing your account handle creates your personal workspace, which uses that handle. Renaming keeps the old address redirecting for 90 days, and nobody else can take the old handle during that time. A handle can change at most five times a day.
+
+An Owner can make a repository **public** in its Settings → General. Gitflare asks for a `LICENSE` file on the default branch, or an explicit choice to publish without one, and records the change in the audit log. A public repository lives at `https://<site>/<handle>/<repository>`: anyone can read its code, commits, streams and releases without signing in. Issues, proposals, missions, discussions, secrets, previews, deployments and settings stay private to the workspace. Making the repository private again takes effect immediately; copies people already cloned stay with them.
+
+Anonymous reads go through one access check for a public principal that can only read a repository marked public in its own workspace. A private repository, an unknown repository and an unknown handle all return the same `404`. Commit lookups by SHA on the public pages are limited to the last 1,000 commits of the default branch. Anonymous requests are rate-limited per address. Old `/repository/<id>` links of a public repository lead signed-out visitors to its public address.
+
+Public repositories are part of hosted Gitflare; the self-hosted and demo editions keep every repository private.

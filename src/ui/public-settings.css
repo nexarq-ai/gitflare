@@ -1,0 +1,26 @@
+.handle-address { display: inline-flex; align-items: baseline; min-width: 0; max-width: 100%; overflow: hidden; padding: 6px 10px; border: 1px solid var(--gf-color-border); border-radius: 6px; background: var(--gf-color-surface-sunken); font-family: var(--gf-font-mono); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.handle-address > span { color: var(--gf-color-text-tertiary); }
+.handle-address > strong { color: var(--gf-color-text); font-weight: 600; }
+.handle-lead { margin-bottom: 12px; }
+.handle-note { margin-top: 10px; }
+.handle-note a, .visibility-card .form-error a { color: var(--gf-color-accent); text-underline-offset: 3px; }
+.handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.handle-input { display: flex; flex: 1; align-items: center; min-width: min(100%, 260px); min-height: 36px; border: 1px solid var(--gf-color-border-strong); border-radius: 6px; background: var(--gf-color-surface-sunken); font-family: var(--gf-font-mono); font-size: 13px; }
+.handle-input:focus-within { outline: 2px solid var(--gf-color-focus); outline-offset: 1px; }
+.handle-input > span { flex-shrink: 0; padding-left: 10px; color: var(--gf-color-text-tertiary); user-select: none; }
+.handle-input > input { flex: 1; min-width: 0; height: 34px; padding: 0 10px 0 1px; border: 0; outline: 0; background: transparent; color: var(--gf-color-text); font: inherit; }
+.handle-actions { display: flex; gap: 8px; }
+.handle-status { display: flex; align-items: center; gap: 6px; min-height: 20px; margin: 8px 0 0; font-size: 12px; color: var(--gf-color-text-secondary); }
+.handle-status-available { color: var(--gf-color-success); }
+.handle-status-unavailable { color: var(--gf-color-danger); }
+
+.visibility-pill { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); color: var(--gf-color-text-secondary); font-size: 11px; line-height: 1.6; }
+.visibility-pill.is-public { border-color: var(--gf-color-success); background: var(--gf-color-success-bg); color: var(--gf-color-success); }
+.visibility-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.visibility-state { flex: 1; min-width: min(100%, 240px); margin: 0; font-size: 13px; line-height: 1.6; color: var(--gf-color-text); overflow-wrap: anywhere; }
+.visibility-state a { color: var(--gf-color-accent); font-family: var(--gf-font-mono); font-size: 12px; text-underline-offset: 3px; }
+.visibility-license { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--gf-color-border); }
+.visibility-card .form-error { margin-top: 12px; }
+
+.repository-public-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); color: var(--gf-color-text-secondary); font-size: 11px; font-weight: 450; letter-spacing: 0; line-height: 1.6; vertical-align: middle; }
+.repository-public-pill:hover { border-color: var(--gf-color-border-strong); color: var(--gf-color-text); text-decoration: none; }

@@ -8,6 +8,7 @@ import { SettingsLayout } from "./SettingsLayout";
 import { RouteProgress } from "./WorkspaceLoader";
 import { ErrorNotice } from "./components";
 import DemoFeaturePanel from "./DemoFeaturePanel";
+import { UserHandleCard } from "./HandleSettings";
 import { needsRecentSignIn, signInAgain } from "./reauth";
 import { accountSections, browserSessions, clientSessions, describeSession, tokenSessions, type AccountSection } from "./account-data";
 import "./account-settings.css";
@@ -30,7 +31,7 @@ export default function AccountSettings({ section, config, onChanged, onSwitchWo
   return <SettingsLayout title="Your account" items={accountSections.map(item => ({ href: `/account/${item.id}`, label: item.label, current: item.id === section, ai: item.id === "clients" }))}>
     <div className="page-heading"><div><h1>{titles[section][0]}</h1><p>{titles[section][1]}</p></div></div>
     {error && <ErrorNotice message={error} onRetry={() => void load()} />}
-    {!data ? !error && <RouteProgress /> : section === "profile" ? <Profile data={data} config={config} onSwitchWorkspace={onSwitchWorkspace} />
+    {!data ? !error && <RouteProgress /> : section === "profile" ? <Profile data={data} config={config} onSwitchWorkspace={onSwitchWorkspace} onChanged={async () => { await load(); await onChanged(); }} />
       : config.demo && (section === "security" || section === "sessions") ? <DemoFeaturePanel feature="account-security" />
       : section === "security" ? <Security data={data} config={config} onChanged={async () => { await load(); await onChanged(); }} />
       : section === "sessions" ? <Sessions data={data} reload={load} onSignOut={onSignOut} />
@@ -38,7 +39,7 @@ export default function AccountSettings({ section, config, onChanged, onSwitchWo
   </SettingsLayout>;
 }
 
-function Profile({ data, config, onSwitchWorkspace }: { data: AccountSnapshot; config: AuthConfig; onSwitchWorkspace: (id: string) => Promise<void> }) {
+function Profile({ data, config, onSwitchWorkspace, onChanged }: { data: AccountSnapshot; config: AuthConfig; onSwitchWorkspace: (id: string) => Promise<void>; onChanged: () => Promise<void> }) {
   const user = data.user;
   const email = "email" in user ? user.email : undefined;
   const linked = "cloudflareLinked" in user && user.cloudflareLinked;
@@ -51,6 +52,7 @@ function Profile({ data, config, onSwitchWorkspace }: { data: AccountSnapshot; c
         {email && <VerifyEmailNotice user={{ email, emailVerified: user.emailVerified }} />}
       </div>
     </section>
+    {email && config.edition === "hosted" && !config.demo && <UserHandleCard onChanged={onChanged} />}
     {email && <section className="panel">
       <div className="panel-header"><h2>Sign-in methods</h2></div>
       <ul className="people-list">

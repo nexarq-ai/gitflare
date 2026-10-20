@@ -9,6 +9,7 @@ import { needsRecentSignIn, signInAgain } from "./reauth";
 import { demoOf } from "./DemoFeaturePanel";
 import InfoTip from "./InfoTip";
 import CheckChips from "./CheckChips";
+import { WorkspaceHandleCard } from "./HandleSettings";
 import { approvalWarning, eligibleApprovers, knownCheckNames, selfApprovalNote } from "./approvals";
 import "./people-settings.css";
 
@@ -23,6 +24,7 @@ export default function GeneralSettings({ workspace, data, selfHosted, onChanged
     <div className="page-heading"><div><h1>Workspace</h1><p>Name, defaults and ownership for {workspace.name}.</p></div></div>
     {selfHosted && owner && <InstallationCredentialPrompt onOpen={onOpenInstallation} />}
     <NameCard name={workspace.name} role={data.role} owner={owner} onChanged={onChanged} />
+    {!selfHosted && !demoOf(data) && <WorkspaceHandleCard key={data.workspace?.id} onChanged={onChanged} />}
     <AiSettingsPanel settings={workspace.ai} canManage={owner} onChanged={onChanged} />
     <ProtectionCard key={JSON.stringify(data.protection)} protection={data.protection} owner={owner} approvers={eligibleApprovers(data.members)} knownChecks={knownCheckNames(workspace.missions)} onChanged={onChanged} />
     {owner && <OwnershipCard data={data} onChanged={onChanged} />}
