@@ -2,6 +2,8 @@ export const HANDLE_MAX = 39;
 export const HANDLE_REDIRECT_DAYS = 90;
 export const HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$/;
 
+export const PROFILE_LIMITS = { displayName: 80, bio: 300, links: 4, linkLength: 200, pinned: 6 } as const;
+
 export const OPERATOR_HANDLES = ['gitflare', 'nexarq'] as const;
 
 export const RESERVED_HANDLES: ReadonlySet<string> = new Set([

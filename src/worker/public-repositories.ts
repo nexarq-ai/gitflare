@@ -7,7 +7,8 @@ import type { AppEnv } from './env';
 import { catalogName } from './capacity';
 import { listBranches } from './git-http';
 import { consume, rateLimitedResponse } from './rate-limits';
-import { publicPrincipal, securityClient, type Principal, type SecurityService, type VisibilityRecord } from './security';
+import { publicPrincipal, securityClient, type Principal, type PublicListing, type SecurityService, type VisibilityRecord } from './security';
+import { CACHE_DEPENDENCIES } from './public-cache';
 import { sourceView, type SourceHandle } from './source-browse';
 
 export const PUBLIC_NOT_FOUND = 'This repository does not exist or is not public.';
@@ -45,6 +46,17 @@ export async function resolvePublicRepository(env: AppEnv, access: SecurityServi
   if (!repository || repository.provider !== 'artifacts' || !env.ARTIFACTS) return null;
   const allowed = await access.check(publicPrincipal(resolved.workspaceId), 'read', 'repository', repository.id).then(() => true, () => false);
   return allowed ? { repository, handle: resolved.handle, workspaceId: resolved.workspaceId } : null;
+}
+
+export interface PublicTargetById extends PublicTarget { listing: PublicListing }
+
+export async function publicTargetById(env: AppEnv, access: SecurityService, repositoryId: string): Promise<PublicTargetById | null> {
+  const listing = await access.publicListing(repositoryId);
+  if (!listing) return null;
+  const repository = await env.GITFLARE_COORDINATOR.getByName(catalogName(listing.workspaceId)).getRepository(repositoryId).catch(() => undefined);
+  if (!repository || repository.provider !== 'artifacts') return null;
+  const [allowed, handle] = await Promise.all([access.check(publicPrincipal(listing.workspaceId), 'read', 'repository', repository.id).then(() => true, () => false), access.handleOf(listing.workspaceId)]);
+  return allowed && handle ? { repository, handle, workspaceId: listing.workspaceId, listing } : null;
 }
 
 export function detectSpdx(text: string): string | null {
@@ -126,16 +138,24 @@ async function publicRef(source: SourceHandle, repository: Repository, value: st
 
 function commits(list: { hash: string; message: string }[]): PublicCommit[] { return list.map(commit => ({ sha: commit.hash, message: commit.message.slice(0, 2000) })); }
 
-async function publicRead(env: AppEnv, target: PublicTarget, view: string, url: URL, origin: string): Promise<Response> {
+async function publicRead(env: AppEnv, access: SecurityService, target: PublicTarget, view: string, url: URL, origin: string): Promise<Response> {
+  const response = await publicView(env, access, target, view, url, origin);
+  if (response.ok) response.headers.set(CACHE_DEPENDENCIES, target.repository.id);
+  return response;
+}
+
+async function publicView(env: AppEnv, access: SecurityService, target: PublicTarget, view: string, url: URL, origin: string): Promise<Response> {
   const { repository, handle } = target;
   using source = await env.ARTIFACTS!.get(repository.name);
   if (view === '') {
     const { commit, entries } = await rootEntries(source, repository.defaultBranch);
     const readme = entries.filter(entry => entry.type !== 'tree' && README_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0]?.name ?? null;
     const urls = publicUrls(origin, handle, repository);
+    const [stats] = await access.repositoryStats([repository.id]);
     return Response.json({
       handle, name: repositoryLabel(repository), description: repository.description, defaultBranch: repository.defaultBranch, headSha: commit?.hash ?? null, updatedAt: repository.updatedAt,
       visibility: 'public', license: commit ? await detectLicense(source, repository.defaultBranch) : null, readme, url: urls.url, cloneUrl: urls.cloneUrl, latestCommit: commit ? commits([commit])[0]! : null,
+      stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0,
     } satisfies PublicRepositorySummary);
   }
   if (view === 'branches') {
@@ -212,5 +232,5 @@ export async function publicRepositoryApi(request: Request, env: AppEnv): Promis
   const target = await resolvePublicRepository(env, access, handle.toLowerCase(), name);
   if (!target) notFound();
   if ('redirect' in target) return new Response(null, { status: 308, headers: { Location: `/api/public/repos/${target.redirect}/${encodeURIComponent(name)}${view ? `/${view}` : ''}${url.search}` } });
-  return publicRead(env, target, view, url, origin);
+  return publicRead(env, access, target, view, url, origin);
 }

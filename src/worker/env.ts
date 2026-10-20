@@ -7,7 +7,7 @@ import type { MissionWorkflowParams } from './workflow';
 import type { RateLimitEnv } from './rate-limits';
 import type { ModelRelay } from './model-relay';
 
-export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRET' | 'CLOUDFLARE_OAUTH_SCOPES' | 'CLOUDFLARE_CLIENT_AUTH_METHOD' | 'EDITION' | 'ADMIN_EMAIL' | 'ADMIN_PASSWORD' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO' | 'OAUTH_KV' | 'GITFLARE_SECURITY' | 'APP_ENV' | 'GITFLARE_COORDINATOR' | 'ARTIFACTS' | 'SANDBOX' | 'MISSION_WORKFLOW' | 'MODEL' | 'AI' | 'AI_GATEWAY_ID' | 'MODEL_RELAY' | 'MODEL_RELAY_LOCATION_HINT' | 'AI_FEATURES' | 'TEST_COMMAND' | 'SITE_ORIGIN' | 'APP_ORIGIN' | 'DEMO_MODE' | 'DEMO_RESET_TOKEN' | keyof RateLimitEnv> & RateLimitEnv & {
+export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRET' | 'CLOUDFLARE_OAUTH_SCOPES' | 'CLOUDFLARE_CLIENT_AUTH_METHOD' | 'EDITION' | 'ADMIN_EMAIL' | 'ADMIN_PASSWORD' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO' | 'OAUTH_KV' | 'GITFLARE_SECURITY' | 'APP_ENV' | 'GITFLARE_COORDINATOR' | 'ARTIFACTS' | 'SANDBOX' | 'MISSION_WORKFLOW' | 'MODEL' | 'AI' | 'AI_GATEWAY_ID' | 'MODEL_RELAY' | 'MODEL_RELAY_LOCATION_HINT' | 'AI_FEATURES' | 'TEST_COMMAND' | 'SITE_ORIGIN' | 'APP_ORIGIN' | 'DEMO_MODE' | 'DEMO_RESET_TOKEN' | 'PUBLIC_INDEX' | keyof RateLimitEnv> & RateLimitEnv & {
   GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity>;
   APP_ENV: 'local' | 'production';
   GITFLARE_COORDINATOR: DurableObjectNamespace<GitflareCoordinator>;
@@ -63,4 +63,5 @@ export type AppEnv = Omit<Env, 'CLOUDFLARE_CLIENT_ID' | 'CLOUDFLARE_CLIENT_SECRE
   DEMO_RESET_TOKEN?: string;
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
+  PUBLIC_INDEX?: D1Database;
 };

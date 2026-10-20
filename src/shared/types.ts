@@ -370,8 +370,22 @@ export interface PublicRepositorySummary {
   url: string;
   cloneUrl: string;
   latestCommit: PublicCommit | null;
+  stars: number;
+  watchers: number;
 }
 export interface PublicCommit { sha: string; message: string }
+export type PublicHandleKind = 'user' | 'workspace';
+export interface PublicRepositoryCard { handle: string; name: string; description: string; language: string | null; topics: string[]; license: string | null; stars: number; updatedAt: string; publishedAt: string; url: string }
+export type ExploreSort = 'stars' | 'new' | 'updated';
+export interface PublicExplore { sort: ExploreSort; language: string | null; items: PublicRepositoryCard[]; languages: string[]; nextCursor: number | null; indexed: boolean }
+export type PublicSearchType = 'repositories' | 'paths' | 'people';
+export interface PublicPathMatch { handle: string; repository: string; path: string; url: string }
+export interface PublicPerson { handle: string; kind: PublicHandleKind; displayName: string; url: string }
+export interface PublicSearch { query: string; type: PublicSearchType; repositories: PublicRepositoryCard[]; paths: PublicPathMatch[]; people: PublicPerson[]; nextCursor: number | null; indexed: boolean }
+export interface PublicProfile { handle: string; kind: PublicHandleKind; displayName: string; bio: string; links: string[]; pinned: string[]; repositories: PublicRepositoryCard[]; starred: PublicRepositoryCard[]; url: string }
+export interface ProfileSettings { scope: PublicHandleKind; handle: string | null; displayName: string; bio: string; links: string[]; pinned: string[]; canChange: boolean; url: string | null }
+export interface StarState { handle: string; repository: string; starred: boolean; watching: boolean; stars: number; watchers: number }
+export interface StarList { starred: PublicRepositoryCard[]; watching: PublicRepositoryCard[] }
 export interface PublicTree { entries: { name: string; path: string; type: 'file' | 'directory' }[]; ref: string; commitSha: string }
 export interface PublicFile { path: string; content: string; commitSha: string }
 export interface PublicHistory { ref: string; commits: PublicCommit[] }
