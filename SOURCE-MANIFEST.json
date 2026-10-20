@@ -1050,8 +1050,8 @@
     },
     {
       "path": "src/worker/cloudflare-deploy.ts",
-      "size": 5998,
-      "sha256": "3b26e5110b3ac8c1fc115ef38e6290e68a0d0234f579f88ccb5c0cc59d89469f"
+      "size": 5962,
+      "sha256": "47fb94948dfb601e0069fdf1eecc9c50a24080d88e234030db0085cb569d5734"
     },
     {
       "path": "src/worker/cloudflare-projects.ts",
