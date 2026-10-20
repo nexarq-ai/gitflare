@@ -1,7 +1,7 @@
 import type { Principal } from './security';
 
 export type RateLimitBinding = { limit(options: { key: string }): Promise<{ success: boolean }> };
-export type RateLimitEnv = { MCP_WRITE_RATE_LIMIT?: RateLimitBinding; MCP_READ_RATE_LIMIT?: RateLimitBinding; API_RATE_LIMIT?: RateLimitBinding; GIT_RATE_LIMIT?: RateLimitBinding; GIT_AUTH_FAILURE_RATE_LIMIT?: RateLimitBinding; PUBLIC_READ_RATE_LIMIT?: RateLimitBinding; PUBLIC_GIT_RATE_LIMIT?: RateLimitBinding };
+export type RateLimitEnv = { MCP_WRITE_RATE_LIMIT?: RateLimitBinding; MCP_READ_RATE_LIMIT?: RateLimitBinding; API_RATE_LIMIT?: RateLimitBinding; GIT_RATE_LIMIT?: RateLimitBinding; GIT_AUTH_FAILURE_RATE_LIMIT?: RateLimitBinding; PUBLIC_READ_RATE_LIMIT?: RateLimitBinding; PUBLIC_GIT_RATE_LIMIT?: RateLimitBinding; FORK_RATE_LIMIT?: RateLimitBinding; OUTSIDE_PROPOSAL_RATE_LIMIT?: RateLimitBinding };
 export type RateLimitName = keyof RateLimitEnv;
 export type RateLimited = { limit: number; windowSeconds: number; retryAfterSeconds: number };
 
@@ -14,6 +14,8 @@ export const RATE_LIMITS: Record<RateLimitName, { namespaceId: string; limit: nu
   GIT_AUTH_FAILURE_RATE_LIMIT: { namespaceId: '4105', limit: 20, period: 60 },
   PUBLIC_READ_RATE_LIMIT: { namespaceId: '4106', limit: 300, period: 60 },
   PUBLIC_GIT_RATE_LIMIT: { namespaceId: '4107', limit: 60, period: 60 },
+  FORK_RATE_LIMIT: { namespaceId: '4120', limit: 5, period: 60 },
+  OUTSIDE_PROPOSAL_RATE_LIMIT: { namespaceId: '4121', limit: 10, period: 60 },
 };
 
 export function rateSubject(principal: Principal): string {

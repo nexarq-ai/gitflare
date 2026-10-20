@@ -48,4 +48,12 @@ Anonymous reads go through one access check for a public principal that can only
 
 Anyone can clone or fetch a public repository over HTTPS without an account: `git clone https://<site>/<handle>/<repository>.git`. Pushing to that address asks for a personal token as the password (create one in Account → AI clients), and only workspace members with Contributor access can push, under the same stream protection as `/git/<repository>.git`. A private repository, an unknown one and an unknown handle all answer `Repository not found.`; clone a private repository with a token at `/git/<repository>.git` on the app host. SSH is not offered; use HTTPS with a token. Anonymous fetches are rate-limited per address, and `/llms.txt` lists recently published public repositories.
 
+## Forks
+
+Signed in, choose **Fork** on a public repository to copy its default branch into a workspace you own, usually your personal one. The fork is a private repository linked to its upstream; the upstream's page counts its forks. Push streams to the fork over HTTPS with a personal token created while that workspace is open (`git push https://<site>/<your-handle>/<repository>.git`). Nobody outside the upstream workspace can push to the upstream itself.
+
+The fork's Code tab shows where it came from and whether its default branch is up to date. **Sync** moves the default branch forward to the upstream head; it never merges, so a fork whose default branch has its own commits must keep working on streams. Each fork holds up to 1 GiB. Gitflare counts the bytes pushed into a fork and synced from upstream, because Artifacts does not report a repository's size, and refuses a push or sync past the limit. Forking is rate-limited per account: 10 forks an hour and 5 of the same repository a day.
+
+A private repository cannot be forked; it answers the same not-found as an unknown one. If an upstream is made private later, its forks keep their code but lose the link's address and sync.
+
 Public repositories are part of hosted Gitflare; the self-hosted and demo editions keep every repository private.

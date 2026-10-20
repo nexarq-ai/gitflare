@@ -194,6 +194,20 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     this.store.put(`repository:${repository.id}`, repository);
   }
 
+  forkStorage(): number { return this.store.get<number>('fork-storage') ?? 0; }
+
+  addForkStorage(bytes: number): number {
+    return this.ctx.storage.transactionSync(() => {
+      const total = this.forkStorage() + Math.max(0, Math.floor(bytes));
+      this.store.put('fork-storage', total);
+      return total;
+    });
+  }
+
+  recordFork(entry: { workspaceId: string; repositoryId: string; forkedAt: string }): void { this.store.put(`forked-into:${entry.repositoryId}`, entry); }
+
+  forkCount(): number { return this.store.list('forked-into:').length; }
+
   listSummaryCache(): MissionSummaryCache[] {
     return this.store.list<MissionSummaryCache>('summary-cache:');
   }
