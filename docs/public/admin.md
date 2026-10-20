@@ -1,33 +1,35 @@
-# Administer a workspace
+# Workspace administration
 
-The self-hosted edition is designed for one workspace in the Cloudflare account that runs it. The first administrator becomes Owner of that workspace; this role does not grant global administration of the separately operated hosted service. Public workspace signup is disabled in self-hosted mode; the Owner creates or invites each additional user.
+The self-hosted edition runs one workspace in the Cloudflare account that hosts it. The first administrator becomes its Owner. There is no public sign-up; the Owner creates or invites every other user.
 
 ![Account identity, role and repository scope flow through shared access checks before UI or MCP operations are allowed](gitflare-diagram:access-control)
 
 ## First administrator and MFA
 
-For a new native Cloudflare deployment, provide `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the deployment settings. At the new Worker URL, use those same credentials with the administrator's display name and workspace name. Passwords must have at least 12 characters. The setup flow then requires TOTP authenticator enrollment and verification before opening the workspace, and displays ten single-use recovery codes. Store those codes privately. A new self-hosted installation does not ask for a setup token. Hosted signup, MFA enrollment, password login with an MFA challenge, and recovery-code login have passed live checks; the new self-hosted first-admin flow has not yet been verified in a fresh installation.
+Deploy with `ADMIN_EMAIL` and `ADMIN_PASSWORD` (12 characters or more). On the first visit, sign in with them, give a display name and a workspace name, then enroll a TOTP authenticator. Gitflare shows ten single-use recovery codes once; store them privately.
 
-Self-hosted login is configured to require an authenticator challenge. An enrolled user can use a single-use recovery code if the authenticator is unavailable. Provisioning is implemented to generate `AUTH_ENCRYPTION_KEY` when absent and preserve it on later deployments; this has not yet been verified in a fresh installation. Back up the key securely and do not rotate it casually. There is no automated account recovery, email-address verification, MFA reset, Cloudflare product SSO, or platform-level super-administrator interface. The hosted MFA checks do not establish a fresh self-hosted install.
+Every sign-in asks for an authenticator code; a recovery code works when the authenticator is unavailable. There is no automated MFA reset, Cloudflare SSO or platform-level super-administrator, so keep at least one Owner who can sign in.
+
+`AUTH_ENCRYPTION_KEY` is generated at first deployment and kept on later ones. Back it up. If it is lost or changed, stored tokens and connections can no longer be decrypted.
 
 ## Users and permissions
 
-In **Settings → People**, Owners can create users or send a single-use invitation. If a verified Email Sending sender is configured, the application can deliver invitation links. Without that sender, deliver the invitation capability securely yourself. Invitations expire after 24 hours and must match the invitee's account email. Email delivery and invitation acceptance must be verified in your own deployment.
+In **Settings → People**, Owners create users or send single-use invitations. With a verified Cloudflare Email Sending sender configured, Gitflare emails the link; without one, pass the invitation link on yourself. Invitations expire after 24 hours and must match the invitee's email.
 
-The current role presets are Viewer, Contributor, Reviewer, Maintainer, Deployer, and Owner. Membership can be limited to selected repositories. Teams and exact-resource grants can refine access, but grant records do not provision secrets, databases, deployment credentials, or migration executors. Keep at least one active Owner and review the audit trail after access changes.
+Roles are Viewer, Contributor, Reviewer, Triager, Maintainer, Deployer and Owner. Membership can be limited to selected repositories, and teams and per-resource grants refine it. Grants are authorization records only; they do not create secrets, databases or deployment credentials.
 
-Browser sessions end after seven days without use and always 30 days after sign-in; personal MCP tokens last eight hours. Recent-sign-in checks for ownership transfer, authenticator setup and new tokens count from the actual sign-in, not from the last renewal. Revoke browser sessions, personal MCP sessions, task credentials, and invitations during offboarding. Task credentials have bounded repository scope, expiry, request budget, and execution budget. A coding agent must never receive owner credentials, personal MCP credentials, or deployment credentials.
+Browser sessions end after seven days without use and 30 days after sign-in; personal MCP tokens last eight hours. Ownership transfer, authenticator changes and new tokens require a sign-in within the last few minutes. When someone leaves, revoke their browser sessions, MCP sessions, agent credentials and open invitations.
 
-An authenticated MCP client acts with the signed-in user's current authority; it can approve or land only if the user's role and the exact candidate state allow it. See [MCP authorization](mcp.md) and [repository review](repositories.md). The hosted service's global administration and hosted-agent claim process are separate from this self-hosted workspace and are excluded from the source package.
+Agent credentials are scoped to one repository with an expiry, a request budget and an execution budget. An agent never receives Owner, personal MCP or deployment credentials.
 
-## Cloudflare account and repository resources
+An MCP client acts with the signed-in person's current authority: it can approve or land only when that person's role and the candidate's state allow it. See the [MCP guide](mcp.md).
 
-After signing in to Gitflare as an Owner, **Settings → Cloudflare** can start a separate Cloudflare account authorization. This connection is not Cloudflare product SSO and does not sign a user in to Gitflare; in the hosted edition, Sign in with Cloudflare likewise never creates it. Before Cloudflare opens, Gitflare lists each permission it will request and why. [Cloudflare permissions](cloudflare-permissions.md) explains each one, what Gitflare never does, and how to revoke access. The OAuth account connection and resource listing have been verified live; each project mapping and operation has separate verification status.
+## Cloudflare account and resources
 
-With an account connected, an Owner can associate one repository with multiple Workers, D1 databases, Durable Object namespaces, Container applications, and Workflows. The account catalog supports search and type filtering, and each selected resource receives an environment label. Source validates the resources against the connected account before saving. Usage results are scoped to the account and each mapped resource; Worker and D1 counters are supported, while other resource types report unavailable rather than estimated metrics.
+**Settings → Cloudflare** connects a Cloudflare account with a separate OAuth authorization. This is not sign-in; it never creates a Gitflare session. Before Cloudflare opens, Gitflare lists each permission it will request and why; [Cloudflare permissions](cloudflare-permissions.md) explains them and how to revoke access.
 
-The current development project map contains seven resources: two Workers, three Durable Object namespaces, one Workflow, and one Container, all labeled `development`. The UI save, API read (HTTP 200), and MCP `get` returned identical resource records. Only the dedicated Gitflare runner was associated from the three apps shown in the Container catalog. Container usage counters are unavailable. D1 is not mapped; migration execution was not tested.
+With an account connected, an Owner maps a repository to its Workers, D1 databases, Durable Object namespaces, Container applications and Workflows, each labelled with an environment. Resources are validated against the account before saving. Worker and D1 usage counters are shown; other types report unavailable rather than an estimate.
 
-A D1 migration plan identifies one selected mapped database, the current repository commit, and a SQL file under `migrations/` or `db/migrations/`. The plan stores a SHA-256 checksum for exact review before explicit execution. If more than one D1 database is linked, choose its `databaseId` explicitly. Applying SQL can alter or delete data; an uncertain execution outcome must be inspected before planning another migration. The plan and execution path are implemented, but a live D1 migration has not been performed.
+A D1 migration plan names one mapped database, the current repository revision and a SQL file under `migrations/` or `db/migrations/`, and records a SHA-256 checksum for review before the explicit execute step. If several D1 databases are mapped, choose the `databaseId`. Applying SQL can alter or delete data; inspect an uncertain outcome before planning another migration.
 
-Workers Builds trigger integration and Durable Object migration execution are not available in this release. Cloudflare resource associations do not deploy a Worker or migrate a Durable Object. See the [overview](overview.md) for current implementation and verification limits.
+Mapping a resource never deploys a Worker or migrates a Durable Object. Workers Builds triggers and Durable Object migrations are not available. See the [overview](overview.md) for the current scope.

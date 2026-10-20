@@ -16,7 +16,7 @@ function PullChoice({ repository, onAskAgents }: { repository: Repository; onAsk
   return (
     <div className="pull-choice" role="group" aria-label="How to make this change">
       <button type="button" className="ai-only" aria-pressed="false" onClick={onAskAgents}><RobotIcon size={20} /><div><strong>Ask AI agents</strong><span>Describe the change. Agents write it in isolated forks of {repositoryLabel(repository)}, and their result becomes this proposal.</span></div></button>
-      <button type="button" aria-pressed="true"><GitBranchIcon size={20} /><div><strong>From a stream</strong><span>Propose a stream (Git branch) you pushed or created on the Streams page.</span></div></button>
+      <button type="button" aria-pressed="true"><GitBranchIcon size={20} /><div><strong>From a stream</strong><span>Propose a stream you pushed or created.</span></div></button>
     </div>
   );
 }
@@ -73,8 +73,8 @@ export default function PullRequestCreate({ repository, canContribute, canExecut
       <div className="pull-create">
       <PullChoice repository={repository} onAskAgents={onAskAgents} />
       <section className="panel">
-        <EmptyState icon={<GitBranchIcon size={25} />} title="Push a stream first" description={`A proposal lands a stream other than ${list.defaultBranch}. Push your work to a new Git branch, then come back.`} />
-        <div className="pull-git-steps"><pre className="code-output">{`git push ${quoteGitArgument(gitUrl)} HEAD:refs/heads/my-branch`}</pre><p>Use any username. The password is a personal session token from <a href="/settings">Settings → Account</a>. You can also create a stream on the <a href={`/repository/${repository.id}/settings/branches`}>Streams</a> page.</p></div>
+        <EmptyState icon={<GitBranchIcon size={25} />} title="Push a stream first" description={`A proposal lands a stream other than ${list.defaultBranch}. Push your work to a new stream, then come back.`} />
+        <div className="pull-git-steps"><pre className="code-output">{`git push ${quoteGitArgument(gitUrl)} HEAD:refs/heads/my-branch`}</pre><p>Password: a personal token from <a href="/account/clients">Account → AI clients</a>. You can also create a stream on the <a href={`/repository/${repository.id}/settings/branches`}>Streams</a> page.</p></div>
       </section>
       </div>
     );
@@ -84,10 +84,10 @@ export default function PullRequestCreate({ repository, canContribute, canExecut
       <section className="panel">
         <div className="panel-header"><h2>Open a proposal</h2></div>
         <div className="panel-body">
-          {upstreamLabel && <div className="pull-target"><div className="pull-filter" role="group" aria-label="Propose to">{([["upstream", upstreamLabel], ["self", "This fork"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={target === value} disabled={busy} onClick={() => { setTarget(value); if (value === "self" && list.branches.find(item => item.name === branch)?.default) setBranch(list.branches.find(item => !item.default)?.name ?? ""); }}>{label}</button>)}</div><InfoTip label="proposing upstream">The upstream maintainers review it. Checks run without secrets once a maintainer starts them, and automatically after your first landed proposal.</InfoTip></div>}
+          {upstreamLabel && <div className="pull-target"><div className="pull-filter" role="group" aria-label="Propose to">{([["upstream", upstreamLabel], ["self", "This fork"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={target === value} disabled={busy} onClick={() => { setTarget(value); if (value === "self" && list.branches.find(item => item.name === branch)?.default) setBranch(list.branches.find(item => !item.default)?.name ?? ""); }}>{label}</button>)}</div><InfoTip label="proposing upstream">The upstream maintainers review it. Checks run without secrets once a Maintainer starts them, and automatically after your first landed proposal.</InfoTip></div>}
           <div className="pull-create-branches">
             <div className="form-field"><label htmlFor="pull-branch">Stream</label><select id="pull-branch" required disabled={busy} value={branch} onChange={event => setBranch(event.target.value)}>{candidates.map(item => <option key={item.name} value={item.name}>{item.name}{item.protected ? " (protected)" : ""}</option>)}</select></div>
-            <div className="form-field"><label htmlFor="pull-target">Into</label><Input id="pull-target" readOnly value={upstream ? `${upstreamLabel} · default branch` : list.defaultBranch} /></div>
+            <div className="form-field"><label htmlFor="pull-target">Into</label><Input id="pull-target" readOnly value={upstream ? `${upstreamLabel} · default stream` : list.defaultBranch} /></div>
           </div>
           {selected && <p className="pull-create-meta"><code>{selected.headSha.slice(0, 12)}</code>{selected.protected && <span><LockSimpleIcon size={12} />Protected</span>}{selected.ahead !== undefined && <span>{selected.ahead} ahead</span>}{selected.behind !== undefined && <span>{selected.behind} behind {list.defaultBranch}</span>}</p>}
           <div className="form-field"><label htmlFor="pull-title">Title <span className="proposal-optional">(optional)</span></label><Input id="pull-title" maxLength={120} disabled={busy} value={title} placeholder={branch} onChange={event => setTitle(event.target.value)} /></div>

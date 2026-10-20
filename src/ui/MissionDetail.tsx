@@ -900,27 +900,11 @@ export default function MissionDetail({
           </div>
         </div>
       )}
-      {overlap.length > 0 && (
-        <div className="alert">
-          <WarningCircleIcon size={17} />
-          <div className="alert-text">
-            <strong>
-              {overlap.length} shared {overlap.length === 1 ? "file" : "files"}{" "}
-              changed by multiple agents.
-            </strong>{" "}
-            File overlap needs attention; combined checks determine whether the
-            changes work together.
-          </div>
-        </div>
-      )}
       {mission.status === "approved" && (
         <div className="alert info">
           <ShieldCheckIcon size={17} />
           <div className="alert-text">
-            Candidate <code>{mission.candidateSha}</code> is
-            approved. Land it to update the repository after the server verifies
-            that the base is unchanged. To run the mission again, revoke this
-            approval first. The decision stays in attempt history.
+            Candidate <code>{mission.candidateSha}</code> is approved and ready to land.<InfoTip label="landing an approved candidate">Landing checks the base is unchanged. Revoke approval to run the mission again.</InfoTip>
           </div>
         </div>
       )}
@@ -937,8 +921,7 @@ export default function MissionDetail({
         <div className="alert info">
           <RobotIcon size={17} />
           <div className="alert-text">
-            This mission is a draft. Starting it checks your connections before
-            dispatching agent work.
+            Draft. Nothing runs until you start it.
           </div>
         </div>
       )}
@@ -946,7 +929,7 @@ export default function MissionDetail({
         <div className="alert info" role="status">
           <InfoIcon size={17} />
           <div className="alert-text">
-            {overlaps.length === 1 ? "One file is" : `${overlaps.length} files are`} being changed by more than one agent. The combined check decides whether the changes fit together.
+            {overlaps.length === 1 ? "One file" : `${overlaps.length} files`} changed by more than one agent.<InfoTip label="overlapping files">The combined check decides whether the changes fit together.</InfoTip>
             <ul className="overlap-list">
               {overlaps.slice(0, 8).map((entry) => (
                 <li key={entry.path}>
@@ -1091,13 +1074,8 @@ export default function MissionDetail({
                   <ShieldCheckIcon size={16} color="#8b99ab" />
                 </div>
                 <div className="panel-body">
-                  <p className="mission-prompt" style={{ fontSize: 13 }}>
-                    Each agent works in its own fork. Review applies to the
-                    exact candidate and base revisions.
-                  </p>
                   <p className="security-note">
-                    <GitCommitIcon size={14} />A changed candidate needs a new
-                    review.
+                    <GitCommitIcon size={14} />A new revision needs a new review.
                   </p>
                 </div>
               </aside>
@@ -1266,8 +1244,8 @@ export default function MissionDetail({
             <div className="panel">
               <EmptyState
                 icon={<RobotIcon size={25} />}
-                title="Your agents will appear here"
-                description="Start this mission to allocate independent work. Execution results will appear as they are recorded."
+                title="No agents yet"
+                description="Agents appear here once you start the mission."
               />
             </div>
           )}
@@ -1341,7 +1319,7 @@ export default function MissionDetail({
               <EmptyState
                 icon={<FileCodeIcon size={25} />}
                 title="No changes to review yet"
-                description="Actual file changes appear here after agents save their revisions. Every diff stays attached to its mission."
+                description="Changes appear when agents save a revision."
               />
             </div>
           )}
@@ -1350,9 +1328,7 @@ export default function MissionDetail({
       {tab === "checks" && (
         <>
           <p className="mission-prompt">
-            Individual agent checks verify each isolated revision. Combined
-            checks verify the candidate that will land. Passing individual
-            checks alone does not establish a passing combined candidate.
+            Checks on each agent and on the combined result.<InfoTip label="mission checks">Each agent's revision is checked alone. The combined revision is checked again because changes that pass separately can fail together.</InfoTip>
           </p>
           <div className="panel">
             {mission.checks.length ? (
@@ -1414,7 +1390,7 @@ export default function MissionDetail({
               <EmptyState
                 icon={<ShieldCheckIcon size={25} />}
                 title="Checks have not run"
-                description="Individual agent checks and combined verification will appear here. Passing streams alone do not prove their combined result is safe."
+                description="Checks appear here once agents finish."
               />
             )}
           </div>
@@ -1519,7 +1495,7 @@ export default function MissionDetail({
             <EmptyState
               icon={<ShieldCheckIcon size={25} />}
               title="No review discussion yet"
-              description="Comments and requests for changes are recorded against an exact candidate and base revision."
+              description="Comment on or request changes to this revision."
             />
           )}
           {canDiscuss &&
@@ -1575,8 +1551,7 @@ export default function MissionDetail({
           ) : (
             <div className="panel-body">
               <p className="mission-prompt">
-                Review discussion opens when a candidate is ready for review.
-                Earlier revision comments remain in the record.
+                Discussion opens when a revision is ready for review.
               </p>
             </div>
           )}
@@ -1606,7 +1581,7 @@ export default function MissionDetail({
               ? <>Approve revision <code>{mission.candidateSha?.slice(0, 12)}</code> after {mission.checks.length} passing check{mission.checks.length === 1 ? "" : "s"}. Approval does not change the repository; landing is a separate step.{dependencyGate && <> You also approve the dependency changes listed on the Overview tab.</>}{approveFromReview.current && reviewBody.trim() && <> Your summary is posted with the approval.</>}</>
               : <>Land revision <code>{mission.candidateSha?.slice(0, 12)}</code> on <strong>{repository?.defaultBranch ?? "the main stream"}</strong> of <strong>{repository ? repositoryLabel(repository) : "this repository"}</strong>. You can undo it later with Restore.</>}
           </Dialog.Description>
-          {confirming && <CommitMessageField draft={commitDraft} branch={repository?.defaultBranch ?? "the default branch"} problem={commitProblem} onChange={setCommitDraft} />}
+          {confirming && <CommitMessageField draft={commitDraft} branch={repository?.defaultBranch ?? "the default stream"} problem={commitProblem} onChange={setCommitDraft} />}
           <div className="dialog-actions">
             <Button variant="secondary" size="base" type="button" onClick={() => setConfirming(null)}>Cancel</Button>
             <Button variant="primary" size="base" type="button" icon={confirming === "approve" ? ShieldCheckIcon : GitMergeIcon} disabled={!!commitProblem} onClick={() => { const action = confirming; setConfirming(null); if (!action) return; const message = action === "integrate" || commitMessage !== suggestedMessage ? commitMessage : undefined; if (action === "approve" && approveFromReview.current) void submitReview("approve", message); else void act(action, message); }}>

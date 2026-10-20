@@ -73,6 +73,7 @@ import { publicRepositoryPath } from "../shared/handles";
 import AccountMenu from "./AccountMenu";
 
 import ConnectionError from "./ConnectionError";
+import InfoTip from "./InfoTip";
 import "./policy-pages.css";
 import "./public-settings.css";
 import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
@@ -341,13 +342,14 @@ function Workspace() {
       clearTimeout(timer);
       if (!stopped && document.visibilityState === "visible") timer = setTimeout(poll, workspaceActive.current ? 8000 : 60000);
     };
-    const poll = () => { if (!authFlowActive.current) void load(true).finally(schedule); else schedule(); };
+    const anonymousSite = () => { const origins = pageHostOrigins(); return !!origins && window.location.origin === origins.site && !siteSignedInHint(origins); };
+    const poll = () => { if (authFlowActive.current || anonymousSite()) schedule(); else void load(true).finally(schedule); };
     const resume = () => { if (document.visibilityState === "visible") poll(); else clearTimeout(timer); };
     reschedulePoll.current = schedule;
-    void load(true).finally(schedule);
+    if (anonymousSite()) { clearSession(); schedule(); } else void load(true).finally(schedule);
     document.addEventListener("visibilitychange", resume);
     return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", resume); };
-  }, [load]);
+  }, [load, clearSession]);
 
   const hasActiveMissions = workspace.missions.some((mission) => ["queued", "running", "checking", "integrating"].includes(mission.status));
   workspaceActive.current = hasActiveMissions;
@@ -775,12 +777,8 @@ function Workspace() {
                     <h1>{pageName}</h1>
                     <p>
                       {{
-                        overview:
-                          "Your code, your agents, and everything they build together.",
-                        repositories:
-                          "A shared home for code. Independent space for every agent.",
                         missions:
-                          "Every proposed change (pull request), whether AI agents or people wrote it.",
+                          "Every proposed change, by agents or people.",
                         activity: "Follow the work across your repositories.",
                         settings:
                           "Manage access, security, and workspace connections.",
@@ -804,7 +802,7 @@ function Workspace() {
                           : void refresh()
                       }
                     >
-                      {page === "repositories" ? "Connect existing" : "Refresh"}
+                      {page === "repositories" ? "Connect repository" : "Refresh"}
                     </Button>
                     {page === "repositories" ? (
                       <Button
@@ -826,7 +824,7 @@ function Workspace() {
                           className="ai-only"
           onClick={() => createMission()}
                         >
-                          Create mission
+                          {page === "missions" ? "New proposal" : "Create mission"}
                         </Button>
                       )
                     )}
@@ -838,8 +836,7 @@ function Workspace() {
                     <div className="workspace-help">
                       <GitBranchIcon size={20} />
                       <p>
-                        Agents work independently. Review their combined changes
-                        before merging.
+                        Agents work separately. Review the combined result before landing.
                       </p>
                       <button
                         className="text-link"
@@ -876,8 +873,8 @@ function Workspace() {
                           ) : (
                             <EmptyState
                               icon={<GitBranchIcon size={25} />}
-                              title="The next change starts with a mission"
-                              description="Describe what you want to build. Track each agent's work and review the result in one place."
+                              title="No missions yet"
+                              description="Describe an outcome; agents do the work."
                               action={
                                 <Button
                                   variant="secondary"
@@ -983,7 +980,7 @@ function Workspace() {
                           ) : (
                             <EmptyState
                               icon={<FolderSimpleIcon size={25} />}
-                              title="A home for your next idea"
+                              title="No repositories yet"
                               description="Create a repository to keep source code and agent contributions together."
                               action={
                                 <button
@@ -1007,25 +1004,6 @@ function Workspace() {
                           onSettings={() => navigate("settings")}
                         />
                         {permissions.includes("manage") && <CloudflareConnectPrompt onOpen={() => navigate("settings/cloudflare")} />}
-                        <div className="info-card">
-                          <h3>
-                            <ShieldCheckIcon size={17} />
-                            Review the combination
-                          </h3>
-                          <p>
-                            Two passing changes can fail together. Gitflare
-                            keeps the combined result and its checks in the same
-                            review.
-                          </p>
-                          <button
-                            className="text-link"
-                            style={{ marginTop: 13, fontSize: 13 }}
-                            onClick={() => setModal("learn")}
-                          >
-                            See how it works
-                            <ArrowUpRightIcon size={12} />
-                          </button>
-                        </div>
                       </aside>
                     </div>
                   </>
@@ -1079,8 +1057,8 @@ function Workspace() {
                           icon={<GitBranchIcon size={25} />}
                           title={
                             search || filter !== "all"
-                              ? "No missions match this view"
-                              : "Create your first mission"
+                              ? "No matching proposals"
+                              : "No proposals yet"
                           }
                           description={
                             search || filter !== "all"
@@ -1102,7 +1080,7 @@ function Workspace() {
                             >
                               {search || filter !== "all"
                                 ? "Clear filters"
-                                : "Create mission"}
+                                : "New proposal"}
                             </Button>
                           }
                         />
@@ -1219,11 +1197,8 @@ function Workspace() {
             <footer className="bottom-note">
               <span>
                 <CloudIcon size={13} />
-                Gitflare · A workspace for human and agent collaboration
-              </span>
-              <span>
                 {workspace.mode === "local"
-                  ? "Local development · No simulated execution"
+                  ? "Local development"
                   : "Private workspace"}
               </span>
             </footer>
@@ -1396,8 +1371,8 @@ function ActivityView({
       ) : (
         <EmptyState
           icon={<ActivityIcon size={25} />}
-          title="Your workspace history starts here"
-          description="Mission creation, agent execution, checks, and review decisions will appear as they happen."
+          title="No activity yet"
+          description="Missions, checks and reviews appear here."
         />
       )}
     </section>
@@ -1548,8 +1523,8 @@ function RepositoryDetail({
             ) : (
               <EmptyState
                 icon={<GitBranchIcon size={25} />}
-                title="What should we build next?"
-                description="Start a mission to give your agents a clear outcome and track their contributions."
+                title="No proposals yet"
+                description="Describe an outcome; agents do the work."
                 action={
                   <Button
                     variant="secondary"
@@ -1576,8 +1551,8 @@ function RepositoryDetail({
           ) : (
             <EmptyState
               icon={<GitBranchIcon size={25} />}
-              title="No missions yet"
-              description="Create your first mission for this repository."
+              title="No proposals yet"
+              description="Missions and pushed streams appear here."
               action={
                 <Button
                   variant="secondary"
@@ -1734,15 +1709,14 @@ function CreationDialog({
               <div>
                 <strong>1. Define the work</strong>
                 <p>
-                  Choose a repository, describe the outcome, and assign
-                  independent tasks.
+                  Choose a repository, describe the outcome, and give each
+                  agent an assignment.
                 </p>
               </div>
               <div>
-                <strong>2. Follow the evidence</strong>
+                <strong>2. Watch the work</strong>
                 <p>
-                  Inspect each agent's fork, revisions, actual changes, and
-                  recorded checks.
+                  Inspect each agent's fork, revisions, changes and checks.
                 </p>
               </div>
               <div>
@@ -1760,7 +1734,7 @@ function CreationDialog({
             </p>
             <div className="dialog-actions">
               <Button variant="primary" size="base" onClick={onClose}>
-                Got it
+                Close
               </Button>
             </div>
           </>
@@ -1819,8 +1793,8 @@ function CreationDialog({
                     onChange={(event) => setDescription(event.target.value)}
                   />
                 </div>
-                {modal === "repository" && <div className="form-field"><label htmlFor="repository-start">Start this repository</label><select id="repository-start" value={start} onChange={event => setStart(event.target.value as "new" | "zip" | "url")}><option value="new">Start a new project</option><option value="zip">Import existing code from a ZIP</option><option value="url">Import from a Git URL with history</option></select><small>{start === "zip" ? "Create an empty repository, then choose your project ZIP on the import page." : start === "url" ? <>Copy every branch and tag with full history from GitHub, GitLab, Bitbucket or another HTTPS Git host. <button type="button" className="text-link" onClick={onImportOrganization}>Import a GitHub organization</button></> : "Choose initial setup files for your repository."}</small></div>}
-                {modal === "repository" && start === "url" && <div className="form-field"><label htmlFor="repository-source-url">Repository URL</label><Input id="repository-source-url" type="url" required placeholder="https://github.com/owner/repository" value={sourceUrl} maxLength={2048} onChange={event => { const value = event.target.value; const derived = (url: string) => (url.trim().replace(/\/+$/, "").split("/").pop() ?? "").replace(/\.git$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64); if (!name || name === derived(sourceUrl)) setName(derived(value)); setSourceUrl(value); }} /><label htmlFor="repository-source-token">Access token <span style={{ color: "#929dab", fontWeight: 400 }}>(private repositories only)</span></label><Input id="repository-source-token" type="password" autoComplete="off" value={sourceToken} maxLength={1024} onChange={event => setSourceToken(event.target.value)} />{sourceToken && <><label htmlFor="repository-source-username">Token username <span style={{ color: "#929dab", fontWeight: 400 }}>(optional)</span></label><Input id="repository-source-username" autoComplete="off" value={sourceUsername} maxLength={100} onChange={event => setSourceUsername(event.target.value)} /></>}<small>The token is used once to read the source for this import and is never stored. Use a read-only token. Limit: 256 MiB of Git objects, 500 branches and 2,000 tags.</small></div>}
+                {modal === "repository" && <div className="form-field"><label htmlFor="repository-start">Start this repository</label><select id="repository-start" value={start} onChange={event => setStart(event.target.value as "new" | "zip" | "url")}><option value="new">Start a new project</option><option value="zip">Import existing code from a ZIP</option><option value="url">Import from a Git URL with history</option></select><small>{start === "zip" ? "Create an empty repository, then choose your project ZIP on the import page." : start === "url" ? <>Copies every stream and tag with full history. <button type="button" className="text-link" onClick={onImportOrganization}>Import a GitHub organization</button></> : "Choose initial setup files for your repository."}</small></div>}
+                {modal === "repository" && start === "url" && <div className="form-field"><label htmlFor="repository-source-url">Repository URL</label><Input id="repository-source-url" type="url" required placeholder="https://github.com/owner/repository" value={sourceUrl} maxLength={2048} onChange={event => { const value = event.target.value; const derived = (url: string) => (url.trim().replace(/\/+$/, "").split("/").pop() ?? "").replace(/\.git$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64); if (!name || name === derived(sourceUrl)) setName(derived(value)); setSourceUrl(value); }} /><label htmlFor="repository-source-token">Access token <span style={{ color: "#929dab", fontWeight: 400 }}>(private repositories only)</span></label><Input id="repository-source-token" type="password" autoComplete="off" value={sourceToken} maxLength={1024} onChange={event => setSourceToken(event.target.value)} />{sourceToken && <><label htmlFor="repository-source-username">Token username <span style={{ color: "#929dab", fontWeight: 400 }}>(optional)</span></label><Input id="repository-source-username" autoComplete="off" value={sourceUsername} maxLength={100} onChange={event => setSourceUsername(event.target.value)} /></>}<small>Used once, never stored.<InfoTip label="the access token">Read-only token recommended. Up to 256 MiB, 500 streams, 2,000 tags.</InfoTip></small></div>}
                 {modal === "repository" && start === "new" && <div className="form-field"><label className="access-checkbox"><input type="checkbox" checked={initializeReadme} onChange={event => setInitializeReadme(event.target.checked)}/>Initialize with a README</label><label htmlFor="repository-gitignore">.gitignore template</label><select id="repository-gitignore" value={gitignore} onChange={event => setGitignore(event.target.value)}>{["none", "Node", "Python"].map(value => <option key={value} value={value}>{value === "none" ? "None" : value}</option>)}</select><label htmlFor="repository-license">License</label><select id="repository-license" value={license} onChange={event => setLicense(event.target.value)}>{["none", "MIT", "Apache-2.0"].map(value => <option key={value} value={value}>{value === "none" ? "No license" : value}</option>)}</select>{license === "MIT" && <><label htmlFor="repository-copyright">Copyright holder</label><Input id="repository-copyright" value={copyrightHolder} onChange={event => setCopyrightHolder(event.target.value)} required maxLength={200}/></>}</div>}
                 {modal === "repository" && start !== "url" &&
                   workspace.mode === "local" &&
@@ -1830,8 +1804,7 @@ function CreationDialog({
                     <div className="alert info">
                       <InfoIcon size={16} />
                       <div className="alert-text">
-                        This creates a local workspace record. Connect Artifacts
-                        for Git hosting.
+                        Local only. Connect Cloudflare Artifacts to host Git.
                       </div>
                     </div>
                   )}

@@ -27,6 +27,6 @@ npm run build
 - AI features must stay optional: with `AI_FEATURES=disabled` no model is called and AI-only screens are hidden.
 - Keep code comments rare: explain constraints the code cannot show, not what it does.
 
-## Licence
+## License
 
 By contributing you agree that your contribution is licensed under the Apache License, Version 2.0 (see `LICENSE`), as described in section 5 of that license.

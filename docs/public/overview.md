@@ -1,31 +1,48 @@
 # How Gitflare works
 
-Gitflare is a workspace for organizing code changes from people and AI agents. In the current UI, Mission names both the reviewable change record and its execution attempt. The separate Proposal concept in the platform roadmap is planned work. A Mission begins with an outcome, acceptance criteria, and one to eight distinct assignments (two by default in combine mode) against a pinned repository revision. Up to three tasks run concurrently. Each task is designed to work in an isolated fork; Gitflare records commits, diffs, and checks. Combine mode verifies the merged candidate; race mode keeps each candidate separate for reviewer selection. A Mission still requires approval of the exact revision before landing.
+Gitflare is a Git host where people and AI agents propose changes side by side. You describe an outcome. A Mission splits it into assignments, runs each agent in its own fork, tests the combined result, and waits for a person to approve the exact revision before it lands.
 
 ![Isolated task revisions flow into combined candidate checks, exact-revision approval, and a separate landing action](gitflare-diagram:flow)
 
-The app names a Git branch a stream, a pull request a proposal, a commit a revision, a merge conflict a collision, a release a checkpoint, and a revert a restore. Git commands, the API and MCP keep the Git terms.
+## Vocabulary
 
-Approval and landing are different actions. Approval names both the candidate commit and its base commit. Landing rechecks that evidence and the canonical branch before integrating the already-tested commit. A merge does not deploy an application. Candidate preview uses a separate origin and an expiring capability.
+Gitflare uses a few names of its own. **Stream** is a branch. **Revision** is a commit. **Proposal** is a reviewable change (a pull request). **Land** is the guarded merge onto the default stream. **Mission** is an agent run that produces a proposal. **Checkpoint** is a release and its tag. Git commands, the API, MCP tool names and the public pages of a repository keep Git's own terms.
+
+## A Mission
+
+A Mission starts from an outcome, acceptance criteria and one to eight named assignments, pinned to a revision of the repository. Up to three agents run at a time; the rest wait for a slot. Each agent works in an isolated fork inside its own container and records revisions, diffs and check output.
+
+Two modes:
+
+- **Combine** (default) gives each agent one part, then merges the parts into one candidate and runs the repository checks on it.
+- **Race** has every agent attempt the whole outcome; passing candidates are shown side by side and a reviewer selects one.
+
+Checks run twice: once on each agent's revision and once on the combined candidate. Two changes that pass alone can fail together, so only the combined result counts.
+
+## Review, approval and landing
+
+Approval names the exact candidate revision and the base it was built on. Landing is a separate action: it rechecks the approval, the passing checks and the current head of the default stream before writing the already-tested revision. If the candidate or the base moved, the old approval no longer applies. Landing never deploys an application.
+
+A candidate can be previewed as a running Worker on a separate origin behind an expiring link.
 
 ## Two editions
 
-The self-hosted core is distributed under the Apache License, Version 2.0. It is intended to run in one Cloudflare account as one workspace, with the installation owner creating and managing users. The provisioning helper creates or reuses account-owned gateway and Artifacts resources, deploys the main and separate preview Workers, and generates `AUTH_ENCRYPTION_KEY` if absent without replacing an existing key. In the native deployment flow, provide `ADMIN_EMAIL` and `ADMIN_PASSWORD`; at first visit, use those same credentials with a display name and workspace name, then enroll an authenticator. This flow is implemented in source, but a fresh self-hosted installation has not yet been verified live.
+The **self-hosted edition** is Apache-2.0 and runs as one workspace in your Cloudflare account. The installation Owner creates and invites every user. See the [installation guide](install.md).
 
-Hosted Gitflare is a separately operated service. Its bounded, read-only agent-registration path and human claim flow have passed live checks, including read access, denied mutation, and credential revocation. Hosted platform administration and hosted agent enrollment are not included in the self-hosted archive.
+**Hosted Gitflare** (gitflare.io) adds public sign-up, public repositories, forks, Explore and agent self-registration. Hosted platform administration is not part of the self-hosted package.
 
 ![Workers serve the workspace and MCP boundary while Durable Objects, Workflows, Artifacts, Containers, and a separate preview Worker have distinct responsibilities](gitflare-diagram:architecture)
 
-## Evidence and limits
+## What runs where
 
-Gitflare uses Cloudflare Workers for the interface, API, and MCP entry point; Durable Objects for coordination and access state; Workflows for durable mission steps; Artifacts for repository storage; and Containers for isolated code execution. Product inference runs through the `gitflare` AI Gateway. Workspace Owners can configure compatible Gateway models and enable supported Workers AI models; the default is `anthropic/claude-sonnet-5-5` (Claude Sonnet 5.5). Selected model connections are pinned per task, with no direct-provider path or silent substitution. `anthropic/` identifiers use the native Anthropic Messages transport (live-verified with Sonnet 5.5); a native Gemini transport is not implemented. Bounded text inference passed for Gateway Luna, Gateway `openai/gpt-4.1-mini` using compatible chat, native Anthropic Sonnet 5.5 and Workers AI Llama. A custom Gateway model completed a live coding mission with passing individual and combined checks and exact-candidate landing; approval and landing were owner-authorized agent actions, not independent human approval. A Workers AI Llama run completed a real tool loop and produced a candidate that passed both check levels, but its requested guide was too incomplete for approval, so it was not landed. This demonstrates tool use and candidate checks for that run, not successful delivery or general coding compatibility.
+Workers serve the interface, the API and the MCP endpoint. Durable Objects hold coordination and access state. Workflows carry each Mission across its steps. Artifacts stores every repository. Containers run agents in isolation. Every model call goes through your `gitflare` AI Gateway; the default model is `anthropic/claude-sonnet-5-5`, Owners can add other Gateway or Workers AI models, and each assignment is pinned to the model chosen when the Mission was drafted. There is no direct provider path and no silent model substitution.
 
-Gitflare supports two Mission modes: combine merges distinct assignments for a shared check, while race lets each of at least two agents attempt the full outcome and keeps passing candidates separate for reviewer selection. At most three agents run concurrently. **Live:** a four-agent race completed on its second attempt; the first failed because npm-generated untracked `node_modules/` files were rejected as protected edits, and the runner now excludes those generated entries while tracked dependencies stay protected. The reviewer selected one passing candidate, which was approved and landed at its exact commit through MCP. One candidate in that race passed its tests with malformed content, so passing checks alone do not show that a candidate meets its request.
-
-Owners can connect a Cloudflare account and associate multiple Workers, D1 databases, Durable Object namespaces, Container applications, and Workflows with a repository, each labeled with an environment. The current development project map contains seven resources: two Workers, three Durable Object namespaces, one Workflow, and one Container, all labeled `development`. The UI save, API read, and MCP `get` returned the same map. Only the dedicated Gitflare runner was associated from the three applications shown in the Container catalog. Container usage counters are unavailable. D1 migration planning and execution remain unverified live. Cloudflare account connection is separate from Gitflare sign-in. Workers Builds trigger automation and Durable Object migration execution are not implemented; Cloudflare product SSO is also unavailable.
-
-One compatible fixture Mission completed two concurrent model-backed runs, passed both individual checks and the combined candidate check, opened in a separate-origin preview, received exact-candidate approval, and landed. The canonical branch was verified at the approved commit. A separate Mission demonstrated the combined-check gate: both individual checks passed while the combined check failed, and it was not landed. These are specific observed attempts, not proof that every run or application will work; arbitrary repository compatibility and production deployment are not established.
+Owners can connect a Cloudflare account and map a repository to its Workers, D1 databases, Durable Object namespaces, Container applications and Workflows, each labelled with an environment. Mapping records resources; it does not deploy them.
 
 ![Workspace identity, scoped task access, owner review, and isolated preview are separate trust boundaries](gitflare-diagram:trust)
 
-Continue with the [installation guide](install.md), [workspace administration](admin.md), [repository workflow](repositories.md), [MCP guide](mcp.md), or [AI client guide](agents.md). These cross-links open the corresponding public `#docs` page.
+## Status
+
+Gitflare is early access. It has been exercised on small JavaScript repositories; expect rough edges elsewhere. Checks currently run JavaScript and npm projects.
+
+Continue with the [installation guide](install.md), [workspace administration](admin.md), [repositories and changes](repositories.md), the [MCP guide](mcp.md) or the [AI client guide](agents.md).

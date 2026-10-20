@@ -36,7 +36,7 @@ export default function ContentReports() {
   return <section className="panel">
     <div className="panel-header"><h2>Content reports</h2>{data && <span className="number-tag">{data.reports.length}</span>}<InfoTip label="content reports">People report public issues and comments here. Report text is written by them, not by Gitflare.</InfoTip></div>
     {error && <div className="panel-body"><div className="error-notice" role="alert">{error}</div></div>}
-    {!data ? !error && <div className="panel-body"><p className="people-muted">Loading…</p></div>
+    {!data ? !error && <div className="panel-body"><p className="people-muted">Loading reports…</p></div>
       : data.reports.length ? <ul className="people-list">{data.reports.map(report => <li key={report.id}>
         <div><strong><a href={siteHref(reportLink(report))} target="_blank" rel="noopener noreferrer">{report.address} #{report.issueNumber}{report.commentId ? " · comment" : ""}</a></strong><span className="people-muted">{report.reason} · {personLabel(report.reporterId, data.people)} · {relativeTime(report.createdAt)}{report.detail ? ` · ${report.detail}` : ""}</span></div>
         <Button variant="secondary" size="sm" loading={busy === report.id} disabled={!!busy} onClick={() => void dismiss(report)}>Dismiss</Button>

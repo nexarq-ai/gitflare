@@ -86,7 +86,7 @@ function ProtectionCard({ protection, owner, approvers, knownChecks, onChanged }
           {warning && <p className={`approval-warning${warning.blocking ? " approval-warning-blocking" : ""}`} role="status">{warning.text}</p>}
           {warning?.blocking && <label className="people-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />Save anyway, I will invite reviewers</label>}
         </div>
-        <div className="people-field"><span className="field-label">Checks that must pass<InfoTip label="Checks that must pass">A change can land only after these checks pass on the exact revision. Pick none to land without checks, or pick test to require the test check, for example.</InfoTip></span>
+        <div className="people-field"><span className="field-label">Checks that must pass<InfoTip label="Checks that must pass">Changes land only after these checks pass on the exact revision. Leave empty to skip.</InfoTip></span>
           <CheckChips label="Checks that must pass" known={knownChecks} selected={checks} onChange={setChecks} />
         </div>
         <div><label className="people-check"><input type="checkbox" checked={preventSelf} onChange={event => setPreventSelf(event.target.checked)} />Authors cannot approve their own changes<InfoTip label="Authors cannot approve their own changes">{selfApprovalNote(approvers)}</InfoTip></label></div>
@@ -122,7 +122,7 @@ function OwnershipCard({ data, onChanged }: { data: AccessSnapshot; onChanged: (
         <label className="people-field"><span>New owner</span><select required value={target} onChange={event => setTarget(event.target.value)}><option value="">Select the new owner</option>{candidates.map(item => <option key={item.userId} value={item.userId}>{item.user?.name} · {item.user?.email}</option>)}</select></label>
         <label className="people-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />I understand I will no longer be an Owner</label>
         <div><Button type="submit" variant="secondary" size="base" loading={busy} disabled={!target || !confirmed}>Transfer ownership</Button></div>
-        {reauth && <div className="people-reauth" role="alert"><p>Sign in again first. For your safety, ownership changes need a sign-in from the last five minutes.</p><Button variant="primary" size="sm" onClick={() => void signInAgain("settings")}>Sign in again</Button></div>}
+        {reauth && <div className="people-reauth" role="alert"><p>Sign in again to continue.</p><Button variant="primary" size="sm" onClick={() => void signInAgain("settings")}>Sign in again</Button></div>}
         {error && <div className="form-error" role="alert">{error}</div>}
       </form>}
     </div>
