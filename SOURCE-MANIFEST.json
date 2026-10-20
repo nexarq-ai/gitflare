@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/public/mcp.md",
-      "size": 6998,
-      "sha256": "31a616226805ff788b4ccd6cd99cf131a37d6cb1765c479a6a02c3d71407d4d6"
+      "size": 7494,
+      "sha256": "67d957c0b38f21ea6bba716166f3bc15809faf35adc78f7256b37fcd982be9bf"
     },
     {
       "path": "docs/public/overview.md",
@@ -1305,8 +1305,8 @@
     },
     {
       "path": "src/worker/email/templates.ts",
-      "size": 11893,
-      "sha256": "049f0e499b24bab308064a1e2520d2dd713675bd247b0969c520b6d09bd8d79c"
+      "size": 11824,
+      "sha256": "be50569a3f0a9ef992edbc28c79afd4f4a6aa1983fa24d534ac4708019654ee7"
     },
     {
       "path": "src/worker/env.ts",

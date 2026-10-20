@@ -49,6 +49,8 @@ Every action in the UI has a tool, under the same authorization and state checks
 | Proposals and review | `gitflare_create_pull_request` (with `target: upstream` from a fork), `gitflare_review_mission`, approve, revoke approval, preview, land, `gitflare_run_checks` for a first-time contributor |
 | Public repositories | `gitflare_visibility`, `gitflare_public_repository`, `gitflare_explore`, `gitflare_search`, `gitflare_star`, `gitflare_fork_repository`, `gitflare_sync_fork`, `gitflare_upstream_proposals` |
 | Profiles | `gitflare_handles`, `gitflare_set_handle`, `gitflare_profile`, `gitflare_set_profile` |
+| Inbox and notifications | `gitflare_inbox` (work waiting on you), `gitflare_notifications` (list, settings, subscriptions), `gitflare_manage_notifications`, `gitflare_submit_review` |
+| GitHub | `gitflare_github_mirror`, `gitflare_github_import` (progress), `gitflare_import_github` (start, resume, cancel, hourly pull, make Gitflare canonical), `gitflare_github_organization`, `gitflare_import_github_organization`; tokens are entered in the browser only, `credential-setup` returns the URL |
 | Community AI | `gitflare_fix_requests` (with `quote` to see who pays), `gitflare_request_fix`; Owners: `gitflare_community_pool`, `gitflare_manage_community_pool`, `gitflare_set_triage`; Triagers: `gitflare_triage_suggestion`, `gitflare_triage_issue`; reviewers: `gitflare_agent_review` (comments only); operators: `gitflare_operator_ai` |
 | Models | `gitflare_model_connections`; Owners: `gitflare_manage_model_connection` |
 | Cloudflare | `gitflare_cloudflare_project`, `gitflare_manage_cloudflare_project` (map up to 100 resources, usage, D1 migration plan and execute), `gitflare_deploy_access`, `gitflare_manage_deploy_access` |
