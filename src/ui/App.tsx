@@ -119,6 +119,7 @@ const PreviewSettings = lazy(() => import("./PreviewSettings"));
 const AgentSettings = lazy(() => import("./AgentSettings"));
 const GitHubMirror = lazy(() => import("./GitHubMirror"));
 const RepositoryVisibilityCard = lazy(() => import("./RepositoryVisibility"));
+const ForkBanner = lazy(() => import("./ForkBanner"));
 const loadSecretSettings = () => import("./SecretSettings");
 const SecretSettings = lazy(loadSecretSettings);
 const loadGitAccess = () => import("./GitAccess");
@@ -1494,7 +1495,7 @@ function RepositoryDetail({
           : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <RouteProgress />
           : <RepositoryGeneral repository={repository} publicRepositories={publicRepositories} onNotify={onNotify} onRefresh={onRefresh} />}
       </RepositorySettingsLayout> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "code" ? (
-        <><RepositoryImportOnboarding key={repository.id} repository={repository} canManage={canManage} onImport={onImport} onRefresh={onRefresh} /><RepositoryBrowser key={repository.id} repository={repository} />{repository.provider === "artifacts" && <GitAccess key={`git-${repository.id}`} repository={repository} publicUrl={publicRepositories && repository.visibility === "public" && workspace.handle ? `${pageHostOrigins()?.site ?? window.location.origin}${publicRepositoryPath(workspace.handle, repositoryLabel(repository))}.git` : undefined} onNotify={onNotify} />}</>
+        <>{repository.fork && <ForkBanner key={`fork-${repository.id}`} repository={repository} onNotify={onNotify} onChanged={onRefresh} />}<RepositoryImportOnboarding key={repository.id} repository={repository} canManage={canManage} onImport={onImport} onRefresh={onRefresh} /><RepositoryBrowser key={repository.id} repository={repository} />{repository.provider === "artifacts" && <GitAccess key={`git-${repository.id}`} repository={repository} publicUrl={publicRepositories && repository.visibility === "public" && workspace.handle ? `${pageHostOrigins()?.site ?? window.location.origin}${publicRepositoryPath(workspace.handle, repositoryLabel(repository))}.git` : undefined} onNotify={onNotify} />}</>
       ) : tab === "overview" ? (
         <>
           <RepositoryDetailsPanel repository={repository} onNotify={onNotify} />

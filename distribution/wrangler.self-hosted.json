@@ -102,6 +102,22 @@
         "limit": 10,
         "period": 60
       }
+    },
+    {
+      "name": "FORK_RATE_LIMIT",
+      "namespace_id": "4120",
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
+    },
+    {
+      "name": "OUTSIDE_PROPOSAL_RATE_LIMIT",
+      "namespace_id": "4121",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {

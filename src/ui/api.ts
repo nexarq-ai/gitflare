@@ -29,13 +29,14 @@ export async function request<T>(
   path: string,
   body?: unknown,
   key?: string,
+  workspace?: string,
 ): Promise<T> {
   const response = await fetch(path, {
     signal: body === undefined ? AbortSignal.timeout(READ_TIMEOUT_MS) : undefined,
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
     headers: {
-      ...(workspaceId ? { "X-Gitflare-Workspace": workspaceId } : {}),
+      ...(workspace ?? workspaceId ? { "X-Gitflare-Workspace": (workspace ?? workspaceId) } : {}),
       ...(body === undefined ? {} : {
             "Content-Type": "application/json",
             "Idempotency-Key": key ?? crypto.randomUUID(),

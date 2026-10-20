@@ -63,6 +63,7 @@ import { handlePublicGit, isPublicGitPath } from './public-git';
 import { accountDiscoveryApi, handleChanged, publicDiscoveryApi, refreshPublicRepository, visibilityChanged } from './public-discovery';
 import { servePublicCached } from './public-cache';
 import { PUBLIC_INDEX_CRON, publicIndex, reconcilePublicIndex } from './public-index';
+import { FORK_STORAGE_LIMIT_BYTES, handleForks } from './forks';
 
 export { GitflareSecurity } from './security';
 export { GitflareCoordinator } from './coordinator';
@@ -146,6 +147,8 @@ function gitDependencies(env: AppEnv): GitHttpDependencies {
     rules: async (repository) => effectiveRules(await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).getBranchProtection(), repository.defaultBranch),
     artifacts: env.ARTIFACTS,
     pushed: async (repository, refs) => { await Promise.all([triggerMirrorSync(env, repository.id, repository.workspaceId ?? 'legacy', 'push', refs), refreshPublicRepository(env, repository.id).catch(() => undefined)]); },
+    storage: async (repository) => repository.fork ? { remainingBytes: FORK_STORAGE_LIMIT_BYTES - await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).forkStorage(), limitBytes: FORK_STORAGE_LIMIT_BYTES } : null,
+    stored: async (repository, bytes) => { await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).addForkStorage(bytes); },
   };
 }
 
@@ -523,6 +526,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     assertMutationOrigin(request);
     return Response.json({ blocks: await access.setBlock(principal, repository.id, await readJson(request)) });
   }
+  const forks = await handleForks(request, url, { env, principal, access, catalog, catalogOf: (workspaceId) => env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId)), records: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
+  if (forks) return forks;
   const urlImport = await handleUrlImport(request, url, { env, principal, access, catalog, repositoryRecords: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
   if (urlImport) return urlImport;
   const mirrorRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/github-mirror(?:\/([a-z-]+))?$/.exec(url.pathname);

@@ -1,0 +1,22 @@
+.fork-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 16px; padding: 10px 14px; border: 1px solid var(--gf-color-border); border-radius: 10px; background: var(--gf-color-surface); color: var(--gf-color-text-secondary); font-size: 13px; }
+.fork-banner-icon { flex-shrink: 0; color: var(--gf-color-text-tertiary); }
+.fork-banner-text { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; flex: 1; }
+.fork-banner-text a, .fork-banner-text strong { color: var(--gf-color-text); font-weight: 600; }
+.fork-banner-text a:hover { color: var(--gf-color-accent); }
+.fork-banner-actions { display: flex; gap: 8px; margin-left: auto; }
+.fork-banner-actions:empty { display: none; }
+.fork-banner-error { flex-basis: 100%; color: var(--gf-color-danger); font-size: 12px; }
+.fork-sync { padding: 1px 8px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); font-size: 11px; line-height: 1.6; white-space: nowrap; }
+.fork-sync-up-to-date { color: var(--gf-color-success); }
+.fork-sync-behind, .fork-sync-diverged { color: var(--gf-color-warning); }
+.fork-sync-unknown { color: var(--gf-color-text-tertiary); }
+.fork-dialog .dialog-description { display: flex; align-items: center; gap: 4px; }
+.fork-dialog select { width: 100%; }
+.fork-empty { margin: 0 0 12px; color: var(--gf-color-text-secondary); font-size: 13px; }
+.fork-empty a, .fork-signin { color: var(--gf-color-accent); }
+.fork-signin { display: inline-flex; align-items: center; font-weight: 600; font-size: 13px; }
+@media (max-width: 600px) {
+  .fork-banner { padding: 10px 12px; }
+  .fork-banner-actions { width: 100%; margin-left: 0; }
+  .fork-banner-actions > * { flex: 1; }
+}

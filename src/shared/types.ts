@@ -15,9 +15,25 @@ export interface Repository {
   remote?: string;
   urlImport?: RepositoryUrlImport;
   visibility?: RepositoryVisibilityKind;
+  fork?: RepositoryFork;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface RepositoryFork { upstream: { workspaceId: string; repositoryId: string; label: string }; forkedAt: string; forkedAtSha: string | null; forkedBy: string }
+export type ForkSyncState = 'up-to-date' | 'behind' | 'ahead' | 'diverged' | 'unknown';
+export interface ForkStatus {
+  repositoryId: string;
+  defaultBranch: string;
+  headSha: string | null;
+  forkedAt: string;
+  upstream: { label: string; handle: string | null; name: string; url: string | null; available: boolean; defaultBranch: string | null; headSha: string | null };
+  sync: ForkSyncState;
+  storage: { usedBytes: number; limitBytes: number };
+  canSync: boolean;
+  canPropose: boolean;
+}
+export interface ForkSyncResult { status: ForkStatus; updated: boolean; headSha: string | null }
 
 export type UrlImportPhase = 'queued' | 'preparing' | 'fetching' | 'verifying' | 'pushing' | 'complete';
 export interface RepositoryUrlImport {
@@ -372,6 +388,7 @@ export interface PublicRepositorySummary {
   latestCommit: PublicCommit | null;
   stars: number;
   watchers: number;
+  forks?: number;
 }
 export interface PublicCommit { sha: string; message: string }
 export type PublicHandleKind = 'user' | 'workspace';

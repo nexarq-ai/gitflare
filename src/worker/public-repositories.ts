@@ -151,11 +151,12 @@ async function publicView(env: AppEnv, access: SecurityService, target: PublicTa
     const { commit, entries } = await rootEntries(source, repository.defaultBranch);
     const readme = entries.filter(entry => entry.type !== 'tree' && README_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0]?.name ?? null;
     const urls = publicUrls(origin, handle, repository);
-    const [stats] = await access.repositoryStats([repository.id]);
+    const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
+    const [[stats], forks] = await Promise.all([access.repositoryStats([repository.id]), Promise.resolve().then(() => records.forkCount()).catch(() => 0)]);
     return Response.json({
       handle, name: repositoryLabel(repository), description: repository.description, defaultBranch: repository.defaultBranch, headSha: commit?.hash ?? null, updatedAt: repository.updatedAt,
       visibility: 'public', license: commit ? await detectLicense(source, repository.defaultBranch) : null, readme, url: urls.url, cloneUrl: urls.cloneUrl, latestCommit: commit ? commits([commit])[0]! : null,
-      stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0,
+      stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0, forks,
     } satisfies PublicRepositorySummary);
   }
   if (view === 'branches') {

@@ -22,6 +22,8 @@ export interface GitHttpDependencies {
   fetcher?: typeof fetch;
   limits?: GitRateLimits;
   pushed?(repository: Repository, refs: string[]): Promise<void>;
+  storage?(repository: Repository): Promise<{ remainingBytes: number; limitBytes: number } | null>;
+  stored?(repository: Repository, bytes: number): Promise<void>;
 }
 
 export class GitProtocolError extends Error {}
@@ -122,15 +124,16 @@ function decodedBody(request: Request): ReadableStream<Uint8Array> {
   throw new GitProtocolError('unsupported request encoding');
 }
 
-function limitedStream(prefix: Uint8Array, reader: ReadableStreamDefaultReader<Uint8Array>, limit: number): ReadableStream<Uint8Array> {
+function limitedStream(prefix: Uint8Array, reader: ReadableStreamDefaultReader<Uint8Array>, limit: number, counter: { bytes: number } = { bytes: 0 }): ReadableStream<Uint8Array> {
   let size = prefix.length;
   let started = false;
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      if (!started) { started = true; if (prefix.length) { controller.enqueue(prefix); return; } }
+      if (!started) { started = true; counter.bytes = size; if (prefix.length) { controller.enqueue(prefix); return; } }
       const next = await reader.read();
       if (next.done) { controller.close(); return; }
       size += next.value.length;
+      counter.bytes = size;
       if (size > limit) { await reader.cancel(); controller.error(new GitProtocolError('push exceeds the size limit')); return; }
       controller.enqueue(next.value);
     },
@@ -295,10 +298,15 @@ export async function handleGitRequest(request: Request, deps: GitHttpDependenci
   if (request.headers.get('Content-Type')?.split(';')[0]?.trim() !== `application/x-${service}-request`) return text(415, 'Use a Git client for this request.');
   const declared = Number(request.headers.get('Content-Length') ?? '0');
   if (declared > GIT_PUSH_MAX_BYTES) return text(413, `Pushes are limited to ${GIT_PUSH_MAX_BYTES / 1_048_576} MiB. Push fewer commits at once.`);
+  const quota = await deps.storage?.(repository) ?? null;
+  const pushLimit = quota ? Math.min(GIT_PUSH_MAX_BYTES, Math.max(0, quota.remainingBytes)) : GIT_PUSH_MAX_BYTES;
+  const storageFull = quota ? `This fork has used its ${Math.round(quota.limitBytes / 1_073_741_824)} GiB storage limit. Push less, or start a new fork.` : '';
+  if (quota && declared > pushLimit) return text(413, storageFull);
   let reader: ReadableStreamDefaultReader<Uint8Array>;
   let parsed: Awaited<ReturnType<typeof readReceivePackCommands>>;
   try { reader = decodedBody(request).getReader(); parsed = await readReceivePackCommands(reader); }
   catch (error) { if (error instanceof GitProtocolError) return text(400, `Invalid Git push: ${error.message}.`); throw error; }
+  if (quota && pushLimit <= 0 && parsed.updates.some(update => update.newSha !== ZERO_SHA)) { await drain(reader, GIT_PUSH_MAX_BYTES); return text(413, storageFull); }
   const rules = await deps.rules(repository);
   const touchesProtected = parsed.updates.some(update => update.ref.startsWith('refs/heads/') && ruleFor(rules, update.ref.slice(11), repository.defaultBranch));
   const canLand = touchesProtected && await deps.authorize(principal, 'land', repository.id).then(() => true, () => false);
@@ -308,7 +316,9 @@ export async function handleGitRequest(request: Request, deps: GitHttpDependenci
     if (!parsed.capabilities.includes('report-status') && !parsed.capabilities.includes('report-status-v2')) return text(403, decisions.filter(decision => !decision.ok).map(decision => `${decision.ref}: ${(decision as { reason: string }).reason}`).join('\n'));
     return new Response(receivePackReport(decisions, parsed.capabilities), { status: 200, headers: { 'Content-Type': 'application/x-git-receive-pack-result', 'Cache-Control': 'no-store' } });
   }
-  const response = await forward(source, service, 'rpc', request, limitedStream(parsed.prefix, reader, GIT_PUSH_MAX_BYTES), fetcher);
+  const counter = { bytes: 0 };
+  const response = await forward(source, service, 'rpc', request, limitedStream(parsed.prefix, reader, Math.max(pushLimit, parsed.prefix.length), counter), fetcher);
+  if (quota && deps.stored && response.status === 200) await deps.stored(repository, counter.bytes).catch(() => {});
   if (!deps.pushed || response.status !== 200 || !response.body) return response;
   const notify = deps.pushed.bind(deps);
   const refs = parsed.updates.map(update => update.ref);
