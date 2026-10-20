@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/public/mcp.md",
-      "size": 13930,
-      "sha256": "6ac196d069c06c635d81aa4741c08eacd3e328dec9ec66489e831f9673dfca9f"
+      "size": 14206,
+      "sha256": "e9eee94eb2ede9911572761444ba747c390b07905d74b5f14ec912887e191197"
     },
     {
       "path": "docs/public/overview.md",
@@ -60,8 +60,8 @@
     },
     {
       "path": "docs/public/repositories.md",
-      "size": 12547,
-      "sha256": "48419c412ba8d1763cbd593c56fcda4fda55b11a5b956e19ccb5d462244cf859"
+      "size": 13895,
+      "sha256": "e6f3cc50c595b2135a5572939b941ba1638298f745fbcaed65ed5ed57b7cf85e"
     },
     {
       "path": "index.html",
@@ -131,7 +131,7 @@
     {
       "path": "README.md",
       "size": 5249,
-      "sha256": "f57e6c0d2da33eb60af1a19fb71023e9045bd6c861bd1d774843a65e66508fb5"
+      "sha256": "118faa10e91a4b54d076ba7faff87f7a84120644d10795cbaae0816df43a3688"
     },
     {
       "path": "runner/Dockerfile",
