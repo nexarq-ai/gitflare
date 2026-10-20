@@ -78,6 +78,14 @@
         "limit": 20,
         "period": 60
       }
+    },
+    {
+      "name": "PUBLIC_READ_RATE_LIMIT",
+      "namespace_id": "4106",
+      "simple": {
+        "limit": 300,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {

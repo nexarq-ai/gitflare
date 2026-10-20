@@ -7,6 +7,8 @@ import { validEnvironmentName, DEPLOY_ENVIRONMENTS_MAX } from './deploy-environm
 import { normalizeProjectMapping, type ProjectMapping, type MigrationPlan, type ProjectStoreOperation } from './cloudflare-projects';
 import { authenticatorUri, decryptAuth, encryptAuth, mfaSecret, randomCapability, verifyTotp } from './mfa';
 import { renewedExpiry, SESSION_ABSOLUTE_MS, slidingExpiry } from './session-policy';
+import { HANDLE_REDIRECT_DAYS, handleProblem, normalizeHandle, suggestedHandle } from '../shared/handles';
+import type { HandleAvailability, HandleStatus, RepositoryLicense } from '../shared/types';
 
 export const ROLES = ['Viewer', 'Contributor', 'Reviewer', 'Maintainer', 'Deployer', 'Owner'] as const;
 export type Role = typeof ROLES[number];
@@ -53,7 +55,23 @@ export interface MfaChallengeResult { mfaRequired: true; challengeId: string; ex
 interface State { cloudflareConnections: Record<string, CloudflareConnection>; cloudflareStates: Record<string, CloudflareOAuthState>; cloudflareSignins: Record<string, CloudflareSigninState>; cloudflareLinks: Record<string, CloudflareLink>; cloudflareProjects: Record<string, ProjectRecord>; mfa: MfaRecord[]; challenges: AuthChallenge[]; emailTokens: EmailToken[]; loginFailures: Record<string, LoginFailures>; installations: Record<string, Installation>; machines: MachineRegistration[]; users: User[]; members: Member[]; sessions: Session[]; workspaces: WorkspaceRecord[]; invitations: Invitation[]; teams: Team[]; grants: Grant[]; credentials: Credential[]; audit: Audit[]; protections: Record<string, Protection>; approvals: Record<string, string[]>; limits: Record<string, { count: number; until: number }> }
 interface ProjectRecord { mapping: ProjectMapping | null; plans: MigrationPlan[]; accounts?: RepositoryAccountSelection }
 export interface DemoInstallInput { workspaceId: string; workspaceName: string; users: { id: string; name: string; email: string; role: Role }[]; visitorId: string }
-export interface Principal { userId: string; workspaceId: string; role: Role; sessionId?: string; credentialId?: string; bootstrap?: boolean }
+export interface Principal { userId: string; workspaceId: string; role: Role; sessionId?: string; credentialId?: string; bootstrap?: boolean; kind?: 'public' }
+export const PUBLIC_USER_ID = 'public';
+export function publicPrincipal(workspaceId: string): Principal { return { kind: 'public', userId: PUBLIC_USER_ID, workspaceId, role: 'Viewer' }; }
+export function personalWorkspaceId(userId: string): string {
+  if (!/^[A-Za-z0-9-]{1,54}$/.test(userId) || userId === 'bootstrap-owner') fail('ACCOUNT_REQUIRED', 'Sign in with an account to choose a handle.');
+  return `personal-${userId}`;
+}
+export function isPersonalWorkspace(workspaceId: string): boolean { return workspaceId.startsWith('personal-'); }
+export type HandleKind = 'user' | 'workspace';
+interface HandleRecord { handle: string; kind: HandleKind; id: string; workspaceId: string; createdAt: string; redirectTo?: string; redirectUntil?: number }
+export interface ResolvedHandle { handle: string; kind: HandleKind; workspaceId: string }
+export type HandleResolution = ResolvedHandle | { redirect: string } | null;
+export interface PublicListing { repositoryId: string; workspaceId: string; name: string; publishedAt: string }
+export interface VisibilityRecord { visibility: 'public'; publishedAt: string; publishedBy: string; license: RepositoryLicense | null; acknowledgedNoLicense?: boolean }
+const HANDLE_REDIRECT_MS = HANDLE_REDIRECT_DAYS * 86_400_000;
+const HANDLE_CHANGES_PER_DAY = 5;
+const PUBLIC_LISTING_LIMIT = 500;
 export interface LegacyWorkspaceSlice { workspace: WorkspaceRecord | null; members: Member[]; sessions: Session[]; teams: Team[]; invitations: Invitation[]; grants: Grant[]; credentials: Credential[]; protection: Protection | null; approvals: Record<string, string[]>; connection: CloudflareConnection | null; cloudflareStates: CloudflareOAuthState[]; projects: Record<string, ProjectRecord>; audit: Audit[] }
 interface IndexEntry { workspaceId: string; expiresAt: number }
 interface Outbox { id: string; userId: string; revision: number; workspaces: string[]; at: number }
@@ -153,7 +171,7 @@ const key = {
   failures: (id: string) => `id:fail:${enc(id)}`, limit: (id: string) => `id:limit:${enc(id)}`, installation: (id: string) => `id:install:${enc(id)}`, machine: (id: string) => `id:machine:${enc(id)}`, machineClaim: (hash: string) => `id:mclaim:${enc(hash)}`,
   signin: (id: string) => `id:cfsignin:${enc(id)}`, link: (id: string) => `id:cflink:${enc(id)}`, linkEmail: (email: string) => `id:cflinkemail:${enc(email)}`,
   route: (hash: string) => `id:route:${enc(hash)}`, sessionHome: (id: string) => `id:sesshome:${enc(id)}`, invite: (hash: string) => `id:invite:${enc(hash)}`, oauthState: (id: string) => `id:cfstate:${enc(id)}`,
-  outbox: (id: string) => `id:outbox:${enc(id)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
+  outbox: (id: string) => `id:outbox:${enc(id)}`, handle: (handle: string) => `id:handle:${enc(handle)}`, workspaceHandle: (workspaceId: string) => `id:wshandle:${enc(workspaceId)}`, publicListing: (repositoryId: string) => `id:pubrepo:${enc(repositoryId)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
 };
 
 class Records {
@@ -526,6 +544,50 @@ export class IdentityStore {
   }
   migrationStatus() { return this.read(async unit => ({ marker: await unit.get<{ version: number; pending: number; workspaces: number }>(key.migration), workspaces: Object.fromEntries([...await unit.list<{ done?: string }>({ prefix: 'id:legacy-ws:' })].map(([id, value]) => [decodeURIComponent(id.slice('id:legacy-ws:'.length)), value.done ?? null])) })); }
 
+  handleOf(workspaceId: string) { return this.read(async unit => await unit.get<string>(key.workspaceHandle(workspaceId)) ?? null); }
+  resolveHandle(value: string) {
+    return this.read(async (unit): Promise<HandleResolution> => {
+      const record = await unit.get<HandleRecord>(key.handle(normalizeHandle(value)));
+      if (!record) return null;
+      if (record.redirectTo === undefined) return { handle: record.handle, kind: record.kind, workspaceId: record.workspaceId };
+      if ((record.redirectUntil ?? 0) <= Date.now()) return null;
+      const current = await unit.get<string>(key.workspaceHandle(record.workspaceId));
+      const target = current ? await unit.get<HandleRecord>(key.handle(current)) : undefined;
+      return target && target.redirectTo === undefined && target.kind === record.kind && target.id === record.id ? { redirect: target.handle } : null;
+    });
+  }
+  private async handleConflict(unit: Unit, handle: string, owner: { kind: HandleKind; id: string }, operator: boolean): Promise<Omit<HandleAvailability, 'handle'> | null> {
+    const problem = handleProblem(handle, { operator });
+    if (problem) return { available: false, code: problem.code, message: problem.message };
+    const record = await unit.get<HandleRecord>(key.handle(handle));
+    const mine = record?.kind === owner.kind && record.id === owner.id;
+    if (record && !mine && (record.redirectTo === undefined || (record.redirectUntil ?? 0) > Date.now())) return { available: false, code: 'HANDLE_TAKEN', message: `${handle} is taken. Choose another handle.` };
+    return null;
+  }
+  handleAvailability(value: string, owner: { kind: HandleKind; id: string }, operator = false) {
+    return this.read(async (unit): Promise<HandleAvailability> => { const handle = normalizeHandle(value); return { handle, ...await this.handleConflict(unit, handle, owner, operator) ?? { available: true } }; });
+  }
+  claimHandle(input: { kind: HandleKind; id: string; workspaceId: string; handle: string; operator?: boolean }) {
+    return this.write(async unit => {
+      const handle = normalizeHandle(input.handle);
+      const conflict = await this.handleConflict(unit, handle, input, !!input.operator);
+      if (conflict) throw new ApiError(conflict.code === 'HANDLE_TAKEN' ? 409 : 400, conflict.code!, conflict.message!);
+      const previous = await unit.get<string>(key.workspaceHandle(input.workspaceId)) ?? null;
+      if (previous === handle) return { handle, previous };
+      if (!await this.limitAllows(unit, `handle:${input.kind}:${input.id}`, HANDLE_CHANGES_PER_DAY, 86_400_000)) throw new ApiError(429, 'RATE_LIMITED', 'You changed this handle several times today. Try again tomorrow.');
+      const now = Date.now();
+      if (previous) {
+        const old = await unit.get<HandleRecord>(key.handle(previous));
+        if (old && old.kind === input.kind && old.id === input.id) unit.put(key.handle(previous), { ...old, redirectTo: handle, redirectUntil: now + HANDLE_REDIRECT_MS } satisfies HandleRecord);
+      }
+      unit.put(key.handle(handle), { handle, kind: input.kind, id: input.id, workspaceId: input.workspaceId, createdAt: new Date(now).toISOString() } satisfies HandleRecord);
+      unit.put(key.workspaceHandle(input.workspaceId), handle);
+      return { handle, previous };
+    });
+  }
+  publicListing(repositoryId: string) { return this.read(async unit => await unit.get<PublicListing>(key.publicListing(repositoryId)) ?? null); }
+  publicListings() { return this.read(async unit => [...(await unit.list<PublicListing>({ prefix: 'id:pubrepo:', limit: PUBLIC_LISTING_LIMIT })).values()]); }
+  changePublicListing(repositoryId: string, listing: PublicListing | null) { return this.write(unit => { if (listing) unit.put(key.publicListing(repositoryId), listing); else unit.delete(key.publicListing(repositoryId)); }); }
   async pushLegacy(): Promise<void> {
     const status = await this.migrationStatus();
     const failures: unknown[] = [];
@@ -582,9 +644,9 @@ function splitIdentity(legacy: State, unit: Unit, now: number): string[] {
   return [...workspaces];
 }
 
-type ShardGroup = 'meta' | 'workspace' | 'member' | 'session' | 'team' | 'invitation' | 'grant' | 'credential' | 'protection' | 'approval' | 'connection' | 'cfstate' | 'project' | 'revision' | 'cfaccount';
-const SHARD_GROUPS: ShardGroup[] = ['meta', 'workspace', 'member', 'session', 'team', 'invitation', 'grant', 'credential', 'protection', 'approval', 'connection', 'cfstate', 'project', 'revision', 'cfaccount'];
-interface ShardData { meta: Map<string, { workspaceId: string; source: string; version: number; at: string }>; workspace: Map<string, WorkspaceRecord>; member: Map<string, Member>; session: Map<string, Session>; team: Map<string, Team>; invitation: Map<string, Invitation>; grant: Map<string, Grant>; credential: Map<string, Credential>; protection: Map<string, Protection>; approval: Map<string, string[]>; connection: Map<string, CloudflareConnection>; cfstate: Map<string, CloudflareOAuthState>; project: Map<string, ProjectRecord>; revision: Map<string, number>; cfaccount: Map<string, ConnectedCloudflareAccount> }
+type ShardGroup = 'meta' | 'workspace' | 'member' | 'session' | 'team' | 'invitation' | 'grant' | 'credential' | 'protection' | 'approval' | 'connection' | 'cfstate' | 'project' | 'revision' | 'cfaccount' | 'visibility';
+const SHARD_GROUPS: ShardGroup[] = ['meta', 'workspace', 'member', 'session', 'team', 'invitation', 'grant', 'credential', 'protection', 'approval', 'connection', 'cfstate', 'project', 'revision', 'cfaccount', 'visibility'];
+interface ShardData { meta: Map<string, { workspaceId: string; source: string; version: number; at: string }>; workspace: Map<string, WorkspaceRecord>; member: Map<string, Member>; session: Map<string, Session>; team: Map<string, Team>; invitation: Map<string, Invitation>; grant: Map<string, Grant>; credential: Map<string, Credential>; protection: Map<string, Protection>; approval: Map<string, string[]>; connection: Map<string, CloudflareConnection>; cfstate: Map<string, CloudflareOAuthState>; project: Map<string, ProjectRecord>; revision: Map<string, number>; cfaccount: Map<string, ConnectedCloudflareAccount>; visibility: Map<string, VisibilityRecord> }
 function emptyShard(): ShardData { return Object.fromEntries(SHARD_GROUPS.map(group => [group, new Map()])) as unknown as ShardData; }
 function connectionRepository(value: unknown): string | undefined { if (value === undefined) return undefined; if (typeof value !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(value)) fail(); return value; }
 function connectionGrant(value: unknown): string | undefined { if (value === undefined) return undefined; if (typeof value !== 'string' || !/^[a-f0-9-]{36}$/.test(value)) fail(); return value; }
@@ -660,6 +722,7 @@ export class WorkspaceStore {
   private session(id: string | undefined, context: Context): PublicSession | undefined { return id ? this.data.session.get(id) ?? context.session ?? undefined : undefined; }
   private validate(p: Principal, context: Context) {
     const now = Date.now();
+    if (p.kind !== undefined) fail();
     if (p.workspaceId !== this.workspaceId) fail();
     if (p.bootstrap) {
       if (this.options.EDITION === 'self-hosted') fail('BOOTSTRAP_DISABLED');
@@ -825,13 +888,36 @@ export class WorkspaceStore {
       change.keys!.push(['credential', credential.id]);
     }, { full: false });
   }
+  private publicAllows(p: Principal, action: Action, resourceType: string, resourceId: string, missionId?: string): boolean {
+    return p.kind === 'public' && p.userId === PUBLIC_USER_ID && p.workspaceId === this.workspaceId && !p.sessionId && !p.credentialId && !p.bootstrap
+      && action === 'read' && resourceType === 'repository' && missionId === undefined && this.initialized && this.data.visibility.get(resourceId)?.visibility === 'public';
+  }
   async check(p: Principal, action: Action, resourceType = 'workspace', resourceId = p.workspaceId, missionId?: string): Promise<void> {
+    if (p.kind !== undefined) { await this.load(); return this.guarded(() => { if (!this.publicAllows(p, action, resourceType, resourceId, missionId)) fail(); }); }
     const context = await this.prepare(p);
     await this.guarded(() => { this.validate(p, context); if (!this.checkAllows(p, action, resourceType, resourceId, missionId)) fail(); });
   }
   async checkMany(p: Principal, action: Action, resources: { resourceType: string; resourceId: string; missionId?: string }[]): Promise<boolean[]> {
+    if (p.kind !== undefined) { await this.load(); return this.guarded(() => resources.map(r => this.publicAllows(p, action, r.resourceType, r.resourceId, r.missionId))); }
     const context = await this.prepare(p);
     return this.guarded(() => { this.validate(p, context); return resources.map(r => this.checkAllows(p, action, r.resourceType, r.resourceId, r.missionId)); });
+  }
+  async visibility(p: Principal, repositoryId: string): Promise<VisibilityRecord | null> {
+    const context = await this.prepare(p);
+    return this.guarded(() => { this.validate(p, context); if (!this.checkAllows(p, 'read', 'repository', repositoryId)) fail(); return this.data.visibility.get(repositoryId) ?? null; });
+  }
+  async setVisibility(p: Principal, repositoryId: string, record: VisibilityRecord | null): Promise<VisibilityRecord | null> {
+    const context = await this.prepare(p);
+    return this.change(change => {
+      this.validate(p, context);
+      if (p.credentialId || p.role !== 'Owner') fail('OWNER_REQUIRED', 'Only a workspace Owner can change who can see a repository.');
+      if (!this.authorityAllows(p, 'manage', 'repository', repositoryId)) fail();
+      const before = this.data.visibility.get(repositoryId) ?? null;
+      if (record) this.data.visibility.set(repositoryId, record); else this.data.visibility.delete(repositoryId);
+      change.keys!.push(['visibility', repositoryId]);
+      if (!!before !== !!record) change.audit.push({ actorId: p.userId, action: record ? 'repository.visibility.public' : 'repository.visibility.private', resourceId: repositoryId });
+      return record;
+    }, { full: false });
   }
   async workspace(p: Principal) { const context = await this.prepare(p); return this.guarded(() => { this.validate(p, context); const workspace = this.record(); if (!workspace) fail(); return { id: workspace.id, name: workspace.name }; }); }
   async snapshotPart(p: Principal) {
@@ -1344,8 +1430,8 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
-const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall']);
-const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand']);
+const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing']);
+const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand', 'visibility', 'setVisibility']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
   return new Proxy({}, {
     get: (_target, op) => typeof op !== 'string' || op === 'then' ? undefined : async (...args: unknown[]) => {
@@ -1600,6 +1686,71 @@ export class SecurityService {
     for (const userId of [p.userId, ...joined.map(item => item.userId)]) await this.identity().addHint(userId, workspaceId);
     await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: 'workspace:create', resourceId: workspaceId }]);
     return { workspace: { id: workspaceId, name }, members: joined.length + 1 };
+  }
+  private publicLayerAvailable() { if (this.options.EDITION === 'self-hosted' || this.options.DEMO_MODE === 'true') fail('HOSTED_ONLY', 'Public repositories and handles are part of hosted Gitflare.'); }
+  private operatorWorkspace(workspaceId: string) { return operatorWorkspaces(this.options.INSTALLATION_OWNER_WORKSPACES).includes(workspaceId); }
+  handleOf(workspaceId: string): Promise<string | null> { return this.identity().handleOf(workspaceId); }
+  resolveHandle(handle: string): Promise<HandleResolution> { return this.identity().resolveHandle(handle); }
+  publicListing(repositoryId: string): Promise<PublicListing | null> { return this.identity().publicListing(repositoryId); }
+  publicListings(): Promise<PublicListing[]> { return this.identity().publicListings(); }
+  async handles(p: Principal, origin: string): Promise<HandleStatus> {
+    if (p.credentialId) fail();
+    await this.shard(p.workspaceId).validatePrincipal(p);
+    const account = !p.bootstrap && /^[A-Za-z0-9-]{1,54}$/.test(p.userId);
+    const personalId = account ? personalWorkspaceId(p.userId) : null;
+    const personal = !!personalId && p.workspaceId === personalId;
+    const [userHandle, workspaceHandle, users, workspace] = await Promise.all([
+      personalId ? this.identity().handleOf(personalId) : Promise.resolve(null), this.identity().handleOf(p.workspaceId),
+      account ? this.identity().users([p.userId]) : Promise.resolve({} as Record<string, { name: string }>), this.shard(p.workspaceId).workspace(p),
+    ]);
+    return {
+      user: { handle: userHandle, personalWorkspaceId: userHandle ? personalId : null, suggested: suggestedHandle(users[p.userId]?.name ?? '') },
+      workspace: { id: p.workspaceId, handle: workspaceHandle, personal, canChange: !personal && p.role === 'Owner', suggested: suggestedHandle(workspace.name) },
+      origin,
+    };
+  }
+  async checkHandle(p: Principal, scope: HandleKind, value: string): Promise<HandleAvailability> {
+    if (p.credentialId) fail();
+    await this.shard(p.workspaceId).validatePrincipal(p);
+    const owner = scope === 'user' ? { kind: 'user' as const, id: p.userId } : { kind: 'workspace' as const, id: p.workspaceId };
+    return this.identity().handleAvailability(String(value).slice(0, 100), owner, scope === 'workspace' && this.operatorWorkspace(p.workspaceId));
+  }
+  async setHandle(p: Principal, scope: HandleKind, value: string, origin: string): Promise<HandleStatus> {
+    this.publicLayerAvailable();
+    if (p.credentialId) fail();
+    const handle = normalizeHandle(requireString(value, 'Handle', 100));
+    if (scope === 'user') {
+      if (p.bootstrap || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to choose a handle.');
+      await this.shard(p.workspaceId).validatePrincipal(p, { account: true });
+      const workspaceId = personalWorkspaceId(p.userId);
+      const problem = await this.identity().handleAvailability(handle, { kind: 'user', id: p.userId });
+      if (!problem.available) throw new ApiError(problem.code === 'HANDLE_TAKEN' ? 409 : 400, problem.code!, problem.message!);
+      if (!await this.shard(workspaceId).isMember(p.userId)) {
+        await this.shard(workspaceId).initWorkspace({ record: { id: workspaceId, name: 'Personal' }, members: [{ userId: p.userId, workspaceId, role: 'Owner' }], audit: [{ actorId: p.userId, action: 'workspace:create-personal' }] }, true);
+        await this.identity().addHint(p.userId, workspaceId);
+      }
+      const claimed = await this.identity().claimHandle({ kind: 'user', id: p.userId, workspaceId, handle });
+      if (claimed.previous !== claimed.handle) await this.shard(workspaceId).audit([{ actorId: p.userId, action: 'account.handle.set', resourceId: claimed.handle }]);
+      return this.handles(p, origin);
+    }
+    await this.shard(p.workspaceId).validatePrincipal(p, { owner: true });
+    if (isPersonalWorkspace(p.workspaceId)) fail('PERSONAL_WORKSPACE', 'This personal workspace uses your account handle. Change it in Account → Profile.');
+    const claimed = await this.identity().claimHandle({ kind: 'workspace', id: p.workspaceId, workspaceId: p.workspaceId, handle, operator: this.operatorWorkspace(p.workspaceId) });
+    if (claimed.previous !== claimed.handle) await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: 'workspace.handle.set', resourceId: claimed.handle }]);
+    return this.handles(p, origin);
+  }
+  visibility(p: Principal, repositoryId: string): Promise<VisibilityRecord | null> { return this.shard(p.workspaceId).visibility(p, repositoryId); }
+  async setVisibility(p: Principal, repository: { id: string; name: string }, record: VisibilityRecord | null): Promise<VisibilityRecord | null> {
+    this.publicLayerAvailable();
+    if (record) {
+      if (!await this.identity().handleOf(p.workspaceId)) throw new ApiError(409, 'HANDLE_REQUIRED', isPersonalWorkspace(p.workspaceId) ? 'Choose your handle in Account → Profile before making a repository public.' : 'Choose a handle for this workspace in Settings → General before making a repository public.');
+      const saved = await this.shard(p.workspaceId).setVisibility(p, repository.id, record);
+      await this.identity().changePublicListing(repository.id, { repositoryId: repository.id, workspaceId: p.workspaceId, name: repository.name, publishedAt: record.publishedAt });
+      return saved;
+    }
+    await this.shard(p.workspaceId).validatePrincipal(p, { owner: true });
+    await this.identity().changePublicListing(repository.id, null);
+    return this.shard(p.workspaceId).setVisibility(p, repository.id, null);
   }
   private async inviteAccepted(invite: { scope?: InvitationScope; role: Role; workspaceId: string }, userId: string) {
     if (invite.scope?.kind !== 'organization') return;

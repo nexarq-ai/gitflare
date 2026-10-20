@@ -1,0 +1,195 @@
+import type { PublicBranches, PublicCommit, PublicFile, PublicHistory, PublicReleases, PublicRepositorySummary, PublicTree, Release, Repository, RepositoryLicense, RepositoryVisibility } from '../shared/types';
+import { HANDLE_PATTERN } from '../shared/handles';
+import { repositoryLabel } from '../shared/repository-names';
+import { hostOrigins } from '../shared/hosts';
+import { ApiError, repositoryPath, repositoryRef } from './domain';
+import type { AppEnv } from './env';
+import { catalogName } from './capacity';
+import { listBranches } from './git-http';
+import { consume, rateLimitedResponse } from './rate-limits';
+import { publicPrincipal, securityClient, type Principal, type SecurityService, type VisibilityRecord } from './security';
+import { sourceView, type SourceHandle } from './source-browse';
+
+export const PUBLIC_NOT_FOUND = 'This repository does not exist or is not public.';
+const REPOSITORY_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const LICENSE_FILE = /^(?:licen[cs]e|copying)(?:[.-][a-z0-9.-]{1,20})?$/i;
+const README_FILE = /^readme(?:\.(?:md|markdown|txt))?$/i;
+const LICENSE_READ_MAX = 65_536;
+const PUBLIC_HISTORY_MAX = 100;
+const PUBLIC_SHA_HISTORY = 1000;
+
+export interface PublicTarget { repository: Repository; handle: string; workspaceId: string }
+export type PublicResolution = PublicTarget | { redirect: string } | null;
+
+function notFound(): never { throw new ApiError(404, 'NOT_FOUND', PUBLIC_NOT_FOUND); }
+
+export function siteOrigin(env: Pick<AppEnv, 'SITE_ORIGIN' | 'APP_ORIGIN'>, requestOrigin: string): string {
+  return hostOrigins(env.SITE_ORIGIN, env.APP_ORIGIN)?.site ?? requestOrigin;
+}
+
+export function publicUrls(origin: string, handle: string, repository: Pick<Repository, 'name' | 'displayName'>) {
+  const path = `/${handle}/${encodeURIComponent(repositoryLabel(repository))}`;
+  return { path, url: `${origin}${path}`, cloneUrl: `${origin}${path}.git` };
+}
+
+export function findPublicRepository(repositories: Repository[], name: string): Repository | undefined {
+  return repositories.find(item => repositoryLabel(item) === name) ?? repositories.find(item => repositoryLabel(item).toLowerCase() === name.toLowerCase());
+}
+
+export async function resolvePublicRepository(env: AppEnv, access: SecurityService, handle: string, name: string): Promise<PublicResolution> {
+  if (!HANDLE_PATTERN.test(handle) || !REPOSITORY_SEGMENT.test(name) || name.endsWith('.git')) return null;
+  const resolved = await access.resolveHandle(handle);
+  if (!resolved) return null;
+  if ('redirect' in resolved) return { redirect: resolved.redirect };
+  const repository = findPublicRepository(await env.GITFLARE_COORDINATOR.getByName(catalogName(resolved.workspaceId)).listRepositories(), name);
+  if (!repository || repository.provider !== 'artifacts' || !env.ARTIFACTS) return null;
+  const allowed = await access.check(publicPrincipal(resolved.workspaceId), 'read', 'repository', repository.id).then(() => true, () => false);
+  return allowed ? { repository, handle: resolved.handle, workspaceId: resolved.workspaceId } : null;
+}
+
+export function detectSpdx(text: string): string | null {
+  const head = text.slice(0, 4000).replace(/\s+/g, ' ');
+  const rules: [RegExp, string][] = [
+    [/GNU AFFERO GENERAL PUBLIC LICENSE/i, 'AGPL-3.0'],
+    [/GNU LESSER GENERAL PUBLIC LICENSE/i, /Version 2\.1/i.test(head) ? 'LGPL-2.1' : 'LGPL-3.0'],
+    [/GNU GENERAL PUBLIC LICENSE/i, /Version 2,/i.test(head) ? 'GPL-2.0' : 'GPL-3.0'],
+    [/Mozilla Public License,? (?:Version|v\.?) ?2\.0/i, 'MPL-2.0'],
+    [/Apache License,? Version 2\.0/i, 'Apache-2.0'],
+    [/Permission is hereby granted, free of charge/i, 'MIT'],
+    [/Permission to use, copy, modify, and\/or distribute this software for any purpose/i, 'ISC'],
+    [/This is free and unencumbered software released into the public domain/i, 'Unlicense'],
+    [/Boost Software License/i, 'BSL-1.0'],
+    [/Redistribution and use in source and binary forms/i, /Neither the name/i.test(head) ? 'BSD-3-Clause' : 'BSD-2-Clause'],
+  ];
+  return rules.find(([pattern]) => pattern.test(head))?.[1] ?? null;
+}
+
+async function rootEntries(source: SourceHandle, ref: string) {
+  const commit = (await source.log({ ref, limit: 1 }).catch(() => []))[0];
+  if (!commit) return { commit: undefined, entries: [] };
+  return { commit, entries: (await source.readTree(commit.treeHash)) ?? [] };
+}
+
+export async function detectLicense(source: SourceHandle, ref: string): Promise<RepositoryLicense | null> {
+  const { commit, entries } = await rootEntries(source, ref);
+  const file = entries.filter(entry => entry.type !== 'tree' && LICENSE_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0];
+  if (!commit || !file) return null;
+  const blob = await source.readFile({ ref: commit.hash, path: file.name }).catch(() => null);
+  const text = blob && blob.size <= LICENSE_READ_MAX ? await blob.text().catch(() => '') : '';
+  return { spdx: detectSpdx(text), path: file.name };
+}
+
+export async function visibilitySnapshot(env: AppEnv, access: SecurityService, principal: Principal, repository: Repository, origin: string): Promise<RepositoryVisibility> {
+  const [record, handle] = await Promise.all([access.visibility(principal, repository.id), access.handleOf(principal.workspaceId)]);
+  let license: RepositoryLicense | null = record?.license ?? null;
+  if (env.ARTIFACTS && repository.provider === 'artifacts') {
+    using source = await env.ARTIFACTS.get(repository.name);
+    license = await detectLicense(source, repository.defaultBranch).catch(() => license);
+  }
+  const urls = handle ? publicUrls(origin, handle, repository) : null;
+  const hosted = env.EDITION !== 'self-hosted' && env.DEMO_MODE !== 'true';
+  return {
+    repositoryId: repository.id, visibility: record ? 'public' : 'private', publishedAt: record?.publishedAt ?? null, license, handle,
+    url: urls?.url ?? null, cloneUrl: urls?.cloneUrl ?? null, canChange: hosted && principal.role === 'Owner' && !principal.credentialId,
+  };
+}
+
+export async function changeVisibility(env: AppEnv, access: SecurityService, principal: Principal, repository: Repository, body: Record<string, unknown>): Promise<void> {
+  if (body.visibility !== 'public' && body.visibility !== 'private') throw new ApiError(400, 'INVALID_VISIBILITY', 'Choose public or private.');
+  if (body.acknowledgeNoLicense !== undefined && typeof body.acknowledgeNoLicense !== 'boolean') throw new ApiError(400, 'INVALID_INPUT', 'acknowledgeNoLicense must be true or false.');
+  await access.authorize(principal, 'manage', 'repository', repository.id);
+  if (body.visibility === 'private') { await access.setVisibility(principal, repository, null); return; }
+  if (!env.ARTIFACTS || repository.provider !== 'artifacts') throw new ApiError(409, 'REPOSITORY_NOT_CONNECTED', 'Only repositories with Git storage can be public.');
+  using source = await env.ARTIFACTS.get(repository.name);
+  if (!(await source.log({ ref: repository.defaultBranch, limit: 1 }).catch(() => []))[0]) throw new ApiError(409, 'EMPTY_REPOSITORY', 'Push a first commit before making this repository public.');
+  const license = await detectLicense(source, repository.defaultBranch);
+  if (!license && body.acknowledgeNoLicense !== true) throw new ApiError(409, 'LICENSE_REQUIRED', 'Add a LICENSE file so others know how they may use the code, or confirm publishing without one.');
+  const current = await access.visibility(principal, repository.id);
+  const record: VisibilityRecord = { visibility: 'public', publishedAt: current?.publishedAt ?? new Date().toISOString(), publishedBy: current?.publishedBy ?? principal.userId, license, ...(license ? {} : { acknowledgedNoLicense: true }) };
+  await access.setVisibility(principal, repository, record);
+}
+
+async function publicRef(source: SourceHandle, repository: Repository, value: string | null): Promise<string> {
+  const ref = repositoryRef(value || repository.defaultBranch);
+  if (!/^[a-f0-9]{7,40}$/.test(ref)) return ref;
+  const reachable = await source.log({ ref: repository.defaultBranch, limit: PUBLIC_SHA_HISTORY }).catch(() => []);
+  const match = reachable.filter(commit => commit.hash.startsWith(ref));
+  if (match.length === 1) return match[0]!.hash;
+  if (match.length > 1) throw new ApiError(409, 'AMBIGUOUS_REF', `Commit prefix ${ref} matches more than one commit. Pass more characters.`);
+  throw new ApiError(404, 'REF_NOT_FOUND', `Commit ${ref.slice(0, 12)} is not in the last ${PUBLIC_SHA_HISTORY} commits of ${repository.defaultBranch}. Pass a branch or tag name.`);
+}
+
+function commits(list: { hash: string; message: string }[]): PublicCommit[] { return list.map(commit => ({ sha: commit.hash, message: commit.message.slice(0, 2000) })); }
+
+async function publicRead(env: AppEnv, target: PublicTarget, view: string, url: URL, origin: string): Promise<Response> {
+  const { repository, handle } = target;
+  using source = await env.ARTIFACTS!.get(repository.name);
+  if (view === '') {
+    const { commit, entries } = await rootEntries(source, repository.defaultBranch);
+    const readme = entries.filter(entry => entry.type !== 'tree' && README_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0]?.name ?? null;
+    const urls = publicUrls(origin, handle, repository);
+    return Response.json({
+      handle, name: repositoryLabel(repository), description: repository.description, defaultBranch: repository.defaultBranch, headSha: commit?.hash ?? null, updatedAt: repository.updatedAt,
+      visibility: 'public', license: commit ? await detectLicense(source, repository.defaultBranch) : null, readme, url: urls.url, cloneUrl: urls.cloneUrl, latestCommit: commit ? commits([commit])[0]! : null,
+    } satisfies PublicRepositorySummary);
+  }
+  if (view === 'branches') {
+    const branches = await listBranches(env.ARTIFACTS!, repository, []);
+    return Response.json({ defaultBranch: repository.defaultBranch, branches: branches.map(branch => ({ name: branch.name, headSha: branch.headSha, default: branch.default })) } satisfies PublicBranches);
+  }
+  if (view === 'releases') {
+    const releases = await env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`).listReleases() as Release[];
+    return Response.json({ releases: releases.filter(release => !release.draft && release.publishedAt).sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '')).map(release => ({ tag: release.tag, name: release.name, notes: release.notes, targetSha: release.targetSha, prerelease: release.prerelease, publishedAt: release.publishedAt })) } satisfies PublicReleases);
+  }
+  const ref = await publicRef(source, repository, url.searchParams.get('ref'));
+  const commit = (await source.log({ ref, limit: 1 }).catch(() => []))[0];
+  if (!commit) throw new ApiError(404, 'REF_NOT_FOUND', 'This branch, tag or commit does not exist in this repository.');
+  if (view === 'history') {
+    const limit = Math.min(PUBLIC_HISTORY_MAX, Math.max(1, Number(url.searchParams.get('limit')) || 30));
+    return Response.json({ ref, commits: commits(await source.log({ ref: commit.hash, limit })) } satisfies PublicHistory);
+  }
+  if (view === 'readme') {
+    const { entries } = await rootEntries(source, commit.hash);
+    const readme = entries.filter(entry => entry.type !== 'tree' && README_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0];
+    if (!readme) throw new ApiError(404, 'FILE_NOT_FOUND', 'This repository has no README.');
+    return publicSource(await sourceView(source, commit, 'file', readme.name, ref));
+  }
+  const kind = view === 'file' ? 'file' : 'tree';
+  return publicSource(await sourceView(source, commit, kind, repositoryPath(url.searchParams.get('path') ?? '', kind === 'tree'), ref));
+}
+
+async function publicSource(response: Response): Promise<Response> {
+  const value = await response.json() as (PublicTree | PublicFile) & { missionId?: unknown; source?: unknown };
+  const { missionId: _missionId, source: _source, ...rest } = value;
+  return Response.json(rest);
+}
+
+const PUBLIC_VIEWS = new Set(['', 'tree', 'file', 'history', 'branches', 'releases', 'readme']);
+
+export async function publicRepositoryApi(request: Request, env: AppEnv): Promise<Response | null> {
+  const url = new URL(request.url);
+  const repositoryRoute = /^\/api\/public\/repos\/([^/]+)\/([^/]+)(?:\/([a-z]+))?$/.exec(url.pathname);
+  const byId = /^\/api\/public\/repository\/([a-zA-Z0-9-]{1,100})$/.exec(url.pathname);
+  if (!repositoryRoute && !byId) return null;
+  if (request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Public repositories are read-only here.');
+  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+  if (limited) return rateLimitedResponse(limited, 'public repository requests');
+  const access = securityClient(env);
+  const origin = siteOrigin(env, url.origin);
+  if (byId) {
+    const listing = await access.publicListing(byId[1]!);
+    const repository = listing ? await env.GITFLARE_COORDINATOR.getByName(catalogName(listing.workspaceId)).getRepository(byId[1]!) : undefined;
+    const allowed = repository ? await access.check(publicPrincipal(listing!.workspaceId), 'read', 'repository', repository.id).then(() => true, () => false) : false;
+    const handle = allowed ? await access.handleOf(listing!.workspaceId) : null;
+    if (!repository || !handle) notFound();
+    return Response.json({ url: publicUrls('', handle, repository).path });
+  }
+  let handle: string; let name: string;
+  try { handle = decodeURIComponent(repositoryRoute![1]!); name = decodeURIComponent(repositoryRoute![2]!); } catch { notFound(); }
+  const view = repositoryRoute![3] ?? '';
+  if (!PUBLIC_VIEWS.has(view)) notFound();
+  const target = await resolvePublicRepository(env, access, handle.toLowerCase(), name);
+  if (!target) notFound();
+  if ('redirect' in target) return new Response(null, { status: 308, headers: { Location: `/api/public/repos/${target.redirect}/${encodeURIComponent(name)}${view ? `/${view}` : ''}${url.search}` } });
+  return publicRead(env, target, view, url, origin);
+}

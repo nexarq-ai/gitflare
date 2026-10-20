@@ -1,3 +1,5 @@
+import { HANDLE_PATTERN, OPERATOR_HANDLES, RESERVED_HANDLES, type PublicRepositoryView } from "../shared/handles";
+
 const ROUTE_EVENT = "gitflare:route";
 // Bearer tokens travel in the fragment so they never reach server logs or Referer headers
 const TOKEN_ROUTES: Record<string, (fragment: string) => string> = {
@@ -63,12 +65,35 @@ export function publicSourceLocation(route: string): { path: string; kind: "file
   return { path: match[2], kind: match[1] === "blob" ? "file" : "directory" };
 }
 
+const PUBLIC_REPOSITORY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const SINGLE_PUBLIC_VIEWS = ["commits", "branches", "releases"] as const;
+
+export type PublicRepositoryLocation = { handle: string; repository: string; view: PublicRepositoryView; path: string };
+
+function unsafeSegment(segment: string): boolean {
+  return !segment || segment === "." || segment === ".." || /[\\\u0000-\u001f]/.test(segment);
+}
+
+export function publicRepositoryLocation(route: string): PublicRepositoryLocation | null {
+  const [handle, repository, view, ...rest] = route.split("/");
+  if (!handle || !repository || !HANDLE_PATTERN.test(handle)) return null;
+  if (RESERVED_HANDLES.has(handle) && !(OPERATOR_HANDLES as readonly string[]).includes(handle)) return null;
+  if (!PUBLIC_REPOSITORY_NAME.test(repository) || /\.git$/i.test(repository)) return null;
+  if (view === undefined) return { handle, repository, view: "code", path: "" };
+  if ((SINGLE_PUBLIC_VIEWS as readonly string[]).includes(view)) return rest.length ? null : { handle, repository, view: view as PublicRepositoryView, path: "" };
+  if (view !== "tree" && view !== "blob") return null;
+  if (!rest.length) return view === "tree" ? { handle, repository, view: "code", path: "" } : null;
+  if (rest.some(unsafeSegment)) return null;
+  return { handle, repository, view, path: rest.join("/") };
+}
+
 export function publicSourceUrl(path = "", kind: "file" | "directory" = "file"): string {
   return path ? `/source/gitflare/${kind === "file" ? "blob" : "tree"}/${path.split("/").map(encodeURIComponent).join("/")}` : "/source/gitflare";
 }
 
 export function isAppPath(pathname: string): boolean {
-  return !!publicSourceLocation(routeFromLocation(pathname, "")) || !SERVER_PATH.test(pathname);
+  const route = routeFromLocation(pathname, "");
+  return !!publicSourceLocation(route) || !!publicRepositoryLocation(route) || !SERVER_PATH.test(pathname);
 }
 
 export function onRouteChange(listener: () => void): () => void {

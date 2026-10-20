@@ -14,6 +14,7 @@ export interface Repository {
   provider: 'artifacts' | 'local';
   remote?: string;
   urlImport?: RepositoryUrlImport;
+  visibility?: RepositoryVisibilityKind;
   createdAt: string;
   updatedAt: string;
 }
@@ -335,7 +336,48 @@ export interface Workspace {
   integrations: IntegrationStatus[];
   ai?: AiSettings;
   cloudflare?: WorkspaceCloudflare;
+  handle?: string | null;
 }
+
+export type RepositoryVisibilityKind = 'public' | 'private';
+export interface RepositoryLicense { spdx: string | null; path: string | null }
+export interface HandleStatus {
+  user: { handle: string | null; personalWorkspaceId: string | null; suggested: string };
+  workspace: { id: string; handle: string | null; personal: boolean; canChange: boolean; suggested: string };
+  origin: string;
+}
+export interface HandleAvailability { handle: string; available: boolean; code?: string; message?: string }
+export interface RepositoryVisibility {
+  repositoryId: string;
+  visibility: RepositoryVisibilityKind;
+  publishedAt: string | null;
+  license: RepositoryLicense | null;
+  handle: string | null;
+  url: string | null;
+  cloneUrl: string | null;
+  canChange: boolean;
+}
+export interface PublicRepositorySummary {
+  handle: string;
+  name: string;
+  description: string;
+  defaultBranch: string;
+  headSha: string | null;
+  updatedAt: string;
+  visibility: 'public';
+  license: RepositoryLicense | null;
+  readme: string | null;
+  url: string;
+  cloneUrl: string;
+  latestCommit: PublicCommit | null;
+}
+export interface PublicCommit { sha: string; message: string }
+export interface PublicTree { entries: { name: string; path: string; type: 'file' | 'directory' }[]; ref: string; commitSha: string }
+export interface PublicFile { path: string; content: string; commitSha: string }
+export interface PublicHistory { ref: string; commits: PublicCommit[] }
+export interface PublicBranches { defaultBranch: string; branches: { name: string; headSha: string; default: boolean }[] }
+export interface PublicRelease { tag: string; name: string; notes: string; targetSha: string; prerelease: boolean; publishedAt: string | null }
+export interface PublicReleases { releases: PublicRelease[] }
 
 export interface WorkspaceCloudflareAccount { id: string; name: string; default: boolean }
 export type RepositoryAccountSource = 'repository' | 'selected' | 'default' | 'none';
