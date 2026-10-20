@@ -70,7 +70,7 @@ export default function DemoFeaturePanel({ demo, feature, examples, headingLevel
           </div>
         );
       })}
-      {tables.length > 0 && <p className="demo-example-note">Example records from the demo seed. Names and references only: no values or credentials.</p>}
+      {tables.length > 0 && <p className="demo-example-note">Sample data. No real secrets.</p>}
     </section>
   );
 }

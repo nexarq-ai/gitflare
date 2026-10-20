@@ -40,7 +40,7 @@ export default function PullRequests({ repositoryId, missions, canContribute, fo
   return (
     <>
       <div className="repository-work-heading">
-        <div><h2>Proposals<span className="git-term">· pull requests</span></h2><p>Every proposed change to this repository. AI agents open one when you start a mission; people open one from a pushed stream. Both run checks, need approval of the exact revision, and land the same way.</p></div>
+        <div><h2>Proposals<InfoTip label="proposals">Opened by agents (missions) or people (streams). Both run checks, need approval of the exact revision, and land the same way.</InfoTip></h2></div>
         {newPull}
       </div>
       <div className="repository-work-toolbar">
@@ -125,7 +125,7 @@ export function PullRequestPanel({ mission, permissions, onChange }: { mission: 
       </div>
       {change.description && <p className="pull-panel-description">{change.description}</p>}
       {waitingForMaintainer(mission) && <p className="pull-panel-note">Waiting for a maintainer to run checks.</p>}
-      {state === "closed" && <p className="pull-panel-note">Closed{change.closedAt ? ` ${relativeTime(change.closedAt)}` : ""}. Reopening restarts checks against the stream's current head.</p>}
+      {state === "closed" && <p className="pull-panel-note">Closed{change.closedAt ? ` ${relativeTime(change.closedAt)}` : ""}. Reopening re-runs checks on the stream's latest revision.</p>}
       {error && <div className="error-notice" role="alert">{error}</div>}
       <Dialog.Root open={confirmClose} onOpenChange={setConfirmClose}>
         <Dialog size="sm" className="dialog-content confirm-dialog">

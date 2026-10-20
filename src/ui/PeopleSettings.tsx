@@ -38,7 +38,7 @@ export default function PeopleSettings({ data, repositories, workspaceName, self
     try {
       const result = await request<{ token?: string; delivery?: { status: string; message?: string } }>(`/api/access/${action}`, body);
       if (action === "invite-resend" && result.token && result.delivery?.status !== "sent") setSecret({ label: "New invitation link", value: `${window.location.origin}/invite#token=${result.token}` });
-      if (action === "credential-create" && result.token) setSecret({ label: "Agent task credential", value: result.token });
+      if (action === "credential-create" && result.token) setSecret({ label: "Agent credential", value: result.token });
       setNotice(action === "invite-resend" && result.delivery?.status !== "sent" ? result.delivery?.message ?? "A new link is ready. Share it privately." : done);
       await onChanged();
       return true;
@@ -133,7 +133,7 @@ function TaskCredentials({ data, repositories, canCreate, busy, act }: { data: A
     if (ok) form.reset();
   }
   return <details className="panel people-details">
-    <summary><KeyIcon size={17} aria-hidden="true" /><span><strong>Agent task credentials</strong><small>Bounded tokens for coding agents. They never carry your permissions.</small></span><span className="number-tag">{credentials.length}</span></summary>
+    <summary><KeyIcon size={17} aria-hidden="true" /><span><strong>Agent credentials</strong><small>Bounded tokens for coding agents. They never carry your permissions.</small></span><span className="number-tag">{credentials.length}</span></summary>
     <div className="panel-body">
       {credentials.length > 0 && <div className="people-table-wrap"><table className="people-table">
         <thead><tr><th scope="col">Name</th><th scope="col">Repository</th><th scope="col">Allows</th><th scope="col">Used</th><th scope="col">Expires</th>{canCreate && <th scope="col"><span className="sr-only">Actions</span></th>}</tr></thead>
@@ -145,7 +145,7 @@ function TaskCredentials({ data, repositories, canCreate, busy, act }: { data: A
           <Field label="Name"><input name="name" required maxLength={100} /></Field>
           <Field label="Repository"><select name="repositoryId" required>{repositories.map(repo => <option key={repo.id} value={repo.id}>{repositoryLabel(repo)}</option>)}</select></Field>
           <Field label="Expires after (minutes)" tip="The credential stops working after this many minutes, at most 1440 (one day)."><input name="expiresInSeconds" type="number" min="1" max="1440" defaultValue="60" required /></Field>
-          <Field label="Request budget" tip="The most API requests the agent can make with it. 100 is enough for most single tasks."><input name="maxRequests" type="number" min="1" max="1000" defaultValue="100" required /></Field>
+          <Field label="Request budget" tip="The most API requests the agent can make with it. 100 is enough for most runs."><input name="maxRequests" type="number" min="1" max="1000" defaultValue="100" required /></Field>
           <Field label="Agent run budget" tip="How many agent runs it may start. 1 means a single run."><input name="maxExecutions" type="number" min="1" max="10" defaultValue="1" required /></Field>
         </div>
         <fieldset className="people-checks"><legend>Allows<InfoTip label="credential actions">Read lets the agent look at code. Propose changes lets it push a proposal. Run agents lets it start further agent runs.</InfoTip></legend>{[["read", "Read"], ["contribute", "Propose changes"], ["execute", "Run agents"]].map(([value, label]) => <label key={value}><input type="checkbox" name="actions" value={value} defaultChecked={value === "read"} />{label}</label>)}</fieldset>

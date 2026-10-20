@@ -115,11 +115,11 @@ export default function RepositoryWork({
               ? "Agent runs"
               : tab === "checks"
                 ? "Checks"
-                : "Missions"}
+                : "Proposals"}
           </h2>
           <p>
             {tab === "agents"
-              ? "Each task has its own isolated fork. Inspect actual execution and saved changes."
+              ? "Each agent works in its own fork."
               : tab === "checks"
                 ? "Recorded agent and combined checks, pinned to the revision they verified."
                 : "Review changes produced by a mission, discuss the exact revision, and land approved work."}
@@ -134,9 +134,6 @@ export default function RepositoryWork({
               {individualPassed} individual checks passed · {combinedVerified}{" "}
               combined candidates verified
             </strong>
-            <br />
-            Individual success does not establish combined safety. Review and
-            approval apply to the exact candidate.
           </span>
         </p>
       )}
@@ -181,12 +178,12 @@ export default function RepositoryWork({
                   ? "No agent runs yet"
                   : tab === "checks"
                     ? "No checks recorded"
-                    : "No missions yet"
+                    : "No proposals yet"
             }
             description={
               total
                 ? "Try another search or status filter."
-                : "Create a mission with an outcome and agent tasks. Agents and checks run only after you choose Start."
+                : "Describe an outcome; agents start when you say so."
             }
             action={
               total ? (
@@ -347,7 +344,7 @@ export default function RepositoryWork({
                         onClick={() => onOpen(mission.id, "agents")}
                       >
                         {mission.runs.length}{" "}
-                        {mission.epoch > 0 ? "runs" : "planned tasks"}
+                        {mission.epoch > 0 ? "runs" : "planned agents"}
                       </button>
                     </td>
                     <td>

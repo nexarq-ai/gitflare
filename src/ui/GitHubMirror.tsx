@@ -75,7 +75,7 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
 
   async function overwrite(ref: MirrorRefStatus) {
     const confirmed = await confirm(ref.gitflareSha
-      ? { title: `Overwrite ${ref.ref} on GitHub?`, description: "GitHub's copy of this ref moves to Gitflare's revision. Commits that exist only on GitHub are no longer on that ref.", facts: [{ label: "GitHub now", value: short(ref.githubSha), title: ref.githubSha ?? undefined, code: true }, { label: "Gitflare", value: short(ref.gitflareSha), title: ref.gitflareSha, code: true }], confirmLabel: "Overwrite GitHub", tone: "danger" }
+      ? { title: `Overwrite ${ref.ref} on GitHub?`, description: "GitHub's copy of this ref moves to Gitflare's revision. Revisions that exist only on GitHub are no longer on that ref.", facts: [{ label: "GitHub now", value: short(ref.githubSha), title: ref.githubSha ?? undefined, code: true }, { label: "Gitflare", value: short(ref.gitflareSha), title: ref.gitflareSha, code: true }], confirmLabel: "Overwrite GitHub", tone: "danger" }
       : { title: `Delete ${ref.ref} on GitHub?`, description: "Gitflare has no such ref, so the mirror removes it from GitHub.", confirmLabel: "Delete on GitHub", tone: "danger" });
     if (!confirmed) return;
     void act("overwrite", { ref: ref.ref, expectedGithubSha: ref.githubSha }, (current) => (current.outcome as { state?: string } | undefined)?.state === "diverged" ? "GitHub changed again. Review the new state before overwriting." : `Overwrote ${ref.ref} on GitHub.`);
@@ -85,7 +85,7 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
     <section className="panel check-settings github-mirror" id="github-mirror">
       <div className="panel-header"><h2><GithubLogoIcon size={18} /> GitHub mirror</h2></div>
       <div className="panel-body">
-        <p className="branch-rule-note">Gitflare is the source of truth for this repository. A linked GitHub repository receives every landing and push to the mirrored refs. If GitHub gets commits Gitflare does not have, the mirror stops for that ref and shows it as diverged; nothing on GitHub is overwritten unless an Owner chooses to.</p>
+        <p className="branch-rule-note">Every landing and push is mirrored to GitHub.<InfoTip label="mirroring">If GitHub has revisions Gitflare doesn't, mirroring stops for that stream. Nothing is overwritten unless an Owner chooses to.</InfoTip></p>
         {!canManage && <p className="branch-rule-note">Only workspace Owners can change the mirror.</p>}
         <fieldset className="check-settings-fields" disabled={!canManage || !!busy}>
           <div className="form-field">

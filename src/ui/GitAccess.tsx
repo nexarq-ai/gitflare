@@ -27,7 +27,7 @@ export default function GitAccess({ repository, publicUrl, onNotify }: { reposit
             <Button variant="ghost" size="base" shape="square" aria-label={`Copy ${command}`} icon={CopyIcon} onClick={() => void navigator.clipboard.writeText(command).then(() => onNotify("Command copied.")).catch(() => onNotify("Copy is unavailable in this browser."))} />
           </div>
         ))}
-        <p className="git-access-note"><InfoIcon size={14} /><span>Git ignores the username. Use a personal token from <a href="/account/clients">Account → AI clients</a> as the password. Pushes to protected branches are rejected, so push a branch and <a href={`/repository/${repository.id}/pulls/new`}>open a proposal</a>. Tags are managed by Checkpoints.</span></p>
+        <p className="git-access-note"><InfoIcon size={14} /><span>Password: a personal token from <a href="/account/clients">Account → AI clients</a>. Protected streams reject pushes; push a new stream and <a href={`/repository/${repository.id}/pulls/new`}>open a proposal</a>. Tags are managed by Checkpoints.</span></p>
       </div>
     </section>
   );

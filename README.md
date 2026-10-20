@@ -32,7 +32,7 @@ This is the open-source, single-workspace edition of Gitflare. It gives every AI
 - **Create branch** makes `issue-<n>-<title>` for working by hand.
 
 **Works with your AI tools (MCP)**
-- A built-in MCP server exposes every action in the UI (125 tools) with the same permissions, so Claude, Codex, Cursor, OpenCode and any MCP client can create missions, review, approve and land.
+- A built-in MCP server exposes every action in the UI with the same permissions, so Claude, Codex, Cursor, OpenCode and any MCP client can create missions, review, approve and land.
 
 **Run without AI if you want**
 - Set `AI_FEATURES=disabled`, or turn AI off per workspace. AI tabs disappear and Gitflare works as a plain Git host with pull requests, issues, releases and branch protection.
@@ -64,7 +64,7 @@ To turn on Worker Previews, open **Settings → Cloudflare** after signing in: t
 
 To use AI, configure provider keys (BYOK) or Unified Billing in AI Gateway, then enable models under **AI models** in the workspace. Email requires your own verified sender.
 
-Read [`docs/public/install.md`](docs/public/install.md) for prerequisites. A fresh-account deployment through the button has not yet been verified end to end; current live limits are in [`docs/public/overview.md`](docs/public/overview.md) and [`docs/public/agents.md`](docs/public/agents.md).
+Read [`docs/public/install.md`](docs/public/install.md) for prerequisites. A fresh-account deployment through the button has not yet been tested end to end.
 
 ## What is not in this edition
 
