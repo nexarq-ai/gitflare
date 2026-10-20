@@ -1,12 +1,13 @@
 import type { AccountSnapshot } from "../shared/types";
 
-export type AccountSection = "profile" | "security" | "sessions" | "clients";
+export type AccountSection = "profile" | "security" | "sessions" | "clients" | "notifications";
 type Session = AccountSnapshot["sessions"][number];
 
 export const accountSections: { id: AccountSection; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "security", label: "Security" },
   { id: "sessions", label: "Sessions" },
+  { id: "notifications", label: "Notifications" },
   { id: "clients", label: "AI clients" },
 ];
 

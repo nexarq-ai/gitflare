@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { BookOpenIcon, BuildingsIcon, CaretDownIcon, MoonIcon, PlugsConnectedIcon, ShieldCheckIcon, SignOutIcon, SunIcon, UserCircleIcon } from "@phosphor-icons/react";
+import { BellIcon, BookOpenIcon, BuildingsIcon, CaretDownIcon, MoonIcon, PlugsConnectedIcon, ShieldCheckIcon, SignOutIcon, SunIcon, UserCircleIcon } from "@phosphor-icons/react";
 import type { AccessSnapshot, Workspace } from "../shared/types";
 import { setTheme, useTheme } from "./ThemeToggle";
 import "./account-settings.css";
@@ -40,6 +40,7 @@ export default function AccountMenu({ account, workspace, loaded, installationAd
       <div className="account-menu-identity" role="presentation"><strong>{name}</strong><span>{email}</span><span className="account-menu-workspace"><i className={`status-dot ${loaded ? "good" : "warn"}`}/>{loaded ? workspace.mode === "local" ? "Local workspace" : "Connected workspace" : "Connecting"}</span></div>
       <a role="menuitem" href="/account/profile" onClick={() => close()}><UserCircleIcon size={18}/>Profile</a>
       <a role="menuitem" href="/account/security" onClick={() => close()}><ShieldCheckIcon size={18}/>Security</a>
+      <a role="menuitem" href="/account/notifications" onClick={() => close()}><BellIcon size={18}/>Notifications</a>
       <a role="menuitem" className="ai-only" href="/account/clients" onClick={() => close()}><PlugsConnectedIcon size={18}/>AI clients</a>
       {installationAdmin && <a role="menuitem" href="/admin" onClick={() => close()}><BuildingsIcon size={18}/>Installation admin</a>}
       <a role="menuitem" href="/docs/how-it-works" onClick={() => close()}><BookOpenIcon size={18}/>Documentation</a>

@@ -19,6 +19,7 @@ import {
   RobotIcon,
   ShieldCheckIcon,
   StopIcon,
+  UsersThreeIcon,
   WarningCircleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
@@ -48,6 +49,9 @@ import { resumePreview, type PreviewProgress, type PreviewStatusLike } from "../
 import { isPreviewSetupCode, type PreviewSetupCode } from "../shared/preview-setup";
 import { PreviewFailedCard, PreviewReadyCard, PreviewStartingCard, type PreviewAccess, type PreviewHost, type PreviewState } from "./PreviewPanel";
 import CommitMessageField, { type CommitDraft } from "./CommitMessageField";
+import SubscribeButton from "./SubscribeButton";
+import { currentReviewRequests, ownerGroupStatus, reviewKindLabel, submitReviewBody, VERDICT_LABELS, VERDICTS, verdictAvailable, type ApprovalProgress, type OwnerGroupStatus, type ReviewVerdict } from "./review-summary";
+import "./inbox.css";
 import { commitMessageProblem, normalizeCommitMessage, suggestedCommitMessage } from "../shared/commit-message";
 
 type PreviewResult = { status?: "starting" | "ready"; message?: string; kind?: "worker" | "container"; previewUrl?: string; deploymentUrl?: string | null; notes?: string[]; candidateSha: string; expiresAt?: string; linkExpiresAt?: string; host?: PreviewHost; access?: PreviewAccess; extended?: boolean; setup?: string };
@@ -99,6 +103,9 @@ export default function MissionDetail({
     ? initialTab
     : "overview";
   const [reviewBody, setReviewBody] = useState("");
+  const [verdict, setVerdict] = useState<ReviewVerdict>("comment");
+  const [approval, setApproval] = useState<(ApprovalProgress & { candidateSha: string }) | null>(null);
+  const approveFromReview = useRef(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState("");
@@ -192,13 +199,14 @@ export default function MissionDetail({
     if (mutation.current?.signature !== signature)
       mutation.current = { signature, key: crypto.randomUUID() };
     try {
-      const result = await request<Mission>(
+      const result = await request<Mission & { approval?: ApprovalProgress }>(
         `/api/missions/${encodeURIComponent(id)}/${action}`,
         body,
         mutation.current.key,
       );
       revision.current++;
       setMission(result);
+      if (action === "approve") recordApproval(result);
       mutation.current = null;
       onUpdate();
     } catch (failure) {
@@ -215,8 +223,41 @@ export default function MissionDetail({
   const commitMessage = normalizeCommitMessage(commitDraft.subject, commitDraft.body);
   const commitProblem = confirming ? commitMessageProblem(commitMessage) : null;
 
-  function openConfirm(action: "approve" | "integrate") {
+  function recordApproval(result: Mission & { approval?: ApprovalProgress }) {
+    setApproval(result.approval && result.candidateSha ? { ...result.approval, candidateSha: result.candidateSha } : null);
+  }
+
+  async function submitReview(chosen: ReviewVerdict, commitMessage?: string) {
+    if (!mission || busy) return;
+    const body = submitReviewBody(chosen, mission, reviewBody, chosen === "approve" ? { ...(mission.dependencyChanges?.length ? { approveDependencies: dependenciesAcknowledged } : {}), ...(commitMessage !== undefined ? { commitMessage } : {}) } : {});
+    const signature = JSON.stringify({ id, action: "submit-review", body });
+    if (mutation.current?.signature !== signature)
+      mutation.current = { signature, key: crypto.randomUUID() };
+    setBusy(chosen === "approve" ? "approve" : chosen);
+    setError("");
+    try {
+      const result = await request<Mission & { approval?: ApprovalProgress }>(
+        `/api/missions/${encodeURIComponent(id)}/submit-review`,
+        body,
+        mutation.current.key,
+      );
+      revision.current++;
+      setMission(result);
+      if (chosen === "approve") recordApproval(result);
+      setReviewBody("");
+      setVerdict("comment");
+      mutation.current = null;
+      onUpdate();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not submit the review.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function openConfirm(action: "approve" | "integrate", fromReview = false) {
     if (!mission) return;
+    approveFromReview.current = action === "approve" && fromReview;
     const suggestion = suggestedCommitMessage(mission);
     setCommitDraft(suggestion);
     setSuggestedMessage(normalizeCommitMessage(suggestion.subject, suggestion.body));
@@ -635,6 +676,11 @@ export default function MissionDetail({
   const passed = mission.checks.filter(
     (check) => check.status === "passed",
   ).length;
+  const reviewRequests = currentReviewRequests(mission);
+  const currentApproval = approval && approval.candidateSha === mission.candidateSha ? approval : null;
+  const ownerGroups = reviewRequests ? ownerGroupStatus(reviewRequests.groups, currentApproval?.missingOwners) : [];
+  const reviewContext = { canReview: permissions.includes("review"), canComment: permissions.includes("contribute"), readyForApproval: readyForReview };
+  const chosenVerdict = verdictAvailable(verdict, reviewContext) ? verdict : "comment";
 
   return (
     <>
@@ -659,6 +705,7 @@ export default function MissionDetail({
           </div>
         </div>
         <div className="heading-actions detail-actions">
+          {!replay.active && <SubscribeButton target={{ kind: "proposal", repositoryId: mission.repositoryId, missionId: mission.id }} />}
           {replay.available && !replay.active && (
             <Button variant="secondary" size="base" icon={PlayIcon} onClick={replay.start}>
               Watch this mission run
@@ -829,6 +876,7 @@ export default function MissionDetail({
       {replay.bar}
       {mission.fixRequest && <FixRequestNote fix={mission.fixRequest} status={mission.status} />}
       {mission.branchChange && <PullRequestPanel mission={mission} permissions={permissions} onChange={(result) => { revision.current++; setMission(result); onUpdate(); }} />}
+      {["needs_review", "approved"].includes(mission.status) && (ownerGroups.length > 0 || (currentApproval && !currentApproval.ready)) && <ReviewRequestsStrip groups={ownerGroups} source={reviewRequests?.source ?? null} approval={currentApproval} />}
       {currentPreview && <PreviewReadyCard preview={currentPreview} viewer={previewViewer} busy={busy} canExtend={permissions.includes("land")} canStop={permissions.includes("contribute")} onExtend={() => void extendPreview()} onStop={() => void stopPreview()} />}
       {previewProgress && <PreviewStartingCard progress={previewProgress} />}
       {previewFailure && !previewStarting && <PreviewFailedCard message={previewFailure} setup={previewSetup} viewer={previewViewer} canRetry={canPreview && !replay.active} busy={busy} onRetry={() => void preparePreview()} />}
@@ -1380,14 +1428,12 @@ export default function MissionDetail({
                 item.candidateSha === mission.candidateSha &&
                 item.baseSha === mission.baseSha;
               return (
-                <article className="repository-work-item" key={item.id}>
+                <article className={`repository-work-item proposal-review-entry${item.summary ? " is-summary" : ""}${item.kind === "approve" ? " is-approved" : ""}`} key={item.id}>
                   <div className="repository-work-title">
                     <strong>
-                      {item.authorId === AGENT_REVIEWER_ID
-                        ? "Agent review"
-                        : item.kind === "request_changes"
-                        ? "Changes requested"
-                        : "Comment"}
+                      {item.kind === "approve" && <ShieldCheckIcon size={14} weight="fill" aria-hidden="true" />}
+                      {item.authorId === AGENT_REVIEWER_ID ? "Agent review" : reviewKindLabel(item.kind)}
+                      {item.summary && <span className="proposal-review-tag">Review</span>}
                       {item.resolvedAt ? " · Resolved" : ""}
                     </strong>
                     <small>{new Date(item.createdAt).toLocaleString()}</small>
@@ -1421,7 +1467,7 @@ export default function MissionDetail({
                       )}
                     </p>
                   )}
-                  <p style={{ whiteSpace: "pre-wrap" }}>{item.body}</p>
+                  {item.summary ? item.body.trim() && <div className="proposal-review-body"><MarkdownContent content={item.body} /></div> : <p style={{ whiteSpace: "pre-wrap" }}>{item.body}</p>}
                   {item.kind === "request_changes" &&
                     !item.resolvedAt &&
                     current &&
@@ -1459,46 +1505,47 @@ export default function MissionDetail({
               className="proposal-review-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                void review("comment");
+                if (chosenVerdict === "approve") openConfirm("approve", true);
+                else void submitReview(chosenVerdict);
               }}
             >
-              <label htmlFor="proposal-review-body">Review this revision</label>
+              <span className="proposal-review-heading">
+                <label htmlFor="proposal-review-body">Submit review</label>
+                <InfoTip label="this review">Tied to candidate {mission.candidateSha?.slice(0, 12)}, base {mission.baseSha?.slice(0, 12)} and attempt {mission.epoch}. Markdown is supported.</InfoTip>
+              </span>
               <textarea
                 id="proposal-review-body"
-                required
+                required={chosenVerdict !== "approve"}
                 maxLength={8000}
                 value={reviewBody}
                 onChange={(event) => setReviewBody(event.target.value)}
-                placeholder="Discuss the changes or describe what needs to be addressed…"
+                placeholder={chosenVerdict === "approve" ? "Optional summary…" : "Summarize your review…"}
               />
-              <p className="proposal-review-revision">
-                Candidate {mission.candidateSha} · Base{" "}
-                {mission.baseSha?.slice(0, 12)} · Attempt {mission.epoch}
-              </p>
+              <div className="proposal-review-verdicts" role="radiogroup" aria-label="Review verdict">
+                {VERDICTS.map((option) => (
+                  <label key={option} className={verdictAvailable(option, reviewContext) ? undefined : "is-disabled"} title={option === "approve" && !verdictAvailable(option, reviewContext) ? !permissions.includes("review") ? "You need the Reviewer role or higher to approve." : "Approval opens when checks pass and no change requests are open." : undefined}>
+                    <input type="radio" name="proposal-review-verdict" value={option} checked={chosenVerdict === option} disabled={!!busy || !verdictAvailable(option, reviewContext)} onChange={() => setVerdict(option)} />
+                    {VERDICT_LABELS[option]}
+                  </label>
+                ))}
+              </div>
+              {chosenVerdict === "approve" && dependencyGate && (
+                <DependencyApprovalControl isOwner={isOwner} manifests={mission.dependencyChanges ?? []} checked={dependenciesAcknowledged} onChange={(checked) => setDependencyAck({ candidateSha: mission.candidateSha ?? "", checked })} />
+              )}
               <div className="proposal-review-actions">
                 <Button
                   type="submit"
                   variant="primary"
+                  icon={chosenVerdict === "approve" ? ShieldCheckIcon : undefined}
+                  loading={busy === chosenVerdict}
                   disabled={
                     !!busy ||
-                    !reviewBody.trim() ||
-                    !(
-                      permissions.includes("contribute") ||
-                      permissions.includes("review")
-                    )
+                    (chosenVerdict !== "approve" && !reviewBody.trim()) ||
+                    (chosenVerdict === "approve" && dependencyGate && !dependenciesAcknowledged)
                   }
                 >
-                  Add comment
+                  {chosenVerdict === "approve" ? "Approve…" : chosenVerdict === "request_changes" ? "Request changes" : "Comment"}
                 </Button>
-                {permissions.includes("review") && (
-                  <Button
-                    variant="secondary"
-                    disabled={!!busy || !reviewBody.trim()}
-                    onClick={() => void review("request_changes")}
-                  >
-                    Request changes
-                  </Button>
-                )}
               </div>
             </form>
           ) : (
@@ -1531,19 +1578,43 @@ export default function MissionDetail({
           </Dialog.Title>
           <Dialog.Description className="dialog-description">
             {confirming === "approve"
-              ? <>Approve revision <code>{mission.candidateSha?.slice(0, 12)}</code> after {mission.checks.length} passing check{mission.checks.length === 1 ? "" : "s"}. Approval does not change the repository; landing is a separate step.{dependencyGate && <> You also approve the dependency changes listed on the Overview tab.</>}</>
+              ? <>Approve revision <code>{mission.candidateSha?.slice(0, 12)}</code> after {mission.checks.length} passing check{mission.checks.length === 1 ? "" : "s"}. Approval does not change the repository; landing is a separate step.{dependencyGate && <> You also approve the dependency changes listed on the Overview tab.</>}{approveFromReview.current && reviewBody.trim() && <> Your summary is posted with the approval.</>}</>
               : <>Land revision <code>{mission.candidateSha?.slice(0, 12)}</code> on <strong>{repository?.defaultBranch ?? "the main stream"}</strong> of <strong>{repository ? repositoryLabel(repository) : "this repository"}</strong>. You can undo it later with Restore.</>}
           </Dialog.Description>
           {confirming && <CommitMessageField draft={commitDraft} branch={repository?.defaultBranch ?? "the default stream"} problem={commitProblem} onChange={setCommitDraft} />}
           <div className="dialog-actions">
             <Button variant="secondary" size="base" type="button" onClick={() => setConfirming(null)}>Cancel</Button>
-            <Button variant="primary" size="base" type="button" icon={confirming === "approve" ? ShieldCheckIcon : GitMergeIcon} disabled={!!commitProblem} onClick={() => { const action = confirming; setConfirming(null); if (action) void act(action, action === "integrate" || commitMessage !== suggestedMessage ? commitMessage : undefined); }}>
+            <Button variant="primary" size="base" type="button" icon={confirming === "approve" ? ShieldCheckIcon : GitMergeIcon} disabled={!!commitProblem} onClick={() => { const action = confirming; setConfirming(null); if (!action) return; const message = action === "integrate" || commitMessage !== suggestedMessage ? commitMessage : undefined; if (action === "approve" && approveFromReview.current) void submitReview("approve", message); else void act(action, message); }}>
               {confirming === "approve" ? "Approve" : "Land changes"}
             </Button>
           </div>
         </Dialog>
       </Dialog.Root>
     </>
+  );
+}
+
+function ReviewRequestsStrip({ groups, source, approval }: { groups: OwnerGroupStatus[]; source: string | null; approval: ApprovalProgress | null }) {
+  return (
+    <section className="review-requests" aria-label={groups.length ? "Code owner reviews" : "Approvals"}>
+      <div className="review-requests-head">
+        <UsersThreeIcon size={15} aria-hidden="true" />
+        <strong>{groups.length ? "Code owners" : "Approvals"}</strong>
+        {groups.length > 0 && <InfoTip label="code owners">Read from {source ?? "CODEOWNERS"} at the base commit. Each group needs an approval from one of its owners on this revision.</InfoTip>}
+        {approval && <span className="review-requests-count">{approval.approvals} of {approval.requiredApprovals} approvals</span>}
+      </div>
+      {groups.length > 0 && (
+        <ul>
+          {groups.map((group) => (
+            <li key={group.handles.join(" ") + group.paths[0]} className={`is-${group.state}`}>
+              {group.state === "clear" ? <CheckCircleIcon size={14} weight="fill" aria-label="Approved" /> : group.state === "missing" ? <WarningCircleIcon size={14} aria-label="Needs approval" /> : <ClockIcon size={14} aria-label="Requested" />}
+              <span className="review-requests-owners">{group.handles.map((handle) => `@${handle}`).join(" ")}</span>
+              <span className="review-requests-paths" title={group.paths.join("\n")}>{group.paths.slice(0, 2).join(", ")}{group.paths.length > 2 ? ` +${group.paths.length - 2}` : ""}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

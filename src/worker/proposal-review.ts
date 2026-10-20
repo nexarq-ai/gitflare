@@ -11,14 +11,21 @@ function lineAnchor(body: Record<string, unknown>): Pick<ReviewMissionInput, 'pa
   return { path, line: Number(body.line), side: body.side };
 }
 
+export const REVIEW_VERDICTS = ['comment', 'approve', 'request_changes'] as const;
+export type ReviewVerdict = typeof REVIEW_VERDICTS[number];
+
 export function reviewMissionInput(body: Record<string, unknown>): ReviewMissionInput {
-  if (!['comment', 'request_changes', 'resolve'].includes(String(body.action))) throw new ApiError(400, 'INVALID_REVIEW', 'Choose a comment, request changes, or resolve a review.');
+  const summary = body.summary === true;
+  if (body.summary !== undefined && typeof body.summary !== 'boolean') throw new ApiError(400, 'INVALID_REVIEW', 'summary must be true or false.');
+  if (!['comment', 'request_changes', 'resolve', ...(summary ? ['approve'] : [])].includes(String(body.action))) throw new ApiError(400, 'INVALID_REVIEW', 'Choose a comment, request changes, or resolve a review.');
+  if (summary && (body.action === 'resolve' || body.path !== undefined || body.line !== undefined)) throw new ApiError(400, 'INVALID_REVIEW', 'A review summary covers the whole revision.');
   if (!Number.isSafeInteger(body.epoch) || Number(body.epoch) < 1) throw new ApiError(400, 'INVALID_REVIEW', 'An exact execution attempt is required.');
   const candidateSha = requireString(body.candidateSha, 'Candidate commit', 40, 40);
   const baseSha = requireString(body.baseSha, 'Base commit', 40, 40);
   if (!/^[a-f0-9]{40}$/.test(candidateSha) || !/^[a-f0-9]{40}$/.test(baseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Commit identifiers must be 40 lowercase hexadecimal characters.');
   const action = body.action as ReviewMissionInput['action'];
-  return { action, epoch: Number(body.epoch), candidateSha, baseSha, ...(action === 'resolve' ? { reviewId: requireString(body.reviewId, 'Review', 100) } : { body: requireString(body.body, 'Review message', 8000) }), ...lineAnchor(body) };
+  const message = action === 'resolve' ? { reviewId: requireString(body.reviewId, 'Review', 100) } : action === 'approve' ? { body: body.body === undefined || body.body === '' ? '' : requireString(body.body, 'Review message', 8000) } : { body: requireString(body.body, 'Review message', 8000) };
+  return { action, epoch: Number(body.epoch), candidateSha, baseSha, ...message, ...(summary ? { summary: true } : {}), ...lineAnchor(body) };
 }
 
 export function assertLineInCandidate(mission: Mission, input: ReviewMissionInput): void {

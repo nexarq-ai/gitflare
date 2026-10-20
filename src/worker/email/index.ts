@@ -70,3 +70,16 @@ export function deliverVerification(env: InvitationEmailEnv, input: AccountEmail
 export function deliverPasswordReset(env: InvitationEmailEnv, input: AccountEmailInput): Promise<InvitationDelivery> {
   return deliver(env, input, 'reset-password#', (link, context) => passwordResetEmail({ email: input.email, link }, context), accountWording);
 }
+
+export async function deliverNotificationEmail(env: InvitationEmailEnv, input: { email: string; message: RenderedEmail; unsubscribeUrl: string }): Promise<InvitationDelivery> {
+  if (!env.EMAIL || !env.EMAIL_FROM) return { status: 'unconfigured', code: 'EMAIL_NOT_CONFIGURED', message: accountWording.unconfigured };
+  const sender = parseSender(env.EMAIL_FROM);
+  if (!sender || !validEmail(input.email)) return { status: 'error', code: 'INVALID_EMAIL_INPUT', message: accountWording.prepare };
+  try {
+    const result = await env.EMAIL.send({ from: sender, to: input.email, headers: { 'List-Unsubscribe': `<${absoluteUrl(input.unsubscribeUrl)}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }, ...input.message });
+    return { status: 'sent', messageId: result.messageId };
+  } catch (error) {
+    const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
+    return { status: 'error', code: DELIVERY_FAILURE_CODES.includes(code) || NOT_ONBOARDED_CODES.includes(code) ? code : 'EMAIL_SEND_FAILED', message: accountWording.rejected };
+  }
+}

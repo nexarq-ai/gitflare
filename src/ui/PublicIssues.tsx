@@ -11,6 +11,7 @@ import { relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
 import { appHref, siteSignedInHint } from "./hosts";
 import InfoTip from "./InfoTip";
+import SubscribeButton, { publicThreadTarget } from "./SubscribeButton";
 import { ImportedFrom } from "./IssueLabels";
 import { RequestFix } from "./FixRequests";
 import { currentRoute } from "./router";
@@ -529,6 +530,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
   const own = (authorId: string) => !!userId && authorId === userId;
   const canWrite = viewer.canParticipate && !issue.locked;
   const commentPath = `${api}/issues/${issue.number}/comment`;
+  const subscription = publicThreadTarget(api, issue.number);
 
   function actions(authorId: string, onEdit: () => void, commentId?: string) {
     const edit = canWrite && own(authorId);
@@ -572,6 +574,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
         {issue.locked && <span className="pub-issue-locked"><LockSimpleIcon size={13} aria-hidden="true" />Locked</span>}
       </div>
       {issue.labels.length > 0 && <LabelChips labels={issue.labels} colors={colors} />}
+      {viewer.signedIn && subscription && <div className="pub-issue-subscribe"><SubscribeButton target={subscription} /></div>}
     </header>}
     {notice && <p className="pub-issue-notice" role="status">{notice}</p>}
     <div className="pub-issue-thread">
