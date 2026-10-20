@@ -118,6 +118,14 @@
         "limit": 10,
         "period": 60
       }
+    },
+    {
+      "name": "NOTIFICATION_RATE_LIMIT",
+      "namespace_id": "4130",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {

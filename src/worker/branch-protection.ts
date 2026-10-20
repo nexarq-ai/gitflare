@@ -38,7 +38,7 @@ export function defaultBranchRule(defaultBranch: string): BranchRule {
 export function normalizeBranchRule(value: unknown): BranchRule {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ApiError(400, 'INVALID_BRANCH_RULE', 'Each branch rule must be an object.');
   const input = value as Record<string, unknown>;
-  const allowed = new Set(['pattern', 'requirePullRequest', 'requiredApprovals', 'requiredCheckNames', 'preventSelfApproval', 'restrictLanders', 'requirePassingChecks', 'dismissApprovalsOnNewCommits', 'allowForcePush']);
+  const allowed = new Set(['pattern', 'requirePullRequest', 'requiredApprovals', 'requiredCheckNames', 'preventSelfApproval', 'restrictLanders', 'requirePassingChecks', 'dismissApprovalsOnNewCommits', 'allowForcePush', 'codeowners']);
   if (Object.keys(input).some(key => !allowed.has(key))) throw new ApiError(400, 'INVALID_BRANCH_RULE', 'A branch rule contains an unsupported field.');
   if (input.requirePassingChecks === false || input.dismissApprovalsOnNewCommits === false || input.allowForcePush === true) throw new ApiError(400, 'UNSUPPORTED_BRANCH_RULE', 'Checks always gate landing, approvals are always pinned to the exact commit, and force pushes to protected branches are never allowed.');
   const approvals = input.requiredApprovals ?? 1;
@@ -47,8 +47,8 @@ export function normalizeBranchRule(value: unknown): BranchRule {
   if (!Array.isArray(checks) || checks.length > 20 || checks.some(name => typeof name !== 'string' || !name.trim() || name.length > 200)) throw new ApiError(400, 'INVALID_BRANCH_RULE', 'Provide up to 20 required check names of at most 200 characters.');
   const landers = input.restrictLanders ?? [];
   if (!Array.isArray(landers) || landers.some(role => !LANDER_ROLES.includes(role as LanderRole))) throw new ApiError(400, 'INVALID_BRANCH_RULE', 'Landers can be restricted to Maintainer and Owner roles.');
-  for (const key of ['requirePullRequest', 'preventSelfApproval'] as const) if (input[key] !== undefined && typeof input[key] !== 'boolean') throw new ApiError(400, 'INVALID_BRANCH_RULE', `${key} must be true or false.`);
-  return { pattern: branchPattern(input.pattern), requirePullRequest: input.requirePullRequest !== false, requiredApprovals: approvals as number, requirePassingChecks: true, requiredCheckNames: [...new Set((checks as string[]).map(name => name.trim()))], preventSelfApproval: input.preventSelfApproval === true, dismissApprovalsOnNewCommits: true, restrictLanders: LANDER_ROLES.filter(role => (landers as string[]).includes(role)), allowForcePush: false };
+  for (const key of ['requirePullRequest', 'preventSelfApproval', 'codeowners'] as const) if (input[key] !== undefined && typeof input[key] !== 'boolean') throw new ApiError(400, 'INVALID_BRANCH_RULE', `${key} must be true or false.`);
+  return { pattern: branchPattern(input.pattern), requirePullRequest: input.requirePullRequest !== false, requiredApprovals: approvals as number, requirePassingChecks: true, requiredCheckNames: [...new Set((checks as string[]).map(name => name.trim()))], preventSelfApproval: input.preventSelfApproval === true, dismissApprovalsOnNewCommits: true, restrictLanders: LANDER_ROLES.filter(role => (landers as string[]).includes(role)), allowForcePush: false, ...(input.codeowners === true ? { codeowners: true } : {}) };
 }
 
 export function normalizeBranchRules(value: unknown): BranchRule[] {

@@ -41,6 +41,9 @@ import { SKILL_REQUEST_MAX_BYTES, validateRepositorySkillChange, verifyRepositor
 import { autoDraftRequest, draftMission, draftRequest, planMission, repositorySnapshot } from './mission-draft';
 import { handleIssues } from './issues';
 import { issueServices, publicIssuesApi } from './public-issues';
+import { notificationsApi, unsubscribeApi } from './inbox';
+import { codeownerRequirement, notifyProposal, proposalOpened, proposalReviewed } from './proposal-notifications';
+import { REVIEW_VERDICTS } from './proposal-review';
 import { releaseApi } from './releases';
 import { effectiveDefaultModel, modelConnectionsSnapshot, modelIdentifier, resolveModelConnection, validateModelConnection, verifyModelConnection } from './model-config';
 import { aiKeyProvider, aiKeysSnapshot, assertModelAccess, assertWorkspaceAi, createModelAccess, encryptAiGateway, encryptAiKey, ownGatewayInput, providerKey, reserveOperatorUsage, storedOwnGateway, storedProviderKey, verificationModel, verifyProviderKey, type AiCredentials } from './ai-keys';
@@ -237,7 +240,9 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     return markdown ? documentationMarkdown(doc, listPublicDocs(), request.url, true) : Response.json(doc);
   }
   if (url.pathname.startsWith('/api/public/source')) return publicSourceResponse(request, env.ASSETS);
-  const publicIssues = await publicIssuesApi(request, env, signedInPrincipal(env));
+  const unsubscribe = await unsubscribeApi(request, env);
+  if (unsubscribe) return unsubscribe;
+  const publicIssues = await publicIssuesApi(request, env, signedInPrincipal(env), ctx);
   if (publicIssues) return publicIssues;
   const publicRepository = await publicRepositoryApi(request, env);
   if (publicRepository) return publicRepository;
@@ -259,6 +264,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   const principal = await authorize(request, env);
   const access = security(env);
   if (url.pathname === '/api/session' && request.method === 'GET') return Response.json({ authenticated: true, userId: principal.userId, workspaceId: principal.workspaceId });
+  const notifications = await notificationsApi(request, env, principal, access);
+  if (notifications) return notifications;
   if (request.method === 'GET' && (['/api/docs', '/api/mcp'].includes(url.pathname) || url.pathname.startsWith('/api/docs/'))) await access.authorizeMetadata(principal);
   if (url.pathname === '/api/access' && request.method === 'GET') {
     const [snapshot, name] = await Promise.all([access.snapshot(principal), workspaceName(env, access, principal)]);
@@ -517,7 +524,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
     return repositorySecretsApi(request, secretsApiContext(env, principal, repository, env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`)));
   }
-  const issues = await handleIssues(request, url, principal, access, catalog, (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`), (repository) => issueServices(env, access, repository));
+  const issues = await handleIssues(request, url, principal, access, catalog, (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`), (repository) => issueServices(env, access, repository, ctx));
   if (issues) return issues;
   const blocksRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/issue-blocks$/.exec(url.pathname);
   if (blocksRoute) {
@@ -667,9 +674,11 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const models = await coordinatorRead('getModelConnections', () => catalog.getModelConnections());
     const authorization = { principal, workspaceId: principal.workspaceId, creatorId: principal.userId };
     const draft = await coordinator.createMission(key, { repositoryId: repository.id, expectedBaseSha: current.headSha, title, prompt: description ?? `Merge ${branch} into ${repository.defaultBranch}.`, branchChange: { branch, headSha, targetBranch: repository.defaultBranch, ...(description ? { description } : {}) } }, authorization, models);
-    return Response.json(await startWithDurableDispatch(coordinator, `${key.slice(0, 120)}-start`, draft.id, authorization, models), { status: 202 });
+    const started = await startWithDurableDispatch(coordinator, `${key.slice(0, 120)}-start`, draft.id, authorization, models);
+    await notifyProposal(env, access, ctx, repository, started, proposalOpened(started, principal.userId));
+    return Response.json(started, { status: 202 });
   }
-  const match = /^\/api\/missions\/([a-zA-Z0-9-]+)(?:\/(start|cancel|approve|revoke|integrate|preview|preview-extend|preview-stop|attempts|review|select|revert|pull|retry-checks|run-checks|retry-agents|drop-failed-agents|address-review))?$/.exec(url.pathname);
+  const match = /^\/api\/missions\/([a-zA-Z0-9-]+)(?:\/(start|cancel|approve|revoke|integrate|preview|preview-extend|preview-stop|attempts|review|select|revert|pull|retry-checks|run-checks|retry-agents|drop-failed-agents|address-review|submit-review))?$/.exec(url.pathname);
   if (request.method === 'GET' && match && !match[2]) { const {mission,repository} = await findMission(env, match[1], principal.workspaceId); await access.authorize(principal, 'read', 'repository', repository.id, mission.id); return Response.json(mission); }
   if (request.method === 'GET' && match?.[2] === 'attempts') {
     const { repository, mission } = await findMission(env, match[1], principal.workspaceId);
@@ -825,6 +834,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${input.repositoryId}`);
     const [models, storedDefault] = await Promise.all([coordinatorRead('getModelConnections', () => catalog.getModelConnections()), catalog.getDefaultModel()]);
     const mission = await coordinator.createMission(key, input, { principal, workspaceId: principal.workspaceId, creatorId: principal.userId }, models, effectiveDefaultModel(models, storedDefault));
+    await notifyProposal(env, access, ctx, repository, mission, { ...proposalOpened(mission, principal.userId), watchers: false });
     return Response.json(mission, { status: 201 });
   }
   if (match?.[2] === 'retry-checks') {
@@ -842,6 +852,20 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     match[2] = mission.branchChange ? 'pull' : 'start';
     if (mission.branchChange) body.action = 'update';
   }
+  let summaryReview: { body: string } | undefined;
+  if (match?.[2] === 'submit-review') {
+    if (!(REVIEW_VERDICTS as readonly string[]).includes(String(body.verdict))) throw new ApiError(400, 'INVALID_REVIEW', 'Choose comment, approve or request changes.');
+    if (body.verdict === 'approve') {
+      if (body.epoch !== undefined && !Number.isSafeInteger(body.epoch)) throw new ApiError(400, 'INVALID_REVIEW', 'An exact execution attempt is required.');
+      summaryReview = { body: body.body === undefined || body.body === '' ? '' : requireString(body.body, 'Review message', 8000) };
+      match[2] = 'approve';
+    } else {
+      body.action = body.verdict;
+      body.summary = true;
+      match[2] = 'review';
+    }
+    delete body.verdict;
+  }
   if (match?.[2] === 'run-checks') {
     const { mission } = await findMission(env, match[1], principal.workspaceId);
     if (!mission.branchChange) throw new ApiError(409, 'NOT_A_PULL_REQUEST', 'Only a proposal from a stream has checks to run.');
@@ -853,6 +877,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     if (isOutsideProposal(mission) && ['start', 'retry-agents', 'drop-failed-agents', 'address-review'].includes(match[2])) { match[2] = 'pull'; body.action = 'update'; }
     const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
     const reviewInput = match[2] === 'review' ? reviewMissionInput(body) : undefined;
+    if (reviewInput?.action === 'approve') throw new ApiError(400, 'INVALID_REVIEW', 'Approve through the approval action.');
     const pullAction = match[2] === 'pull' ? body.action : undefined;
     if (match[2] === 'pull' && !['update', 'close', 'reopen'].includes(String(pullAction))) throw new ApiError(400, 'INVALID_PULL_ACTION', 'Choose update, close or reopen.');
     const action: Action = reviewInput ? (reviewInput.action === 'comment' ? 'contribute' : 'review') : match[2] === 'start' || match[2] === 'retry-agents' || match[2] === 'drop-failed-agents' || match[2] === 'address-review' || match[2] === 'revert' || (pullAction && pullAction !== 'close') ? 'execute' : ['approve', 'revoke', 'select'].includes(match[2]) ? 'review' : match[2] === 'integrate' || match[2] === 'preview-extend' ? 'land' : match[2] === 'preview' ? 'read' : 'contribute';
@@ -864,12 +889,14 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     if (reviewInput) {
       const reviewed = await coordinator.reviewMission(key, mission.id, reviewInput, principal.userId, principal);
       await coordinator.settleApprovalClears(mission.id, principal);
+      const event = reviewInput.action === 'resolve' ? null : proposalReviewed(reviewed, principal.userId, reviewInput.action, reviewInput.body, !!reviewInput.summary);
+      if (event) await notifyProposal(env, access, ctx, repository, reviewed, event);
       return Response.json(reviewed);
     }
     if (match[2] === 'cancel') { const cancelled = await coordinator.cancelMission(key, mission.id); await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(cancelled); }
     if (match[2] === 'pull') {
       if (!mission.branchChange) throw new ApiError(409, 'NOT_A_PULL_REQUEST', 'This mission is not a pull request.');
-      if (pullAction === 'close') { const closed = await coordinator.pullRequestAction(key, mission.id, 'close', principal.userId, undefined, principal); await coordinator.settleApprovalClears(mission.id, principal); await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId); return Response.json(closed); }
+      if (pullAction === 'close') { const closed = await coordinator.pullRequestAction(key, mission.id, 'close', principal.userId, undefined, principal); await coordinator.settleApprovalClears(mission.id, principal); await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId); await notifyProposal(env, access, ctx, repository, closed, { id: `proposal:${repository.id}:${mission.id}:closed:${closed.branchChange?.closedAt ?? closed.updatedAt}`, event: 'closed', actorId: principal.userId, subscribe: [{ userId: principal.userId, reason: 'participant' }], thread: true }); return Response.json(closed); }
       await access.authorize(principal, 'contribute', 'repository', repository.id, mission.id);
       if (isOutsideProposal(mission)) await access.authorize(principal, 'land', 'repository', repository.id, mission.id);
       if (!env.MISSION_WORKFLOW || !executionReadiness(env, 'skill-edit').ready || !env.ARTIFACTS) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', 'Connect the required services before running pull request checks.');
@@ -972,7 +999,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     if (match[2] === 'integrate') {
       if (!env.SANDBOX || !env.ARTIFACTS || !env.MISSION_WORKFLOW) throw new ApiError(503, 'EXECUTION_NOT_CONFIGURED', 'Connect Artifacts, Sandbox and the Mission Workflow before integrating.');
       const rule = await landingReviewRule(env, repository);
-      await access.assertLand(principal, mission.id, candidateSha, baseSha, mission.epoch, repository.id, rule);
+      await access.assertLand(principal, mission.id, candidateSha, baseSha, mission.epoch, repository.id, rule, await codeownerRequirement(env, access, repository, mission, rule));
       const claim = await coordinator.beginIntegration(key, mission.id, candidateSha, baseSha, commitMessage, principal.userId, isOutsideProposal(mission) && !principal.credentialId && !principal.bootstrap ? backgroundPrincipal(principal) : undefined);
       if (claim.mission.status === 'integrated') return Response.json(claim.mission);
       if (!claim.claimId) throw new ApiError(500, 'INTEGRATION_CLAIM_MISSING', 'The integration claim could not be established.');
@@ -988,15 +1015,20 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       }
       return Response.json(claim.mission, { status: 202 });
     }
+    if (summaryReview && body.epoch !== undefined && body.epoch !== mission.epoch) throw new ApiError(409, 'STALE_REVIEW', 'This review belongs to another revision. Refresh the proposal.');
     assertReviewClear(mission);
     if (body.approveDependencies !== undefined && typeof body.approveDependencies !== 'boolean') throw new ApiError(400, 'INVALID_INPUT', 'approveDependencies must be true or false.');
     const approveDependencies = body.approveDependencies === true;
     assertDependencyApproval(mission, principal.role, approveDependencies);
     await coordinator.settleApprovalClears(mission.id, principal);
-    const approval = await access.recordApproval(principal, mission.id, candidateSha, baseSha, mission.epoch, mission.checks, proposalAuthor(mission), await landingReviewRule(env, repository));
+    const rule = await landingReviewRule(env, repository);
+    const approval = await access.recordApproval(principal, mission.id, candidateSha, baseSha, mission.epoch, mission.checks, proposalAuthor(mission), rule, await codeownerRequirement(env, access, repository, mission, rule));
     if (mission.dependencyChanges?.length) await access.auditRepositoryChange(principal, 'mission.dependencies.approved', mission.id);
-    if (!approval.ready) return Response.json({ ...(commitMessage === undefined ? mission : await coordinator.setLandingMessage(mission.id, candidateSha, baseSha, commitMessage, principal.userId)), approval });
-    return Response.json(await coordinator.approveMission(key, mission.id, candidateSha, baseSha, principal.userId, principal.role === 'Owner' && approveDependencies, commitMessage));
+    const approved: Mission & { approval?: typeof approval } = !approval.ready ? { ...(commitMessage === undefined ? mission : await coordinator.setLandingMessage(mission.id, candidateSha, baseSha, commitMessage, principal.userId)), approval } : await coordinator.approveMission(key, mission.id, candidateSha, baseSha, principal.userId, principal.role === 'Owner' && approveDependencies, commitMessage);
+    const result = summaryReview ? { ...await coordinator.reviewMission(`${key.slice(0, 100)}-summary`, mission.id, { action: 'approve', summary: true, epoch: mission.epoch, candidateSha, baseSha, body: summaryReview.body }, principal.userId, principal), ...(approved.approval ? { approval: approved.approval } : {}) } : approved;
+    const event = summaryReview ? proposalReviewed(result, principal.userId, 'approve', summaryReview.body, true) : { id: `proposal:${repository.id}:${mission.id}:approved:${mission.epoch}:${principal.userId}`, event: 'approved' as const, subscribe: [{ userId: principal.userId, reason: 'reviewer' }], thread: true };
+    if (event) await notifyProposal(env, access, ctx, repository, result, { ...event, actorId: principal.userId });
+    return Response.json(result);
   }
   throw new ApiError(404, 'NOT_FOUND', 'This API route could not be found.');
 }

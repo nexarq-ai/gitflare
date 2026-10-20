@@ -1,4 +1,5 @@
 import type { Mission, ModelConnection, OutsideChecksGate, Repository, UpstreamProposal } from '../shared/types';
+import { awaitingChecks, notifyProposal, proposalOpened } from './proposal-notifications';
 import { pullRequestState, waitingForMaintainer } from '../shared/pull-requests';
 import { repositoryLabel } from '../shared/repository-names';
 import { ApiError, assertMutationOrigin, readJson, requireIdempotencyKey, requireString } from './domain';
@@ -109,6 +110,7 @@ export async function proposeUpstream(context: OutsideContext, fork: Repository,
   await context.records(fork.id).recordOutgoingProposal({ missionId: created.id, upstreamWorkspaceId: target.workspaceId ?? 'legacy', upstreamRepositoryId: target.id, branch, createdAt: created.createdAt });
   const mission = created.epoch === 0 && created.status === 'draft' && !created.branchChange.gate ? await startOrHold(context, target, created, key, principal.userId) : created;
   await access.auditRepositoryChange(principal, 'repository.proposal.upstream', fork.id);
+  await (waitingForMaintainer(mission) ? awaitingChecks(env, access, undefined, target, mission) : notifyProposal(env, access, undefined, target, mission, proposalOpened(mission, principal.userId)));
   return Response.json(upstreamProposalView(mission, origin, upstream), { status: 202 });
 }
 
@@ -161,6 +163,7 @@ export async function handleUpstreamProposals(request: Request, url: URL, contex
   if (vouch) await Promise.resolve().then(() => records.settleApprovalClears(mission.id, vouch)).catch(() => {});
   const next = await startOrHold(context, upstream.repository, updated, key, principal.userId);
   await access.auditRepositoryChange(principal, `repository.proposal.upstream.${action}`, fork.id);
+  if (waitingForMaintainer(next)) await awaitingChecks(env, access, undefined, upstream.repository, next);
   return Response.json(upstreamProposalView(next, origin, upstream));
 }
 

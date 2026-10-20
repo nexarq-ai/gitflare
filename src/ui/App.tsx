@@ -34,6 +34,7 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
   ShieldCheckIcon,
+  TrayIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import type { AccessSnapshot, Repository, Workspace } from "../shared/types";
@@ -63,6 +64,8 @@ import DeployStatusPill from "./DeployProgress";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLayout";
 import { workspaceChord } from "./workspace-chord";
+import { useInboxCounts } from "./inbox-count";
+import { badgeLabel } from "./inbox-data";
 import { accountSection } from "./account-data";
 import { eligibleApprovers, knownCheckNames } from "./approvals";
 import { crossHostTarget, pageHostOrigins, siteHref, siteSignedInHint } from "./hosts";
@@ -76,6 +79,7 @@ import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
 import { BrandMark } from "./BrandMark";
 
 const AccountSettings = lazy(() => import("./AccountSettings"));
+const Inbox = lazy(() => import("./Inbox"));
 const GeneralSettings = lazy(() => import("./GeneralSettings"));
 const loadMissionDetail = () => import("./MissionDetail");
 const MissionDetail = lazy(loadMissionDetail);
@@ -411,6 +415,14 @@ function Workspace() {
     });
   }, [loaded, modal, quickSearchOpen]);
 
+  useEffect(() => {
+    if (!loaded) return;
+    return workspaceChord(() => { if (!modal && !quickSearchOpen) navigate("inbox"); }, "i");
+  }, [loaded, modal, quickSearchOpen]);
+
+  const personalAccount = !!account && "email" in account.user;
+  const [inboxCounts, updateInboxCounts] = useInboxCounts(authState === "authenticated" && loaded && personalAccount, account?.workspace?.id ?? "", route);
+
   const adminCheck = account?.role === "Owner" ? account.workspace?.id ?? "" : "";
   useEffect(() => {
     if (!adminCheck) { setInstallationAdmin(false); return; }
@@ -539,7 +551,8 @@ function Workspace() {
       repository: "Repository",
       activity: "Activity",
       settings: "Settings",
-      account: { security: "Security", sessions: "Sessions", clients: "AI clients", profile: "Profile" }[accountSection(route)],
+      account: { security: "Security", sessions: "Sessions", clients: "AI clients", profile: "Profile", notifications: "Notifications" }[accountSection(route)],
+      inbox: "Inbox",
       admin: "Installation",
     }[page] ?? "Overview";
   const missionList = workspace.missions.filter(
@@ -561,6 +574,7 @@ function Workspace() {
   const hasAccountSession = authConfig.edition !== "self-hosted" && !!account && "email" in account.user;
   const navigation = [
     { id: "overview", label: "Overview", icon: HouseIcon },
+    ...(personalAccount ? [{ id: "inbox", label: "Inbox", icon: TrayIcon, count: inboxCounts ? inboxCounts.work + inboxCounts.unread : 0, title: inboxCounts ? `${inboxCounts.work} to do · ${inboxCounts.unread} unread` : undefined }] : []),
     { id: "repositories", label: "Repositories", icon: FolderSimpleIcon },
     {
       id: "missions",
@@ -637,7 +651,7 @@ function Workspace() {
             >
               <item.icon size={17} />
               {item.label}
-              {!!item.count && <span className="count">{item.count}</span>}
+              {!!item.count && <span className="count" title={"title" in item ? item.title : undefined}>{badgeLabel(item.count)}</span>}
             </button>
           ))}
         </nav>
@@ -708,7 +722,7 @@ function Workspace() {
                   : route === "settings/audit" ? <AuditLog data={account} repositories={workspace.repositories} workspaceName={workspace.name} />
                   : <GeneralSettings workspace={workspace} data={account} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onLeft={async remaining => { if (remaining[0]) await switchWorkspace(remaining[0].id); else await load(); }} onOpenInstallation={() => navigate("admin")} />}
               </WorkspaceSettingsLayout>
-            ) : route === "admin" ? <InstallationAdmin workspace={workspace} notFound={<NotFoundPanel />} /> : page === "account" ? <AccountSettings key={route} section={accountSection(route)} config={authConfig} onChanged={load} onSwitchWorkspace={switchWorkspace} onSignOut={() => void signOut()}>{route === "account/clients" && <McpConnections />}</AccountSettings> : page === "mission" ? (
+            ) : route === "admin" ? <InstallationAdmin workspace={workspace} notFound={<NotFoundPanel />} /> : route === "inbox" ? <Inbox currentWorkspaceId={account?.workspace?.id ?? ""} onCounts={updateInboxCounts} onSwitchWorkspace={async id => { await switchWorkspace(id, false); return selectedWorkspace() === id; }} /> : page === "account" ? <AccountSettings key={route} section={accountSection(route)} config={authConfig} onChanged={load} onSwitchWorkspace={switchWorkspace} onSignOut={() => void signOut()}>{route === "account/clients" && <McpConnections />}</AccountSettings> : page === "mission" ? (
               <MissionDetail
                 key={route.split("/")[1]}
                 id={route.split("/")[1]}

@@ -1,9 +1,11 @@
-import type { IssueTemplates, IssueViewer, Repository } from '../shared/types';
+import type { IssueDetail, IssueTemplates, IssueViewer, Repository } from '../shared/types';
 import { repositoryLabel } from '../shared/repository-names';
 import { ApiError, publicError } from './domain';
 import type { AppEnv } from './env';
 import { readIssueTemplates } from './issue-templates';
-import { allowed, issueNumber, issueRoute, type IssueAccess, type IssueCoordinator, type IssueServices } from './issues';
+import { allowed, issueNumber, issueRoute, type IssueAccess, type IssueChange, type IssueCoordinator, type IssueServices } from './issues';
+import { excerptOf, mentionHandles, notify, type PublishInput } from './notifications';
+import { repositorySubject } from './inbox';
 import { PUBLIC_NOT_FOUND, resolvePublicRepository } from './public-repositories';
 import { consume, rateLimitedResponse, rateLimitMessage } from './rate-limits';
 import { publicPrincipal, securityClient, type Principal, type SecurityService } from './security';
@@ -17,13 +19,36 @@ export async function repositoryTemplates(env: AppEnv, repository: Repository): 
   return await readIssueTemplates(source, repository.defaultBranch);
 }
 
-export function issueServices(env: AppEnv, access: SecurityService, repository: Repository): IssueServices {
-  return { people: ids => access.profiles(ids), templates: () => repositoryTemplates(env, repository) };
+type Waiter = { waitUntil(promise: Promise<unknown>): void } | undefined;
+
+export function issueServices(env: AppEnv, access: SecurityService, repository: Repository, ctx?: Waiter): IssueServices {
+  return {
+    people: ids => access.profiles(ids), templates: () => repositoryTemplates(env, repository),
+    afterWrite: async (change, issue, actorId) => {
+      const event = issueNotification(change, issue, actorId);
+      if (!event) return;
+      const base = await repositorySubject(access, repository);
+      await notify(env, access, ctx, { ...event, subject: { ...base, kind: 'issue', number: issue.number, title: issue.title }, actorId, origin: env.APP_ORIGIN });
+    },
+  };
+}
+
+function issueNotification(change: IssueChange, issue: IssueDetail, actorId: string): Omit<PublishInput, 'subject' | 'actorId'> | null {
+  const thread = `issue:${issue.repositoryId}:${issue.number}`;
+  if (change.action === 'create') return { id: `${thread}:opened`, event: 'opened', excerpt: excerptOf(issue.body), mentions: mentionHandles(issue.body), subscribe: [{ userId: actorId, reason: 'author' }, ...issue.assignees.map(userId => ({ userId, reason: 'assigned' }))], recipients: issue.assignees.map(userId => ({ userId, reason: 'participating' as const })), watchers: true };
+  if (change.action === 'comment') {
+    const comment = [...issue.comments].reverse().find(item => item.authorId === actorId && item.body === change.body);
+    if (!comment) return null;
+    return { id: `issue-comment:${comment.id}`, event: 'commented', excerpt: excerptOf(comment.body), mentions: mentionHandles(comment.body), subscribe: [{ userId: actorId, reason: 'commenter' }], thread: true };
+  }
+  if (change.action === 'close' || change.action === 'reopen') return { id: `${thread}:${change.action}:${issue.updatedAt}`, event: change.action === 'close' ? 'closed' : 'reopened', subscribe: [{ userId: actorId, reason: 'participant' }], thread: true };
+  if (change.action === 'update' && change.assignees?.length) return { id: `${thread}:assigned:${issue.updatedAt}`, event: 'opened', subscribe: change.assignees.map(userId => ({ userId, reason: 'assigned' })), recipients: change.assignees.map(userId => ({ userId, reason: 'participating' as const })) };
+  return null;
 }
 
 function notFound(): never { throw new ApiError(404, 'NOT_FOUND', PUBLIC_NOT_FOUND); }
 
-export async function publicIssuesApi(request: Request, env: AppEnv, signedIn: (request: Request) => Promise<Principal | null>): Promise<Response | null> {
+export async function publicIssuesApi(request: Request, env: AppEnv, signedIn: (request: Request) => Promise<Principal | null>, ctx?: Waiter): Promise<Response | null> {
   const url = new URL(request.url);
   const match = ROUTE.exec(url.pathname);
   if (!match) return null;
@@ -65,7 +90,7 @@ export async function publicIssuesApi(request: Request, env: AppEnv, signedIn: (
     await access.dailyPublicWrite(principal.userId);
   };
   const services: IssueServices = {
-    ...issueServices(env, access, repository),
+    ...issueServices(env, access, repository, ctx),
     beforeWrite: (_change, body) => community(body, true),
     report: async (number, body) => {
       const issue = await coordinator.getIssue(issueNumber(number));

@@ -191,7 +191,7 @@ export async function accountDiscoveryApi(request: Request, env: AppEnv, ctx: Wa
       await purgePublicCache(env, [...repositoryCachePaths(target.handle, repositoryLabel(target.repository)), ...(own ? discoveryCachePaths(own) : [])], url.origin);
       await updateIndexedStars(env, target.repository.id, state.stars);
     })());
-    else background(ctx, purgePublicCache(env, repositoryCachePaths(target.handle, repositoryLabel(target.repository)), url.origin));
+    else background(ctx, Promise.all([purgePublicCache(env, repositoryCachePaths(target.handle, repositoryLabel(target.repository)), url.origin), Promise.resolve().then(() => env.GITFLARE_COORDINATOR.getByName(`repository:${target.repository.id}`).setRepositoryWatcher(principal.userId, state.watching))]));
     return Response.json(starState(target.handle, target.repository, state));
   }
   if (url.pathname === '/api/profile') {

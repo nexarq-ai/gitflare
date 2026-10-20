@@ -31,6 +31,9 @@ import type { AiCredentials, OperatorModelGrant, OperatorUsageKind, StoredAiGate
 import type { PreviewD1Database } from './worker-bundle';
 import { storedPreviewSettings, type PreviewSettings } from './preview-settings';
 import { applyMirrorChange, type MirrorChange, type MirrorChangeResult, type StoredMirror } from './github-mirror';
+import { NotificationBook, SubscriptionBook, type DigestEntry, type NotificationFilter, type NotificationRecord } from './notifications';
+import { sendNotificationEmail } from './notification-email';
+import type { NotificationEvent, NotificationPreferences, NotificationReason, NotificationSubject, ReviewRequests, SubscriptionState } from '../shared/notifications';
 
 interface Receipt<T> { fingerprint: string; result: T }
 export interface ContributorStanding { userId: string; landed: number; firstProposalAt: string; vouchedBy?: Principal }
@@ -197,6 +200,57 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   }
 
   forkStorage(): number { return this.store.get<number>('fork-storage') ?? 0; }
+
+  notificationAudience(thread: string, add: { userId: string; reason: string }[]) { return this.ctx.storage.transactionSync(() => new SubscriptionBook(this.store).audience(thread, add)); }
+  notificationSubscription(thread: string, userId: string): SubscriptionState { return new SubscriptionBook(this.store).subscription(thread, userId); }
+  setNotificationSubscription(thread: string, userId: string, state: SubscriptionState): SubscriptionState { return this.ctx.storage.transactionSync(() => new SubscriptionBook(this.store).setSubscription(thread, userId, state)); }
+  setRepositoryWatcher(userId: string, on: boolean): void { this.ctx.storage.transactionSync(() => new SubscriptionBook(this.store).setWatcher(userId, on)); }
+
+  async deliverNotification(userId: string, input: { id: string; reason: NotificationReason; event: NotificationEvent; subject: NotificationSubject; actorId?: string; excerpt?: string; origin?: string }): Promise<{ stored: boolean; email: 'sent' | 'queued' | 'off' }> {
+    const book = new NotificationBook(this.store);
+    const { record, fresh } = this.ctx.storage.transactionSync(() => { book.claim(userId); book.rememberOrigin(input.origin); return book.deliver(input); });
+    if (!fresh) return { stored: false, email: 'off' };
+    if (book.emailMode(input.reason) === 'off') return { stored: true, email: 'off' };
+    const entry: DigestEntry = { id: input.id, threadId: record.id, reason: input.reason, event: input.event, subject: input.subject, ...(input.actorId ? { actorId: input.actorId } : {}), ...(input.excerpt ? { excerpt: input.excerpt } : {}), at: record.updatedAt };
+    if (book.emailMode(input.reason) === 'instant' && book.instantAllowed() && await sendNotificationEmail(this.env, userId, book, [entry], false) === 'sent') return { stored: true, email: 'sent' };
+    await this.ensureDispatchAlarm(this.ctx.storage.transactionSync(() => book.queueDigest(entry)));
+    return { stored: true, email: 'queued' };
+  }
+
+  notifications(userId: string, filter: NotificationFilter): NotificationRecord[] { const book = new NotificationBook(this.store); book.claim(userId); return book.list(filter); }
+  markNotifications(userId: string, action: 'read' | 'unread' | 'archive' | 'unarchive' | 'read-all', ids: string[]): number { return this.ctx.storage.transactionSync(() => { const book = new NotificationBook(this.store); book.claim(userId); return book.mark(action, ids); }); }
+  forgetNotifications(userId: string, ids: string[]): void { this.ctx.storage.transactionSync(() => { const book = new NotificationBook(this.store); book.claim(userId); book.forget(ids); }); }
+  notificationPreferences(userId: string): { preferences: NotificationPreferences; nextDigestAt: string | null; sentToday: number } {
+    const book = new NotificationBook(this.store); book.claim(userId);
+    const due = book.digestAt();
+    return { preferences: book.preferences(), nextDigestAt: due ? new Date(due).toISOString() : null, sentToday: book.sentToday() };
+  }
+  setNotificationPreferences(userId: string, value: unknown): NotificationPreferences { return this.ctx.storage.transactionSync(() => { const book = new NotificationBook(this.store); book.claim(userId); return book.setPreferences(value); }); }
+  unsubscribeNotifications(userId: string, token: string, reason: NotificationReason | 'all'): NotificationPreferences | null { return this.ctx.storage.transactionSync(() => { const book = new NotificationBook(this.store); if (this.store.get('nf-owner') !== userId) return null; return book.unsubscribe(token, reason); }); }
+  archiveInboxRows(userId: string, rows: { id: string; version: string }[], archived: boolean): void { this.ctx.storage.transactionSync(() => { const book = new NotificationBook(this.store); book.claim(userId); book.inboxArchive(rows, archived); }); }
+  inboxArchived(userId: string): Record<string, string> { const book = new NotificationBook(this.store); book.claim(userId); return book.inboxArchived(); }
+
+  private async deliverNotificationDigest(): Promise<void> {
+    const userId = this.store.get<string>('nf-owner');
+    if (!userId) return;
+    const book = new NotificationBook(this.store);
+    const entries = this.ctx.storage.transactionSync(() => book.takeDigest())?.filter(entry => book.emailMode(entry.reason) !== 'off');
+    if (!entries?.length) return;
+    if (!book.dailyAllowed()) { this.ctx.storage.transactionSync(() => book.postponeDigest(entries)); return; }
+    try { await sendNotificationEmail(this.env, userId, book, entries, true); }
+    catch (error) { this.ctx.storage.transactionSync(() => book.postponeDigest(entries)); throw error; }
+  }
+
+  setReviewRequests(missionId: string, requests: ReviewRequests): Mission | undefined {
+    return this.ctx.storage.transactionSync(() => {
+      const mission = this.getMission(missionId);
+      if (!mission || mission.epoch !== requests.epoch || mission.candidateSha !== requests.candidateSha || mission.baseSha !== requests.baseSha) return undefined;
+      if (JSON.stringify(mission.reviewRequests) === JSON.stringify(requests)) return mission;
+      mission.reviewRequests = requests;
+      const owners = [...new Set(requests.groups.flatMap(group => group.handles))];
+      return this.saveMission(mission, owners.length ? `Review requested from code owners: ${owners.slice(0, 10).map(handle => `@${handle}`).join(', ')}.` : undefined);
+    });
+  }
 
   addForkStorage(bytes: number): number {
     return this.ctx.storage.transactionSync(() => {
@@ -1134,11 +1188,13 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   }
 
   async alarm(): Promise<void> {
+    await this.deliverNotificationDigest().catch(error => console.warn(JSON.stringify({ event: 'notification_digest_failed', message: error instanceof Error ? error.message.slice(0, 200) : 'unknown' })));
     await this.prunePreviewCapabilities();
     await this.deliverDispatches();
     await this.superviseMissions();
     await this.settleApprovalClears(undefined, undefined, true);
-    const next = [...this.listDispatches().map((intent) => intent.nextAttemptAt), ...this.listMissionWatches().map((watch) => watch.checkAt), ...this.listApprovalClears().map((entry) => entry.nextAttemptAt)];
+    const digest = new NotificationBook(this.store).digestAt();
+    const next = [...this.listDispatches().map((intent) => intent.nextAttemptAt), ...this.listMissionWatches().map((watch) => watch.checkAt), ...this.listApprovalClears().map((entry) => entry.nextAttemptAt), ...(digest === undefined ? [] : [digest])];
     if (next.length) await this.ensureDispatchAlarm(Math.max(Date.now() + 1000, Math.min(...next)));
   }
 
@@ -1280,7 +1336,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       } else {
         if (mission.reviews.length >= 500) throw new ApiError(409, 'REVIEW_LIMIT', 'This proposal has reached its discussion limit.');
         assertLineInCandidate(mission, input);
-        mission.reviews.push({ id: crypto.randomUUID(), kind: input.action, body: input.body!, authorId: actorId, createdAt: new Date().toISOString(), epoch: input.epoch, candidateSha: input.candidateSha, baseSha: input.baseSha, ...(input.path === undefined ? {} : { path: input.path, line: input.line, side: input.side }) });
+        mission.reviews.push({ id: crypto.randomUUID(), kind: input.action, body: input.body!, authorId: actorId, createdAt: new Date().toISOString(), epoch: input.epoch, candidateSha: input.candidateSha, baseSha: input.baseSha, ...(input.summary ? { summary: true } : {}), ...(input.path === undefined ? {} : { path: input.path, line: input.line, side: input.side }) });
         if (input.action === 'request_changes') this.queueApprovalClear(id, clearFor);
         if (input.action === 'request_changes' && mission.status === 'approved') {
           this.archive(mission, 'approved');
@@ -1291,7 +1347,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
           this.archive(mission, 'approval_revoked');
         }
       }
-      return this.saveMission(mission, input.action === 'resolve' ? `Reviewer ${actorId} resolved their change request.` : input.action === 'request_changes' ? `Reviewer ${actorId} requested changes to this revision.` : input.path === undefined ? `${actorId} added a review comment.` : `${actorId} commented on ${input.path.slice(0, 200)}:${input.line}.`, input.action === 'request_changes' ? 'warning' : 'info');
+      return this.saveMission(mission, input.action === 'resolve' ? `Reviewer ${actorId} resolved their change request.` : input.action === 'request_changes' ? `Reviewer ${actorId} requested changes to this revision.` : input.action === 'approve' ? `Reviewer ${actorId} approved this revision.` : input.path === undefined ? `${actorId} added a review comment.` : `${actorId} commented on ${input.path.slice(0, 200)}:${input.line}.`, input.action === 'request_changes' ? 'warning' : 'info');
     });
   }
 

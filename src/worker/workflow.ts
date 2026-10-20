@@ -11,6 +11,7 @@ import type { MirrorParams } from './github-mirror';
 import { mirrorWorkflow } from './github-mirror-runtime';
 import { missionStepTimeoutMs } from './budgets';
 import { catalogName } from './capacity';
+import { afterChecks } from './proposal-notifications';
 import { createModelAccess, type AiAccessOptions, type AiCredentials } from './ai-keys';
 import { withStoreSecrets } from './store-secrets';
 
@@ -104,5 +105,9 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
     } finally {
       await this.env.GITFLARE_COORDINATOR.getByName(catalogName(planned?.authorization?.workspaceId ?? 'legacy')).releaseMissionSlot(missionId, epoch).catch(() => {});
     }
+    await step.do('notify reviewers and participants', { retries: { limit: 2, delay: '10 seconds', backoff: 'exponential' }, timeout: '2 minutes' }, async () => {
+      await afterChecks(this.env as unknown as AppEnv, repositoryId, missionId, epoch).catch(() => undefined);
+      return true;
+    });
   }
 }

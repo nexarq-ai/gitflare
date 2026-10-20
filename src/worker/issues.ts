@@ -315,6 +315,7 @@ export interface IssueServices {
   people(ids: string[]): Promise<Record<string, IssuePerson>>;
   templates(): Promise<IssueTemplates>;
   beforeWrite?(change: IssueChange, body: Record<string, unknown>): Promise<void>;
+  afterWrite?(change: IssueChange, issue: IssueDetail, actorId: string): Promise<void>;
   report?(number: number, body: Record<string, unknown>): Promise<Response>;
 }
 export interface IssueTarget { principal: Principal; repositoryId: string; publicView: boolean }
@@ -395,7 +396,9 @@ export async function issueRoute(request: Request, url: URL, target: IssueTarget
     change.templateLabels = template.labels;
   }
   await services.beforeWrite?.(change, body);
-  const result = issueForViewer(await coordinator.changeIssue(key, change, { userId: principal.userId, moderator }), moderator, publicView);
+  const changed = await coordinator.changeIssue(key, change, { userId: principal.userId, moderator });
+  await services.afterWrite?.(change, changed, principal.userId).catch(() => {});
+  const result = issueForViewer(changed, moderator, publicView);
   return Response.json(await withPeople(result, issuePeopleIds(result, moderator), services), { status: change.action === 'create' ? 201 : 200 });
 }
 

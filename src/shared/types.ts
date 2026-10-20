@@ -237,7 +237,8 @@ export interface FileChange {
 
 export interface ProposalReview {
   id: string;
-  kind: 'comment' | 'request_changes';
+  kind: 'comment' | 'request_changes' | 'approve';
+  summary?: boolean;
   body: string;
   authorId: string;
   createdAt: string;
@@ -252,7 +253,8 @@ export interface ProposalReview {
 }
 
 export interface ReviewMissionInput {
-  action: 'comment' | 'request_changes' | 'resolve';
+  action: 'comment' | 'request_changes' | 'resolve' | 'approve';
+  summary?: boolean;
   epoch: number;
   candidateSha: string;
   baseSha: string;
@@ -291,6 +293,7 @@ export interface Mission {
   events: MissionEvent[];
   changes: FileChange[];
   reviews?: ProposalReview[];
+  reviewRequests?: import('./notifications').ReviewRequests;
   createdAt: string;
   updatedAt: string;
   approvedAt?: string;
@@ -442,8 +445,8 @@ export interface UpstreamProposal {
 }
 export type PullRequestState = 'open' | 'needs_review' | 'approved' | 'landed' | 'closed';
 export type LanderRole = 'Maintainer' | 'Owner';
-export interface BranchRule { pattern: string; requirePullRequest: boolean; requiredApprovals: number; requirePassingChecks: true; requiredCheckNames: string[]; preventSelfApproval: boolean; dismissApprovalsOnNewCommits: true; restrictLanders: LanderRole[]; allowForcePush: false }
-export type BranchRuleInput = Pick<BranchRule, 'pattern' | 'requirePullRequest' | 'requiredApprovals' | 'requiredCheckNames' | 'preventSelfApproval' | 'restrictLanders'>;
+export interface BranchRule { pattern: string; requirePullRequest: boolean; requiredApprovals: number; requirePassingChecks: true; requiredCheckNames: string[]; preventSelfApproval: boolean; dismissApprovalsOnNewCommits: true; restrictLanders: LanderRole[]; allowForcePush: false; codeowners?: boolean }
+export type BranchRuleInput = Pick<BranchRule, 'pattern' | 'requirePullRequest' | 'requiredApprovals' | 'requiredCheckNames' | 'preventSelfApproval' | 'restrictLanders' | 'codeowners'>;
 export interface BranchProtection { repositoryId: string; defaultBranch: string; rules: BranchRule[]; configured: boolean; updatedAt?: string; updatedBy?: string }
 export interface BranchInfo { name: string; headSha: string; protected: boolean; default: boolean; ahead?: number; behind?: number }
 export interface BranchChangeResult { name: string; headSha: string; created?: true; deleted?: true }

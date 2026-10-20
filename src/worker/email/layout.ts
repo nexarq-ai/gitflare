@@ -16,6 +16,7 @@ export interface EmailContent {
   details?: Array<[label: string, value: string]>;
   note: string;
   reason: string;
+  unsubscribe?: EmailAction;
 }
 export interface EmailContext { edition: EmailEdition; origin: string }
 export interface RenderedEmail { subject: string; html: string; text: string }
@@ -46,9 +47,11 @@ function headingHtml(heading: string, accent: string): string {
   return `${escapeHtml(heading.slice(0, at))}<em class="gf-accent" style="font-family:${SERIF};font-style:italic;font-weight:400;letter-spacing:-0.2px;color:${ACCENT}">${escapeHtml(accent)}</em>${escapeHtml(heading.slice(at + accent.length))}`;
 }
 
-function footer(context: EmailContext, reason: string): { html: string; text: string } {
+function footer(context: EmailContext, reason: string, unsubscribe?: EmailAction): { html: string; text: string } {
   const link = (href: string, label: string) => `<a href="${escapeHtml(href)}" class="gf-foot-link" style="color:${C.muted};text-decoration:underline">${escapeHtml(label)}</a>`;
-  const reasonHtml = `<p style="margin:0 0 10px">${escapeHtml(reason)}</p>`;
+  const leave = unsubscribe ? { html: ` ${link(absoluteUrl(unsubscribe.url), unsubscribe.label)}.`, text: `\n${unsubscribe.label}: ${absoluteUrl(unsubscribe.url)}` } : { html: '', text: '' };
+  const reasonHtml = `<p style="margin:0 0 10px">${escapeHtml(reason)}${leave.html}</p>`;
+  reason = `${reason}${leave.text}`;
   if (context.edition === 'self-hosted') {
     const origin = absoluteUrl(context.origin);
     return {
@@ -68,7 +71,7 @@ export function renderEmail(content: EmailContent, context: EmailContext): Rende
   const actionUrl = absoluteUrl(content.action.url);
   const href = escapeHtml(actionUrl);
   const label = escapeHtml(content.action.label);
-  const foot = footer(context, content.reason);
+  const foot = footer(context, content.reason, content.unsubscribe);
   const details = content.details ?? [];
   const detailRows = details.map(([name, value], index) => `<tr><td class="gf-muted gf-label" style="padding:${index ? '12px' : '0'} 16px 0 0;font-family:${SANS};font-size:13px;line-height:20px;color:${C.muted};width:140px;vertical-align:top;white-space:nowrap">${escapeHtml(name)}</td><td class="gf-strong gf-value" style="padding:${index ? '12px' : '0'} 0 0;font-family:${SANS};font-size:14px;line-height:20px;font-weight:500;color:${C.text};word-break:break-word">${escapeHtml(value)}</td></tr>`).join('');
   const detailsBlock = details.length ? `<tr><td class="gf-pad" style="padding:8px 48px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="gf-panel" style="background:${C.panel};border:1px solid ${C.panelBorder};border-radius:14px"><tr><td class="gf-panel-pad" style="padding:20px 24px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${detailRows}</table></td></tr></table></td></tr>` : '';
