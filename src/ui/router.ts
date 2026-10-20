@@ -66,7 +66,7 @@ export function publicSourceLocation(route: string): { path: string; kind: "file
 }
 
 const PUBLIC_REPOSITORY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
-const SINGLE_PUBLIC_VIEWS = ["commits", "branches", "releases"] as const;
+const SINGLE_PUBLIC_VIEWS = ["commits", "branches", "releases", "agents"] as const;
 
 export type PublicRepositoryLocation = { handle: string; repository: string; view: PublicRepositoryView; path: string };
 
@@ -168,7 +168,7 @@ export function isKnownAppRoute(route: string): boolean {
     || /^settings(?:\/(?:people|cloudflare|models|audit))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
-    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|import)|\/settings(?:\/(?:branches|deploys|previews|agents|secrets|cloudflare|access))?|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
+    || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|import)|\/settings(?:\/(?:branches|deploys|previews|agents|issues|community|secrets|cloudflare|access))?|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases)(?:\/[^/]+)?)?$/.test(route)
     || /^(?:forgot-password|reset-password|verify-email)(?:\/[^/]+)?$/.test(route)
     || route === "invite" || route.startsWith("invite?");
 }

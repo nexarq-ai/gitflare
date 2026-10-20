@@ -17,7 +17,7 @@ import { bindPreviewD1, deletePreviewD1 } from './preview-d1';
 import { cloudflareDeployAccess, cloudflareWorkerDeployer } from './cloudflare';
 import { previewLifetimeMs } from './preview-settings';
 import { candidateWorkerTarget, previewTarget, resolvePreviewHost, usedContainerFallback, workerPreviewSetup, type PreviewHostPlan, type PreviewTarget, type ProjectWorkers } from './preview-host';
-import { isOutsideProposal } from '../shared/pull-requests';
+import { isUntrustedMission } from '../shared/pull-requests';
 import { isPreviewSetupCode, type PreviewSetupCode } from '../shared/preview-setup';
 import { ensurePreviewAccess } from './preview-access';
 import { previewAccessIncludes } from './preview-settings-api';
@@ -341,7 +341,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       if (!mission || !repository || mission.epoch !== epoch || mission.candidateSha !== candidateSha) throw new PreviewFailure('The candidate changed before its preview started.');
       if (!env.SANDBOX) { setup = 'PREVIEW_NOT_CONFIGURED'; throw new PreviewFailure('The preview runner is unavailable.'); }
       const settings = await coordinator.getPreviewSettings();
-      const untrusted = isOutsideProposal(mission);
+      const untrusted = isUntrustedMission(mission);
       const lifetimeMs = untrusted ? Math.min(previewLifetimeMs(settings, env), UNTRUSTED_PREVIEW_MS) : previewLifetimeMs(settings, env);
       const lifetime = { lifetimeMs, extendMs: lifetimeMs };
       let installationProblem: string | undefined;

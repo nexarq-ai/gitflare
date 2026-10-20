@@ -5,6 +5,7 @@ import { request, RequestError } from "./api";
 import { ErrorNotice, Status } from "./components";
 import InstallationCredential, { type WorkspaceConnection } from "./InstallationCredential";
 import ContentReports from "./ContentReports";
+import OperatorAi from "./OperatorAi";
 import { RouteProgress } from "./WorkspaceLoader";
 import "./people-settings.css";
 
@@ -37,6 +38,7 @@ export default function InstallationAdmin({ workspace, notFound }: { workspace: 
       {status.superAdmins.length ? <ul className="people-list">{status.superAdmins.map(email => <li key={email}><div><strong>{email}</strong></div></li>)}</ul> : <div className="panel-body"><p className="people-muted">None configured.</p></div>}
     </section>}
     {hosted && <ContentReports />}
+    {hosted && <OperatorAi />}
     <section className="panel">
       <div className="panel-header"><h2>Edition and configuration</h2><span className="people-role-text">{hosted ? "Hosted" : "Self-hosted"}</span></div>
       <dl className="general-facts admin-facts">

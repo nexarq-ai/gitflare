@@ -161,6 +161,15 @@ export function recordIssueOutcome(store: IssueStore, number: number, state: Iss
   return true;
 }
 
+export function applyTriage(store: IssueStore, number: number, labels: string[], body: string, now = new Date().toISOString()): void {
+  const issue = required(store, number);
+  const known = new Map(listLabelDefinitions(store).map((label) => [label.name.toLowerCase(), label.name]));
+  issue.labels = mergedLabels(issue.labels, labels.flatMap((label) => known.get(label.toLowerCase()) ?? []));
+  if (body && issue.commentCount < ISSUE_COMMENT_LIMIT) addComment(store, issue, ISSUE_SYSTEM_AUTHOR, body, now);
+  issue.updatedAt = now;
+  store.put(issueKey(number), issue);
+}
+
 function mergedLabels(labels: string[], extra: string[] = []): string[] {
   const seen = new Set<string>();
   return [...labels, ...extra].filter((label) => !seen.has(label.toLowerCase()) && !!seen.add(label.toLowerCase())).slice(0, 10);

@@ -10,6 +10,8 @@ export function pullRequestState(mission: Pick<Mission, 'status' | 'branchChange
 
 export function isOutsideProposal(mission: Pick<Mission, 'branchChange'>): boolean { return !!mission.branchChange?.source; }
 
-export function proposalAuthor(mission: Pick<Mission, 'authorization' | 'branchChange'>): string | undefined { return mission.authorization?.creatorId ?? mission.branchChange?.source?.authorId; }
+export function isUntrustedMission(mission: Pick<Mission, 'branchChange' | 'fixRequest'>): boolean { return isOutsideProposal(mission) || !!mission.fixRequest; }
+
+export function proposalAuthor(mission: Pick<Mission, 'authorization' | 'branchChange' | 'fixRequest'>): string | undefined { return mission.authorization?.creatorId ?? mission.branchChange?.source?.authorId ?? mission.fixRequest?.requesterId; }
 
 export function waitingForMaintainer(mission: Pick<Mission, 'branchChange' | 'status'>): boolean { return !!mission.branchChange?.gate && mission.status === 'draft' && !mission.branchChange.closedAt; }

@@ -2,7 +2,7 @@ import { listRepositorySkills } from './repository-skills';
 import { assertReviewClear, reviewMissionInput } from './proposal-review';
 import { timingSafeEqual } from 'node:crypto';
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import type { AiSettings, IntegrationStatus, Mission, Repository, Workspace } from '../shared/types';
+import type { AiSettings, IntegrationStatus, Mission, ModelConnection, Repository, Workspace } from '../shared/types';
 import { createArtifactsRepository, repositoryHead } from './artifacts';
 import { assertDependencyApproval } from './dependency-changes';
 import { agentRunIds, ApiError, assertMutationOrigin, COMMIT_MESSAGE_REQUEST_MAX_BYTES, commitMessageInput, findRepositoryByName, isLocalRequest, MISSION_REQUEST_MAX_BYTES, missionInput, publicError, readJson, repositoryName, requireIdempotencyKey, requireString, retryGuidance, storageRepositoryName } from './domain';
@@ -32,7 +32,7 @@ import { publicPageResponse } from './public-pages';
 import { hostRedirect, withHostOrigins } from './host-split';
 import { publicGitResponse } from './hosted-source';
 import { deliverInvitation } from './email';
-import { ADMIN_STATUS_PATH, installationAdminStatus } from './installation-admin';
+import { ADMIN_STATUS_PATH, installationAdminStatus, OPERATOR_AI_PATH, operatorAiStatus } from './installation-admin';
 import { requestSessionMeta } from './session-meta';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare, handleRepositoryCloudflare, cloudflareAccount, cloudflareApiRequest, cloudflareAnalyticsRequest, cloudflareDeployAccess } from './cloudflare';
 import { dispatchCloudflareProject, projectDependencies, type ProjectOperation } from './cloudflare-projects';
@@ -65,6 +65,8 @@ import { servePublicCached } from './public-cache';
 import { PUBLIC_INDEX_CRON, publicIndex, reconcilePublicIndex } from './public-index';
 import { FORK_STORAGE_LIMIT_BYTES, handleForks } from './forks';
 import { handleUpstreamProposals, proposeUpstream, type OutsideContext } from './outside-proposals';
+import { fixStartModels, publicFixRequestsApi } from './fix-requests';
+import { autoTriage, handleCommunityAi } from './agent-assist';
 import { isOutsideProposal, proposalAuthor } from '../shared/pull-requests';
 
 export { GitflareSecurity } from './security';
@@ -205,6 +207,16 @@ async function workspaceName(env: AppEnv, access: { workspace(principal: Princip
   return principal.workspaceId === 'legacy' && env.WORKSPACE_NAME ? env.WORKSPACE_NAME : (await access.workspace(principal)).name;
 }
 
+async function triageCreated(request: Request, response: Response, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
+  if (request.method !== 'POST' || response.status !== 201 || !/\/issues$/.test(new URL(request.url).pathname)) return response;
+  const created = await response.clone().json().catch(() => null) as { repositoryId?: unknown; number?: unknown } | null;
+  if (typeof created?.repositoryId === 'string' && typeof created.number === 'number') {
+    const work = autoTriage(env, created.repositoryId, created.number);
+    if (ctx) ctx.waitUntil(work); else await work;
+  }
+  return response;
+}
+
 async function api(request: Request, env: AppEnv, ctx?: ExecutionContext): Promise<Response> {
   if (!demoMode(env)) return apiRoutes(request, env, ctx);
   return demoDisabledApi(request, env, {
@@ -237,8 +249,10 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     return markdown ? documentationMarkdown(doc, listPublicDocs(), request.url, true) : Response.json(doc);
   }
   if (url.pathname.startsWith('/api/public/source')) return publicSourceResponse(request, env.ASSETS);
+  const fixRequests = await publicFixRequestsApi(request, env, signedInPrincipal(env));
+  if (fixRequests) return fixRequests;
   const publicIssues = await publicIssuesApi(request, env, signedInPrincipal(env));
-  if (publicIssues) return publicIssues;
+  if (publicIssues) return triageCreated(request, publicIssues, env, ctx);
   const publicRepository = await publicRepositoryApi(request, env);
   if (publicRepository) return publicRepository;
   const discovery = await publicDiscoveryApi(request, env, ctx);
@@ -267,6 +281,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (url.pathname === '/api/account' && request.method === 'GET') return Response.json(await access.account(principal), { headers: { 'Cache-Control': 'no-store' } });
   if (url.pathname === '/api/account/sessions/revoke-others' && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.revokeOtherSessions(principal)); }
   if (url.pathname === ADMIN_STATUS_PATH && request.method === 'GET') return Response.json(await installationAdminStatus(env, principal), { headers: { 'Cache-Control': 'no-store' } });
+  if (url.pathname === OPERATOR_AI_PATH && request.method === 'GET') return Response.json(await operatorAiStatus(env, principal), { headers: { 'Cache-Control': 'no-store' } });
   if (url.pathname === '/api/admin/reports' && request.method === 'GET') return Response.json(await access.reports(principal));
   const dismissReport = /^\/api\/admin\/reports\/([a-f0-9-]{36})\/dismiss$/.exec(url.pathname);
   if (dismissReport && request.method === 'POST') { assertMutationOrigin(request); return Response.json(await access.dismissReport(principal, dismissReport[1]!)); }
@@ -518,7 +533,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     return repositorySecretsApi(request, secretsApiContext(env, principal, repository, env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`)));
   }
   const issues = await handleIssues(request, url, principal, access, catalog, (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`), (repository) => issueServices(env, access, repository));
-  if (issues) return issues;
+  if (issues) return triageCreated(request, issues, env, ctx);
   const blocksRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/issue-blocks$/.exec(url.pathname);
   if (blocksRoute) {
     const repository = await catalog.getRepository(blocksRoute[1]!);
@@ -533,6 +548,8 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   const outside: OutsideContext = { env, principal, access, catalogOf: (workspaceId) => env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId)), records: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) };
   const upstreamProposals = await handleUpstreamProposals(request, url, { ...outside, catalog });
   if (upstreamProposals) return upstreamProposals;
+  const communityAi = await handleCommunityAi(request, url, { env, principal, access, catalog, findMission: (id) => findMission(env, id, principal.workspaceId) });
+  if (communityAi) return communityAi;
   const urlImport = await handleUrlImport(request, url, { env, principal, access, catalog, repositoryRecords: (id) => env.GITFLARE_COORDINATOR.getByName(`repository:${id}`) });
   if (urlImport) return urlImport;
   const mirrorRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/github-mirror(?:\/([a-z-]+))?$/.exec(url.pathname);
@@ -944,7 +961,13 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       if (body.guidance !== undefined && match[2] !== 'retry-agents' && match[2] !== 'address-review') throw new ApiError(400, 'INVALID_INPUT', 'guidance applies only to retrying failed agents or addressing a review.');
       if (body.overrides !== undefined && match[2] !== 'retry-agents') throw new ApiError(400, 'INVALID_INPUT', 'overrides apply only to retrying failed agents.');
       const overrides = match[2] === 'retry-agents' ? normalizeRetryOverrides(body.overrides, runIds ?? []) : undefined;
-      if (!mission.skillChange && !mission.revertChange && !mission.branchChange) {
+      let fixModels: ModelConnection[] | undefined;
+      if (mission.fixRequest) {
+        await access.authorize(principal, 'land', 'repository', repository.id, mission.id);
+        if (overrides && Object.values(overrides).some((override) => override.model)) throw new ApiError(400, 'INVALID_INPUT', 'A requested fix keeps the model it was funded with.');
+        await requireAi(env, catalog);
+        fixModels = await fixStartModels(env, mission, `${mission.id}:${mission.epoch}`);
+      } else if (!mission.skillChange && !mission.revertChange && !mission.branchChange) {
         await requireAi(env, catalog);
         const credentials = await aiCredentials(catalog);
         assertWorkspaceAi(env, principal.workspaceId, credentials);
@@ -958,7 +981,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
       const current = await currentRepository(env, repository);
       if (!current.headSha) throw new ApiError(409, 'EMPTY_REPOSITORY', 'Push an initial commit before starting a mission.');
       const authorization = { principal, workspaceId: principal.workspaceId, creatorId: proposalAuthor(mission) ?? principal.userId };
-      const models = await coordinatorRead('getModelConnections', () => catalog.getModelConnections());
+      const models = fixModels ?? await coordinatorRead('getModelConnections', () => catalog.getModelConnections());
       const started = match[2] === 'start' ? await startWithDurableDispatch(coordinator, key, mission.id, authorization, models) : await coordinator.retryAgents(key, mission.id, match[2] === 'retry-agents' ? 'retry' : match[2] === 'address-review' ? 'review' : 'drop', runIds, authorization, models, guidance, overrides);
       return Response.json(started, { status: 202 });
     }

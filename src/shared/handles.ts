@@ -33,7 +33,7 @@ export function suggestedHandle(name: string): string {
   return slug && !RESERVED_HANDLES.has(slug) ? slug : '';
 }
 
-export const PUBLIC_REPOSITORY_VIEWS = ['tree', 'blob', 'issues', 'commits', 'branches', 'releases'] as const;
+export const PUBLIC_REPOSITORY_VIEWS = ['tree', 'blob', 'issues', 'commits', 'branches', 'releases', 'agents'] as const;
 export const PUBLIC_ISSUE_PATH = /^(?:new|[1-9]\d{0,5})$/;
 export type PublicRepositoryView = 'code' | typeof PUBLIC_REPOSITORY_VIEWS[number];
 

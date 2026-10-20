@@ -22,7 +22,10 @@ import {
   WarningCircleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import type { AgentRetryOverride, Mission, ModelConnection, ModelConnectionsSnapshot, Workspace } from "../shared/types";
+import { AGENT_REVIEWER_ID, type AgentRetryOverride, type Mission, type ModelConnection, type ModelConnectionsSnapshot, type Workspace } from "../shared/types";
+import { isUntrustedMission } from "../shared/pull-requests";
+import InfoTip from "./InfoTip";
+import { FixRequestNote } from "./FixRequests";
 import { request, RequestError } from "./api";
 import { EmptyState, ErrorNotice, relativeTime, Status } from "./components";
 import AgentAssignment from "./AgentAssignment";
@@ -168,7 +171,7 @@ export default function MissionDetail({
   }, [needsRetryModels, retryModels]);
 
   async function act(
-    action: "start" | "retry-agents" | "drop-failed-agents" | "address-review" | "cancel" | "approve" | "integrate" | "revoke",
+    action: "start" | "retry-agents" | "drop-failed-agents" | "address-review" | "cancel" | "approve" | "integrate" | "revoke" | "agent-review",
     commitMessage?: string,
     retry?: { runId: string; override?: AgentRetryOverride },
   ) {
@@ -644,7 +647,7 @@ export default function MissionDetail({
           <h1>{mission.title}</h1>
           <div className="detail-meta">
             <Status status={mission.status} />
-            <span>{mission.branchChange ? "Proposal" : mission.mode === "race" ? "AI race" : "AI mission"}</span>
+            <span>{mission.branchChange ? "Proposal" : mission.fixRequest ? "Requested fix" : mission.mode === "race" ? "AI race" : "AI mission"}</span>
             <span>
               <GitBranchIcon size={13} />
               {repository ? repositoryLabel(repository) : "Repository"}
@@ -824,6 +827,7 @@ export default function MissionDetail({
         </div>
       </div>
       {replay.bar}
+      {mission.fixRequest && <FixRequestNote fix={mission.fixRequest} status={mission.status} />}
       {mission.branchChange && <PullRequestPanel mission={mission} permissions={permissions} onChange={(result) => { revision.current++; setMission(result); onUpdate(); }} />}
       {currentPreview && <PreviewReadyCard preview={currentPreview} viewer={previewViewer} busy={busy} canExtend={permissions.includes("land")} canStop={permissions.includes("contribute")} onExtend={() => void extendPreview()} onStop={() => void stopPreview()} />}
       {previewProgress && <PreviewStartingCard progress={previewProgress} />}
@@ -1383,6 +1387,12 @@ export default function MissionDetail({
         <section className="panel">
           <div className="panel-header">
             <h2>Review discussion</h2>
+            {isUntrustedMission(mission) && mission.status === "needs_review" && permissions.includes("review") && !(mission.reviews ?? []).some((item) => item.authorId === AGENT_REVIEWER_ID && item.candidateSha === mission.candidateSha && item.epoch === mission.epoch) && (
+              <span className="fix-action">
+                <Button variant="secondary" size="sm" icon={RobotIcon} loading={busy === "agent-review"} disabled={!!busy} onClick={() => void act("agent-review")}>Ask the agent</Button>
+                <InfoTip label="agent reviews">One answer from the review agent, paid by the community pool. It comments only; it never approves or lands.</InfoTip>
+              </span>
+            )}
             <span className="number-tag">
               {unresolvedRequests.length} unresolved requests on this revision
             </span>
@@ -1397,7 +1407,9 @@ export default function MissionDetail({
                 <article className="repository-work-item" key={item.id}>
                   <div className="repository-work-title">
                     <strong>
-                      {item.kind === "request_changes"
+                      {item.authorId === AGENT_REVIEWER_ID
+                        ? "Agent review"
+                        : item.kind === "request_changes"
                         ? "Changes requested"
                         : "Comment"}
                       {item.resolvedAt ? " · Resolved" : ""}
@@ -1405,7 +1417,7 @@ export default function MissionDetail({
                     <small>{new Date(item.createdAt).toLocaleString()}</small>
                   </div>
                   <p className="proposal-review-revision">
-                    Reviewer {item.authorId} · Attempt {item.epoch} · Candidate{" "}
+                    {item.authorId === AGENT_REVIEWER_ID ? "Review agent, not an approval" : `Reviewer ${item.authorId}`} · Attempt {item.epoch} · Candidate{" "}
                     {item.candidateSha.slice(0, 12)} · Base{" "}
                     {item.baseSha.slice(0, 12)}
                     {!current && !item.path ? " · Previous revision" : ""}
