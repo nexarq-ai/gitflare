@@ -1065,8 +1065,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 69387,
-      "sha256": "b925f8127f09fa93b31274e1f241349466d54703d6c320f1445948cfc6f59a5d"
+      "size": 69984,
+      "sha256": "ec3c6f444d02fc6707b119ae3a868a3486427a6c4058a84d21be727d343651c9"
     },
     {
       "path": "src/ui/SubscribeButton.tsx",
