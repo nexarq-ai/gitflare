@@ -1,12 +1,13 @@
-import type { ExploreSort, ProfileSettings, PublicProfile, PublicRepositoryCard, PublicSearchType, Repository, StarList, StarState } from '../shared/types';
-import { HANDLE_PATTERN, PROFILE_LIMITS, publicRepositoryPath } from '../shared/handles';
+import type { ExploreSort, MissionSummary, ProfileFields, ProfileReadme, ProfileSettings, ProfileShowcase, PublicProfile, PublicRepositoryCard, PublicSearchType, PublicShowcase, Repository, ShowcaseMission, ShowcaseOptions, StarList, StarState, SubscriptionEntry, SubscriptionStatus, SubscriptionTargetKind } from '../shared/types';
+import { HANDLE_PATTERN, PROFILE_FILES, PROFILE_LIMITS, publicRepositoryPath } from '../shared/handles';
+import { proposalAuthor } from '../shared/pull-requests';
 import { repositoryLabel } from '../shared/repository-names';
 import { ApiError, assertMutationOrigin, readJson } from './domain';
 import type { AppEnv } from './env';
 import { logFailure } from './log';
 import { catalogName } from './capacity';
 import { clientIp, consume, rateLimitedResponse } from './rate-limits';
-import { personalWorkspaceId, publicPrincipal, securityClient, type FollowKind, type HandleKind, type Principal, type ProfileRecord, type SecurityService } from './security';
+import { personalWorkspaceId, publicPrincipal, securityClient, type FollowKind, type HandleKind, type Principal, type ProfileRecord, type SecurityService, type SubscriptionTarget } from './security';
 import { CACHE_DEPENDENCIES, discoveryCachePaths, purgePublicCache, repositoryCachePaths } from './public-cache';
 import { backfillEmptyIndex, explorePublic, indexedDetails, indexPublicRepository, indexWorkspaceRepositories, pageCursor, publicIndex, refreshIndexedHandle, removeIndexedRepositories, searchPublic, searchQuery, updateIndexedStars } from './public-index';
 import { publicTargetById, resolvePublicRepository, siteOrigin, PUBLIC_NOT_FOUND } from './public-repositories';
@@ -18,6 +19,9 @@ const SORTS: ExploreSort[] = ['stars', 'new', 'updated'];
 const SEARCH_TYPES: PublicSearchType[] = ['repositories', 'paths', 'people'];
 const STARRED_ON_PROFILE = 12;
 const STAR_LIST_LIMIT = 50;
+const PROFILE_README_MAX = 65_536;
+const SHOWCASE_MISSIONS = 50;
+const SUBSCRIPTION_KINDS: SubscriptionTargetKind[] = ['person', 'repository'];
 
 async function background(ctx: Waiter, work: Promise<unknown>): Promise<void> {
   const guarded = work.catch(error => logFailure('public_index_update_failed', error, {}, 'warn'));
@@ -58,19 +62,61 @@ async function cardsFor(env: AppEnv, access: SecurityService, repositoryIds: str
   return { cards: targets.map((target, index) => cardOf(target.repository, target.handle, stats[index]?.stars ?? 0, details.get(target.repository.id), target.listing.publishedAt)), ids: targets.map(target => target.repository.id) };
 }
 
+async function profileReadme(env: AppEnv, access: SecurityService, handle: string): Promise<{ readme: ProfileReadme | null; repositoryId: string | null }> {
+  const target = await resolvePublicRepository(env, access, handle, handle).catch(() => null);
+  if (!target || 'redirect' in target) return { readme: null, repositoryId: null };
+  using source = await env.ARTIFACTS!.get(target.repository.name);
+  const commit = (await source.log({ ref: target.repository.defaultBranch, limit: 1 }).catch(() => []))[0];
+  if (!commit) return { readme: null, repositoryId: target.repository.id };
+  for (const path of PROFILE_FILES) {
+    const blob = await source.readFile({ ref: commit.hash, path }).catch(() => null);
+    if (!blob) continue;
+    if (blob.size > PROFILE_README_MAX) break;
+    let content: string;
+    try { content = new TextDecoder('utf-8', { fatal: true }).decode(await blob.arrayBuffer()); } catch { break; }
+    if (content.includes('\0')) break;
+    const name = repositoryLabel(target.repository);
+    return { readme: { path, content, repository: name, url: publicRepositoryPath(handle, name) }, repositoryId: target.repository.id };
+  }
+  return { readme: null, repositoryId: target.repository.id };
+}
+
+function showcaseMission(mission: MissionSummary, handle: string, repository: string): ShowcaseMission {
+  const people = new Set([mission.approvedBy, proposalAuthor(mission)].filter((id): id is string => !!id));
+  return { id: mission.id, title: mission.title, repository, handle, landedAt: mission.updatedAt, landedSha: mission.landedSha ?? mission.candidateSha ?? null, agents: mission.runs.length, people: people.size, url: publicRepositoryPath(handle, repository, 'agents') };
+}
+
+async function landedMissions(env: AppEnv, repositoryId: string): Promise<MissionSummary[]> {
+  const missions = await Promise.resolve().then(() => env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`).listMissionSummaries() as Promise<MissionSummary[]>).catch(() => [] as MissionSummary[]);
+  return missions.filter(mission => mission.status === 'integrated').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, SHOWCASE_MISSIONS);
+}
+
+async function featuredOf(env: AppEnv, showcase: ProfileShowcase | null | undefined, handle: string, owned: { cards: PublicRepositoryCard[]; ids: string[] }): Promise<PublicShowcase | null> {
+  if (!showcase) return null;
+  const index = owned.cards.findIndex(card => card.name === (showcase.kind === 'repository' ? showcase.name : showcase.repository));
+  if (index < 0) return null;
+  if (showcase.kind === 'repository') return { kind: 'repository', repository: owned.cards[index]! };
+  const mission = (await landedMissions(env, owned.ids[index]!)).find(item => item.id === showcase.missionId);
+  return mission ? { kind: 'mission', mission: showcaseMission(mission, handle, showcase.repository) } : null;
+}
+
+function fieldsOf(profile: ProfileRecord | null, fallbackName: string, pinned: string[]): ProfileFields {
+  return { displayName: profile?.displayName || fallbackName, bio: profile?.bio ?? '', links: profile?.links ?? [], pinned, location: profile?.location ?? '', website: profile?.website ?? '', showcase: profile?.showcase ?? null };
+}
+
 async function publicProfile(env: AppEnv, access: SecurityService, value: string, origin: string): Promise<Response> {
   if (!HANDLE_PATTERN.test(value)) notFound();
   const resolved = await access.resolveHandle(value);
   if (!resolved) throw new ApiError(404, 'NOT_FOUND', 'This profile does not exist.');
   if ('redirect' in resolved) return new Response(null, { status: 308, headers: { Location: `/api/public/profiles/${resolved.redirect}` } });
-  const [profile, owned, follows] = await Promise.all([access.profileOf(resolved.workspaceId), workspaceRepositories(env, access, resolved.workspaceId, resolved.handle), resolved.kind === 'user' ? access.userFollows(resolved.workspaceId) : Promise.resolve([])]);
-  const starred = await cardsFor(env, access, follows.map(item => item.repositoryId), STARRED_ON_PROFILE);
+  const [profile, owned, follows, readme] = await Promise.all([access.profileOf(resolved.workspaceId), workspaceRepositories(env, access, resolved.workspaceId, resolved.handle), resolved.kind === 'user' ? access.userFollows(resolved.workspaceId) : Promise.resolve([]), env.ARTIFACTS ? profileReadme(env, access, resolved.handle) : Promise.resolve({ readme: null, repositoryId: null })]);
+  const [starred, featured] = await Promise.all([cardsFor(env, access, follows.map(item => item.repositoryId), STARRED_ON_PROFILE), featuredOf(env, profile?.showcase, resolved.handle, owned)]);
   const names = new Set(owned.cards.map(card => card.name));
   const body: PublicProfile = {
-    handle: resolved.handle, kind: resolved.kind, displayName: profile?.displayName || resolved.handle, bio: profile?.bio ?? '', links: profile?.links ?? [],
-    pinned: (profile?.pinned ?? []).filter(name => names.has(name)), repositories: owned.cards, starred: starred.cards, url: `${origin}/${resolved.handle}`,
+    ...fieldsOf(profile, resolved.handle, (profile?.pinned ?? []).filter(name => names.has(name))), handle: resolved.handle, kind: resolved.kind,
+    repositories: owned.cards, starred: starred.cards, readme: readme.readme, featured, url: `${origin}/${resolved.handle}`,
   };
-  return withDependencies(body, [...owned.ids, ...starred.ids]);
+  return withDependencies(body, [...owned.ids, ...starred.ids, ...(readme.repositoryId ? [readme.repositoryId] : [])]);
 }
 
 export async function publicDiscoveryApi(request: Request, env: AppEnv, ctx?: Waiter): Promise<Response | null> {
@@ -151,11 +197,86 @@ function profileInput(body: Record<string, unknown>): Omit<ProfileRecord, 'updat
   });
   const pinned = list(body.pinned, 'Pinned repositories', PROFILE_LIMITS.pinned);
   if (pinned.some(name => !REPOSITORY_SEGMENT.test(name))) throw new ApiError(400, 'INVALID_INPUT', 'Pin repositories by name.');
-  return { displayName: text(body.displayName, 'Display name', PROFILE_LIMITS.displayName), bio: text(body.bio, 'Bio', PROFILE_LIMITS.bio), links, pinned };
+  let website = text(body.website, 'Website', PROFILE_LIMITS.website);
+  if (website) {
+    let parsed: URL | null = null;
+    try { parsed = new URL(website); } catch { parsed = null; }
+    if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password) throw new ApiError(400, 'INVALID_LINK', `The website must be an https address of at most ${PROFILE_LIMITS.website} characters.`);
+    website = parsed.toString();
+  }
+  return { displayName: text(body.displayName, 'Display name', PROFILE_LIMITS.displayName), bio: text(body.bio, 'Bio', PROFILE_LIMITS.bio), links, pinned, location: text(body.location, 'Location', PROFILE_LIMITS.location), website, showcase: showcaseInput(body.showcase) };
+}
+
+function showcaseInput(value: unknown): ProfileShowcase | null {
+  if (value === undefined || value === null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ApiError(400, 'INVALID_INPUT', 'showcase must be a repository or a mission.');
+  const input = value as Record<string, unknown>;
+  if (input.kind === 'repository') {
+    if (typeof input.name !== 'string' || !REPOSITORY_SEGMENT.test(input.name)) throw new ApiError(400, 'INVALID_INPUT', 'Feature a repository by name.');
+    return { kind: 'repository', name: input.name };
+  }
+  if (input.kind === 'mission') {
+    if (typeof input.repository !== 'string' || !REPOSITORY_SEGMENT.test(input.repository) || typeof input.missionId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(input.missionId)) throw new ApiError(400, 'INVALID_INPUT', 'Feature a mission by repository name and mission ID.');
+    return { kind: 'mission', repository: input.repository, missionId: input.missionId };
+  }
+  throw new ApiError(400, 'INVALID_INPUT', 'showcase.kind must be repository or mission.');
 }
 
 function profileSettings(scope: HandleKind, settings: { handle: string | null; profile: ProfileRecord | null; canChange: boolean }, origin: string): ProfileSettings {
-  return { scope, handle: settings.handle, displayName: settings.profile?.displayName ?? '', bio: settings.profile?.bio ?? '', links: settings.profile?.links ?? [], pinned: settings.profile?.pinned ?? [], canChange: settings.canChange, url: settings.handle ? `${origin}/${settings.handle}` : null };
+  return { ...fieldsOf(settings.profile, '', settings.profile?.pinned ?? []), scope, handle: settings.handle, canChange: settings.canChange, url: settings.handle ? `${origin}/${settings.handle}` : null };
+}
+
+async function showcaseOptions(env: AppEnv, access: SecurityService, workspaceId: string): Promise<ShowcaseOptions> {
+  const handle = await access.handleOf(workspaceId);
+  const owned = await workspaceRepositories(env, access, workspaceId, handle ?? '');
+  const missions = await Promise.all(owned.ids.map(async (id, index) => (await landedMissions(env, id)).map(mission => ({ repository: owned.cards[index]!.name, missionId: mission.id, title: mission.title, landedAt: mission.updatedAt }))));
+  return { repositories: owned.cards.map(card => card.name), missions: missions.flat().sort((a, b) => b.landedAt.localeCompare(a.landedAt)).slice(0, SHOWCASE_MISSIONS) };
+}
+
+async function assertShowcase(env: AppEnv, showcase: ProfileShowcase | null, owned: { cards: PublicRepositoryCard[]; ids: string[] }): Promise<void> {
+  if (!showcase) return;
+  const name = showcase.kind === 'repository' ? showcase.name : showcase.repository;
+  const index = owned.cards.findIndex(card => card.name === name);
+  if (index < 0) throw new ApiError(400, 'SHOWCASE_NOT_PUBLIC', `${name} is not a public repository of this profile.`);
+  if (showcase.kind === 'mission' && !(await landedMissions(env, owned.ids[index]!)).some(mission => mission.id === showcase.missionId)) throw new ApiError(400, 'SHOWCASE_NOT_LANDED', 'Feature a mission that landed in a public repository of this profile.');
+}
+
+type ResolvedSubscription = { target: SubscriptionTarget; kind: SubscriptionTargetKind; handle: string; repository: string | null; url: string };
+
+async function subscriptionTarget(env: AppEnv, access: SecurityService, input: Record<string, unknown> | URLSearchParams): Promise<ResolvedSubscription> {
+  const get = (name: string) => input instanceof URLSearchParams ? input.get(name) ?? undefined : input[name];
+  const kind = get('kind');
+  if (!SUBSCRIPTION_KINDS.includes(kind as SubscriptionTargetKind)) throw new ApiError(400, 'INVALID_INPUT', 'Subscribe to a person or a repository.');
+  const handle = get('handle');
+  if (typeof handle !== 'string' || !HANDLE_PATTERN.test(handle.toLowerCase())) throw new ApiError(400, 'INVALID_INPUT', 'Pass the handle.');
+  if (kind === 'repository') {
+    const target = await starTarget(env, access, handle, get('repository'));
+    const name = repositoryLabel(target.repository);
+    return { target: { kind: 'repository', repositoryId: target.repository.id }, kind, handle: target.handle, repository: name, url: publicRepositoryPath(target.handle, name) };
+  }
+  let resolved = await access.resolveHandle(handle.toLowerCase());
+  if (resolved && 'redirect' in resolved) resolved = await access.resolveHandle(resolved.redirect);
+  if (!resolved || 'redirect' in resolved) throw new ApiError(404, 'NOT_FOUND', 'This profile does not exist.');
+  return { target: { kind: 'person', workspaceId: resolved.workspaceId }, kind: 'person', handle: resolved.handle, repository: null, url: `/${resolved.handle}` };
+}
+
+async function subscriptionList(env: AppEnv, access: SecurityService, principal: Principal): Promise<SubscriptionEntry[]> {
+  const entries = await access.subscriptions(principal);
+  const items = await Promise.all(entries.map(async (entry): Promise<SubscriptionEntry | null> => {
+    if (entry.kind === 'repository') {
+      const target = await publicTargetById(env, access, entry.id).catch(() => null);
+      if (!target) return null;
+      const name = repositoryLabel(target.repository);
+      return { kind: 'repository', handle: target.handle, repository: name, url: publicRepositoryPath(target.handle, name), at: entry.at };
+    }
+    const handle = await access.handleOf(entry.id).catch(() => null);
+    return handle ? { kind: 'person', handle, repository: null, url: `/${handle}`, at: entry.at } : null;
+  }));
+  return items.filter((item): item is SubscriptionEntry => !!item);
+}
+
+function subscriptionStatus(resolved: ResolvedSubscription, state: { subscribed: boolean; subscribers: number }): SubscriptionStatus {
+  return { kind: resolved.kind, handle: resolved.handle, repository: resolved.repository, subscribed: state.subscribed, subscribers: state.subscribers };
 }
 
 function starState(handle: string, repository: Repository, state: { starred: boolean; watching: boolean; stars: number; watchers: number }): StarState {
@@ -196,6 +317,24 @@ export async function accountDiscoveryApi(request: Request, env: AppEnv, ctx: Wa
     else await background(ctx, Promise.all([purgePublicCache(env, repositoryCachePaths(target.handle, repositoryLabel(target.repository)), url.origin), Promise.resolve().then(() => env.GITFLARE_COORDINATOR.getByName(`repository:${target.repository.id}`).setRepositoryWatcher(principal.userId, state.watching))]));
     return Response.json(starState(target.handle, target.repository, state));
   }
+  if (url.pathname === '/api/profile/showcase-options') {
+    if (request.method !== 'GET') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET for showcase options.');
+    const scope = url.searchParams.get('scope') === 'workspace' ? 'workspace' : 'user';
+    const settings = await access.profileSettings(principal, scope);
+    return Response.json(settings.handle ? await showcaseOptions(env, access, settings.workspaceId) : { repositories: [], missions: [] } satisfies ShowcaseOptions);
+  }
+  if (url.pathname === '/api/subscriptions') {
+    if (request.method === 'GET') {
+      if (!url.searchParams.has('kind')) return Response.json({ items: await subscriptionList(env, access, principal) }, { headers: { 'Cache-Control': 'no-store' } });
+      const resolved = await subscriptionTarget(env, access, url.searchParams);
+      return Response.json(subscriptionStatus(resolved, await access.subscription(principal, resolved.target)), { headers: { 'Cache-Control': 'no-store' } });
+    }
+    if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET or POST for subscriptions.');
+    assertMutationOrigin(request);
+    const body = await readJson(request, 2048);
+    const resolved = await subscriptionTarget(env, access, body);
+    return Response.json(subscriptionStatus(resolved, await access.subscribe(principal, resolved.target, body.on as boolean)));
+  }
   if (url.pathname === '/api/profile') {
     const origin = siteOrigin(env, url.origin);
     if (request.method === 'GET') {
@@ -209,11 +348,13 @@ export async function accountDiscoveryApi(request: Request, env: AppEnv, ctx: Wa
     const scope = body.scope;
     const input = profileInput(body);
     const saved = await access.setProfile(principal, scope, input, async workspaceId => {
-      if (!input.pinned.length) return;
+      if (!input.pinned.length && !input.showcase) return;
       const handle = await access.handleOf(workspaceId);
-      const names = new Set((await workspaceRepositories(env, access, workspaceId, handle ?? '')).cards.map(card => card.name));
+      const owned = await workspaceRepositories(env, access, workspaceId, handle ?? '');
+      const names = new Set(owned.cards.map(card => card.name));
       const missing = input.pinned.find(name => !names.has(name));
       if (missing) throw new ApiError(400, 'PIN_NOT_PUBLIC', `${missing} is not a public repository of this profile.`);
+      await assertShowcase(env, input.showcase ?? null, owned);
     });
     await background(ctx, (async () => {
       await purgePublicCache(env, discoveryCachePaths(saved.handle), url.origin);

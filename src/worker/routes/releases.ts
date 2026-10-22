@@ -2,6 +2,8 @@ import { releaseApi } from '../releases';
 import { releaseAssetsApi } from '../release-assets';
 import { advisoriesApi } from '../advisories';
 import { triggerMirrorSync } from '../github-mirror-runtime';
+import { notifyReleased } from '../subscription-notifications';
+import type { Release } from '../../shared/types';
 import { type RouteContext, records, requireRepository, publicRepositoryBase, releaseExtras, inBackground } from '../route-context';
 
 export async function releaseRoutes(context: RouteContext): Promise<Response | null> {
@@ -22,6 +24,10 @@ export async function releaseRoutes(context: RouteContext): Promise<Response | n
     const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
     const released = await releaseApi(request, { artifacts: env.ARTIFACTS, repository, coordinator: records, principal, access, extras: await releaseExtras(env, access, repository, url.origin) }, releaseRoute[2], releaseRoute[3]);
     if (request.method === 'POST' && released.ok) await inBackground(ctx, triggerMirrorSync(env, repository.id, principal.workspaceId, 'release', undefined, ctx));
+    if (request.method === 'POST' && released.ok && (!releaseRoute[2] || releaseRoute[3] === 'publish')) {
+      const release = await released.clone().json().catch(() => null) as Release | null;
+      if (release?.publishedAt) await inBackground(ctx, notifyReleased(env, access, ctx, repository, release));
+    }
     return released;
   }
   return null;

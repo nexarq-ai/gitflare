@@ -18,17 +18,19 @@ export function register(server: McpServer, { call }: McpToolContext): void {
     inputSchema: z.object({ query: z.string().min(2).max(100).describe('Text to find, 2 to 100 characters.'), type: z.enum(['repositories', 'paths', 'people']).default('repositories'), cursor }).strict(), annotations: readOnly,
   }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/public/search?${new URLSearchParams({ q: input.query, type: input.type, ...(input.cursor ? { cursor: String(input.cursor) } : {}) })}`)));
   server.registerTool('gitflare_profile', {
-    title: 'Read a profile', description: 'Pass handle to read anyone’s public profile as visitors see it: display name, bio, links, pinned and public repositories, and starred repositories for people. Omit handle to read your own editable profile for scope. Read-only.',
-    inputSchema: z.object({ handle: handleValue.optional(), scope: profileScope.default('user') }).strict(), annotations: readOnly,
-  }, (input) => guarded(async () => input.handle ? call<Record<string, unknown>>(`/api/public/profiles/${encodeURIComponent(input.handle)}`) : call<Record<string, unknown>>(`/api/profile?${new URLSearchParams({ scope: input.scope })}`)));
+    title: 'Read a profile', description: 'Pass handle to read anyone’s public profile as visitors see it: display name, bio, location, website, links, pinned and public repositories, the featured repository or landed mission, PROFILE.md from the repository named after the handle, and starred repositories for people. Omit handle to read your own editable profile for scope; view showcase_options lists what you may feature. Read-only.',
+    inputSchema: z.object({ handle: handleValue.optional(), scope: profileScope.default('user'), view: z.enum(['profile', 'showcase_options']).default('profile') }).strict(), annotations: readOnly,
+  }, (input) => guarded(async () => input.handle ? call<Record<string, unknown>>(`/api/public/profiles/${encodeURIComponent(input.handle)}`) : call<Record<string, unknown>>(`/api/profile${input.view === 'showcase_options' ? '/showcase-options' : ''}?${new URLSearchParams({ scope: input.scope })}`)));
   server.registerTool('gitflare_set_profile', {
     title: 'Update a public profile', description: `Replace your account profile (scope user) or this workspace’s profile (scope workspace; Owner only). Everything here is public at <site>/<handle>. Needs a handle first. Pinned names must be public repositories of that handle. Audited. Needs admin access.`,
     inputSchema: z.object({
       scope: profileScope, display_name: z.string().max(PROFILE_LIMITS.displayName).optional(), bio: z.string().max(PROFILE_LIMITS.bio).optional(),
       links: z.array(z.string().url().max(PROFILE_LIMITS.linkLength)).max(PROFILE_LIMITS.links).optional().describe('https links shown on the profile.'),
       pinned: z.array(publicRepositoryName).max(PROFILE_LIMITS.pinned).optional().describe('Public repository names to show first.'),
+      location: z.string().max(PROFILE_LIMITS.location).optional(), website: z.string().url().max(PROFILE_LIMITS.website).optional().describe('https address shown on the profile.'),
+      showcase: z.union([z.object({ kind: z.literal('repository'), name: publicRepositoryName }), z.object({ kind: z.literal('mission'), repository: publicRepositoryName, mission_id: z.string().min(1).max(100) })]).nullable().optional().describe('Feature one public repository or one landed mission of this handle; null clears it.'),
     }).strict(), annotations: destructive,
-  }, (input) => guarded(async () => call<Record<string, unknown>>('/api/profile', { scope: input.scope, displayName: input.display_name ?? '', bio: input.bio ?? '', links: input.links ?? [], pinned: input.pinned ?? [] })));
+  }, (input) => guarded(async () => call<Record<string, unknown>>('/api/profile', { scope: input.scope, displayName: input.display_name ?? '', bio: input.bio ?? '', links: input.links ?? [], pinned: input.pinned ?? [], location: input.location ?? '', website: input.website ?? '', showcase: input.showcase ? input.showcase.kind === 'repository' ? input.showcase : { kind: 'mission', repository: input.showcase.repository, missionId: input.showcase.mission_id } : null })));
   server.registerTool('gitflare_stars', {
     title: 'Read stars and watches', description: 'Pass handle and repository to read whether you starred or watch that public repository and its counts. Omit both to list the public repositories you starred and watch. Read-only.',
     inputSchema: z.object({ handle: handleValue.optional(), repository: publicRepositoryName.optional() }).strict(), annotations: readOnly,

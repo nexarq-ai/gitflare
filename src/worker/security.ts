@@ -9,7 +9,7 @@ import { normalizeProjectMapping, type ProjectMapping, type MigrationPlan, type 
 import { authenticatorUri, decryptAuth, encryptAuth, mfaSecret, randomCapability, verifyTotp } from './mfa';
 import { renewedExpiry, SESSION_ABSOLUTE_MS, slidingExpiry } from './session-policy';
 import { HANDLE_REDIRECT_DAYS, handleProblem, normalizeHandle, suggestedHandle } from '../shared/handles';
-import { CONTENT_REPORT_REASONS, type ContentReport, type HandleAvailability, type HandleStatus, type IssuePerson, type RepositoryBlock, type RepositoryLicense } from '../shared/types';
+import { CONTENT_REPORT_REASONS, type ContentReport, type HandleAvailability, type HandleStatus, type IssuePerson, type ProfileShowcase, type RepositoryBlock, type RepositoryLicense } from '../shared/types';
 
 export const ROLES = ['Viewer', 'Triager', 'Contributor', 'Reviewer', 'Maintainer', 'Deployer', 'Owner'] as const;
 export type Role = typeof ROLES[number];
@@ -87,7 +87,12 @@ const PROFILE_CHANGES_PER_DAY = 30;
 export type FollowKind = 'star' | 'watch';
 export interface RepositoryStats { stars: number; watchers: number }
 export interface FollowState extends RepositoryStats { starred: boolean; watching: boolean }
-export interface ProfileRecord { displayName: string; bio: string; links: string[]; pinned: string[]; updatedAt: string; updatedBy: string }
+export interface ProfileRecord { displayName: string; bio: string; links: string[]; pinned: string[]; location?: string; website?: string; showcase?: ProfileShowcase | null; updatedAt: string; updatedBy: string }
+export type SubscriptionTarget = { kind: 'repository'; repositoryId: string } | { kind: 'person'; workspaceId: string };
+export interface SubscriptionRecord { kind: SubscriptionTarget['kind']; at: string }
+const SUBSCRIBERS_PER_TARGET = 1_000;
+const SUBSCRIPTION_LIST_LIMIT = 500;
+function subscriptionTargetKey(target: SubscriptionTarget): string { return target.kind === 'repository' ? `repo:${target.repositoryId}` : `person:${target.workspaceId}`; }
 export interface LegacyWorkspaceSlice { workspace: WorkspaceRecord | null; members: Member[]; sessions: Session[]; teams: Team[]; invitations: Invitation[]; grants: Grant[]; credentials: Credential[]; protection: Protection | null; approvals: Record<string, string[]>; connection: CloudflareConnection | null; cloudflareStates: CloudflareOAuthState[]; projects: Record<string, ProjectRecord>; audit: Audit[] }
 interface IndexEntry { workspaceId: string; expiresAt: number }
 interface Outbox { id: string; userId: string; revision: number; workspaces: string[]; at: number }
@@ -188,7 +193,7 @@ const key = {
   failures: (id: string) => `id:fail:${enc(id)}`, limit: (id: string) => `id:limit:${enc(id)}`, installation: (id: string) => `id:install:${enc(id)}`, machine: (id: string) => `id:machine:${enc(id)}`, machineClaim: (hash: string) => `id:mclaim:${enc(hash)}`,
   signin: (id: string) => `id:cfsignin:${enc(id)}`, link: (id: string) => `id:cflink:${enc(id)}`, linkEmail: (email: string) => `id:cflinkemail:${enc(email)}`,
   route: (hash: string) => `id:route:${enc(hash)}`, sessionHome: (id: string) => `id:sesshome:${enc(id)}`, invite: (hash: string) => `id:invite:${enc(hash)}`, oauthState: (id: string) => `id:cfstate:${enc(id)}`,
-  outbox: (id: string) => `id:outbox:${enc(id)}`, handle: (handle: string) => `id:handle:${enc(handle)}`, workspaceHandle: (workspaceId: string) => `id:wshandle:${enc(workspaceId)}`, publicListing: (repositoryId: string) => `id:pubrepo:${enc(repositoryId)}`, report: (id: string) => `id:report:${id}`, follow: (kind: FollowKind, userId: string, repositoryId: string) => `id:${kind}:${enc(userId)}:${repositoryId ? enc(repositoryId) : ''}`, repositoryStats: (repositoryId: string) => `id:rstat:${enc(repositoryId)}`, profile: (workspaceId: string) => `id:profile:${enc(workspaceId)}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
+  outbox: (id: string) => `id:outbox:${enc(id)}`, handle: (handle: string) => `id:handle:${enc(handle)}`, workspaceHandle: (workspaceId: string) => `id:wshandle:${enc(workspaceId)}`, publicListing: (repositoryId: string) => `id:pubrepo:${enc(repositoryId)}`, report: (id: string) => `id:report:${id}`, follow: (kind: FollowKind, userId: string, repositoryId: string) => `id:${kind}:${enc(userId)}:${repositoryId ? enc(repositoryId) : ''}`, repositoryStats: (repositoryId: string) => `id:rstat:${enc(repositoryId)}`, profile: (workspaceId: string) => `id:profile:${enc(workspaceId)}`, subscription: (userId: string, target: string) => `id:sub:${enc(userId)}:${target ? enc(target) : ''}`, subscriber: (target: string, userId: string) => `id:subs:${enc(target)}:${userId ? enc(userId) : ''}`, legacyWorkspace: (id: string) => `id:legacy-ws:${enc(id)}`, migration: 'id:migration', installationCredential: 'id:install-cf', installationConnection: 'id:install-cf-connection',
 };
 
 class Records {
@@ -667,6 +672,41 @@ export class IdentityStore {
   follows(userId: string, kind: FollowKind) { return this.read(async unit => [...(await unit.list<{ at: string }>({ prefix: key.follow(kind, userId, ''), limit: FOLLOW_LIST_LIMIT })).entries()].map(([id, value]) => ({ repositoryId: decodeURIComponent(id.slice(key.follow(kind, userId, '').length)), at: value.at })).sort((a, b) => b.at.localeCompare(a.at))); }
   repositoryStats(repositoryIds: string[]) { return this.read(unit => Promise.all(repositoryIds.slice(0, PUBLIC_LISTING_LIMIT).map(async id => await unit.get<RepositoryStats>(key.repositoryStats(id)) ?? { stars: 0, watchers: 0 }))); }
   profile(workspaceId: string) { return this.read(async unit => await unit.get<ProfileRecord>(key.profile(workspaceId)) ?? null); }
+  subscriptionState(userId: string, target: SubscriptionTarget) {
+    return this.read(async unit => {
+      const id = subscriptionTargetKey(target);
+      const [own, all] = await Promise.all([unit.get(key.subscription(userId, id)), unit.list({ prefix: key.subscriber(id, ''), limit: SUBSCRIBERS_PER_TARGET })]);
+      return { subscribed: !!own, subscribers: all.size };
+    });
+  }
+  setSubscription(input: { userId: string; target: SubscriptionTarget; on: boolean }) {
+    return this.write(async unit => {
+      const id = subscriptionTargetKey(input.target);
+      const own = key.subscription(input.userId, id), reverse = key.subscriber(id, input.userId);
+      const current = !!await unit.get(own);
+      if (current === input.on) return { subscribed: current, subscribers: (await unit.list({ prefix: key.subscriber(id, ''), limit: SUBSCRIBERS_PER_TARGET })).size };
+      if (!await this.limitAllows(unit, `follow:${input.userId}`, FOLLOW_CHANGES_PER_HOUR, 3_600_000)) throw new ApiError(429, 'RATE_LIMITED', 'You changed many subscriptions in the last hour. Try again later.');
+      const subscribers = (await unit.list({ prefix: key.subscriber(id, ''), limit: SUBSCRIBERS_PER_TARGET })).size;
+      if (input.on) {
+        if (subscribers >= SUBSCRIBERS_PER_TARGET) throw new ApiError(409, 'SUBSCRIPTION_LIMIT', 'This has reached its subscriber limit.');
+        if ((await unit.list({ prefix: key.subscription(input.userId, ''), limit: SUBSCRIPTION_LIST_LIMIT })).size >= SUBSCRIPTION_LIST_LIMIT) throw new ApiError(409, 'SUBSCRIPTION_LIMIT', `You can subscribe to at most ${SUBSCRIPTION_LIST_LIMIT} people and repositories.`);
+        const record: SubscriptionRecord = { kind: input.target.kind, at: new Date().toISOString() };
+        unit.put(own, record); unit.put(reverse, record);
+        return { subscribed: true, subscribers: subscribers + 1 };
+      }
+      unit.delete(own); unit.delete(reverse);
+      return { subscribed: false, subscribers: Math.max(0, subscribers - 1) };
+    });
+  }
+  subscriptions(userId: string) {
+    return this.read(async unit => [...(await unit.list<SubscriptionRecord>({ prefix: key.subscription(userId, ''), limit: SUBSCRIPTION_LIST_LIMIT })).entries()].map(([id, value]) => {
+      const target = decodeURIComponent(id.slice(key.subscription(userId, '').length));
+      return { kind: value.kind, id: target.slice(target.indexOf(':') + 1), at: value.at };
+    }).sort((a, b) => b.at.localeCompare(a.at)));
+  }
+  subscribers(target: SubscriptionTarget) {
+    return this.read(async unit => { const prefix = key.subscriber(subscriptionTargetKey(target), ''); return [...(await unit.list({ prefix, limit: SUBSCRIBERS_PER_TARGET })).keys()].map(id => decodeURIComponent(id.slice(prefix.length))); });
+  }
   setProfile(workspaceId: string, record: ProfileRecord, actor: string) {
     return this.write(async unit => {
       if (!await this.limitAllows(unit, `profile:${actor}`, PROFILE_CHANGES_PER_DAY, 86_400_000)) throw new ApiError(429, 'RATE_LIMITED', 'You changed this profile many times today. Try again tomorrow.');
@@ -1590,7 +1630,7 @@ function validActions(value: unknown): Action[] { if (!Array.isArray(value) || !
 
 type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
-const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing', 'publicListed', 'followState', 'follow', 'follows', 'repositoryStats', 'profile', 'setProfile', 'profiles', 'userByHandle', 'standing', 'limitAllowed', 'addReport', 'reports', 'dismissReport']);
+const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing', 'publicListed', 'followState', 'follow', 'follows', 'repositoryStats', 'profile', 'setProfile', 'profiles', 'subscriptionState', 'setSubscription', 'subscriptions', 'subscribers', 'userByHandle', 'standing', 'limitAllowed', 'addReport', 'reports', 'dismissReport']);
 const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand', 'visibility', 'setVisibility', 'blocks', 'setBlock', 'recipientAccess', 'membersWith', 'approvers']);
 function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>): Remote<T> {
   return new Proxy({}, {
@@ -1994,6 +2034,30 @@ export class SecurityService {
     await this.followPrincipal(p);
     const [star, watch] = await Promise.all([this.identity().follows(p.userId, 'star'), this.identity().follows(p.userId, 'watch')]);
     return { star, watch };
+  }
+  private async subscriptionPrincipal(p: Principal): Promise<void> {
+    this.publicLayerAvailable();
+    if (p.kind !== undefined || p.credentialId || p.bootstrap || !/^[A-Za-z0-9-]{1,54}$/.test(p.userId)) fail('ACCOUNT_REQUIRED', 'Sign in with an account to subscribe.');
+    await this.shard(p.workspaceId).validatePrincipal(p);
+  }
+  async subscription(p: Principal, target: SubscriptionTarget): Promise<{ subscribed: boolean; subscribers: number }> {
+    await this.subscriptionPrincipal(p);
+    return this.identity().subscriptionState(p.userId, target);
+  }
+  async subscribe(p: Principal, target: SubscriptionTarget, on: boolean): Promise<{ subscribed: boolean; subscribers: number }> {
+    if (typeof on !== 'boolean') throw new ApiError(400, 'INVALID_INPUT', 'on must be true or false.');
+    await this.subscriptionPrincipal(p);
+    if (target.kind === 'repository' && !await this.publiclyReadable(target.repositoryId)) throw new ApiError(404, 'NOT_FOUND', 'This repository does not exist or is not public.');
+    if (target.kind === 'person' && !await this.identity().handleOf(target.workspaceId)) throw new ApiError(404, 'NOT_FOUND', 'This profile does not exist.');
+    return this.identity().setSubscription({ userId: p.userId, target, on });
+  }
+  async subscriptions(p: Principal): Promise<{ kind: SubscriptionTarget['kind']; id: string; at: string }[]> {
+    await this.subscriptionPrincipal(p);
+    return this.identity().subscriptions(p.userId);
+  }
+  subscribersOf(target: SubscriptionTarget): Promise<string[]> {
+    if (this.options.EDITION === 'self-hosted' || this.options.DEMO_MODE === 'true') return Promise.resolve([]);
+    return this.identity().subscribers(target);
   }
   async userFollows(workspaceId: string): Promise<{ repositoryId: string; at: string }[]> {
     if (!isPersonalWorkspace(workspaceId)) return [];

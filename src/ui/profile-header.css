@@ -1,0 +1,21 @@
+.gfd-pill { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 1px 8px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); color: var(--gf-color-text-secondary); font-size: 11px; font-weight: 450; line-height: 1.5; }
+.gfd-avatar { display: grid; place-items: center; flex-shrink: 0; width: 88px; height: 88px; border: 1px solid var(--gf-color-border); border-radius: 50%; background: var(--gf-color-accent-bg); color: var(--gf-color-accent); font-size: 30px; font-weight: 600; letter-spacing: -.5px; }
+.gfd-avatar-small { width: 32px; height: 32px; font-size: 12px; letter-spacing: 0; }
+.gfd-profile-head { display: flex; align-items: flex-start; gap: 24px; margin: 8px 0 36px; }
+.gfd-profile-head > div { min-width: 0; }
+.gfd-profile-body { flex: 1; }
+.gfd-profile-actions { display: flex; align-items: center; flex-shrink: 0; padding-top: 6px; }
+.gfd-fact { display: inline-flex; align-items: center; gap: 6px; color: var(--gf-color-text-secondary); }
+.gfd-profile-head h1 { margin: 4px 0 2px; font-size: 26px; font-weight: 650; letter-spacing: -.5px; line-height: 1.25; color: var(--gf-color-text); }
+.gfd-handle { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--gf-color-text-secondary); font-size: 15px; }
+.gfd-bio { max-width: 640px; margin: 14px 0 0; color: var(--gf-color-text); font-size: 14px; line-height: 1.65; white-space: pre-line; }
+.gfd-links { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.gfd-links a { display: inline-flex; align-items: center; gap: 6px; color: var(--gf-color-text-secondary); }
+.gfd-links a:hover { color: var(--gf-color-accent); text-decoration: none; }
+.gfd-links svg { flex-shrink: 0; }
+@media (max-width: 600px) {
+  .gfd-profile-head { flex-direction: column; gap: 14px; margin-bottom: 28px; }
+  .gfd-profile-actions { padding-top: 0; }
+  .gfd-avatar:not(.gfd-avatar-small) { width: 72px; height: 72px; font-size: 24px; }
+  .gfd-profile-head h1 { font-size: 22px; }
+}
