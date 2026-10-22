@@ -35,8 +35,8 @@
     },
     {
       "path": "distribution/wrangler.self-hosted.json",
-      "size": 4724,
-      "sha256": "a9143e2eb4e5ed82a0cdc7b7d6930e16473e0e6798e0788ae800e28ca5bbacf9"
+      "size": 4875,
+      "sha256": "74f5040ca26fa675e3361cb870c16d72426ce5845f4969dec78e6153fe200f41"
     },
     {
       "path": "docs/public/admin.md",
@@ -75,8 +75,8 @@
     },
     {
       "path": "docs/public/repositories.md",
-      "size": 10547,
-      "sha256": "75b0f129bd4e113595c7bd03d703f55dd4f849e3634ce939ab55353099fc9dd1"
+      "size": 10906,
+      "sha256": "d6ef7d74401768b46de80143c8aa8d4faae2d7eb3474894cdff02d0e12fa6e33"
     },
     {
       "path": "index.html",
@@ -100,13 +100,13 @@
     },
     {
       "path": "package-lock.json",
-      "size": 288155,
-      "sha256": "425ad4fd34110702ed46c052d605b3ee6f731a0e4aaa5866b0950116f4c876a7"
+      "size": 290371,
+      "sha256": "2a92dc5fcd9da4e56c13963b11ea45aa30d8fc38817bd010d1e63de4c1cc02de"
     },
     {
       "path": "package.json",
-      "size": 2242,
-      "sha256": "5a4a84a430b53683b3dec05205f97b2c17b86c379325c937671f5f4fceccb67a"
+      "size": 2276,
+      "sha256": "d0910f3eeecd05f42de6231dd04ebac81a595417991ab8294d56acd1dbb6296a"
     },
     {
       "path": "public/boot-loader.css",
@@ -302,6 +302,11 @@
       "path": "src/shared/signed-in-hint.ts",
       "size": 1608,
       "sha256": "050ddbf6016f81126ed30519e6e2aa6151c69e87b4061f57db8e3b8c7b7737f4"
+    },
+    {
+      "path": "src/shared/social-card-svg.ts",
+      "size": 13459,
+      "sha256": "7cb1acd264a3b7ed33cf98e85fec1d3f29c58af9dbdc6aa45e1bc5554fef81c0"
     },
     {
       "path": "src/shared/types.ts",
@@ -1525,8 +1530,8 @@
     },
     {
       "path": "src/worker/host-split.ts",
-      "size": 3258,
-      "sha256": "e19368460162b4fa99dd2d0a311e5529aad36e26d11553d2ae96cf2101bca1ce"
+      "size": 3340,
+      "sha256": "2e3d174cfc506723f997149a17617038d8de4c0d9799784fb3aabd942d18ece7"
     },
     {
       "path": "src/worker/hosted-onboarding.ts",
@@ -1545,8 +1550,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 22328,
-      "sha256": "560612855dad2b8e0836bf19c9184c610c5fd92b1d47c4150e7d3075da95cc23"
+      "size": 22522,
+      "sha256": "d134df57278869ce014b15ef8c1bf932d5f2ae3523bb0cc86cca390a265fd5ba"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -1815,8 +1820,8 @@
     },
     {
       "path": "src/worker/public-discovery.ts",
-      "size": 16999,
-      "sha256": "c80d06ab07a35ccb7aac1b4e410974a5f0ffd50f1cff8be53b6f999165d5de54"
+      "size": 17006,
+      "sha256": "142a05725733d152aaf60292d277a330a2944db7b863f2fa293bedfb4d07fd5c"
     },
     {
       "path": "src/worker/public-downloads.ts",
@@ -1850,8 +1855,8 @@
     },
     {
       "path": "src/worker/rate-limits.ts",
-      "size": 5037,
-      "sha256": "6fec256bd59101f834179e56f2b8e409c526fd2a13b34dad16be0fc39114e273"
+      "size": 5154,
+      "sha256": "68a9517b1ab80694a9021541f8b52d1bf7a44e1fdc65d4a1f2d59adbadfc2b7c"
     },
     {
       "path": "src/worker/release-assets.ts",
@@ -1977,6 +1982,16 @@
       "path": "src/worker/skill-edit.ts",
       "size": 5105,
       "sha256": "c998e62041a4b61932aed7585093dbca1c2f7485740987ad25754ccd4f032c76"
+    },
+    {
+      "path": "src/worker/social-cards.ts",
+      "size": 13816,
+      "sha256": "39fc45f9499de7e680e42c8b2ada49944289d94be1b697c089b7e5ea03aa63f5"
+    },
+    {
+      "path": "src/worker/social-raster.ts",
+      "size": 798,
+      "sha256": "d5dcc06047a76270d509dff77672f0a62f00d141331ea00074feed92d16141b7"
     },
     {
       "path": "src/worker/source-browse.ts",
@@ -2465,8 +2480,8 @@
     },
     {
       "path": "wrangler.jsonc",
-      "size": 4724,
-      "sha256": "a9143e2eb4e5ed82a0cdc7b7d6930e16473e0e6798e0788ae800e28ca5bbacf9"
+      "size": 4875,
+      "sha256": "74f5040ca26fa675e3361cb870c16d72426ce5845f4969dec78e6153fe200f41"
     },
     {
       "path": "wrangler.preview.jsonc",
