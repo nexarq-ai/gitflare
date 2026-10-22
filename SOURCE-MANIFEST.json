@@ -35,8 +35,8 @@
     },
     {
       "path": "docs/public/cloudflare-permissions.md",
-      "size": 7208,
-      "sha256": "c1f6f70e239f1bd58f79fde64f54aac8e67329e1212b0b9ab308e00b73d5534d"
+      "size": 8209,
+      "sha256": "73294ef2d38099748afa4bdf6668dbed3c5bcdb7f2b8222164b23f02319f10cb"
     },
     {
       "path": "docs/public/github-mirror.md",
@@ -355,8 +355,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87249,
-      "sha256": "4d244cc779cc0e68306cfcc8fc5e3e115cf3ad39b702b57c4dcec1f6edbfc9f8"
+      "size": 87359,
+      "sha256": "250981c8a849748cde8781fc5e1577b502159a0071331312e419770afddab062"
     },
     {
       "path": "src/ui/approvals.ts",
