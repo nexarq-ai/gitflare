@@ -1650,8 +1650,8 @@
     },
     {
       "path": "src/worker/mcp-tools/assist.ts",
-      "size": 9124,
-      "sha256": "19c73850a3926101ddf2d6a62a721ff2a6cc59caf13254d739f7cf254ab703f9"
+      "size": 9083,
+      "sha256": "5265353853173782924a81225c342bcdfb115268b27fb2a81afb260e33127dd0"
     },
     {
       "path": "src/worker/mcp-tools/branches.ts",
