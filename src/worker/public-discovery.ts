@@ -41,7 +41,7 @@ function cardOf(repository: Repository, handle: string, stars: number, details?:
   return { handle, name, description: repository.description, language: details?.language ?? null, topics: details?.topics ?? [], license: details?.license ?? null, stars, updatedAt: repository.updatedAt, publishedAt, url: publicRepositoryPath(handle, name) };
 }
 
-async function workspaceRepositories(env: AppEnv, access: SecurityService, workspaceId: string, handle: string): Promise<{ cards: PublicRepositoryCard[]; ids: string[] }> {
+export async function workspaceRepositories(env: AppEnv, access: SecurityService, workspaceId: string, handle: string): Promise<{ cards: PublicRepositoryCard[]; ids: string[] }> {
   const listings = (await access.publicListings()).filter(listing => listing.workspaceId === workspaceId);
   if (!listings.length) return { cards: [], ids: [] };
   const catalog = new Map((await env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId)).listRepositories() as Repository[]).map(repository => [repository.id, repository]));

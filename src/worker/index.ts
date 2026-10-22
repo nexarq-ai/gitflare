@@ -21,6 +21,7 @@ import { notificationsApi, unsubscribeApi } from './inbox';
 import { publicAdvisoriesApi } from './advisories';
 import { feedResponse } from './feeds';
 import { publicDownloadResponse } from './public-downloads';
+import { socialCardResponse, socialMetaTags } from './social-cards';
 import { IMPORT_REQUEST_MAX_BYTES } from './repository-import';
 import { handleGitRequest } from './git-http';
 import { handleUrlImport } from './url-import';
@@ -239,9 +240,11 @@ const application = {
     if (feed) return feed;
     const download = await publicDownloadResponse(request, env);
     if (download) return download;
+    const card = await socialCardResponse(request, env, ctx);
+    if (card) return card;
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
-    if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env, path);
+    if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env, path, await socialMetaTags(request, env));
     let response: Response;
     try {
       if (path === '/mcp') {

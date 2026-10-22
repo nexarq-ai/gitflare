@@ -166,6 +166,14 @@
         "limit": 3,
         "period": 60
       }
+    },
+    {
+      "name": "SOCIAL_CARD_RATE_LIMIT",
+      "namespace_id": "4170",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
     }
   ],
   "durable_objects": {
