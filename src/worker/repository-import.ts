@@ -1,12 +1,13 @@
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { deflateSync, inflateRawSync } from 'node:zlib';
-import type { Repository } from '../shared/types';
+import type { ImportExclusion, ImportInstallSuggestion, Repository } from '../shared/types';
 import type { ArtifactRepo, ArtifactsBinding } from './artifacts';
 import { ApiError, requireString } from './domain';
 import { boundedBody, buildInitializationPack, packet, parsePackets, requireGitResponse } from './repository-initialization';
 import { validGitSha } from './artifacts';
 import { ZERO_SHA } from './git-protocol';
+import { classifyImport, installSuggestion, KeepError } from './import-exclusions';
 
 export const IMPORT_ZIP_MAX_BYTES = 5 * 1024 * 1024;
 export const IMPORT_REQUEST_MAX_BYTES = Math.ceil(IMPORT_ZIP_MAX_BYTES / 3) * 4 + 2048;
@@ -14,17 +15,22 @@ export const IMPORT_EXPANDED_MAX_BYTES = 10 * 1024 * 1024;
 export const IMPORT_FILE_MAX_BYTES = 1024 * 1024;
 export const IMPORT_MAX_FILES = 500;
 export interface ImportFile { path: string; data: Uint8Array; mode: '100644' | '100755' }
-export interface ImportInput { archiveBase64: string; expectedHeadSha: string | null; message: string }
+export const IMPORT_KEEP_MAX = 500;
+export interface ImportInput { archiveBase64: string; expectedHeadSha: string | null; message: string; keep: string[]; dryRun: boolean; enableInstall: boolean }
 export interface ImportStatus { allowed: boolean; headSha: string | null; reason: string; branch: string; remote: string | null }
-export interface ImportResult { repository: Repository; headSha: string; files: string[]; skipped: string[] }
-export interface ImportReceipt { fingerprint: string; timestamp: number; candidateSha?: string; files?: string[]; skipped?: string[]; rejection?: { status: number; code: string; message: string }; result?: ImportResult }
+export interface ImportArchive { files: ImportFile[]; skipped: string[]; exclusions: ImportExclusion[]; warnings: string[]; install: ImportInstallSuggestion | null }
+export interface ImportPreview { dryRun: true; allowed: boolean; reason: string; headSha: string | null; files: string[]; skipped: string[]; exclusions: ImportExclusion[]; warnings: string[]; install: ImportInstallSuggestion | null }
+export interface ImportResult { repository: Repository; headSha: string; files: string[]; skipped: string[]; exclusions?: ImportExclusion[]; warnings?: string[]; install?: ImportInstallSuggestion | null }
+export interface ImportReceipt { fingerprint: string; timestamp: number; candidateSha?: string; files?: string[]; skipped?: string[]; exclusions?: ImportExclusion[]; warnings?: string[]; install?: ImportInstallSuggestion | null; rejection?: { status: number; code: string; message: string }; result?: ImportResult }
 export function validateImportInput(body: Record<string, unknown>): ImportInput {
   if (body.expectedHeadSha !== null && (typeof body.expectedHeadSha !== 'string' || !validGitSha(body.expectedHeadSha))) throw new ApiError(400, 'INVALID_COMMIT', 'Supply the observed repository head, or null for an empty repository.');
   const archiveBase64 = requireString(body.archiveBase64, 'ZIP archive', Math.ceil(IMPORT_ZIP_MAX_BYTES / 3) * 4);
   if (archiveBase64.length % 4 || !isCanonicalBase64(archiveBase64)) throw new ApiError(400, 'INVALID_ARCHIVE', 'The ZIP archive must use standard base64 encoding.');
   const message = body.message === undefined ? 'Import existing code' : requireString(body.message, 'Commit message', 200);
   if (/[\r\n\u0000-\u001f\u007f]/.test(message)) throw new ApiError(400, 'INVALID_IMPORT_MESSAGE', 'Use a single line commit message.');
-  return { archiveBase64, expectedHeadSha: body.expectedHeadSha as string | null, message };
+  if (body.keep !== undefined && (!Array.isArray(body.keep) || body.keep.length > IMPORT_KEEP_MAX || body.keep.some(path => typeof path !== 'string' || !path || path.length > 1024))) throw new ApiError(400, 'INVALID_IMPORT_KEEP', `keep must list up to ${IMPORT_KEEP_MAX} archive paths from the import preview.`);
+  for (const flag of ['dryRun', 'enableInstall'] as const) if (body[flag] !== undefined && typeof body[flag] !== 'boolean') throw new ApiError(400, 'INVALID_IMPORT', `${flag} must be true or false.`);
+  return { archiveBase64, expectedHeadSha: body.expectedHeadSha as string | null, message, keep: [...new Set((body.keep as string[] | undefined) ?? [])].sort(), dryRun: body.dryRun === true, enableInstall: body.enableInstall === true };
 }
 function isCanonicalBase64(value: string): boolean {
   const pad = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
@@ -35,7 +41,7 @@ function isCanonicalBase64(value: string): boolean {
   }
   return true;
 }
-export function importFingerprint(input: ImportInput): string { return createHash('sha256').update(Buffer.from(input.archiveBase64, 'base64')).update(JSON.stringify([input.expectedHeadSha, input.message])).digest('hex'); }
+export function importFingerprint(input: ImportInput): string { return createHash('sha256').update(Buffer.from(input.archiveBase64, 'base64')).update(JSON.stringify([input.expectedHeadSha, input.message, ...(input.keep.length ? [input.keep] : [])])).digest('hex'); }
 function invalid(message: string): never { throw new ApiError(400, 'INVALID_ARCHIVE', message); }
 function limit(message: string): never { throw new ApiError(413, 'ARCHIVE_LIMIT', message); }
 function safePath(path: string): string {
@@ -44,12 +50,8 @@ function safePath(path: string): string {
   if (parts.some(part => !part || part === '.' || part === '..')) invalid('ZIP paths must not contain empty, dot or parent segments.');
   return path;
 }
-function omitted(path: string): boolean {
-  const parts = path.split('/');
-  return parts.some(part => ['.git', '.gitflare', 'node_modules', '__MACOSX', '.DS_Store', '__pycache__', '.pytest_cache', '.cache', '.next', '.nuxt', '.turbo', '.output', '.venv', 'venv', 'dist', 'build', 'coverage'].includes(part) || part === '.env' || part.startsWith('.env.') && part !== '.env.example' || /^(id_rsa|id_ed25519|credentials\.json)$/i.test(part) || /\.(pem|key)$/i.test(part));
-}
 export function crc32(data: Uint8Array): number { let crc = 0xffffffff; for (const byte of data) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = crc >>> 1 ^ (crc & 1 ? 0xedb88320 : 0); } return (crc ^ 0xffffffff) >>> 0; }
-export function parseImportArchive(base64: string): { files: ImportFile[]; skipped: string[] } {
+export function parseImportArchive(base64: string, keep: readonly string[] = []): ImportArchive {
   const zip = Buffer.from(base64, 'base64');
   if (zip.length > IMPORT_ZIP_MAX_BYTES) limit('ZIP archives must be at most 5 MiB.');
   if (zip.length < 22) invalid('Upload a complete ZIP archive.');
@@ -59,7 +61,7 @@ export function parseImportArchive(base64: string): { files: ImportFile[]; skipp
   const count = zip.readUInt16LE(end + 10), centralSize = zip.readUInt32LE(end + 12), centralStart = zip.readUInt32LE(end + 16);
   if (zip.readUInt16LE(end + 4) || zip.readUInt16LE(end + 6) || zip.readUInt16LE(end + 8) !== count || count === 65535 || centralSize === 0xffffffff || centralStart === 0xffffffff || centralStart + centralSize !== end) invalid('Multi-disk and ZIP64 archives are unsupported.');
   if (count > 1000) limit('ZIP archives may contain at most 1000 entries and 500 files.');
-  const entries: (ImportFile & { directory: boolean })[] = []; const seen = new Set<string>(); const ranges: [number, number][] = []; let cursor = centralStart, expanded = 0, fileCount = 0;
+  const entries: (ImportFile & { directory: boolean })[] = []; const seen = new Set<string>(); const ranges: [number, number][] = []; const oversized: string[] = []; let cursor = centralStart, expanded = 0, fileCount = 0;
   const extra = (start: number, length: number) => { const last = start + length; while (start < last) { if (start + 4 > last) invalid('Malformed ZIP extra field.'); const id = zip.readUInt16LE(start), size = zip.readUInt16LE(start + 2); start += 4; if (id === 1 || start + size > last) invalid('ZIP64 or malformed ZIP extra fields are unsupported.'); start += size; } };
   for (let index = 0; index < count; index++) {
     if (cursor + 46 > end || zip.readUInt32LE(cursor) !== 0x02014b50) invalid('Malformed ZIP directory entry.');
@@ -76,31 +78,37 @@ export function parseImportArchive(base64: string): { files: ImportFile[]; skipp
     if (fileType === 0x4000 && !directory || directory && fileType === 0x8000) invalid('ZIP file type and path disagree.');
     extra(cursor + 46 + nameSize, extraSize);
     cursor += 46 + nameSize + extraSize + commentSize;
-    if (size > IMPORT_FILE_MAX_BYTES) limit('Each ZIP file must be at most 1 MiB.');
-    expanded += size; if (expanded > IMPORT_EXPANDED_MAX_BYTES) limit('Expanded ZIP content must be at most 10 MiB.');
+    const tooLarge = size > IMPORT_FILE_MAX_BYTES;
+    if (tooLarge) oversized.push(`${normalized} (${(size / 1024 / 1024).toFixed(1)} MiB)`);
+    else expanded += size; if (expanded > IMPORT_EXPANDED_MAX_BYTES) limit('Expanded ZIP content must be at most 10 MiB.');
     if (!directory && ++fileCount > IMPORT_MAX_FILES) limit('ZIP archives must contain at most 500 files.');
     if (local + 30 > centralStart || zip.readUInt32LE(local) !== 0x04034b50) invalid('Malformed ZIP local entry.');
     const localName = zip.readUInt16LE(local + 26), localExtra = zip.readUInt16LE(local + 28), contentStart = local + 30 + localName + localExtra;
     if (zip.readUInt16LE(local + 6) !== flags || zip.readUInt16LE(local + 8) !== method || localName !== rawName.length || !zip.subarray(local + 30, local + 30 + localName).equals(rawName) || contentStart + packed > centralStart) invalid('ZIP local metadata differs from its directory.');
     extra(local + 30 + localName, localExtra);
     if (!(flags & 8) && (zip.readUInt32LE(local + 14) !== checksum || zip.readUInt32LE(local + 18) !== packed || zip.readUInt32LE(local + 22) !== size)) invalid('ZIP local sizes or checksum disagree.');
-    let data: Buffer; try { data = method === 0 ? Buffer.from(zip.subarray(contentStart, contentStart + packed)) : inflateRawSync(zip.subarray(contentStart, contentStart + packed), { maxOutputLength: IMPORT_FILE_MAX_BYTES }); } catch { invalid('ZIP decompression failed or exceeded its declared limit.'); }
-    if (data!.length !== size || crc32(data!) !== checksum || directory && size) invalid('ZIP checksum or expanded size is invalid.');
+    let data: Buffer; try { data = tooLarge ? Buffer.alloc(0) : method === 0 ? Buffer.from(zip.subarray(contentStart, contentStart + packed)) : inflateRawSync(zip.subarray(contentStart, contentStart + packed), { maxOutputLength: IMPORT_FILE_MAX_BYTES }); } catch { invalid('ZIP decompression failed or exceeded its declared limit.'); }
+    if (!tooLarge && (data!.length !== size || crc32(data!) !== checksum) || directory && size) invalid('ZIP checksum or expanded size is invalid.');
     let localEnd = contentStart + packed;
     if (flags & 8) { if (localEnd + 4 > centralStart) invalid('ZIP data descriptor is truncated.'); const descriptor = zip.readUInt32LE(localEnd) === 0x08074b50 ? localEnd + 4 : localEnd; if (descriptor + 12 > centralStart || zip.readUInt32LE(descriptor) !== checksum || zip.readUInt32LE(descriptor + 4) !== packed || zip.readUInt32LE(descriptor + 8) !== size) invalid('ZIP data descriptor is invalid.'); localEnd = descriptor + 12; }
     ranges.push([local, localEnd]);
     entries.push({ path: normalized, data: new Uint8Array(data!), mode: unixMode & 0o111 ? '100755' : '100644', directory });
   }
   if (cursor !== end) invalid('ZIP directory size is invalid.');
+  if (oversized.length) limit(`Each ZIP file must be at most 1 MiB. Remove or shrink ${oversized.length === 1 ? 'this file' : `these ${oversized.length} files`} and import again: ${oversized.slice(0, 10).join(', ')}${oversized.length > 10 ? ', …' : ''}.`);
   ranges.sort((a, b) => a[0] - b[0]); if (ranges.some((range, index) => index > 0 && range[0] < ranges[index - 1][1])) invalid('ZIP entries overlap.');
   const filesOnly = entries.filter(entry => !entry.directory); const filePaths = new Set(filesOnly.map(entry => entry.path));
   for (const entry of entries) { const parts = entry.path.split('/'); for (let index = 1; index < parts.length; index++) if (filePaths.has(parts.slice(0, index).join('/'))) invalid('ZIP files cannot also be parent folders.'); }
   const meaningful = filesOnly.filter(entry => !entry.path.startsWith('__MACOSX/'));
   const wrapper = meaningful.length && meaningful.every(entry => entry.path.includes('/') && entry.path.split('/')[0] === meaningful[0].path.split('/')[0]) ? meaningful[0].path.split('/')[0] : null;
-  const files: ImportFile[] = [], skipped: string[] = [];
-  for (const entry of filesOnly) { const path = wrapper && entry.path.startsWith(`${wrapper}/`) ? entry.path.slice(wrapper.length + 1) : entry.path; if (omitted(entry.path) || omitted(path)) skipped.push(entry.path); else files.push({ path, data: entry.data, mode: entry.mode }); }
+  const located = filesOnly.map(entry => ({ entry, path: wrapper && entry.path.startsWith(`${wrapper}/`) ? entry.path.slice(wrapper.length + 1) : entry.path }));
+  let classified: ReturnType<typeof classifyImport>;
+  try { classified = classifyImport(located.map(({ entry, path }) => ({ path, archivePath: entry.path, data: entry.data })), keep); }
+  catch (error) { if (error instanceof KeepError) throw new ApiError(400, 'INVALID_IMPORT_KEEP', `${error.path} is not a skipped generated file in this archive. Keep only paths the import preview lists as keepable.`); throw error; }
+  const kept = new Set(classified.kept.map(file => file.archivePath));
+  const files: ImportFile[] = located.filter(({ entry }) => kept.has(entry.path)).map(({ entry, path }) => ({ path, data: entry.data, mode: entry.mode }));
   if (!files.length) invalid('The ZIP archive has no importable files.');
-  return { files, skipped };
+  return { files, skipped: classified.exclusions.map(exclusion => exclusion.path), exclusions: classified.exclusions, warnings: classified.warnings, install: installSuggestion(files) };
 }
 
 type GitObject = { type: 'blob' | 'tree' | 'commit'; data: Buffer; hash: Buffer };

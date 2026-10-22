@@ -125,6 +125,8 @@ describe('MCP SDK interoperability', () => {
     expect(calls).toEqual([{ path: `/api/repositories/${repository.id}/import`, key: null }, { path: `/api/repositories/${repository.id}/import`, key: 'mcp-import-request-0001', body: { archiveBase64: 'UEsDBA==', expectedHeadSha: null, message: 'Import existing app' } }]);
     expect((await client.callTool({ name: 'gitflare_import_repository_archive', arguments: { repository_id: repository.id, archive_base64: 'UEsDBA==', idempotency_key: 'mcp-import-request-0002' } })).isError).toBe(true);
     expect(calls).toHaveLength(2);
+    expect((await client.callTool({ name: 'gitflare_import_repository_archive', arguments: { repository_id: repository.id, archive_base64: 'UEsDBA==', expected_head_sha: null, dry_run: true, keep: ['build/index.html'], enable_install: true, idempotency_key: 'mcp-import-request-0003' } })).isError).not.toBe(true);
+    expect(calls[2]).toEqual({ path: `/api/repositories/${repository.id}/import`, key: 'mcp-import-request-0003', body: { archiveBase64: 'UEsDBA==', expectedHeadSha: null, dryRun: true, keep: ['build/index.html'], enableInstall: true } });
   });
 
   it('forwards preview email recipients through gitflare_set_preview_settings', async () => {
@@ -604,12 +606,15 @@ describe('MCP connection access levels', () => {
     expect((await land.callTool({ name: 'gitflare_retry_checks', arguments: { mission_id: mission.id, adjustment: 'timeout', idempotency_key: key } })).isError).not.toBe(true);
     expect((await land.callTool({ name: 'gitflare_set_check_settings', arguments: { repository_id: repository.id, gitflare_json_override: { evidence: 'exit-code', test_timeout_seconds: 300 }, idempotency_key: key } })).isError).not.toBe(true);
     expect((await land.callTool({ name: 'gitflare_set_check_settings', arguments: { repository_id: repository.id, gitflare_json_override: null, idempotency_key: key } })).isError).not.toBe(true);
+    expect((await land.callTool({ name: 'gitflare_set_check_settings', arguments: { repository_id: repository.id, install: 'npm', idempotency_key: key } })).isError).not.toBe(true);
+    expect((await land.callTool({ name: 'gitflare_set_check_settings', arguments: { repository_id: repository.id, install: 'bun', idempotency_key: key } })).isError).toBe(true);
     expect(requests).toEqual([
       { method: 'GET', path: `/api/repositories/${repository.id}/check-settings`, body: undefined },
       { method: 'POST', path: `/api/repositories/${repository.id}/check-settings`, body: { testTimeoutSeconds: 600, runner: 'standard-3', autoIncrease: { enabled: false, maxTimeoutSeconds: 600, maxRunner: 'standard-2' } } },
       { method: 'POST', path: `/api/missions/${mission.id}/retry-checks`, body: { adjustment: 'timeout' } },
       { method: 'POST', path: `/api/repositories/${repository.id}/check-settings`, body: { testTimeoutSeconds: null, runner: null, autoIncrease: null, policyOverride: { evidence: 'exit-code', testTimeoutSeconds: 300 } } },
       { method: 'POST', path: `/api/repositories/${repository.id}/check-settings`, body: { testTimeoutSeconds: null, runner: null, autoIncrease: null, policyOverride: null } },
+      { method: 'POST', path: `/api/repositories/${repository.id}/check-settings`, body: { testTimeoutSeconds: null, runner: null, autoIncrease: null, install: 'npm' } },
     ]);
   });
 

@@ -3,7 +3,7 @@ import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { ArrowCounterClockwiseIcon, ArrowFatLinesUpIcon, CpuIcon, TimerIcon } from "@phosphor-icons/react";
-import type { Check, CheckLimitSource, CheckPolicyOverride, Mission, RepositoryCheckSettings, RunnerSize, TestEvidence } from "../shared/types";
+import type { Check, CheckLimitSource, CheckPolicyOverride, InstallSetting, Mission, RepositoryCheckSettings, RunnerSize, TestEvidence } from "../shared/types";
 import { request } from "./api";
 import { ErrorNotice } from "./components";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
@@ -32,6 +32,7 @@ export default function CheckSettings({ repositoryId, canChange, isOwner = false
   const [overrideEvidence, setOverrideEvidence] = useState<TestEvidence | "">("");
   const [overrideLimit, setOverrideLimit] = useState("");
   const [overrideRunner, setOverrideRunner] = useState<RunnerSize | "">("");
+  const [install, setInstall] = useState<InstallSetting | "">("");
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -49,6 +50,7 @@ export default function CheckSettings({ repositoryId, canChange, isOwner = false
     setOverrideEvidence(current.policyOverride?.evidence ?? "");
     setOverrideLimit(current.policyOverride?.testTimeoutSeconds?.toString() ?? "");
     setOverrideRunner(current.policyOverride?.runner ?? "");
+    setInstall(current.install?.value ?? "");
   }
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export default function CheckSettings({ repositoryId, canChange, isOwner = false
   async function save() {
     if (busy || !settings) return;
     const policyOverride: CheckPolicyOverride = { ...(overrideTest.trim() ? { test: overrideTest.trim() } : {}), ...(overrideEvidence ? { evidence: overrideEvidence } : {}), ...(overrideLimit.trim() ? { testTimeoutSeconds: Number(overrideLimit) } : {}), ...(overrideRunner ? { runner: overrideRunner } : {}) };
-    const body = { testTimeoutSeconds: seconds(limit), runner: runner || null, autoIncrease: { enabled: autoEnabled, maxTimeoutSeconds: Number(autoLimit), maxRunner: autoRunner }, ...(isOwner ? { policyOverride: Object.keys(policyOverride).length ? policyOverride : null } : {}) };
+    const body = { testTimeoutSeconds: seconds(limit), runner: runner || null, autoIncrease: { enabled: autoEnabled, maxTimeoutSeconds: Number(autoLimit), maxRunner: autoRunner }, ...(isOwner ? { policyOverride: Object.keys(policyOverride).length ? policyOverride : null, install: install || null } : {}) };
     const signature = JSON.stringify(body);
     if (mutation.current?.signature !== signature) mutation.current = { signature, key: crypto.randomUUID() };
     setBusy(true);
@@ -113,6 +115,9 @@ export default function CheckSettings({ repositoryId, canChange, isOwner = false
           <div className="form-field"><span className="field-label"><label htmlFor="check-override-timeout">Time limit (seconds)</label><InfoTip label="Override time limit">The time limit to use instead of the one in gitflare.json.</InfoTip></span><Input id="check-override-timeout" inputMode="numeric" value={overrideLimit} placeholder="From gitflare.json" aria-invalid={outOfRange(overrideLimit, true)} onChange={event => setOverrideLimit(event.target.value.replace(/[^0-9]/g, ""))} /></div>
           <div className="form-field"><span className="field-label"><label htmlFor="check-override-runner">Runner size</label><InfoTip label="Override runner size">The runner size to use instead of the one in gitflare.json.</InfoTip></span><select id="check-override-runner" value={overrideRunner} onChange={event => setOverrideRunner(event.target.value as RunnerSize | "")}><option value="">From gitflare.json</option>{RUNNERS.map(size => <option key={size} value={size}>{RUNNER_LABELS[size]}</option>)}</select></div>
           {!isOwner && <small>Only an Owner can change the gitflare.json override.</small>}
+        </fieldset>
+        <fieldset className="check-settings-fields" disabled={!canChange || !isOwner || busy}>
+          <div className="form-field"><span className="field-label"><label htmlFor="check-install">Dependency install (Owner)</label><InfoTip label="Dependency install">Installs packages from the base revision before checks run, because checks have no registry access. Used when gitflare.json at the base sets no "install"; gitflare.json wins. Unset installs only for a package.json test script. Changes are logged.</InfoTip></span><select id="check-install" value={install} onChange={event => setInstall(event.target.value as InstallSetting | "")}><option value="">Only for a package.json test script</option><option value="auto">auto · detect the package manager</option><option value="npm">npm</option><option value="pnpm">pnpm</option><option value="yarn">yarn</option><option value="none">none · never install</option></select></div>
         </fieldset>
         <p className="branch-rule-note">{history.p90Seconds !== undefined ? <>Recent passing checks: 90th percentile {history.p90Seconds} s over {history.samples} runs. {history.learnedTimeoutSeconds ? <>Without a set limit, checks start at the higher of the default and {history.learnedTimeoutSeconds} s (twice that, rounded up to a minute), within the auto-increase ceiling.</> : null}</> : <>Gitflare learns a starting limit after 3 passing checks ({history.samples} so far).</>}{settings.updatedBy === "gitflare:auto-increase" && <> The current values were saved automatically after a retried check passed.</>}</p>
         {error && <div className="error-notice" role="alert">{error}</div>}

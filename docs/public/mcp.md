@@ -63,7 +63,7 @@ A few details worth knowing:
 
 - Writes take an `idempotency_key`; replay the same request to reconcile an uncertain result.
 - Approval and landing name an exact candidate and base revision. A stale base returns `STALE_PROPOSAL_BASE`.
-- `gitflare_import_repository_archive` (Owner) accepts one base64 ZIP up to 5 MiB compressed, 500 files, 10 MiB expanded and 1 MiB per file, as the first revision of an empty repository. Secret, Git, dependency and build paths are skipped.
+- `gitflare_import_repository_archive` (Owner) accepts one base64 ZIP up to 5 MiB compressed, 500 files, 10 MiB expanded and 1 MiB per file, as the first revision of an empty repository. Call it with `dry_run: true` first: nothing is written, and the result lists `files`, `exclusions` (path, reason, `keepable`), `warnings` for imports of missing or skipped files, and an `install` suggestion. Secret, Git and dependency paths are always skipped; generated output only when it is clearly generated, and never when kept code imports it. Pass `keep` to import listed build output anyway and `enable_install` (Owner) to turn on dependency install for checks.
 - D1 migration planning records a SHA-256 checksum of the SQL. Review it before the destructive execute step, and inspect an unknown outcome instead of retrying.
 - Worker Builds triggers and Durable Object migrations are not available.
 

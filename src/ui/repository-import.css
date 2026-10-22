@@ -51,3 +51,14 @@
 .repository-url-retry { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .repository-url-retry > input { flex: 1 1 180px; min-width: 0; }
 .repository-import-banner .repository-import-steps { flex-wrap: wrap; gap: 10px 20px; margin: 14px 0 0; }
+.repository-import-preview { display: grid; gap: 12px; margin-bottom: 24px; font-size: 13px; }
+.repository-import-preview p { margin: 0; }
+.repository-import-preview details ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 240px; overflow: auto; }
+.repository-import-preview details label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.repository-import-preview details input { width: auto; }
+.repository-import-preview details code { overflow-wrap: anywhere; }
+.repository-import-preview details span { color: var(--gf-color-text-secondary); white-space: nowrap; }
+.repository-import-warnings { display: flex; gap: 8px; align-items: flex-start; background: var(--gf-color-surface); border: 1px solid var(--gf-color-border); border-radius: 6px; padding: 10px 12px; font-size: 13px; }
+.repository-import-warnings ul { margin: 0; padding-left: 16px; text-align: left; }
+.repository-import-install { display: flex; align-items: center; gap: 8px; }
+.repository-import-install input { width: auto; }

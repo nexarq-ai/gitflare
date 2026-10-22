@@ -4,15 +4,17 @@ import { Button } from '@cloudflare/kumo/components/button';
 import { Input } from '@cloudflare/kumo/components/input';
 import { ArrowClockwiseIcon, ArrowLeftIcon, CheckCircleIcon, FileZipIcon, GitBranchIcon, UploadSimpleIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import InfoTip from './InfoTip';
-import type { Repository, RepositoryUrlImport, UrlImportPhase } from '../shared/types';
+import type { ImportExclusion, ImportExclusionReason, ImportInstallSuggestion, Repository, RepositoryUrlImport, UrlImportPhase } from '../shared/types';
 import { request, RequestError } from './api';
 import './repository-import.css';
 import { OperationTrack } from './OperationMotion';
 
 type ImportStatus = { allowed: boolean; headSha: string | null; reason: string; branch: string; remote?: string | null };
-type ImportResult = { repository: Repository; headSha: string; files: string[]; skipped: string[] };
+type ImportResult = { repository: Repository; headSha: string; files: string[]; skipped: string[]; warnings?: string[]; install?: ImportInstallSuggestion | null };
+type ImportPreview = { allowed: boolean; reason: string; files: string[]; exclusions: ImportExclusion[]; warnings: string[]; install: ImportInstallSuggestion | null };
 type SelectedArchive = { file: File; base64: string };
-type ImportAttempt = { body: { archiveBase64: string; expectedHeadSha: string | null; message: string }; signature: string; key: string; target: ImportStatus; archive: SelectedArchive };
+type ImportAttempt = { body: { archiveBase64: string; expectedHeadSha: string | null; message: string; keep?: string[]; enableInstall?: boolean }; signature: string; key: string; target: ImportStatus; archive: SelectedArchive };
+const exclusionReasons: Record<ImportExclusionReason, string> = { secret: 'secret', git: 'Git metadata', dependencies: 'installed dependencies', system: 'system file', generated: 'build output' };
 const pendingImports = new Map<string, ImportAttempt>();
 const maximumArchiveBytes = 5 * 1024 * 1024;
 export const quoteGitArgument = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
@@ -110,6 +112,10 @@ export default function RepositoryImport({ repository, canManage, canContribute,
   const [error, setError] = useState('');
   const [pending, setPending] = useState(() => pendingImports.has(repository.id));
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [previewError, setPreviewError] = useState('');
+  const [keep, setKeep] = useState<string[]>(() => pendingImports.get(repository.id)?.body.keep ?? []);
+  const [enableInstall, setEnableInstall] = useState(() => pendingImports.get(repository.id)?.body.enableInstall ?? false);
   const input = useRef<HTMLInputElement>(null);
   const reader = useRef<FileReader | null>(null);
   const mounted = useRef(true);
@@ -119,6 +125,16 @@ export default function RepositoryImport({ repository, canManage, canContribute,
   const locked = stage === 'saving' || pending;
   const status = locked ? mutation.current?.target ?? latestStatus : latestStatus;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; readGeneration.current++; reader.current?.abort(); }; }, []);
+  const previewHead = status?.headSha;
+  useEffect(() => {
+    setPreview(null); setPreviewError('');
+    if (!archive || previewHead === undefined || !canManage) return;
+    let active = true;
+    void request<ImportPreview>(importPath(repository.id), { archiveBase64: archive.base64, expectedHeadSha: previewHead, dryRun: true }, crypto.randomUUID())
+      .then(value => { if (active) { setPreview(value); if (value.install && !value.install.automatic && !pendingImports.has(repository.id)) setEnableInstall(true); } })
+      .catch(failure => { if (active) setPreviewError(failure instanceof Error ? failure.message : 'The ZIP could not be checked.'); });
+    return () => { active = false; };
+  }, [archive, previewHead, repository.id, canManage]);
   useEffect(() => {
     if (!locked) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
@@ -139,7 +155,7 @@ export default function RepositoryImport({ repository, canManage, canContribute,
       const value = typeof fileReader.result === 'string' ? fileReader.result.split(',')[1] : '';
       setReading(false);
       if (!value) { setError('The ZIP could not be read. Choose the file again.'); return; }
-      setArchive({ file, base64: value }); setStage('review'); mutation.current = null;
+      setArchive({ file, base64: value }); setKeep([]); setEnableInstall(false); setStage('review'); mutation.current = null;
     };
     fileReader.onerror = () => { if (mounted.current && generation === readGeneration.current) { setReading(false); setError('The ZIP could not be read. Choose the file again.'); } };
     fileReader.readAsDataURL(file);
@@ -154,7 +170,8 @@ export default function RepositoryImport({ repository, canManage, canContribute,
   async function save() {
     if (submitting.current || !archive || (!pending && !status?.allowed) || !status || !canManage) return;
     if (!message.trim()) { setError('Add a revision message.'); return; }
-    const body = { archiveBase64: archive.base64, expectedHeadSha: status.headSha, message: message.trim() };
+    const installOffer = preview?.install && !preview.install.automatic;
+    const body = { archiveBase64: archive.base64, expectedHeadSha: status.headSha, message: message.trim(), ...(keep.length ? { keep: [...keep].sort() } : {}), ...(installOffer && enableInstall ? { enableInstall: true } : {}) };
     const signature = JSON.stringify(body);
     if (!mutation.current || (!pending && mutation.current.signature !== signature)) mutation.current = { body, signature, key: crypto.randomUUID(), target: status, archive };
     pendingImports.set(repository.id, mutation.current);
@@ -175,12 +192,28 @@ export default function RepositoryImport({ repository, canManage, canContribute,
   }
 
   return <section className="repository-import-page"><button className="header-back" disabled={locked} onClick={onBack}><ArrowLeftIcon size={13} />Back to repository code</button><div className="page-heading"><div><h1>Import code</h1><p>Add an existing project to {repositoryLabel(repository)}, then ask agents to work on it.</p></div></div><ol className="repository-import-steps" aria-label="Import progress">{['Select ZIP', 'Review import', 'Commit code'].map((label, index) => <li key={label} aria-current={(stage === 'select' ? 0 : stage === 'review' ? 1 : 2) === index ? 'step' : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
-    {stage === 'done' && result ? <section className="panel repository-import-success"><CheckCircleIcon size={34} aria-hidden="true" /><h2>Your code is ready</h2><p>{result.files.length} files added to <strong>{status?.branch ?? repository.defaultBranch}</strong>.</p><code>{result.headSha}</code>{result.skipped.length > 0 && <details><summary>{result.skipped.length} entries skipped</summary><ul>{result.skipped.map(path => <li key={path}><code>{path}</code></li>)}</ul></details>}<div><Button type="button" variant="secondary" size="base" onClick={onBack}>View code</Button><Button type="button" variant="primary" size="base" disabled={!canContribute} onClick={onCreateProposal}>Create mission</Button></div></section> : !canManage ? <div className="error-notice" role="alert">An owner with Manage permission can import the initial source code.</div> : repository.provider !== 'artifacts' ? <div className="error-notice" role="alert">Connect Cloudflare Artifacts Git storage before importing code.</div> : <>
+    {stage === 'done' && result ? <section className="panel repository-import-success"><CheckCircleIcon size={34} aria-hidden="true" /><h2>Your code is ready</h2><p>{result.files.length} files added to <strong>{status?.branch ?? repository.defaultBranch}</strong>.</p><code>{result.headSha}</code>{result.install && <p>{result.install.message}</p>}{result.skipped.length > 0 && <details><summary>{result.skipped.length} entries skipped</summary><ul>{result.skipped.map(path => <li key={path}><code>{path}</code></li>)}</ul></details>}{(result.warnings?.length ?? 0) > 0 && <ImportWarnings warnings={result.warnings!} />}<div><Button type="button" variant="secondary" size="base" onClick={onBack}>View code</Button><Button type="button" variant="primary" size="base" disabled={!canContribute} onClick={onCreateProposal}>Create mission</Button></div></section> : !canManage ? <div className="error-notice" role="alert">An owner with Manage permission can import the initial source code.</div> : repository.provider !== 'artifacts' ? <div className="error-notice" role="alert">Connect Cloudflare Artifacts Git storage before importing code.</div> : <>
       {loading && !locked ? <div className="panel repository-import-loading" role="status">Checking the current repository…</div> : statusError && !locked ? <div className="error-notice" role="alert">{statusError}<Button type="button" variant="secondary" size="base" icon={ArrowClockwiseIcon} onClick={retry}>Retry</Button></div> : status && !status.allowed ? <section className="panel repository-import-unavailable"><h2>This repository already has source code</h2><p>{status.reason || 'ZIP import is available only for an empty repository or untouched Gitflare setup files.'}</p><p>Use Git to add changes to this repository.</p></section> : status ? <section className="panel repository-import-form"><div className="repository-import-target"><GitBranchIcon size={18} aria-hidden="true" /><strong>{status.branch}</strong><span>{status.headSha ? 'Initial setup revision' : 'First revision'}</span></div><p className="repository-import-policy">{status.headSha ? 'Your project will be committed after the initial setup revision. Only untouched platform setup files can be replaced.' : 'Your project will become the first revision on this stream.'} Established repositories cannot be overwritten by ZIP import.</p>
-        {stage === 'select' ? <div className={`repository-import-dropzone${dragging ? ' is-dragging' : ''}`} onDragOver={event => { event.preventDefault(); if (!locked) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={dropped}><FileZipIcon size={36} aria-hidden="true" /><h2>Drop your project ZIP here</h2><p>Choose one archive up to 5 MiB.</p><Button type="button" variant="primary" size="base" icon={UploadSimpleIcon} disabled={reading} onClick={() => input.current?.click()}>{reading ? 'Reading ZIP…' : 'Choose ZIP'}</Button><input ref={input} className="repository-import-file-input" type="file" accept=".zip,application/zip" aria-label="Project ZIP archive" onChange={fileChanged} tabIndex={-1} /><p className="repository-import-muted">Exclude credentials, environment files, dependencies and build output. The server validates archive paths and content before saving.</p></div> : archive && <div className="repository-import-review"><div className="repository-import-archive"><FileZipIcon size={26} aria-hidden="true" /><div><strong>{archive.file.name}</strong><span>{(archive.file.size / 1024 / 1024).toFixed(2)} MiB</span></div><Button type="button" variant="secondary" size="base" disabled={locked} onClick={() => { setStage('select'); setArchive(null); setError(''); mutation.current = null; }}>Change ZIP</Button></div><div className="form-field"><label htmlFor="repository-import-message">Revision message</label><Input id="repository-import-message" maxLength={200} disabled={locked} value={message} onChange={event => setMessage(event.target.value)} required /></div><dl><dt>Repository</dt><dd>{repositoryLabel(repository)}</dd><dt>Target stream</dt><dd><code>{status.branch}</code></dd><dt>Expected revision</dt><dd><code>{status.headSha ?? 'Empty stream'}</code></dd></dl><p>Up to 500 files, 10 MiB expanded, and 1 MiB per file. Git history is not imported from the ZIP.</p>{pending && <p className="repository-import-pending" role="status">The server outcome is unconfirmed. Retry this exact import to recover its result before changing the ZIP or revision message.</p>}{stage === 'saving' && <div className="operation-saving" role="status"><OperationTrack compact kind="pull" /><p>Writing the imported files to your repository…</p></div>}<Button type="button" variant="primary" size="base" icon={UploadSimpleIcon} loading={stage === 'saving'} disabled={stage === 'saving' || !message.trim()} onClick={() => void save()}>{stage === 'saving' ? 'Committing code…' : pending ? 'Retry import' : 'Import and commit code'}</Button></div>}
+        {stage === 'select' ? <div className={`repository-import-dropzone${dragging ? ' is-dragging' : ''}`} onDragOver={event => { event.preventDefault(); if (!locked) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={dropped}><FileZipIcon size={36} aria-hidden="true" /><h2>Drop your project ZIP here</h2><p>Choose one archive up to 5 MiB.</p><Button type="button" variant="primary" size="base" icon={UploadSimpleIcon} disabled={reading} onClick={() => input.current?.click()}>{reading ? 'Reading ZIP…' : 'Choose ZIP'}</Button><input ref={input} className="repository-import-file-input" type="file" accept=".zip,application/zip" aria-label="Project ZIP archive" onChange={fileChanged} tabIndex={-1} /><p className="repository-import-muted">Exclude credentials, environment files, dependencies and build output. The server validates archive paths and content before saving.</p></div> : archive && <div className="repository-import-review"><div className="repository-import-archive"><FileZipIcon size={26} aria-hidden="true" /><div><strong>{archive.file.name}</strong><span>{(archive.file.size / 1024 / 1024).toFixed(2)} MiB</span></div><Button type="button" variant="secondary" size="base" disabled={locked} onClick={() => { setStage('select'); setArchive(null); setError(''); mutation.current = null; }}>Change ZIP</Button></div><div className="form-field"><label htmlFor="repository-import-message">Revision message</label><Input id="repository-import-message" maxLength={200} disabled={locked} value={message} onChange={event => setMessage(event.target.value)} required /></div><dl><dt>Repository</dt><dd>{repositoryLabel(repository)}</dd><dt>Target stream</dt><dd><code>{status.branch}</code></dd><dt>Expected revision</dt><dd><code>{status.headSha ?? 'Empty stream'}</code></dd></dl><p>Up to 500 files, 10 MiB expanded, and 1 MiB per file. Git history is not imported from the ZIP.</p><ImportPreviewPanel preview={preview} error={previewError} keep={keep} locked={locked} onKeep={setKeep} enableInstall={enableInstall} onEnableInstall={setEnableInstall} />{pending && <p className="repository-import-pending" role="status">The server outcome is unconfirmed. Retry this exact import to recover its result before changing the ZIP or revision message.</p>}{stage === 'saving' && <div className="operation-saving" role="status"><OperationTrack compact kind="pull" /><p>Writing the imported files to your repository…</p></div>}<Button type="button" variant="primary" size="base" icon={UploadSimpleIcon} loading={stage === 'saving'} disabled={stage === 'saving' || !message.trim() || (!pending && !preview && !previewError)} onClick={() => void save()}>{stage === 'saving' ? 'Committing code…' : pending ? 'Retry import' : 'Import and commit code'}</Button></div>}
         {error && <div className="error-notice" role="alert">{error}</div>}
       </section> : null}
       <GitSetup repository={repository} remote={status?.remote ?? repository.remote} branch={status?.branch ?? repository.defaultBranch} />
     </>}
   </section>;
+}
+
+function ImportWarnings({ warnings }: { warnings: string[] }) {
+  return <div className="repository-import-warnings" role="status"><WarningCircleIcon size={16} aria-hidden="true" /><ul>{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></div>;
+}
+
+function ImportPreviewPanel({ preview, error, keep, locked, onKeep, enableInstall, onEnableInstall }: { preview: ImportPreview | null; error: string; keep: string[]; locked: boolean; onKeep: (paths: string[]) => void; enableInstall: boolean; onEnableInstall: (value: boolean) => void }) {
+  if (error) return <div className="error-notice" role="alert">{error}</div>;
+  if (!preview) return <p className="repository-import-muted" role="status">Checking which files will be imported…</p>;
+  const toggle = (path: string, checked: boolean) => onKeep(checked ? [...keep, path] : keep.filter(item => item !== path));
+  return <div className="repository-import-preview">
+    <p><strong>{preview.files.length} files</strong> will be imported{preview.exclusions.length ? `, ${preview.exclusions.length} skipped` : ''}.<InfoTip label="skipped files">Secrets, Git metadata and installed dependencies are never imported. Build output is skipped only when the project declares it as output or it holds only bundle files; a file another kept file imports is kept. Tick build output to import it anyway.</InfoTip></p>
+    {preview.exclusions.length > 0 && <details open={preview.exclusions.some(item => item.keepable)}><summary>Skipped files</summary><ul>{preview.exclusions.map(item => <li key={item.path}><label>{item.keepable && <input type="checkbox" disabled={locked} checked={keep.includes(item.path)} onChange={event => toggle(item.path, event.target.checked)} />}<code>{item.path}</code><span>{exclusionReasons[item.reason]}</span></label></li>)}</ul></details>}
+    {preview.warnings.length > 0 && <ImportWarnings warnings={preview.warnings} />}
+    {preview.install && (preview.install.automatic ? <p>{preview.install.message}</p> : <label className="repository-import-install"><input type="checkbox" disabled={locked} checked={enableInstall} onChange={event => onEnableInstall(event.target.checked)} />Install dependencies for checks ({preview.install.manager}{preview.install.lockfile ? ` from ${preview.install.lockfile}` : ''})<InfoTip label="dependency install">{preview.install.message} Turning it on saves the repository check setting; change it later in Settings → Branches → Checks.</InfoTip></label>)}
+  </div>;
 }
