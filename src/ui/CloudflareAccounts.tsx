@@ -8,7 +8,7 @@ import { cloudflarePermissionGroups, type CloudflareFeature, type CloudflarePerm
 import type { DemoMarked } from "../shared/demo-features";
 import { request, RequestError } from "./api";
 import { ErrorNotice } from "./components";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import { ConnectPermissions } from "./CloudflareConnection";
 import InfoTip from "./InfoTip";
@@ -103,7 +103,7 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
     <div className="page-heading"><div><h1>Cloudflare accounts</h1><p>Accounts your repositories can deploy to. Connecting Cloudflare is separate from signing in.</p></div></div>
     {error && <ErrorNotice message={error} onRetry={() => setRetry(value => value + 1)} />}
     {notice && <p className="people-notice" role="status">{notice}</p>}
-    {!overview ? !error && <RouteProgress /> : demo ? <DemoFeaturePanel demo={demo} examples={(status ?? overview).examples} />
+    {!overview ? !error && <PageLoading /> : demo ? <DemoFeaturePanel demo={demo} examples={(status ?? overview).examples} />
       : owner && status && !status.configured ? <section className="panel"><div className="panel-body"><p className="people-muted">Cloudflare connections are not available on this installation. The operator needs to configure the Cloudflare OAuth client.</p></div></section>
       : owner && status && !status.connected ? <section className="panel">
         <div className="panel-header"><h2>Connect Cloudflare</h2></div>

@@ -4,7 +4,7 @@ import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { request } from "./api";
 import { ErrorNotice, relativeTime } from "./components";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import type { DemoMarked } from "../shared/demo-features";
 import { PREVIEW_SECRET_ENVIRONMENT, type SecretAction, type SecretLinkView, type SecretRequirementView } from "../shared/secrets";
@@ -118,7 +118,7 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
   }
 
   if (loadError) return <ErrorNotice message={loadError} onRetry={() => setAttempt((count) => count + 1)} />;
-  if (!snapshot) return <RouteProgress />;
+  if (!snapshot) return <PageLoading />;
   const demo = demoOf(snapshot);
   if (demo) return <DemoFeaturePanel demo={demo} examples={snapshot.examples} />;
   const { connection, canManage } = snapshot;

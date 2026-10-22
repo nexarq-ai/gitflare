@@ -14,7 +14,7 @@ import SubscribeButton from "./SubscribeButton";
 import TriageSuggestionPanel from "./TriageSuggestion";
 import { ImportedFrom, Labels, personLabel, ReasonDialog } from "./IssueLabels";
 import { navigate } from "./router";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 
 interface Viewer { userId: string; permissions: string[]; names: Map<string, string> }
 
@@ -40,7 +40,7 @@ export default function Issues({ repository, issueNumber, missions = [] }: { rep
     }).catch(() => { if (active) setViewer({ userId: "", permissions: ["read"], names: new Map() }); });
     return () => { active = false; };
   }, []);
-  if (!viewer) return <RouteProgress />;
+  if (!viewer) return <PageLoading />;
   const base = `repository/${repository.id}/issues`;
   if (issueNumber === "new") return <NewIssue repository={repository} viewer={viewer} base={base} />;
   if (issueNumber) return <IssueView key={issueNumber} repository={repository} number={issueNumber} viewer={viewer} base={base} missions={missions} />;
@@ -86,7 +86,7 @@ function IssueIndex({ repository, viewer, base }: { repository: Repository; view
         </select>
       </div>
       {error && <div className="error-notice" role="alert">{error}</div>}
-      {!data ? <RouteProgress /> : (
+      {!data ? <PageLoading /> : (
         <section className="panel">
           {!data.items.length ? (
             <EmptyState icon={<ChatCircleIcon size={25} />} title={query || label ? "No matching issues" : state === "open" ? "No open issues" : "No closed issues"} description={query || label ? "Try another search or label." : "Issues record work to do. Open one to describe a bug or an idea."} action={query || label ? <Button onClick={() => { setSearch(""); setLabel(""); }}>Clear filters</Button> : canCreate ? <Button onClick={() => navigate(`${base}/new`)}>New issue</Button> : undefined} />
@@ -175,7 +175,7 @@ function NewIssue({ repository, viewer, base }: { repository: Repository; viewer
   }
   if (!templates || template === undefined) return <div className="issue-new">
     <a className="header-back" href={`/${base}`}><ArrowLeftIcon size={13} />All issues</a>
-    {!templates ? <RouteProgress /> : <section className="panel"><div className="panel-header"><h2>New issue</h2><InfoTip label="issue templates">Templates come from {templates.directory} on {repository.defaultBranch}.</InfoTip></div><TemplateChooser templates={templates.templates} onChoose={choose} /></section>}
+    {!templates ? <PageLoading /> : <section className="panel"><div className="panel-header"><h2>New issue</h2><InfoTip label="issue templates">Templates come from {templates.directory} on {repository.defaultBranch}.</InfoTip></div><TemplateChooser templates={templates.templates} onChoose={choose} /></section>}
   </div>;
   return (
     <form className="issue-new" onSubmit={(event) => void submit(event)}>
@@ -242,7 +242,7 @@ function IssueView({ repository, number, viewer, base, missions }: { repository:
     catch (failure) { setError(failure instanceof Error ? failure.message : "This person could not be blocked."); }
     finally { setBusy(""); }
   }
-  if (!issue) return error ? <><a className="header-back" href={`/${base}`}><ArrowLeftIcon size={13} />All issues</a><div className="error-notice" role="alert">{error}</div></> : <RouteProgress />;
+  if (!issue) return error ? <><a className="header-back" href={`/${base}`}><ArrowLeftIcon size={13} />All issues</a><div className="error-notice" role="alert">{error}</div></> : <PageLoading />;
   const canModerate = viewer.permissions.includes("triage");
   const canContribute = viewer.permissions.includes("contribute");
   const canParticipate = viewer.permissions.includes("participate");
