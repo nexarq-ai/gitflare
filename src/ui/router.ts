@@ -58,11 +58,12 @@ export function canonicalizeLegacyHash(): void {
   window.history.replaceState(null, "", routeUrl(hash.slice(1)));
 }
 
-export function publicSourceLocation(route: string): { path: string; kind: "file" | "directory" } | null {
-  if (route === "source/gitflare") return { path: "", kind: "directory" };
-  const match = /^source\/gitflare\/(tree|blob)\/(.+)$/.exec(route);
-  if (!match || match[2].split("/").some(segment => !segment || segment === "." || segment === ".." || /[\\\u0000-\u001f]/.test(segment))) return null;
-  return { path: match[2], kind: match[1] === "blob" ? "file" : "directory" };
+export const PUBLIC_GITFLARE_ROUTE = "gitflare/gitflare";
+export const PUBLIC_GITFLARE_PATH = `/${PUBLIC_GITFLARE_ROUTE}`;
+
+export function legacySourceRoute(route: string): string | null {
+  const match = /^source\/gitflare(\/.*)?$/.exec(route);
+  return match ? `${PUBLIC_GITFLARE_ROUTE}${match[1] ?? ""}` : null;
 }
 
 const PUBLIC_REPOSITORY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -114,13 +115,9 @@ export function followsSavedTheme(route: string): boolean {
   return !!publicRepositoryLocation(route) || isPublicDiscoveryRoute(route);
 }
 
-export function publicSourceUrl(path = "", kind: "file" | "directory" = "file"): string {
-  return path ? `/source/gitflare/${kind === "file" ? "blob" : "tree"}/${path.split("/").map(encodeURIComponent).join("/")}` : "/source/gitflare";
-}
-
 export function isAppPath(pathname: string): boolean {
   const route = routeFromLocation(pathname, "");
-  return !!publicSourceLocation(route) || !!publicRepositoryLocation(route) || !SERVER_PATH.test(pathname);
+  return !!legacySourceRoute(route) || !!publicRepositoryLocation(route) || !SERVER_PATH.test(pathname);
 }
 
 export function onRouteChange(listener: () => void): () => void {
@@ -169,7 +166,7 @@ export function isPublicDocumentationRoute(route: string): boolean {
 }
 
 export function isKnownAppRoute(route: string): boolean {
-  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", "overview", "missions", "activity", "admin", "inbox", "account/profile", "account/security", "account/sessions", "account/clients", "account/notifications", "proposals/new", "import/github", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
+  return !!legacySourceRoute(route) || ["home", "signin", "signup", "deploy", "overview", "missions", "activity", "admin", "inbox", "account/profile", "account/security", "account/sessions", "account/clients", "account/notifications", "proposals/new", "import/github", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
     || /^settings(?:\/(?:people|cloudflare|models|audit))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
     || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
@@ -203,5 +200,9 @@ export function keepsRouteAcrossWorkspaces(route: string): boolean {
 }
 
 export function isSiteRoute(route: string): boolean {
-  return ["home", "deploy", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route) || !!publicSourceLocation(route) || /^docs(?:\/|$)/.test(route) || !isKnownAppRoute(route);
+  return ["home", "deploy", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route) || !!legacySourceRoute(route) || /^docs(?:\/|$)/.test(route) || !isKnownAppRoute(route);
+}
+
+export function isWorkspaceRoute(route: string): boolean {
+  return /^(?:overview|missions|activity|admin|inbox|settings|mission|repository|proposals|import|account)(?:\/|$)/.test(route);
 }

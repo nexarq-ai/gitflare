@@ -8,7 +8,7 @@ import { request } from "./api";
 import CheckSettings from "./CheckSettings";
 import { ErrorNotice, relativeTime } from "./components";
 import { navigate } from "./router";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import InfoTip from "./InfoTip";
 import CheckChips from "./CheckChips";
 import { approvalWarning, selfApprovalNote } from "./approvals";
@@ -114,7 +114,7 @@ export default function BranchProtection({ repository, canManage: mayManage, dem
   }
 
   if (loadError) return <ErrorNotice message={loadError} onRetry={() => setAttempt(value => value + 1)} />;
-  if (!branches || !protection) return <RouteProgress />;
+  if (!branches || !protection) return <PageLoading />;
   const readOnly = !canManage || busy;
   const patterns = rules.map(rule => rule.pattern.trim());
   const warnings = new Map(rules.map(rule => [rule.id, approvers === undefined ? null : approvalWarning(rule.requiredApprovals, approvers, rule.preventSelfApproval)]));

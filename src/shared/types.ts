@@ -179,11 +179,20 @@ export interface CheckPolicyOverride {
   updatedBy?: string;
 }
 
+export type InstallSetting = 'npm' | 'pnpm' | 'yarn' | 'auto' | 'none';
+
+export interface CheckInstall {
+  value: InstallSetting;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface CheckSettings {
   testTimeoutSeconds?: number;
   runner?: RunnerSize;
   autoIncrease?: AutoIncrease;
   policyOverride?: CheckPolicyOverride;
+  install?: CheckInstall;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -198,6 +207,22 @@ export interface CheckOverride {
 export interface CheckPlan extends CheckSettings {
   learnedTimeoutSeconds?: number;
   override?: CheckOverride;
+}
+
+export type ImportExclusionReason = 'secret' | 'git' | 'dependencies' | 'system' | 'generated';
+
+export interface ImportExclusion {
+  path: string;
+  reason: ImportExclusionReason;
+  keepable: boolean;
+}
+
+export interface ImportInstallSuggestion {
+  manager: 'npm' | 'pnpm' | 'yarn';
+  lockfile: string | null;
+  automatic: boolean;
+  enabled?: boolean;
+  message: string;
 }
 
 export interface RepositoryCheckSettings extends CheckSettings {
@@ -396,7 +421,17 @@ export interface PublicRepositorySummary {
   funding?: FundingLink[];
   feeds?: RepositoryFeeds;
   securityPolicy?: boolean;
+  agentReady?: AgentReadiness | null;
+  language?: string | null;
+  latestRelease?: { tag: string; name: string; publishedAt: string } | null;
 }
+
+export interface ActivityWeek { week: string; people: number; agents: number; missions: number; reviews: number; releases: number; issues: number }
+export type ActivityTotals = Omit<ActivityWeek, 'week'>;
+export interface PublicActivity { since: string; weeks: ActivityWeek[]; totals: ActivityTotals; repositories: number; indexed: boolean }
+export type AgentReadyLevel = 'ready' | 'partial' | 'none';
+export interface AgentReadySignal { id: string; label: string; present: boolean; hint: string; weight: number }
+export interface AgentReadiness { score: number; level: AgentReadyLevel; signals: AgentReadySignal[] }
 export const FUNDING_PLATFORMS = ['github', 'patreon', 'open_collective', 'ko_fi', 'tidelift', 'community_bridge', 'liberapay', 'issuehunt', 'lfx_crowdfunding', 'polar', 'buy_me_a_coffee', 'thanks_dev', 'custom'] as const;
 export type FundingPlatform = typeof FUNDING_PLATFORMS[number];
 export interface FundingLink { platform: FundingPlatform; label: string; url: string }
@@ -404,15 +439,25 @@ export interface FeedLinks { atom: string; rss: string }
 export interface RepositoryFeeds { releases: FeedLinks; commits: FeedLinks; issues: FeedLinks }
 export interface PublicCommit { sha: string; message: string }
 export type PublicHandleKind = 'user' | 'workspace';
-export interface PublicRepositoryCard { handle: string; name: string; description: string; language: string | null; topics: string[]; license: string | null; stars: number; updatedAt: string; publishedAt: string; url: string }
+export interface PublicRepositoryCard { handle: string; name: string; description: string; language: string | null; topics: string[]; license: string | null; stars: number; updatedAt: string; publishedAt: string; url: string; agentReady?: Pick<AgentReadiness, 'score' | 'level'> | null }
 export type ExploreSort = 'stars' | 'new' | 'updated';
 export interface PublicExplore { sort: ExploreSort; language: string | null; items: PublicRepositoryCard[]; languages: string[]; nextCursor: number | null; indexed: boolean }
 export type PublicSearchType = 'repositories' | 'paths' | 'people';
 export interface PublicPathMatch { handle: string; repository: string; path: string; url: string }
 export interface PublicPerson { handle: string; kind: PublicHandleKind; displayName: string; url: string }
 export interface PublicSearch { query: string; type: PublicSearchType; repositories: PublicRepositoryCard[]; paths: PublicPathMatch[]; people: PublicPerson[]; nextCursor: number | null; indexed: boolean }
-export interface PublicProfile { handle: string; kind: PublicHandleKind; displayName: string; bio: string; links: string[]; pinned: string[]; repositories: PublicRepositoryCard[]; starred: PublicRepositoryCard[]; url: string }
-export interface ProfileSettings { scope: PublicHandleKind; handle: string | null; displayName: string; bio: string; links: string[]; pinned: string[]; canChange: boolean; url: string | null }
+export type ProfileShowcase = { kind: 'repository'; name: string } | { kind: 'mission'; repository: string; missionId: string };
+export interface ShowcaseMission { id: string; title: string; repository: string; handle: string; landedAt: string; landedSha: string | null; agents: number; people: number; url: string }
+export type PublicShowcase = { kind: 'repository'; repository: PublicRepositoryCard } | { kind: 'mission'; mission: ShowcaseMission };
+export interface ProfileReadme { path: string; content: string; repository: string; url: string }
+export interface ProfileFields { displayName: string; bio: string; links: string[]; pinned: string[]; location: string; website: string; showcase: ProfileShowcase | null }
+export interface PublicProfile extends ProfileFields { handle: string; kind: PublicHandleKind; repositories: PublicRepositoryCard[]; starred: PublicRepositoryCard[]; readme: ProfileReadme | null; featured: PublicShowcase | null; url: string }
+export interface ProfileSettings extends ProfileFields { scope: PublicHandleKind; handle: string | null; canChange: boolean; url: string | null }
+export interface ShowcaseOptions { repositories: string[]; missions: { repository: string; missionId: string; title: string; landedAt: string }[] }
+export type SubscriptionTargetKind = 'person' | 'repository';
+export interface SubscriptionEntry { kind: SubscriptionTargetKind; handle: string; repository: string | null; url: string; at: string }
+export interface SubscriptionStatus { kind: SubscriptionTargetKind; handle: string; repository: string | null; subscribed: boolean; subscribers: number }
+export interface SubscriptionList { items: SubscriptionEntry[] }
 export interface StarState { handle: string; repository: string; starred: boolean; watching: boolean; stars: number; watchers: number }
 export interface StarList { starred: PublicRepositoryCard[]; watching: PublicRepositoryCard[] }
 export interface PublicTree { entries: { name: string; path: string; type: 'file' | 'directory' }[]; ref: string; commitSha: string }

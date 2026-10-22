@@ -11,7 +11,7 @@ import { listPublicDocs, readPublicDoc, publicSourceResponse } from './distribut
 import { oauthConsent, oauthProvider } from './oauth';
 import { publicPageResponse } from './public-pages';
 import { hostRedirect, withHostOrigins } from './host-split';
-import { publicGitResponse } from './hosted-source';
+import { legacySourceRedirect } from './hosted-source';
 import { requestSessionMeta } from './session-meta';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare } from './cloudflare';
 import { SKILL_REQUEST_MAX_BYTES } from './skill-edit';
@@ -230,8 +230,6 @@ const application = {
       if (demoBlocked) return new Response(`${demoBlocked.message}\n`, { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       return gitResponse(() => handleGitRequest(request, gitDependencies(env)));
     }
-    const publicGit = await publicGitResponse(request, env);
-    if (publicGit) return publicGit;
     if (isPublicGitPath(path)) return gitResponse(() => handlePublicGit(request, env, gitDependencies(env)));
     if (path === '/oauth/authorize') return oauthConsent(request, env, authorize);
     const publicPage = publicPageResponse(request, env);
@@ -286,6 +284,8 @@ export default {
   async fetch(request: Request, workerEnv: AppEnv, ctx?: ExecutionContext): Promise<Response> {
     try {
       const env = await withStoreSecrets(workerEnv);
+      const legacySource = legacySourceRedirect(request, env);
+      if (legacySource) return legacySource;
       const hostMove = await hostRedirect(request, env, request => hasSession(request, env));
       if (hostMove) return hostMove;
       const path = new URL(request.url).pathname;

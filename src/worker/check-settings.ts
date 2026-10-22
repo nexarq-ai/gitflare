@@ -1,4 +1,4 @@
-import type { AutoIncrease, Check, CheckOverride, CheckPlan, CheckPolicyOverride, CheckSettings, Mission, RepositoryCheckSettings, RunnerSize } from '../shared/types';
+import type { AutoIncrease, Check, CheckInstall, CheckOverride, CheckPlan, CheckPolicyOverride, CheckSettings, InstallSetting, Mission, RepositoryCheckSettings, RunnerSize } from '../shared/types';
 import { ApiError } from './domain';
 import { autoIncreaseOf, isRunnerSize, MAX_TIMEOUT_SECONDS, RUNNER_SIZES } from './repository-policy';
 
@@ -9,7 +9,8 @@ export const DURATION_SAMPLES = 20;
 export const MIN_DURATION_SAMPLES = 3;
 export const AUTO_INCREASE_ACTOR = 'gitflare:auto-increase';
 export type RetryAdjustment = typeof RETRY_ADJUSTMENTS[number];
-export type CheckSettingsInput = Pick<CheckSettings, 'testTimeoutSeconds' | 'runner' | 'autoIncrease' | 'policyOverride'>;
+export type CheckSettingsInput = Pick<CheckSettings, 'testTimeoutSeconds' | 'runner' | 'autoIncrease' | 'policyOverride' | 'install'>;
+export const INSTALL_SETTINGS: readonly InstallSetting[] = ['npm', 'pnpm', 'yarn', 'auto', 'none'];
 export const POLICY_OVERRIDE_FIELDS = ['test', 'evidence', 'testTimeoutSeconds', 'runner'] as const;
 export interface LearnedLimits { testTimeoutSeconds?: number; runner?: RunnerSize }
 
@@ -58,12 +59,19 @@ export function normalizePolicyOverride(value: unknown): CheckPolicyOverride | u
   return override;
 }
 
+export function normalizeInstall(value: unknown): CheckInstall | undefined {
+  if (value === undefined || value === null) return undefined;
+  const fields = typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : { value };
+  if (Object.keys(fields).some((key) => !['value', 'updatedAt', 'updatedBy'].includes(key)) || !INSTALL_SETTINGS.includes(fields.value as InstallSetting)) invalid(`Dependency install must be one of ${INSTALL_SETTINGS.join(', ')}, or null to clear it.`);
+  return { value: fields.value as InstallSetting, ...(typeof fields.updatedAt === 'string' ? { updatedAt: fields.updatedAt.slice(0, 40) } : {}), ...(typeof fields.updatedBy === 'string' ? { updatedBy: fields.updatedBy.slice(0, 200) } : {}) };
+}
+
 export function samePolicyOverride(left: CheckPolicyOverride | undefined, right: CheckPolicyOverride | undefined): boolean {
   return POLICY_OVERRIDE_FIELDS.every((key) => left?.[key] === right?.[key]);
 }
 
 export function normalizeCheckSettings(body: Record<string, unknown>): CheckSettingsInput {
-  const unknown = Object.keys(body).find((key) => !['testTimeoutSeconds', 'runner', 'autoIncrease', 'policyOverride'].includes(key));
+  const unknown = Object.keys(body).find((key) => !['testTimeoutSeconds', 'runner', 'autoIncrease', 'policyOverride', 'install'].includes(key));
   if (unknown) invalid(`Unsupported check setting "${unknown}".`);
   const settings: CheckSettingsInput = {};
   if (body.testTimeoutSeconds !== undefined && body.testTimeoutSeconds !== null) settings.testTimeoutSeconds = timeoutSeconds(body.testTimeoutSeconds, 'The check time limit');
@@ -71,6 +79,8 @@ export function normalizeCheckSettings(body: Record<string, unknown>): CheckSett
   if (body.autoIncrease !== undefined && body.autoIncrease !== null) settings.autoIncrease = autoIncrease(body.autoIncrease);
   const policyOverride = normalizePolicyOverride(body.policyOverride);
   if (policyOverride) settings.policyOverride = policyOverride;
+  const install = normalizeInstall(body.install);
+  if (install) settings.install = install;
   return settings;
 }
 
@@ -109,7 +119,11 @@ export function withLearnedLimits(current: CheckSettings | undefined | null, lea
 }
 
 function keptSettings(current: CheckSettings | undefined | null): CheckSettingsInput {
-  return { ...(current?.testTimeoutSeconds !== undefined ? { testTimeoutSeconds: current.testTimeoutSeconds } : {}), ...(current?.runner ? { runner: current.runner } : {}), ...(current?.autoIncrease ? { autoIncrease: current.autoIncrease } : {}), ...(current?.policyOverride ? { policyOverride: current.policyOverride } : {}) };
+  return { ...(current?.testTimeoutSeconds !== undefined ? { testTimeoutSeconds: current.testTimeoutSeconds } : {}), ...(current?.runner ? { runner: current.runner } : {}), ...(current?.autoIncrease ? { autoIncrease: current.autoIncrease } : {}), ...(current?.policyOverride ? { policyOverride: current.policyOverride } : {}), ...(current?.install ? { install: current.install } : {}) };
+}
+
+export function withInstall(current: CheckSettings | undefined | null, install: CheckInstall): CheckSettingsInput {
+  return { ...keptSettings(current), install };
 }
 
 export function timedOutCheck(mission: Pick<Mission, 'checks'>): (Check & { timeout: NonNullable<Check['timeout']> }) | undefined {

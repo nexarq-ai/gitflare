@@ -12,7 +12,7 @@ import { ArrowLeftIcon, FileIcon, MagicWandIcon, PencilSimpleIcon, PlusIcon, Roc
 import type { Release, ReleaseList, ReleaseNotes, Repository } from "../shared/types";
 import { request, RequestError } from "./api";
 import { navigate as goTo } from "./router";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import ReleaseAssets from "./ReleaseAssets";
 import { SeverityPill } from "./advisory-ui";
 
@@ -194,7 +194,7 @@ export default function Releases({ repository, releaseId, canLand: mayLand, demo
   useEffect(() => { void load(); }, [load]);
 
   if (error) return <div className="error-notice" role="alert">{error}</div>;
-  if (!list) return <RouteProgress />;
+  if (!list) return <PageLoading />;
   const permission = demo ? "Publishing checkpoints is disabled in the shared demo." : canLand ? "" : "Publishing checkpoints requires permission to land changes on the main stream.";
   if (releaseId === "new") return canLand ? <ReleaseForm repository={repository} list={list} onCancel={() => goTo(base)} onDone={(release) => { onNotify(release.draft ? "Draft saved." : `Published ${release.tag}.`); void load(); goTo(`${base}/${release.id}`); }} /> : <div className="error-notice" role="alert">{permission}</div>;
   if (releaseId) {

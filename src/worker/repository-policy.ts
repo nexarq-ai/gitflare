@@ -47,6 +47,7 @@ export function defaultCheckRunner(command: string): RunnerSize {
 }
 
 export type EvidenceSource = 'gitflare.json' | 'owner' | 'default';
+export type InstallSource = 'gitflare.json' | 'owner' | 'detected';
 
 export interface RepositoryPolicy {
   testCommand: string;
@@ -54,6 +55,8 @@ export interface RepositoryPolicy {
   evidenceSource?: EvidenceSource;
   editable: string[];
   install: InstallPlan | null;
+  installSource?: InstallSource;
+  dependencies?: boolean;
   previewCommand: string;
   testTimeoutMs: number;
   testTimeoutSource: CheckLimitSource;
@@ -154,13 +157,23 @@ export function startingTimeoutMs(command: string, settings?: CheckPlan | null):
   return startingTimeout(command, settings)[0];
 }
 
+function withOwnerInstall(policy: RepositoryPolicy, baseFiles: string[] | undefined, packageJson: string | null | undefined, lockHead: string | null | undefined, settings?: CheckPlan | null): RepositoryPolicy {
+  const owner = settings?.install?.value;
+  if (!owner || !baseFiles) return policy;
+  if (owner === 'none') return { ...policy, install: null, installSource: 'owner' };
+  const install = baseFiles.includes('package.json') && packageJson ? configuredInstall(owner, baseFiles, packageJson, lockHead) : null;
+  return { ...policy, install, installSource: 'owner' };
+}
+
 export function parseRepositoryPolicy(raw: string | null, defaultTestCommand: string, baseFiles?: string[], basePackageJson?: string | null, baseLockHead?: string | null, settings?: CheckPlan | null): RepositoryPolicy {
+  const dependencies = !!baseFiles && hasInstallableDependencies(baseFiles, basePackageJson ?? null);
   const fallback: RepositoryPolicy = { testCommand: defaultTestCommand, evidence: 'tap', editable: DEFAULT_EDITABLE, install: null, previewCommand: DEFAULT_PREVIEW, testTimeoutMs: DEFAULT_TEST_TIMEOUT_MS, testTimeoutSource: 'default', runner: DEFAULT_RUNNER, runnerSource: 'default', autoIncrease: DEFAULT_AUTO_INCREASE, starter: false, untested: false, generated: null };
   if (raw === null) {
     if (baseFiles === undefined) return withLimits(fallback, {}, settings);
     const untested = !baseFiles.some((path) => TEST_PATHS.test(path) && !path.includes('node_modules/'));
     const scripted = basePackageJson !== undefined && basePackageJson !== null ? packageTestCheck(baseFiles, basePackageJson, baseLockHead) : null;
-    return withLimits({ ...fallback, starter: isStarterRepository(baseFiles), untested, manifest: baseFiles.includes('package.json'), ...(scripted ? { testCommand: scripted.testCommand, evidence: scripted.evidence, install: scripted.install } : {}) }, {}, settings);
+    const detected: RepositoryPolicy = { ...fallback, starter: isStarterRepository(baseFiles), untested, manifest: baseFiles.includes('package.json'), dependencies, ...(scripted ? { testCommand: scripted.testCommand, evidence: scripted.evidence, install: scripted.install, ...(scripted.install ? { installSource: 'detected' as const } : {}) } : {}) };
+    return withLimits(withOwnerInstall(detected, baseFiles, basePackageJson, baseLockHead, settings), {}, settings);
   }
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { throw new Error(`${POLICY_FILE} is not valid JSON`); }
@@ -168,7 +181,7 @@ export function parseRepositoryPolicy(raw: string | null, defaultTestCommand: st
   const fields = parsed as Record<string, unknown>;
   const unknown = Object.keys(fields).filter((key) => !['test', 'evidence', 'editable', 'install', 'preview', 'timeoutSeconds', 'runner', 'generated', 'deploy'].includes(key));
   if (unknown.length) throw new Error(`${POLICY_FILE}: unsupported field "${unknown[0]}"`);
-  const policy: RepositoryPolicy = { ...fallback, ...(baseFiles ? { manifest: baseFiles.includes('package.json') } : {}) };
+  const policy: RepositoryPolicy = { ...fallback, ...(baseFiles ? { manifest: baseFiles.includes('package.json'), dependencies } : {}) };
   if (fields.test !== undefined) policy.testCommand = command(fields.test, 'test');
   if (fields.preview !== undefined) policy.previewCommand = command(fields.preview, 'preview');
   if (fields.evidence !== undefined) {
@@ -179,6 +192,7 @@ export function parseRepositoryPolicy(raw: string | null, defaultTestCommand: st
   if (fields.install !== undefined) {
     if (fields.install !== false && !INSTALL_VALUES.includes(fields.install as string)) throw new Error(`${POLICY_FILE}: "install" must be "npm", "pnpm", "yarn", "auto" or false`);
     policy.install = fields.install === false ? null : configuredInstall(fields.install as PackageManager | 'auto', baseFiles ?? [], basePackageJson ?? null, baseLockHead);
+    policy.installSource = 'gitflare.json';
   }
   const explicit: { timeoutSeconds?: number; runner?: RunnerSize } = {};
   if (fields.timeoutSeconds !== undefined) {
@@ -194,12 +208,23 @@ export function parseRepositoryPolicy(raw: string | null, defaultTestCommand: st
     policy.editable = fields.editable.map(editablePath);
   }
   if (fields.generated !== undefined) policy.generated = generatedFiles(fields.generated);
-  return withLimits(policy, explicit, settings);
+  return withLimits(fields.install === undefined ? withOwnerInstall(policy, baseFiles, basePackageJson, baseLockHead, settings) : policy, explicit, settings);
 }
 
 function configuredInstall(value: PackageManager | 'auto', files: string[], packageJson: string | null, lockHead: string | null | undefined): InstallPlan | null {
   if (value === 'auto') return hasInstallableDependencies(files, packageJson) ? detectPackageManager({ files, packageJson, lockHead }) : null;
   return detectPackageManager({ files, packageJson: packageJson ?? '{}', lockHead, prefer: value });
+}
+
+const PACKAGE_COMMAND = /^(?:(?:npm|pnpm|yarn|bun)\s+(?:run\b|run-script\b|exec\b|test\b|t\b|dlx\b|x\b)|(?:npx|pnpx|bunx)\s|(?:tsc|vite|vitest|jest|mocha|ava|webpack|rollup|esbuild|next|astro|nuxt|svelte-kit|eslint|prettier|tsx|ts-node|playwright|wrangler)(?:\s|$))/;
+
+export function needsPackages(command: string): boolean {
+  return command.split(/&&|\|\||;/).some((part) => PACKAGE_COMMAND.test(part.trim()));
+}
+
+export function installPreflight(policy: Pick<RepositoryPolicy, 'install' | 'installSource' | 'dependencies' | 'untested' | 'testCommand'>): string | null {
+  if (policy.install || policy.installSource || policy.untested || !policy.dependencies || !needsPackages(policy.testCommand)) return null;
+  return `The test command \`${policy.testCommand}\` needs installed packages, but dependency install is off: package.json lists dependencies and neither gitflare.json at the base revision nor the repository check settings set "install". Checks have no registry access, so installing inside the test command fails. An Owner can turn on dependency install in Settings → Branches → Checks or with gitflare_set_check_settings (install), then run checks again.`;
 }
 
 export function isProtectedPath(path: string, editable: string[] = DEFAULT_EDITABLE): boolean {

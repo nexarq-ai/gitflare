@@ -10,7 +10,8 @@ export function unsubscribeUrl(origin: string, userId: string, token: string, re
 }
 
 function reference(entry: DigestEntry): string {
-  return entry.subject.kind === 'issue' ? `#${entry.subject.number}` : entry.subject.kind === 'proposal' ? 'proposal' : 'deploy';
+  const { subject } = entry;
+  return subject.kind === 'issue' ? `#${subject.number}` : subject.kind === 'proposal' ? 'proposal' : subject.kind === 'revision' ? (subject.sha ?? '').slice(0, 7) : subject.kind === 'release' ? subject.tag ?? 'release' : 'deploy';
 }
 
 export async function sendNotificationEmail(env: AppEnv, userId: string, book: NotificationBook, entries: DigestEntry[], digest: boolean): Promise<'sent' | 'empty' | 'unavailable'> {

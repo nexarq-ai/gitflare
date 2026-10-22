@@ -6,7 +6,7 @@ import { request } from "./api";
 import { relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
 import InfoTip from "./InfoTip";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import "./fix-requests.css";
 
 type Draft = { models: string[]; missionsPerDay: string; draftsPerDay: string; perUserPerDay: string };
@@ -50,7 +50,7 @@ export default function CommunityAiSettings({ repositoryId, onNotify }: { reposi
   }
 
   if (error && !settings) return <div className="error-notice" role="alert">{error}</div>;
-  if (!settings || !draft) return <RouteProgress />;
+  if (!settings || !draft) return <PageLoading />;
   const { pool, usage, assist, canManage } = settings;
   const number = (field: "missionsPerDay" | "draftsPerDay" | "perUserPerDay", label: string, min: number, max: number) => <div className="form-field">
     <label htmlFor={`pool-${field}`}>{label}</label>

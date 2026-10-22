@@ -3,7 +3,7 @@ import type { ArtifactInfo } from '../artifacts';
 import type { CommandResult } from '../../../runner/sandbox';
 import { DEPENDENCY_FILES, type InstallPlan } from '../package-manager';
 import type { LearnedLimits } from '../check-settings';
-import { escalatedLimits, isFixedSource, startingTimeoutMs, parseRepositoryPolicy, POLICY_FILE, starterCheck, type RepositoryPolicy } from '../repository-policy';
+import { escalatedLimits, installPreflight, isFixedSource, startingTimeoutMs, parseRepositoryPolicy, POLICY_FILE, starterCheck, type RepositoryPolicy } from '../repository-policy';
 import { checkFailureSummary, checkFromCommand, commandOutput, outputLimit } from '../check-evidence';
 import type { SandboxRunner, ExecutionEnv, AuthorityGuard } from './environment';
 import { checked, cloneOnFreshRunner, changesWithStatus, landedPaths } from './sandbox-git';
@@ -104,7 +104,8 @@ async function verifyOnce(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: str
     }, fork, baseSha);
     // Dependencies and baseline come from the base commit, before any candidate code executes in this sandbox
     if (policy.install && !policy.untested) await installDependencies(sandbox, policy.install, assertAuthority, isActive);
-    const baseline = policy.evidence === 'tap' && !policy.untested ? await runCheck(sandbox, policy) : undefined;
+    const preflight = installPreflight(policy);
+    const baseline = policy.evidence === 'tap' && !policy.untested && !preflight ? await runCheck(sandbox, policy) : undefined;
     await checked(sandbox, ['git', 'checkout', '--detach', sha]);
     await checked(sandbox, ['git', 'merge-base', '--is-ancestor', baseSha, sha]);
     const statuses = await changesWithStatus(sandbox, [baseSha, sha]);
@@ -128,6 +129,7 @@ async function verifyOnce(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: str
         return { id: key, name: 'Repository test suite', candidateSha: sha, status: 'failed', output: error.message };
       }
     };
+    if (preflight) return { check: { id: key, name: 'Repository test suite', candidateSha: sha, status: 'failed', output: preflight }, changes, dependencyChanges };
     if (reinstall) {
       const failed = await failedInstall(reinstall);
       if (failed) return { check: failed, changes, dependencyChanges };
