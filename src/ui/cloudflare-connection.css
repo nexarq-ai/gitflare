@@ -6,7 +6,7 @@
 .cf-form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 .cf-form-row label { min-width: 260px; }
 .cf-connection-page label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--gf-color-text-secondary); }
-.cf-connection-page select { min-height: 38px; padding: 8px 10px; border: 1px solid var(--gf-color-border); border-radius: 5px; background: var(--gf-color-surface-raised); width: 100%; font-size: 13px; }
+.cf-connection-page select { min-height: 38px; padding: 8px 10px; border: 1px solid var(--gf-color-border); width: 100%; font-size: 13px; }
 .cf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 20px; }
 .cf-actions a { font-size: 12px; color: var(--gf-color-info); }
 .cf-resource-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 18px; margin-bottom: 22px; }
@@ -79,7 +79,7 @@
 .cf-resource-save { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--gf-color-border); }
 .cf-resource-save > span { color: var(--gf-color-text-secondary); font-size: 12px; }
 .cf-readonly-resource { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--gf-color-border); border-radius: 6px; }
-.cf-environment-badge { display: inline-block; padding: 3px 7px; background: var(--gf-color-surface); border-radius: 4px; color: var(--gf-color-text-secondary); font-size: 11px; overflow-wrap: anywhere; }
+.cf-environment-badge { display: inline-block; font-size: 11px; overflow-wrap: anywhere; }
 .cf-usage-item { padding: 16px; border: 1px solid var(--gf-color-border); border-radius: 6px; min-width: 0; height: 100%; }
 .cf-usage-item h3 { overflow-wrap: anywhere; margin-bottom: 8px; }
 .cf-usage-item > p { margin-top: 10px; }
@@ -136,7 +136,7 @@
 .cf-deployments th { color: var(--gf-color-text-secondary); font-weight: 500; }
 @media (max-width: 700px) { .cf-deployments { display: block; overflow-x: auto; } }
 .cf-targets { display: grid; gap: 14px; margin-bottom: 18px; justify-items: start; }
-.cf-target { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 12px; width: 100%; border: 1px solid var(--gf-color-border); border-radius: 6px; padding: 14px 16px; }
+.cf-target { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 12px; width: 100%; border: 1px solid var(--gf-color-border); padding: 14px 16px; }
 .cf-target legend { font-size: 12px; color: var(--gf-color-text-secondary); padding: 0 6px; }
 .cf-target label, .cf-form-row label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--gf-color-text-secondary); }
 .cf-target input:not([type="checkbox"]), .cf-target select { min-height: 38px; padding: 8px 10px; border: 1px solid var(--gf-color-border); border-radius: 5px; background: var(--gf-color-surface-raised); width: 100%; font-size: 13px; }

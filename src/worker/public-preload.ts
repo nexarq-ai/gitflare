@@ -1,5 +1,11 @@
 import { publicPageRequests } from '../ui/public-requests';
+import { publicProfileLocation, publicRepositoryLocation, publicShellRoute, routeFromLocation } from '../ui/router';
+import { ROUTE_MODULES_MARKER, type RouteModuleName, type RouteModules } from '../shared/route-modules';
+import { hasSignedInHint } from '../shared/signed-in-hint';
+import { hostOrigins } from '../shared/hosts';
 import type { AppEnv } from './env';
+
+const ROUTE_MODULES = new RegExp(`<!--${ROUTE_MODULES_MARKER}([^]*?)-->\\n?`);
 
 function escapeAttribute(value: string): string {
   return value.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
@@ -16,13 +22,34 @@ export function injectPreloads(html: string, tags: string): string {
   return at < 0 ? html : `${html.slice(0, at)}${tags}${html.slice(at)}`;
 }
 
-export async function withPublicPreloads(request: Request, env: Pick<AppEnv, 'EDITION' | 'DEMO_MODE'>, response: Response): Promise<Response> {
+export function publicShellVisit(request: Request, env: Pick<AppEnv, 'SITE_ORIGIN' | 'APP_ORIGIN'>): boolean {
+  const origins = hostOrigins(env.SITE_ORIGIN, env.APP_ORIGIN);
+  return !!origins && new URL(request.url).origin === origins.site && !hasSignedInHint(request.headers.get('Cookie'));
+}
+
+export function routeModuleNames(url: URL, publicShell: boolean): RouteModuleName[] {
+  const route = routeFromLocation(url.pathname, '');
+  const page: RouteModuleName | null = publicRepositoryLocation(route) ? 'repository' : publicProfileLocation(route) ? 'profile' : route === 'explore' ? 'explore' : route === 'search' ? 'search' : route === 'home' ? 'home' : null;
+  return [publicShell && publicShellRoute(route) ? 'public' : 'app', ...(page ? [page] : [])];
+}
+
+export function injectRouteModules(html: string, names: RouteModuleName[]): string {
+  const match = ROUTE_MODULES.exec(html);
+  if (!match) return html;
+  let modules: RouteModules;
+  try { modules = JSON.parse(match[1]!) as RouteModules; } catch { return html.replace(ROUTE_MODULES, ''); }
+  const js = new Set(names.flatMap(name => modules[name]?.js ?? []));
+  const css = new Set(names.flatMap(name => modules[name]?.css ?? []));
+  const tags = [...[...js].map(href => `<link rel="modulepreload" crossorigin href="${escapeAttribute(href)}">`), ...[...css].map(href => `<link rel="preload" as="style" crossorigin href="${escapeAttribute(href)}">`)].join('');
+  return html.replace(ROUTE_MODULES, () => tags);
+}
+
+export async function withPublicPreloads(request: Request, env: Pick<AppEnv, 'EDITION' | 'DEMO_MODE' | 'SITE_ORIGIN' | 'APP_ORIGIN'>, response: Response): Promise<Response> {
   if (env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true' || request.method !== 'GET' || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
-  const tags = publicPreloadTags(new URL(request.url));
-  if (!tags) return response;
-  const html = await response.text();
+  const url = new URL(request.url);
+  const html = injectPreloads(injectRouteModules(await response.text(), routeModuleNames(url, publicShellVisit(request, env))), publicPreloadTags(url));
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
   headers.delete('ETag');
-  return new Response(injectPreloads(html, tags), { status: response.status, statusText: response.statusText, headers });
+  return new Response(html, { status: response.status, statusText: response.statusText, headers });
 }
