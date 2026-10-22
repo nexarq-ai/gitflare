@@ -825,8 +825,8 @@
     },
     {
       "path": "src/ui/McpConnections.tsx",
-      "size": 4518,
-      "sha256": "aa16eadc997ae6900b776aa8fa6a6ec7c134c17ea55479a12d679227ab7c0204"
+      "size": 4564,
+      "sha256": "62cb4a31652cfb220be01117217690c689dd6d9db0d3579d24badb76b9ecc98e"
     },
     {
       "path": "src/ui/mission-documents.css",
@@ -1105,8 +1105,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 69998,
-      "sha256": "3a630b49a4dc4eddb4ddcbc61a726cb06fcfdd17b381567865be6bda4c21103e"
+      "size": 70182,
+      "sha256": "e9befd48e2171a0442ff50bd30d3a82ead1ac6df77b66442dd0b548907036bf0"
     },
     {
       "path": "src/ui/SubscribeButton.tsx",
