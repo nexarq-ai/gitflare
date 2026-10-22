@@ -1504,9 +1504,124 @@
       "sha256": "849f8935deec5c0825769971cf7a4f47882f8177a7e9f944dc616e1bacbed078"
     },
     {
+      "path": "src/worker/mcp-results.ts",
+      "size": 8525,
+      "sha256": "b4d351388786db6cbfc5e1dd2af61052b0190e65aa964b45e8c4f3a1b6ff578d"
+    },
+    {
+      "path": "src/worker/mcp-schemas.ts",
+      "size": 5878,
+      "sha256": "9a94f4e8f3e4fa8faf11596937d9242d81a01e5c2d703b323f22711242101b83"
+    },
+    {
+      "path": "src/worker/mcp-tools/access.ts",
+      "size": 10202,
+      "sha256": "eac2d8900c47d3a0aa184b2e70775ef39da2a05563315a523356653d7a6f1cd2"
+    },
+    {
+      "path": "src/worker/mcp-tools/advisories.ts",
+      "size": 10169,
+      "sha256": "36a75f61dfea82a3926a215a16f879c0e33ed8d8fbc436dc65a503a0ca7d7aa7"
+    },
+    {
+      "path": "src/worker/mcp-tools/ai.ts",
+      "size": 6099,
+      "sha256": "73bc040cfd9d0c84543ebbb9c02e5de377c1a131d549ef5e061cab88f5ea2535"
+    },
+    {
+      "path": "src/worker/mcp-tools/assist.ts",
+      "size": 8621,
+      "sha256": "006354a5fd29d4b06342b8ba495746be234ee0249414a822e5868eb1769bfd4f"
+    },
+    {
+      "path": "src/worker/mcp-tools/branches.ts",
+      "size": 6724,
+      "sha256": "385fbf607c5b3fdc5f33da4d3e9690065c1fe4b79e2a12e6a07fc3476198e2ce"
+    },
+    {
+      "path": "src/worker/mcp-tools/cloudflare.ts",
+      "size": 9791,
+      "sha256": "37637785fde36a32790bfd07374f509e5d1161490c4df0a3b42b9c4bce2a7c74"
+    },
+    {
+      "path": "src/worker/mcp-tools/context.ts",
+      "size": 139,
+      "sha256": "05f36712d4341181a0476ab079ef023b63496ae542c7e92931dc2bedab674aef"
+    },
+    {
+      "path": "src/worker/mcp-tools/deploy.ts",
+      "size": 10574,
+      "sha256": "87ee75d92f2d7912c182f288164eeb7e7d697b3c4d23829a1aa151d5fa1a0590"
+    },
+    {
+      "path": "src/worker/mcp-tools/discovery.ts",
+      "size": 5793,
+      "sha256": "12545202a69acd417d8111024b0614d8590ae7a04011e5ace7f3a871408c3fc9"
+    },
+    {
+      "path": "src/worker/mcp-tools/docs.ts",
+      "size": 3582,
+      "sha256": "a5604ac763f62678bf11d297cf630f0fed1c7b210bb9f3d49137a17b5e2456c4"
+    },
+    {
+      "path": "src/worker/mcp-tools/forks.ts",
+      "size": 5011,
+      "sha256": "b151e6bc4b2b798990a1d6bc878f906e1383091a6b9cb1d751716fc3eeb92531"
+    },
+    {
+      "path": "src/worker/mcp-tools/github.ts",
+      "size": 9890,
+      "sha256": "88d45a7d5beedb07eee266371dbf27a322871be8c788cea088f41b72b0df2d30"
+    },
+    {
+      "path": "src/worker/mcp-tools/issues.ts",
+      "size": 5533,
+      "sha256": "a5c27d331f796093e4a41387f91dfa408d818a370ae8c4e415163efa41294e51"
+    },
+    {
+      "path": "src/worker/mcp-tools/missions.ts",
+      "size": 22789,
+      "sha256": "43e33063145cd39f87cd56063c30be5472fc5c3afafe6a201e0a504eaf4c96f3"
+    },
+    {
+      "path": "src/worker/mcp-tools/moderation.ts",
+      "size": 6997,
+      "sha256": "361a63c4a920dc60e32d4394069f344b0991c21fa717bc5e8e8fd7215b3a9c15"
+    },
+    {
+      "path": "src/worker/mcp-tools/notifications.ts",
+      "size": 6732,
+      "sha256": "3fadd4ab766671188832b477a76e638303042897bf51af35c34f7ad8be0112ca"
+    },
+    {
+      "path": "src/worker/mcp-tools/public.ts",
+      "size": 9890,
+      "sha256": "1db234102f7ae9da40e63da3ee89e1e37ec861681de59209b279d12c0c74611c"
+    },
+    {
+      "path": "src/worker/mcp-tools/releases.ts",
+      "size": 7145,
+      "sha256": "a99a4ac86a85804d3b11ec7bbebd8e249f43404ce8f47fa20f4ef3b42eb13c9d"
+    },
+    {
+      "path": "src/worker/mcp-tools/repositories.ts",
+      "size": 11016,
+      "sha256": "aff005c91333448f0ea59147e44d83d0c706b9b048d4e8415ea41c579ebcc177"
+    },
+    {
+      "path": "src/worker/mcp-tools/repository-settings.ts",
+      "size": 9213,
+      "sha256": "2b28c42123633a500395f09dfe7132384ca09b3c54de5fa313884bb727e5da30"
+    },
+    {
+      "path": "src/worker/mcp-tools/secrets.ts",
+      "size": 4069,
+      "sha256": "7b2c8c290839fb2dc1f3499afe835f89f727edcdb045570045d09b61fbc1eb5e"
+    },
+    {
       "path": "src/worker/mcp.ts",
-      "size": 188106,
-      "sha256": "a9ee2484dd7805954898fab569bae42d0012a11fa0cd9f4a766fd226deaced9c"
+      "size": 13040,
+      "sha256": "f5683a8e3e33d2e234ec3331206d24a563805ceb05b8830a37b6e414b3420685"
     },
     {
       "path": "src/worker/mfa.ts",
