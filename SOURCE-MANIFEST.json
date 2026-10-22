@@ -95,8 +95,8 @@
     },
     {
       "path": "NOTICE",
-      "size": 270,
-      "sha256": "099819635f2f5e538467d53111da605b17368b056808f04d196f73129550f182"
+      "size": 240,
+      "sha256": "04c9f24f38d52febd7ab2efcbc8e7af284d551784f1e610a78d07f7a99002296"
     },
     {
       "path": "package-lock.json",
@@ -195,8 +195,8 @@
     },
     {
       "path": "SECURITY.md",
-      "size": 1016,
-      "sha256": "1898651589a364f24fc52436374f5ce60f2effa98c04aaf15a76e6b92ca5b5ec"
+      "size": 1549,
+      "sha256": "0dc58d8e6f5ac2a8ca56c08441a5525336144e8a01df56ca984f6c8ad7d5cf8d"
     },
     {
       "path": "src/preview/index.ts",
