@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Buffer } from 'node:buffer';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -103,6 +103,8 @@ function setup(fail?: (url: string) => boolean) {
 let runs = 0;
 const run = (context: MirrorRunContext, extra: Partial<Parameters<typeof runMirrorSync>[1]> = {}) => runMirrorSync(context, { runId: `run-${++runs}`, reason: 'test', ...extra });
 
+const EXECUTION_MODULES = readdirSync('src/worker/execution').map(name => `src/worker/execution/${name}`);
+
 describe('GitHub mirror sync', () => {
   it('pushes the default branch and tags, then each landing, without leaking credentials', async () => {
     const { gitflare, github, work, seen, records, context } = setup();
@@ -201,7 +203,7 @@ describe('GitHub mirror sync', () => {
       const source = readFileSync(join(__dirname, '..', file), 'utf8');
       expect(source, file).not.toMatch(/SANDBOX|runner\/sandbox|getSandbox/);
     }
-    for (const file of ['src/worker/execution.ts', 'runner/sandbox.ts']) expect(readFileSync(join(__dirname, '..', file), 'utf8'), file).not.toMatch(/github-mirror|GITHUB_APP|githubMirror/);
+    for (const file of ['src/worker/execution.ts', ...EXECUTION_MODULES, 'runner/sandbox.ts']) expect(readFileSync(join(__dirname, '..', file), 'utf8'), file).not.toMatch(/github-mirror|GITHUB_APP|githubMirror/);
   });
 
   it('validates ref patterns', () => {
