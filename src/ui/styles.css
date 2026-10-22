@@ -2469,6 +2469,17 @@ a svg {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 8px 8px 8px 16px;
+}
+.mcp-auth-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+}
+.mcp-auth-note svg {
+  flex-shrink: 0;
+  margin-top: 4px;
 }
 .mcp-endpoint code {
   font-size: 13px;
