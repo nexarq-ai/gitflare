@@ -14,11 +14,13 @@ import { sourceView, type SourceCommit, type SourceHandle } from './source-brows
 import { readFunding } from './funding';
 import { readSecurityPolicy } from './security-policy';
 import { publicDownloadUrl, servedContentType, type StoredAsset } from './release-assets';
+import { markdownImages } from './image-proxy';
 
 export const PUBLIC_NOT_FOUND = 'This repository does not exist or is not public.';
 const REPOSITORY_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const LICENSE_FILE = /^(?:licen[cs]e|copying)(?:[.-][a-z0-9.-]{1,20})?$/i;
 const README_FILE = /^readme(?:\.(?:md|markdown|txt))?$/i;
+const MARKDOWN_FILE = /\.(?:md|markdown)$/i;
 const LICENSE_READ_MAX = 65_536;
 const LIKELY_LICENSE_FILES = ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'COPYING'];
 const PUBLIC_HISTORY_MAX = 100;
@@ -215,11 +217,12 @@ async function publicView(env: AppEnv, access: SecurityService, target: PublicTa
     const [releases, assets, advisories] = await Promise.all([records.listReleases() as Promise<Release[]>, Promise.resolve().then(() => records.listReleaseAssets() as Promise<StoredAsset[]>).catch(() => [] as StoredAsset[]), Promise.resolve().then(() => records.listAdvisories() as Promise<Advisory[]>).catch(() => [] as Advisory[])]);
     const urls = publicUrls(origin, handle, repository);
     return Response.json({
-      releases: releases.filter(release => !release.draft && release.publishedAt).sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '')).map(release => ({
+      releases: await Promise.all(releases.filter(release => !release.draft && release.publishedAt).sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '')).map(async release => ({
         tag: release.tag, name: release.name, notes: release.notes, targetSha: release.targetSha, prerelease: release.prerelease, publishedAt: release.publishedAt,
         assets: env.RELEASE_ASSETS ? assets.filter(asset => asset.releaseId === release.id).map(asset => ({ name: asset.name, size: asset.size, contentType: servedContentType(asset.contentType), sha256: asset.sha256, downloadUrl: publicDownloadUrl(urls.url, release.tag, asset.name) })) : [],
         advisories: advisories.filter(advisory => advisory.state === 'published' && advisory.releaseId === release.id).map(advisory => ({ id: advisory.id, title: advisory.title, severity: advisory.severity, cveId: advisory.cveId })),
-      })),
+        images: await markdownImages(env, release.notes),
+      }))),
       feeds: feedLinks(origin, urls.path).releases,
     } satisfies PublicReleases);
   }
@@ -236,12 +239,18 @@ async function publicView(env: AppEnv, access: SecurityService, target: PublicTa
     return Response.json(await atCommit(`readme:${ref}`, async () => {
       const readme = rootFile((await source.readTree(commit.treeHash)) ?? [], README_FILE);
       if (!readme) throw new ApiError(404, 'FILE_NOT_FOUND', 'This repository has no README.');
-      return publicSource(await sourceView(source, commit, 'file', readme, ref));
+      return withImages(env, await publicSource(await sourceView(source, commit, 'file', readme, ref)), true);
     }));
   }
   const kind = view === 'file' ? 'file' : 'tree';
   const path = repositoryPath(url.searchParams.get('path') ?? '', kind === 'tree');
-  return Response.json(await atCommit(`${kind}:${ref}:${path}`, async () => publicSource(await sourceView(source, commit, kind, path, ref))));
+  return Response.json(await atCommit(`${kind}:${ref}:${path}`, async () => withImages(env, await publicSource(await sourceView(source, commit, kind, path, ref)), false)));
+}
+
+async function withImages(env: AppEnv, value: PublicTree | PublicFile, readme: boolean): Promise<PublicTree | PublicFile> {
+  if (!('content' in value) || (!readme && !MARKDOWN_FILE.test(value.path))) return value;
+  const images = await markdownImages(env, value.content);
+  return images ? { ...value, images } : value;
 }
 
 async function publicSource(response: Response): Promise<PublicTree | PublicFile> {

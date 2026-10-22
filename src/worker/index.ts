@@ -23,6 +23,8 @@ import { publicAdvisoriesApi } from './advisories';
 import { feedResponse } from './feeds';
 import { publicDownloadResponse } from './public-downloads';
 import { socialCardResponse, socialMetaTags, socialPageTarget } from './social-cards';
+import { imageProxyResponse } from './image-proxy';
+import { rawImageResponse } from './raw-images';
 import { IMPORT_REQUEST_MAX_BYTES } from './repository-import';
 import { handleGitRequest } from './git-http';
 import { handleUrlImport } from './url-import';
@@ -243,6 +245,8 @@ const application = {
     if (download) return download;
     const card = await socialCardResponse(request, env, ctx);
     if (card) return card;
+    const image = await imageProxyResponse(request, env, ctx) ?? await rawImageResponse(request, env);
+    if (image) return image;
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
     if (!path.startsWith('/api/') && path !== '/mcp') {
