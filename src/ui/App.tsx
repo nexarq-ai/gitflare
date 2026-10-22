@@ -168,6 +168,19 @@ export default function App() {
   );
 }
 
+function PrefetchWorkspacePages() {
+  useEffect(() => {
+    const prefetch = () => { for (const load of workspacePages) void load().catch(() => {}); };
+    if ("requestIdleCallback" in window) {
+      const handle = window.requestIdleCallback(prefetch);
+      return () => window.cancelIdleCallback(handle);
+    }
+    const timer = setTimeout(prefetch, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+  return null;
+}
+
 function ReconnectingNotice() {
   return <div className="reconnecting-notice" role="status" aria-live="polite"><span aria-hidden="true" />Reconnecting to Gitflare…</div>;
 }
@@ -305,13 +318,6 @@ function Workspace() {
     );
     return () => { active = false; };
   }, [authState, route]);
-
-  useEffect(() => {
-    if (authState !== "authenticated") return;
-    const prefetch = () => { for (const load of workspacePages) void load().catch(() => {}); };
-    const idle = (window as { requestIdleCallback?: (callback: () => void) => number }).requestIdleCallback;
-    if (idle) idle(prefetch); else setTimeout(prefetch, 1500);
-  }, [authState]);
 
   useEffect(() => {
     let active = true;
@@ -1199,6 +1205,7 @@ function Workspace() {
                   : "Private workspace"}
               </span>
             </footer>
+            <PrefetchWorkspacePages />
           </Suspense>
         </main>
       </div>

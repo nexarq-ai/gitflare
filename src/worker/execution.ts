@@ -95,7 +95,7 @@ export async function runConcurrent<T>(jobs: (() => Promise<T>)[]): Promise<Prom
   return outcomes;
 }
 
-const shellTool = { type: 'function', name: 'shell', description: 'Run a bounded shell command in the isolated repository. Read and edit files, inspect changes, and run available tests. Network access is limited to your task fork.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false }, strict: true };
+const shellTool = { type: 'function', name: 'shell', description: 'Run one bash command in the isolated repository (working directory /workspace/repo, 45 s limit, output truncated). Use it to read and write files, inspect git status and diff, and run tests. No network access.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false }, strict: true };
 const teamTool = { type: 'function', name: 'team_status', description: 'See what the other agents on this mission are assigned, which files each has touched so far, and which of those overlap with yours. Optionally share a one-line note describing what you are about to change and why.', parameters: { type: 'object', properties: { note: { type: ['string', 'null'] } }, required: ['note'], additionalProperties: false }, strict: true };
 
 const noArguments = { type: 'object', properties: {}, required: [], additionalProperties: false };

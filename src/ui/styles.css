@@ -1,6 +1,6 @@
 @source "../../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
 @import "@cloudflare/kumo/styles/tailwind";
-@import "tailwindcss";
+@import "tailwindcss" source("../");
 
 :root {
   font-family: var(--gf-font-sans);
@@ -2959,8 +2959,11 @@ a svg {
   font-size: 13px;
 }
 .commit-message-field { margin: 4px 0 0; }
-.commit-message-field input, .commit-message-field textarea { width: 100%; }
-.commit-message-field textarea { margin-top: 6px; min-height: 0; resize: vertical; font-family: var(--gf-font-mono); font-size: 12px; line-height: 1.5; }
+.commit-message-field input, .commit-message-field textarea { width: 100%; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-md); background: var(--gf-color-surface); color: var(--gf-color-text); font: 14px/1.5 var(--gf-font-sans); }
+.commit-message-field input { height: 38px; padding: 0 12px; }
+.commit-message-field textarea { margin-top: 8px; min-height: 0; padding: 10px 12px; resize: vertical; font-size: 13px; color: var(--gf-color-text-secondary); }
+.commit-message-field input:hover, .commit-message-field textarea:hover { border-color: var(--gf-color-border-strong); }
+.commit-message-field input:focus-visible, .commit-message-field textarea:focus-visible { outline: none; border-color: var(--gf-color-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gf-color-focus) 25%, transparent); }
 .commit-message-tip { display: flex; align-items: center; gap: 6px; }
 .commit-message-tip code { font-size: 12px; }
 .confirm-facts { display: grid; gap: 8px; margin: -8px 0 4px; padding: 12px 14px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-md); background: var(--gf-color-surface-sunken); font-size: 13px; }

@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/public/cloudflare-permissions.md",
-      "size": 7208,
-      "sha256": "c1f6f70e239f1bd58f79fde64f54aac8e67329e1212b0b9ab308e00b73d5534d"
+      "size": 8209,
+      "sha256": "73294ef2d38099748afa4bdf6668dbed3c5bcdb7f2b8222164b23f02319f10cb"
     },
     {
       "path": "docs/public/github-mirror.md",
@@ -395,8 +395,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 85356,
-      "sha256": "e3a7434ab978c8d95e81ed3862f2284c458d32e8e8ef442a039921f5953c8c76"
+      "size": 85466,
+      "sha256": "77237a939e270d8739f1316d6d1b17c180acca5b5d275011517ef0fc604664ed"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -1105,8 +1105,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 69387,
-      "sha256": "b925f8127f09fa93b31274e1f241349466d54703d6c320f1445948cfc6f59a5d"
+      "size": 69998,
+      "sha256": "3a630b49a4dc4eddb4ddcbc61a726cb06fcfdd17b381567865be6bda4c21103e"
     },
     {
       "path": "src/ui/SubscribeButton.tsx",
@@ -1165,13 +1165,13 @@
     },
     {
       "path": "src/worker/agent-assist.ts",
-      "size": 22431,
-      "sha256": "e89d7ca138ab3bc925053da248d250a57397fa6901b2c182d65073facbd0bcb6"
+      "size": 22790,
+      "sha256": "813f9e281cf97d0e7a0d7cc9403b1a738da097a14eaf8002e4bc7bb94dcc87b3"
     },
     {
       "path": "src/worker/agent-rules.ts",
-      "size": 13175,
-      "sha256": "8640062c20bd272e37f7a065f520b9160abdb6eeadd041dd14cadb188c19a473"
+      "size": 14780,
+      "sha256": "aadf283a000e61b17857fd504faf17e991c7734d5c8ef4b66b80f8aeb8d90b3c"
     },
     {
       "path": "src/worker/agent-settings.ts",
@@ -1390,8 +1390,8 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 114527,
-      "sha256": "b1f64b9c614ce068187c307699c294f34847d992543810ab1f205b8198531101"
+      "size": 114573,
+      "sha256": "b8dd10bbefae93f5dd8ae40c2244aaabc54c74b11972d5ad158b4119e1f61454"
     },
     {
       "path": "src/worker/feeds.ts",
@@ -1500,8 +1500,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 187772,
-      "sha256": "6f9076ec1c1723ad3670bbc70d14cee8245be740d0c4c29ea8bb5eb884daf0ca"
+      "size": 188122,
+      "sha256": "dfc4490ef12220bc8db8b673bc5ac70481bf5ea889fbb9cde4ddb8aba7b190ea"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -1515,8 +1515,8 @@
     },
     {
       "path": "src/worker/mission-draft.ts",
-      "size": 22345,
-      "sha256": "dad5064be53bd5007b1282ead8213f2489aa99c94cf0757d4482af8c7b70811d"
+      "size": 22643,
+      "sha256": "b0fb89761d367b77d8a38f076b6c1279361f09dba65b901f8c94cbb9cbb92a49"
     },
     {
       "path": "src/worker/mission-storage.ts",
@@ -1800,8 +1800,8 @@
     },
     {
       "path": "tests/agent-runtime.test.ts",
-      "size": 29948,
-      "sha256": "57c916d969f8b0b6f6a092b970e355b8fefe61ab781cd82d6a5ddd69cd875247"
+      "size": 31824,
+      "sha256": "02a647a975f5cd0169011a119668e6c10284556bc1642c4887b361784b2aa1f1"
     },
     {
       "path": "tests/agent-settings-ui.test.ts",
@@ -1975,8 +1975,8 @@
     },
     {
       "path": "tests/mcp.test.ts",
-      "size": 83681,
-      "sha256": "e74356c54242f4e1b225503eaeaf9953dd2e4c74c40449a54492582827f29562"
+      "size": 84542,
+      "sha256": "24499f3d54afb472d76010ba9fbb7208751846f027bd49846f4746f4357faf85"
     },
     {
       "path": "tests/mission-agent-retry-ui.test.ts",
@@ -2005,8 +2005,8 @@
     },
     {
       "path": "tests/mission-draft.test.ts",
-      "size": 8997,
-      "sha256": "a0bb1184815a3320319249b088450c3e5f99d2f2045f3ee38c7705f54949b7e1"
+      "size": 9466,
+      "sha256": "e1427eb29dc9e61c3170d50957979c187a79f69052c4c91d67b9cdfe26c39c2f"
     },
     {
       "path": "tests/mission-run-status.test.ts",
@@ -2189,6 +2189,11 @@
       "sha256": "80d808c586dc001996c9811df3dc068e2b253ca6e0f4b230001377ec870082b5"
     },
     {
+      "path": "tests/workspace-prefetch.test.ts",
+      "size": 1013,
+      "sha256": "bff4c4b33910cd2934a795f1a1fdeea85d1fe8dd05c0969b47aa3378222cca17"
+    },
+    {
       "path": "tests/workspace-switcher.test.ts",
       "size": 4603,
       "sha256": "6f003690e9a0820fca8741d65de3670178020b46272f1de6263c0611555b6e3e"
@@ -2200,8 +2205,8 @@
     },
     {
       "path": "vite.config.ts",
-      "size": 626,
-      "sha256": "3318e29100ef5db9fc67604602bca8a64a9f60e490af681b04c45009019f6151"
+      "size": 1332,
+      "sha256": "1bd8ef1dde154f99dd6f38a0d3fef1e1e74f5630d06baa1778fa5f5341ddfe59"
     },
     {
       "path": "vitest.config.ts",
