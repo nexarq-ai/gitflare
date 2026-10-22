@@ -42,7 +42,7 @@ import DiffView, {
 import { PullRequestPanel } from "./PullRequests";
 import { DependencyApprovalControl, DependencyChangesPanel } from "./DependencyChanges";
 import { navigate as goTo } from "./router";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import { ContextFiles, MarkdownContent } from "./MissionDocuments";
 import { useMissionReplay } from "./DemoReplay";
 import { resumePreview, type PreviewProgress, type PreviewStatusLike } from "../shared/preview-progress";
@@ -591,7 +591,7 @@ export default function MissionDetail({
         {loadError ? (
           <ErrorNotice message={loadError} />
         ) : (
-          <RouteProgress />
+          <PageLoading />
         )}
       </>
     );

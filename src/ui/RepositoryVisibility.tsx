@@ -9,6 +9,7 @@ import { useConfirm } from "./ConfirmDialog";
 import { pageHostOrigins } from "./hosts";
 import InfoTip from "./InfoTip";
 import "./public-settings.css";
+import { PageLoading } from "./WorkspaceLoader";
 
 type Props = { repository: Repository; onChanged: () => Promise<void> | void; onNotify: (message: string) => void };
 
@@ -102,7 +103,7 @@ export default function RepositoryVisibilityCard({ repository, onChanged, onNoti
     <div className="panel-header"><h2>Visibility</h2>{state && <span className={`visibility-pill${isPublic ? " is-public" : ""}`}>{isPublic ? <GlobeHemisphereWestIcon size={13} aria-hidden="true" /> : <LockSimpleIcon size={13} aria-hidden="true" />}{isPublic ? "Public" : "Private"}</span>}</div>
     <div className="panel-body">
       {loadError ? <div className="form-error" role="alert">{loadError}</div>
-        : !state ? <p className="people-muted" role="status">Loading visibility…</p>
+        : !state ? <PageLoading label="Loading visibility" />
         : <>
           <div className="visibility-row">
             <p className="visibility-state">{isPublic ? <>Public — anyone can read and clone.{address && <> <a href={address} target="_blank" rel="noopener noreferrer">{displayAddress(address)}</a></>}</> : "Private — only workspace members can see it."}</p>

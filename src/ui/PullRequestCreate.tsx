@@ -9,7 +9,7 @@ import { request } from "./api";
 import { EmptyState, ErrorNotice } from "./components";
 import { quoteGitArgument } from "./RepositoryImport";
 import { navigate as goTo } from "./router";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import "./pull-requests.css";
 
 function PullChoice({ repository, onAskAgents }: { repository: Repository; onAskAgents: () => void }) {
@@ -64,7 +64,7 @@ export default function PullRequestCreate({ repository, canContribute, canExecut
     }
   }
 
-  if (loadError || !list) return <div className="pull-create"><PullChoice repository={repository} onAskAgents={onAskAgents} />{loadError ? <ErrorNotice message={loadError} onRetry={() => setAttempt(value => value + 1)} /> : <RouteProgress />}</div>;
+  if (loadError || !list) return <div className="pull-create"><PullChoice repository={repository} onAskAgents={onAskAgents} />{loadError ? <ErrorNotice message={loadError} onRetry={() => setAttempt(value => value + 1)} /> : <PageLoading />}</div>;
   const candidates = list.branches.filter(item => upstream || !item.default);
   const selected = candidates.find(item => item.name === branch);
   const gitUrl = list.gitUrl || `${location.origin}/git/${repositoryLabel(repository)}.git`;

@@ -6,6 +6,7 @@ import { HANDLE_MAX, HANDLE_REDIRECT_DAYS, handleProblem, normalizeHandle } from
 import { request } from "./api";
 import InfoTip from "./InfoTip";
 import "./public-settings.css";
+import { PageLoading } from "./WorkspaceLoader";
 
 type Availability = { state: "idle" | "checking" | "available" | "unavailable"; message: string };
 
@@ -93,7 +94,7 @@ export function UserHandleCard({ onChanged }: { onChanged: () => Promise<void> }
   const { status, setStatus, error } = useHandleStatus();
   return <HandlePanel tip={`Your public address. Setting it creates your personal workspace. After a rename the old address redirects for ${HANDLE_REDIRECT_DAYS} days.`}>
     {error ? <div className="form-error" role="alert">{error}</div>
-      : !status ? <p className="people-muted" role="status">Loading handle…</p>
+      : !status ? <PageLoading label="Loading handle" />
       : <>
         {!status.user.handle && <p className="people-muted handle-lead">Choose your public address.</p>}
         <HandleEditor key={status.user.handle ?? ""} scope="user" current={status.user.handle} suggested={status.user.suggested} host={originHost(status.origin)} onSaved={async next => { setStatus(next); await onChanged(); }} />
@@ -107,7 +108,7 @@ export function WorkspaceHandleCard({ onChanged }: { onChanged: () => Promise<vo
   const host = status ? originHost(status.origin) : "";
   return <HandlePanel tip={`The public address of this workspace's public repositories. After a rename the old address redirects for ${HANDLE_REDIRECT_DAYS} days.`}>
     {error ? <div className="form-error" role="alert">{error}</div>
-      : !workspace ? <p className="people-muted" role="status">Loading handle…</p>
+      : !workspace ? <PageLoading label="Loading handle" />
       : workspace.personal ? <>
         {workspace.handle && <div className="general-row handle-row"><HandleAddress host={host} handle={workspace.handle} /></div>}
         <p className="people-muted handle-note">Uses your account handle. <a href="/account/profile">Change it in your profile</a></p>

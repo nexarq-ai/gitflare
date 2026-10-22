@@ -205,3 +205,7 @@ export function keepsRouteAcrossWorkspaces(route: string): boolean {
 export function isSiteRoute(route: string): boolean {
   return ["home", "deploy", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route) || !!publicSourceLocation(route) || /^docs(?:\/|$)/.test(route) || !isKnownAppRoute(route);
 }
+
+export function isWorkspaceRoute(route: string): boolean {
+  return /^(?:overview|missions|activity|admin|inbox|settings|mission|repository|proposals|import|account)(?:\/|$)/.test(route);
+}
