@@ -123,8 +123,6 @@ const APPROVAL_CLEAR_MAX_BACKOFF_MS = 900_000;
 const minutes = (ms: number) => Math.ceil(ms / 60_000);
 const landingCause = (reason: string) => failureLine(reason).replace(/\.$/, '');
 
-const EXECUTION_UPDATING_MESSAGE = 'Gitflare is finishing an update and could not start this proposal. Nothing was started. Retry in about a minute; if it still fails after 5 minutes, contact your Gitflare operator.';
-
 export function integrationPendingMessage(candidateSha: string): string {
   return `Landing has not finished: the default branch has not yet confirmed commit ${candidateSha.slice(0, 12)}, so other proposals in this repository cannot land until it does. If landing started in the last ${minutes(INTEGRATION_PREPARATION_MS)} minutes, wait and choose Land again; retries never push twice. If it has been longer, ask a workspace Owner to check the default branch: once it shows ${candidateSha.slice(0, 12)}, choose Land again to record it.`;
 }
@@ -132,15 +130,6 @@ export function integrationPendingMessage(candidateSha: string): string {
 export const INTEGRATION_UNCONFIRMED_MESSAGE = 'Landing could not confirm whether the default branch moved to the approved commit, so other proposals in this repository cannot land until it is resolved. Choose Land again to recheck the default branch; it never pushes twice. If the branch does not show the approved commit, ask a workspace Owner to inspect it before landing anything else.';
 
 export const PREVIEW_STARTING_MESSAGE = 'Gitflare is building a preview of this exact revision. It clones the code, installs dependencies and builds it, then publishes it: Cloudflare Workers become a Worker Preview, and other apps run in an isolated preview container. This usually takes about a minute; if a step fails, you see which one and why.';
-
-export async function startWithDurableDispatch(coordinator: { startMissionWithDispatch(key: string, id: string, authorization?: NonNullable<Mission['authorization']>, models?: ModelConnection[]): Promise<Mission> }, key: string, id: string, authorization?: NonNullable<Mission['authorization']>, models?: ModelConnection[]): Promise<Mission> {
-  try {
-    return await coordinator.startMissionWithDispatch(key, id, authorization, models);
-  } catch (error) {
-    if (error instanceof Error && /startMissionWithDispatch/.test(error.message) && /not a function|does not exist|not implemented|does not implement|missing|unknown method/i.test(error.message)) throw new ApiError(503, 'EXECUTION_DEPLOYMENT_PENDING', EXECUTION_UPDATING_MESSAGE);
-    throw error;
-  }
-}
 
 export class GitflareCoordinator extends DurableObject<AppEnv> {
   private store: SqlStore;

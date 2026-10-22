@@ -3,6 +3,7 @@ import { HANDLE_PATTERN, PROFILE_LIMITS, publicRepositoryPath } from '../shared/
 import { repositoryLabel } from '../shared/repository-names';
 import { ApiError, assertMutationOrigin, readJson } from './domain';
 import type { AppEnv } from './env';
+import { logFailure } from './log';
 import { catalogName } from './capacity';
 import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { personalWorkspaceId, publicPrincipal, securityClient, type FollowKind, type HandleKind, type Principal, type ProfileRecord, type SecurityService } from './security';
@@ -18,9 +19,9 @@ const SEARCH_TYPES: PublicSearchType[] = ['repositories', 'paths', 'people'];
 const STARRED_ON_PROFILE = 12;
 const STAR_LIST_LIMIT = 50;
 
-function background(ctx: Waiter, work: Promise<unknown>): void {
-  const guarded = work.catch(error => console.warn(JSON.stringify({ event: 'public_index_update_failed', name: error instanceof Error ? error.name : 'unknown', message: error instanceof Error ? error.message.slice(0, 200) : '' })));
-  if (ctx) ctx.waitUntil(guarded);
+async function background(ctx: Waiter, work: Promise<unknown>): Promise<void> {
+  const guarded = work.catch(error => logFailure('public_index_update_failed', error, {}, 'warn'));
+  if (ctx) ctx.waitUntil(guarded); else await guarded;
 }
 
 function withDependencies(value: unknown, repositoryIds: string[]): Response {
@@ -93,14 +94,14 @@ export async function publicDiscoveryApi(request: Request, env: AppEnv, ctx?: Wa
     const language = url.searchParams.get('language');
     if (language !== null && !LANGUAGE.test(language)) throw new ApiError(400, 'INVALID_LANGUAGE', 'This language filter is not valid.');
     const page = await explorePublic(env, access, sort, language, cursor);
-    if (page.stale.length) background(ctx, removeIndexedRepositories(env, page.stale));
-    if (page.value.indexed && !page.value.items.length && !cursor) background(ctx, backfillEmptyIndex(env, access));
+    if (page.stale.length) await background(ctx, removeIndexedRepositories(env, page.stale));
+    if (page.value.indexed && !page.value.items.length && !cursor) await background(ctx, backfillEmptyIndex(env, access));
     return withDependencies(page.value, page.repositoryIds);
   }
   const type = (url.searchParams.get('type') ?? 'repositories') as PublicSearchType;
   if (!SEARCH_TYPES.includes(type)) throw new ApiError(400, 'INVALID_SEARCH_TYPE', 'Search repositories, paths or people.');
   const page = await searchPublic(env, access, searchQuery(url.searchParams.get('q')), type, cursor);
-  if (page.stale.length) background(ctx, removeIndexedRepositories(env, page.stale));
+  if (page.stale.length) await background(ctx, removeIndexedRepositories(env, page.stale));
   return withDependencies(page.value, page.repositoryIds);
 }
 
@@ -114,16 +115,16 @@ export function refreshPublicRepository(env: AppEnv, repositoryId: string, origi
   })();
 }
 
-export function visibilityChanged(env: AppEnv, ctx: Waiter, access: SecurityService, principal: Principal, repository: Repository, origin: string): void {
-  background(ctx, (async () => {
+export function visibilityChanged(env: AppEnv, ctx: Waiter, access: SecurityService, principal: Principal, repository: Repository, origin: string): Promise<void> {
+  return background(ctx, (async () => {
     const handle = await access.handleOf(principal.workspaceId);
     if (handle) await purgePublicCache(env, repositoryCachePaths(handle, repositoryLabel(repository)), origin);
     await indexPublicRepository(env, repository.id, access);
   })());
 }
 
-export function handleChanged(env: AppEnv, ctx: Waiter, workspaceId: string, previous: string | null, origin: string): void {
-  background(ctx, (async () => {
+export function handleChanged(env: AppEnv, ctx: Waiter, workspaceId: string, previous: string | null, origin: string): Promise<void> {
+  return background(ctx, (async () => {
     if (previous) await purgePublicCache(env, discoveryCachePaths(previous), origin);
     await indexWorkspaceRepositories(env, workspaceId);
   })());
@@ -187,12 +188,12 @@ export async function accountDiscoveryApi(request: Request, env: AppEnv, ctx: Wa
     const body = await readJson(request, 2048);
     const target = await starTarget(env, access, body.handle, body.repository);
     const state = await access.follow(principal, target.repository.id, body.kind as FollowKind, body.on as boolean);
-    if (body.kind === 'star') background(ctx, (async () => {
+    if (body.kind === 'star') await background(ctx, (async () => {
       const own = principal.bootstrap ? null : await access.handleOf(personalWorkspaceId(principal.userId)).catch(() => null);
       await purgePublicCache(env, [...repositoryCachePaths(target.handle, repositoryLabel(target.repository)), ...(own ? discoveryCachePaths(own) : [])], url.origin);
       await updateIndexedStars(env, target.repository.id, state.stars);
     })());
-    else background(ctx, Promise.all([purgePublicCache(env, repositoryCachePaths(target.handle, repositoryLabel(target.repository)), url.origin), Promise.resolve().then(() => env.GITFLARE_COORDINATOR.getByName(`repository:${target.repository.id}`).setRepositoryWatcher(principal.userId, state.watching))]));
+    else await background(ctx, Promise.all([purgePublicCache(env, repositoryCachePaths(target.handle, repositoryLabel(target.repository)), url.origin), Promise.resolve().then(() => env.GITFLARE_COORDINATOR.getByName(`repository:${target.repository.id}`).setRepositoryWatcher(principal.userId, state.watching))]));
     return Response.json(starState(target.handle, target.repository, state));
   }
   if (url.pathname === '/api/profile') {
@@ -214,7 +215,7 @@ export async function accountDiscoveryApi(request: Request, env: AppEnv, ctx: Wa
       const missing = input.pinned.find(name => !names.has(name));
       if (missing) throw new ApiError(400, 'PIN_NOT_PUBLIC', `${missing} is not a public repository of this profile.`);
     });
-    background(ctx, (async () => {
+    await background(ctx, (async () => {
       await purgePublicCache(env, discoveryCachePaths(saved.handle), url.origin);
       await refreshIndexedHandle(env, saved.workspaceId, access);
     })());

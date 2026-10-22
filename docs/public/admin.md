@@ -2,7 +2,7 @@
 
 The self-hosted edition runs one workspace in the Cloudflare account that hosts it. The first administrator becomes its Owner. There is no public sign-up; the Owner creates or invites every other user.
 
-![Account identity, role and repository scope flow through shared access checks before UI or MCP operations are allowed](gitflare-diagram:access-control)
+![Account identity, role and repository scope flow through shared access checks before UI or MCP operations are allowed](../../src/ui/assets/docs/access-control.svg)
 
 ## First administrator and MFA
 

@@ -1,15 +1,28 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MissionSummary, Repository } from '../src/shared/types';
 import type { AppEnv } from '../src/worker/env';
 import { GitflareCoordinator, type MissionSummaryCache } from '../src/worker/coordinator';
-import { collectMissionSummaries } from '../src/worker/workspace-summaries';
+import { collectMissionSummaries, SUMMARY_DEADLINE_MS } from '../src/worker/workspace-summaries';
 import { securityHarness } from './security-harness';
 
 vi.mock('cloudflare:workers', () => ({ DurableObject: class { constructor(protected ctx: DurableObjectState, protected env: AppEnv) {} }, WorkerEntrypoint: class {}, WorkflowEntrypoint: class {} }));
 
 const databases: DatabaseSync[] = [];
-afterEach(() => { for (const db of databases.splice(0)) db.close(); });
+beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] }); });
+afterEach(() => { vi.useRealTimers(); for (const db of databases.splice(0)) db.close(); });
+
+const turn = () => new Promise(resolve => setImmediate(resolve));
+
+async function drive<T>(work: Promise<T>): Promise<T> {
+  let done = false;
+  const tracked = work.finally(() => { done = true; });
+  while (!done) {
+    for (let index = 0; index < 5 && !done; index++) await turn();
+    if (!done) vi.advanceTimersToNextTimer();
+  }
+  return tracked;
+}
 
 function durable() {
   const db = new DatabaseSync(':memory:');
@@ -56,11 +69,11 @@ async function fixture(repositoryCount: number, missionsPerRepository: number, r
   const ctx = { waitUntil: (work: Promise<unknown>) => { deferred.push(work); }, passThroughOnException() {} } as unknown as ExecutionContext;
   const worker = (await import('../src/worker/index')).default;
   const get = async () => {
-    const started = performance.now();
-    const response = await worker.fetch(new Request('https://gitflare.test/api/workspace', { headers: { Authorization: `Bearer ${token}` } }), env, ctx);
-    return { response, elapsed: performance.now() - started };
+    const started = Date.now();
+    const response = await drive(worker.fetch(new Request('https://gitflare.test/api/workspace', { headers: { Authorization: `Bearer ${token}` } }), env, ctx));
+    return { response, elapsed: Date.now() - started };
   };
-  return { get, calls, catalog, coordinators, extraDelay, settle: () => Promise.all(deferred.splice(0)) };
+  return { get, calls, catalog, coordinators, extraDelay, settle: () => drive(Promise.all(deferred.splice(0))) };
 }
 
 describe('workspace route latency', () => {
@@ -73,7 +86,7 @@ describe('workspace route latency', () => {
     const { response, elapsed } = await f.get();
     expect(response.status).toBe(200);
     expect((await response.json() as { missions: unknown[] }).missions).toHaveLength(repositories * missions);
-    expect(elapsed).toBeLessThan(rpcMs * 6);
+    expect(elapsed).toBe(rpcMs * 4);
     expect(f.calls.filter(call => call === 'security.shardCall:checkMany')).toHaveLength(2);
     const timing = logs.mock.calls.map(([line]) => String(line)).find(line => line.includes('workspace_timing'))!;
     expect(JSON.parse(timing)).toMatchObject({ event: 'workspace_timing', repositories, missions: repositories * missions, staleRepositories: 0, totalMs: expect.any(Number) });
@@ -89,14 +102,15 @@ describe('workspace route latency', () => {
     f.coordinators.get('repository:repo-1')!.createMission('create-late', { repositoryId: 'repo-1', title: 'Late mission', prompt: 'Created while the repository is slow.' });
     f.extraDelay.set('repository:repo-1', 4_000);
     const { response, elapsed } = await f.get();
-    expect(elapsed).toBeLessThan(3_500);
+    expect(elapsed).toBeGreaterThanOrEqual(SUMMARY_DEADLINE_MS);
+    expect(elapsed).toBeLessThan(4_000);
     const titles = (await response.json() as { missions: { title: string }[] }).missions.map(mission => mission.title);
     expect(titles).toHaveLength(6);
     expect(titles).not.toContain('Late mission');
     await f.settle();
     expect(f.catalog.listSummaryCache().find(entry => entry.repositoryId === 'repo-1')!.summaries.map(mission => mission.title)).toContain('Late mission');
     vi.restoreAllMocks();
-  }, 20_000);
+  });
 });
 
 describe('mission summary collection', () => {
@@ -106,13 +120,13 @@ describe('mission summary collection', () => {
     const saved: MissionSummaryCache[][] = [];
     const deferred: Promise<unknown>[] = [];
     const cached: MissionSummaryCache[] = [{ repositoryId: 'a', summaries: [summary('a1', 'a')], cachedAt: '' }, { repositoryId: 'b', summaries: [summary('b-old', 'b')], cachedAt: '' }];
-    const result = await collectMissionSummaries(['a', 'b', 'c'], {
+    const result = await drive(collectMissionSummaries(['a', 'b', 'c'], {
       live: async id => { if (id === 'b') throw new Error('unavailable'); await sleep(id === 'c' ? 30 : 0); return [summary(`${id}1`, id)]; },
       cached, save: async entries => { saved.push(entries); }, defer: work => { deferred.push(work); }, deadlineMs: 10,
-    });
+    }));
     expect(result.summaries.map(item => item.id)).toEqual(['a1', 'b-old', 'c1']);
     expect(result.stale).toBe(1);
-    await Promise.all(deferred);
+    await drive(Promise.all(deferred));
     expect(saved).toEqual([[{ repositoryId: 'c', summaries: [summary('c1', 'c')], cachedAt: expect.any(String) }]]);
   });
 

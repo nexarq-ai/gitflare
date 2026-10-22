@@ -7,6 +7,7 @@ import agents from '../../docs/public/agents.md?raw';
 import cloudflarePermissions from '../../docs/public/cloudflare-permissions.md?raw';
 import githubMirror from '../../docs/public/github-mirror.md?raw';
 import type { DocMetadata, ProductDoc } from './docs';
+import { errorResponse } from './domain';
 
 const publicDocuments: ProductDoc[] = [
   { id: 'overview', title: 'How Gitflare works', description: 'Missions, review, landing and editions.', audience: 'human', filename: 'overview.md', content: overview },
@@ -28,4 +29,4 @@ export function readPublicDoc(id: string): ProductDoc | undefined {
   return document ? { ...document } : undefined;
 }
 
-export async function publicSourceResponse(_request: Request, _assets: Fetcher): Promise<Response> { return Response.json({ error: 'Not found' }, { status: 404 }); }
+export async function publicSourceResponse(_request: Request, _assets: Fetcher): Promise<Response> { return errorResponse(404, 'NOT_FOUND', 'This source endpoint does not exist.'); }

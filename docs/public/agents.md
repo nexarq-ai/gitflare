@@ -5,7 +5,7 @@ Two kinds of AI touch a Gitflare workspace, and they never share credentials.
 - An **AI client** (Claude, Codex, Cursor or any MCP client) connects with a person's authorization and acts with that person's current role and scope.
 - A **coding agent** is started by a Mission. It gets short-lived access to one isolated fork and nothing else: no Owner token, no personal MCP token, no deployment or OAuth credential.
 
-![A user authorizes an MCP client while task agents follow a bounded context, isolated fork, commit and verification loop](gitflare-diagram:agent-loop)
+![A user authorizes an MCP client while task agents follow a bounded context, isolated fork, commit and verification loop](../../src/ui/assets/docs/agent-loop.svg)
 
 ## Working through MCP
 
@@ -46,7 +46,7 @@ Hosted Gitflare exposes `POST /api/agent-signup` (rate-limited) and `POST /api/a
 
 The new identity is a Viewer with workspace-read scope, at most 100 requests, a one-hour lifetime and no execution budget. It stays pending until a signed-in person claims the workspace. Registration never starts a Mission, and the endpoint is off in the self-hosted edition.
 
-![Human account authority remains separate from a pending read-only hosted agent identity and from fork-scoped coding credentials](gitflare-diagram:trust)
+![Human account authority remains separate from a pending read-only hosted agent identity and from fork-scoped coding credentials](../../src/ui/assets/docs/trust.svg)
 
 ## Models
 

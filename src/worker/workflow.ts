@@ -19,6 +19,7 @@ import { catalogName } from './capacity';
 import { afterChecks } from './proposal-notifications';
 import { createModelAccess, type AiAccessOptions, type AiCredentials } from './ai-keys';
 import { withStoreSecrets } from './store-secrets';
+import { logFailure } from './log';
 
 export interface MissionRunParams { kind?: 'mission'; repositoryId: string; missionId: string; epoch: number }
 export type MissionWorkflowParams = MissionRunParams | LandingParams | PreviewParams | PreviewRetireParams | DeployParams | MirrorParams | ImportParams;
@@ -112,7 +113,8 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
       }, true);
       throw error;
     } finally {
-      await this.env.GITFLARE_COORDINATOR.getByName(catalogName(planned?.authorization?.workspaceId ?? 'legacy')).releaseMissionSlot(missionId, epoch).catch(() => {});
+      const workspaceId = planned?.authorization?.workspaceId ?? 'legacy';
+      await this.env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId)).releaseMissionSlot(missionId, epoch).catch(error => logFailure('mission_slot_release_failed', error, { workspaceId, repositoryId, missionId, epoch }));
     }
     await step.do('notify reviewers and participants', { retries: { limit: 2, delay: '10 seconds', backoff: 'exponential' }, timeout: '2 minutes' }, async () => {
       await afterChecks(this.env as unknown as AppEnv, repositoryId, missionId, epoch).catch(() => undefined);

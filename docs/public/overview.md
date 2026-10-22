@@ -2,7 +2,7 @@
 
 Gitflare is a Git host where people and AI agents propose changes side by side. You describe an outcome. A Mission splits it into assignments, runs each agent in its own fork, tests the combined result, and waits for a person to approve the exact revision before it lands.
 
-![Isolated task revisions flow into combined candidate checks, exact-revision approval, and a separate landing action](gitflare-diagram:flow)
+![Isolated task revisions flow into combined candidate checks, exact-revision approval, and a separate landing action](../../src/ui/assets/docs/flow.svg)
 
 ## Vocabulary
 
@@ -31,7 +31,7 @@ The **self-hosted edition** is Apache-2.0 and runs as one workspace in your Clou
 
 **Hosted Gitflare** (gitflare.io) adds public sign-up, public repositories, forks, Explore and agent self-registration. Hosted platform administration is not part of the self-hosted package.
 
-![Workers serve the workspace and MCP boundary while Durable Objects, Workflows, Artifacts, Containers, and a separate preview Worker have distinct responsibilities](gitflare-diagram:architecture)
+![Workers serve the workspace and MCP boundary while Durable Objects, Workflows, Artifacts, Containers, and a separate preview Worker have distinct responsibilities](../../src/ui/assets/docs/architecture.svg)
 
 ## What runs where
 
@@ -39,7 +39,7 @@ Workers serve the interface, the API and the MCP endpoint. Durable Objects hold 
 
 Owners can connect a Cloudflare account and map a repository to its Workers, D1 databases, Durable Object namespaces, Container applications and Workflows, each labelled with an environment. Mapping records resources; it does not deploy them.
 
-![Workspace identity, scoped task access, owner review, and isolated preview are separate trust boundaries](gitflare-diagram:trust)
+![Workspace identity, scoped task access, owner review, and isolated preview are separate trust boundaries](../../src/ui/assets/docs/trust.svg)
 
 ## Status
 

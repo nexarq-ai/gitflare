@@ -9,7 +9,7 @@ import { RELEASE_ASSET_INLINE_MAX_BYTES, RELEASE_ASSET_INLINE_REQUEST_BYTES } fr
 import { ADVISORY_COMMENT_MAX, ADVISORY_DESCRIPTION_MAX, ADVISORY_REQUEST_MAX_BYTES } from './advisories';
 import { ENVIRONMENT_NAME } from './deploy-environments';
 import { SECRET_ACTIONS, SECRET_VALUE_MAX_BYTES } from '../shared/secrets';
-import { ApiError, COMMIT_MESSAGE_REQUEST_MAX_BYTES, MISSION_REQUEST_MAX_BYTES, publicError, readJson, repositoryPath, repositoryRef, RETRY_GUIDANCE_MAX } from './domain';
+import { ApiError, COMMIT_MESSAGE_REQUEST_MAX_BYTES, errorResponse, MISSION_REQUEST_MAX_BYTES, publicError, readJson, repositoryPath, repositoryRef, RETRY_GUIDANCE_MAX } from './domain';
 import type { DocMetadata, ProductDoc } from './docs';
 import { ISSUE_BODY_MAX, ISSUE_COMMENT_MAX, ISSUE_REQUEST_MAX_BYTES } from './issues';
 import { ADVISORY_CLOSE_REASONS, ADVISORY_SEVERITIES, CONTENT_REPORT_REASONS, ISSUE_HIDE_REASONS, ISSUE_LOCK_REASONS, type AdvisoryDetail } from '../shared/types';
@@ -1184,8 +1184,8 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
 export async function handleMcp(request: Request, api: McpApi, limiter?: McpLimiter, demo = false): Promise<Response> {
   const origin = new URL(request.url).origin;
   const suppliedOrigin = request.headers.get('Origin');
-  if ((suppliedOrigin && suppliedOrigin !== origin) || request.headers.get('Sec-Fetch-Site') === 'cross-site') return Response.json({ error: 'MCP requests from this origin are not allowed.' }, { status: 403 });
-  if (request.method !== 'POST') return new Response('This stateless MCP endpoint accepts POST requests.', { status: 405, headers: { Allow: 'POST' } });
+  if ((suppliedOrigin && suppliedOrigin !== origin) || request.headers.get('Sec-Fetch-Site') === 'cross-site') return errorResponse(403, 'ORIGIN_REJECTED', 'MCP requests from this origin are not allowed.');
+  if (request.method !== 'POST') return errorResponse(405, 'METHOD_NOT_ALLOWED', 'This stateless MCP endpoint accepts POST requests.', { headers: { Allow: 'POST' } });
   try {
     const parsedBody = await readJson(request, IMPORT_REQUEST_MAX_BYTES + 1024);
     const params = parsedBody.params as { name?: unknown } | undefined;
@@ -1211,6 +1211,6 @@ export async function handleMcp(request: Request, api: McpApi, limiter?: McpLimi
     }).fetch(request, { parsedBody });
   } catch (error) {
     const failure = publicError(error);
-    return Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status });
+    return errorResponse(failure.status, failure.code, failure.message);
   }
 }

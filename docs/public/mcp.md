@@ -2,7 +2,7 @@
 
 Gitflare's MCP endpoint is `https://<your-worker-host>/mcp`. It runs on Cloudflare's Agents SDK MCP handler and every tool goes through the same access checks as the UI. A client gets the authority of the person who authorizes it, never a new role.
 
-![A remote MCP client completes OAuth authorization with the user, then calls bounded tools through the shared Gitflare authorization and API boundary](gitflare-diagram:mcp-connection)
+![A remote MCP client completes OAuth authorization with the user, then calls bounded tools through the shared Gitflare authorization and API boundary](../../src/ui/assets/docs/mcp-connection.svg)
 
 ## Connect with OAuth
 

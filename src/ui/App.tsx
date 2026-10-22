@@ -486,7 +486,7 @@ function Workspace() {
   useEffect(() => { document.documentElement.classList.toggle("ai-off", !aiEnabled); }, [aiEnabled]);
 
   function createMission(repositoryId?: string) {
-    if (!aiEnabled) { notify("AI features are turned off for this workspace. An Owner can turn them on in Settings."); return; }
+    if (!aiEnabled) { notify(workspace.ai?.unavailable ? "Gitflare could not read whether AI features are on, so they stay off until it can. Refresh the page to try again." : "AI features are turned off for this workspace. An Owner can turn them on in Settings."); return; }
     if (!permissions.includes("contribute")) { notify("Your role cannot create missions."); return; }
     navigate(repositoryId ? `repository/${repositoryId}/proposals/new` : "proposals/new");
   }

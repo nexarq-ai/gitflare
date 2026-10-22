@@ -54,9 +54,10 @@ export async function request<T>(
   if (!response.ok) {
     if (response.status === 401 && typeof window !== "undefined" && !["/api/session", "/api/login"].includes(path))
       window.dispatchEvent(new Event(SESSION_CHECK_EVENT));
-    const error =
-      data && typeof data === "object" && "error" in data
-        ? (data as ApiError).error
+    const raw = data && typeof data === "object" && "error" in data ? (data as { error: unknown }).error : null;
+    const error: Partial<ApiError["error"]> | null =
+      typeof raw === "string" ? { message: raw }
+        : raw && typeof raw === "object" ? (raw as ApiError["error"])
         : null;
     throw new RequestError(
       error?.message ??
