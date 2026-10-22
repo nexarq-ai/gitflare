@@ -428,7 +428,7 @@ export type RepositoryAccountSource = 'repository' | 'selected' | 'default' | 'n
 export interface RepositoryCloudflareAccount { accountId: string | null; accountName: string | null; source: RepositoryAccountSource; environments?: Record<string, string> }
 export interface WorkspaceCloudflare { connected: boolean; accounts: WorkspaceCloudflareAccount[]; repositories: Record<string, RepositoryCloudflareAccount> }
 
-export interface AiSettings { enabled: boolean; locked: boolean }
+export interface AiSettings { enabled: boolean; locked: boolean; unavailable?: boolean }
 
 export interface AgentTask { name: string; role: string; task: string; model?: string; coordinator?: boolean; editScope?: string[]; overrides?: AgentOverrides }
 export interface RevertChange { missionId: string; title: string; landedSha: string; previousSha: string }

@@ -3,7 +3,7 @@ import { DRAFT_GOAL_MAX } from '../shared/mission-draft';
 import { ApiError, assertMutationOrigin, publicError, readJson, requireIdempotencyKey, requireString } from './domain';
 import type { AppEnv } from './env';
 import { catalogName } from './capacity';
-import { startWithDurableDispatch, type ContributorStanding } from './coordinator';
+import type { ContributorStanding } from './coordinator';
 import type { CommunityPool } from '../shared/types';
 import { fixModelAccess, hostedOnly, poolModelChoices, REQUESTER_FIXES_PER_DAY, requesterModelChoices, type StoredPool } from './community-pool';
 import { executionReadiness } from './execution';
@@ -13,6 +13,7 @@ import { PUBLIC_NOT_FOUND, resolvePublicRepository } from './public-repositories
 import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { personalWorkspaceId, publicPrincipal, securityClient, type Principal, type SecurityService } from './security';
 import type { AiCredentials } from './ai-keys';
+import { logFailure } from './log';
 
 const ROUTE = /^\/api\/public\/repos\/([^/]+)\/([^/]+)\/fix-requests$/;
 export const FIX_MAX_AGENTS = 2;
@@ -74,7 +75,9 @@ export async function resolveFunding(context: Context): Promise<{ funding: Fundi
   const { env, access, repository, workspaceId, principal } = context;
   if (!aiReady(env)) return { funding: null, reason: 'Agents are not available on this Gitflare installation right now.' };
   const upstream = catalogOf(env, workspaceId);
-  if (!await Promise.resolve().then(() => upstream.getAiEnabled()).catch(() => true)) return { funding: null, reason: 'This project has turned AI features off.' };
+  const aiEnabled = await Promise.resolve().then(() => upstream.getAiEnabled()).catch(error => { logFailure('ai_settings_read_failed', error, { workspaceId, repositoryId: repository.id }); return null; });
+  if (aiEnabled === null) return { funding: null, reason: "This project's AI setting could not be read, so AI fixes stay off until it can. Try again shortly." };
+  if (!aiEnabled) return { funding: null, reason: 'This project has turned AI features off.' };
   const repo = records(env, repository.id);
   const pool = await repo.storedCommunityPool();
   let poolReason = '';
@@ -163,7 +166,7 @@ async function createFixRequest(request: Request, context: Context): Promise<Res
   let mission = created;
   const authority = funding.authority;
   const missionFunded = funding.source === 'requester' || !authority || (await repo.reserveCommunityPool('mission', `${created.id}:${created.epoch}`, principal.userId)).allowed;
-  if (authority && missionFunded && created.status === 'draft' && created.epoch === 0) mission = await startWithDurableDispatch(repo, `${key.slice(0, 120)}-start`, created.id, { principal: authority, workspaceId, creatorId: principal.userId }, [funding.model]);
+  if (authority && missionFunded && created.status === 'draft' && created.epoch === 0) mission = await repo.startMissionWithDispatch(`${key.slice(0, 120)}-start`, created.id, { principal: authority, workspaceId, creatorId: principal.userId }, [funding.model]);
   else if (created.status === 'draft') mission = await repo.holdFixRequest(created.id);
   await access.auditRepositoryChange(principal, `repository.fix.request.${funding.source}`, repository.id);
   return Response.json({ mission: agentMissionEntry(mission), waitingForMaintainer: agentMissionState(mission) === 'waiting' }, { status: 202 });

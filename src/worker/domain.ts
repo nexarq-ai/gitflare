@@ -25,6 +25,10 @@ export function publicError(error: unknown): { status: number; code: string; mes
   return { status: 500, code: 'INTERNAL_ERROR', message: 'The request could not be completed. Please try again.' };
 }
 
+export function errorResponse(status: number, code: string, message: string, init: ResponseInit = {}): Response {
+  return Response.json({ error: { code, message } }, { ...init, status });
+}
+
 export function requireString(value: unknown, field: string, maxLength: number, minLength = 1): string {
   if (typeof value !== 'string' || value.trim().length < minLength || value.trim().length > maxLength) {
     throw new ApiError(400, 'INVALID_INPUT', `${field} must contain between ${minLength} and ${maxLength} characters.`);

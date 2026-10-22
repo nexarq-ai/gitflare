@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { timingSafeEqual } from 'node:crypto';
 import { ApiError, requireString } from './domain';
+import { logFailure } from './log';
 import type { AppEnv } from './env';
 import type { CloudflareConnection, CloudflareIdentity, CloudflareOAuthState, CloudflareStoreOperation, ConnectedCloudflareAccount, RepositoryAccountSelection } from './cloudflare';
 import { validEnvironmentName, DEPLOY_ENVIRONMENTS_MAX } from './deploy-environments';
@@ -162,6 +163,12 @@ function legacySlice(state: State, workspaceId: string): LegacyWorkspaceSlice {
   };
 }
 
+const RETRY_UNITS: [string, number][] = [['day', 86_400_000], ['hour', 3_600_000], ['minute', 60_000], ['second', 1000]];
+export function retryWindow(windowMs: number): string {
+  const [unit, size] = RETRY_UNITS.find(([, size]) => windowMs >= size) ?? RETRY_UNITS[3];
+  const count = Math.max(1, Math.ceil(windowMs / size));
+  return `${count} ${unit}${count === 1 ? '' : 's'}`;
+}
 const TOKEN_PATTERN = /^gf1\.([A-Za-z0-9-]{1,64})\.[a-f0-9]{64}$/;
 const SESSION_ID_PATTERN = /^([A-Za-z0-9-]{1,64})\.[0-9a-f-]{36}$/;
 export function shardName(workspaceId: string): string { return `security:ws:${workspaceId}`; }
@@ -169,9 +176,6 @@ function mintToken(workspaceId: string): string { return `gf1.${workspaceId}.${t
 function tokenHome(value: string): string | undefined { return TOKEN_PATTERN.exec(value)?.[1]; }
 export function wellFormedToken(value: string): boolean { return TOKEN_PATTERN.test(value) || /^[a-f0-9]{64}$/.test(value); }
 function sessionIdHome(id: string): string | undefined { return SESSION_ID_PATTERN.exec(id)?.[1]; }
-function missingRpcMethod(error: unknown): boolean {
-  return error instanceof Error && !error.message.startsWith('GITFLARE:') && /not a function|does not exist|not implemented|does not implement|unknown method|no such method|not supported/i.test(error.message);
-}
 
 type Storage = Pick<DurableObjectStorage, 'transaction'>;
 type ListOptions = { prefix: string; start?: string; reverse?: boolean; limit?: number };
@@ -1588,12 +1592,9 @@ type Remote<T> = { [K in keyof T]: T[K] extends (...args: infer A) => infer R ? 
 export interface SecurityPeer { identityCall(op: string, args: unknown[]): Promise<unknown>; shardCall(workspaceId: string, op: string, args: unknown[]): Promise<unknown> }
 const IDENTITY_OPS = new Set(['rateLimit', 'users', 'account', 'accountByEmail', 'hints', 'addHint', 'removeHint', 'organizationMembers', 'setOrganizationMember', 'removeOrganizationMember', 'mfaEnabled', 'installationCredential', 'installationConnection', 'installationWorkspace', 'selfHostedAllowed', 'lookup', 'index', 'loginAttempt', 'loginFinish', 'applyLink', 'beginMfa', 'challenge', 'verifyChallenge', 'finishOutbox', 'revokeAccount', 'startSetup', 'createUser', 'deleteUser', 'verifyEmail', 'resendVerification', 'requestReset', 'confirmReset', 'cloudflareSigninState', 'cloudflareLookup', 'cloudflareLinkRequest', 'reviewerCreate', 'reviewerUpdate', 'machine', 'createMachine', 'claimMachine', 'legacyWorkspace', 'legacyImported', 'migrationStatus', 'demoInstall', 'handleOf', 'resolveHandle', 'handleAvailability', 'claimHandle', 'publicListing', 'publicListings', 'changePublicListing', 'publicListed', 'followState', 'follow', 'follows', 'repositoryStats', 'profile', 'setProfile', 'profiles', 'userByHandle', 'standing', 'limitAllowed', 'addReport', 'reports', 'dismissReport']);
 const SHARD_OPS = new Set(['ensureImported', 'authenticateToken', 'sessionPrincipal', 'sessionState', 'accountSession', 'isMember', 'validatePrincipal', 'enrollmentAllowed', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshotPart', 'membership', 'bootstrapAllowed', 'createSession', 'clientSession', 'revokeSession', 'revokeUserSessions', 'revokeSessionsExcept', 'revokeUserCredentials', 'audit', 'auditMember', 'initWorkspace', 'peekInvite', 'acceptInvite', 'addMember', 'organizationJoin', 'repositoryVisible', 'superAdmin', 'claimAgent', 'action', 'connectionStore', 'projectStore', 'clearApprovals', 'recordApproval', 'assertLand', 'visibility', 'setVisibility', 'blocks', 'setBlock', 'recipientAccess', 'membersWith', 'approvers']);
-function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>, inDurableObject: boolean): Remote<T> {
+function remote<T>(call: (op: string, args: unknown[]) => Promise<unknown>): Remote<T> {
   return new Proxy({}, {
-    get: (_target, op) => typeof op !== 'string' || op === 'then' ? undefined : async (...args: unknown[]) => {
-      try { return await call(op, args); }
-      catch (error) { if (inDurableObject && missingRpcMethod(error)) throw new ApiError(503, 'SECURITY_DEPLOYMENT_PENDING', 'Access services are updating. Wait briefly and try again.'); throw error; }
-    },
+    get: (_target, op) => typeof op !== 'string' || op === 'then' ? undefined : (...args: unknown[]) => call(op, args),
   }) as Remote<T>;
 }
 
@@ -1604,9 +1605,9 @@ export class SecurityService {
   constructor(private storage: Storage | undefined, private options: SecurityOptions = {}, private resolve: (name: string) => SecurityPeer = () => { throw new Error('Security peers are not configured'); }, private schedule?: () => Promise<void>) {}
   private identity(): Remote<IdentityStore> {
     if (this.storage && this.role !== 'shard') return (this.identityStore ??= new IdentityStore(this.storage, this.options, workspaceId => this.shard(workspaceId), this.schedule)) as unknown as Remote<IdentityStore>;
-    return remote<IdentityStore>((op, args) => this.resolve('security').identityCall(op, args), false);
+    return remote<IdentityStore>((op, args) => this.resolve('security').identityCall(op, args));
   }
-  private shard(workspaceId: string): Remote<WorkspaceStore> { return remote<WorkspaceStore>((op, args) => this.resolve(shardName(workspaceId)).shardCall(workspaceId, op, args), !!this.storage); }
+  private shard(workspaceId: string): Remote<WorkspaceStore> { return remote<WorkspaceStore>((op, args) => this.resolve(shardName(workspaceId)).shardCall(workspaceId, op, args)); }
   identityCall(op: string, args: unknown[]): Promise<unknown> {
     if (!this.storage || this.role === 'shard' || !IDENTITY_OPS.has(op)) throw new ApiError(404, 'NOT_FOUND', 'This access operation is unavailable.');
     this.role = 'identity';
@@ -1693,7 +1694,7 @@ export class SecurityService {
   }
   projectStore(p: Principal, repositoryId: string, operation: ProjectStoreOperation, body: Record<string, unknown> = {}): Promise<unknown> { return this.shard(p.workspaceId).projectStore(p, repositoryId, operation, body); }
   async rateLimit(key: string, max = 15, windowMs = 900000): Promise<void> {
-    if (!await this.identity().rateLimit(key, max, windowMs)) throw new ApiError(429, 'RATE_LIMITED', 'Too many authentication attempts. Try again in 15 minutes.');
+    if (!await this.identity().rateLimit(key, max, windowMs)) throw new ApiError(429, 'RATE_LIMITED', `Too many attempts. Try again in ${retryWindow(windowMs)}.`);
   }
   async signup(body: Record<string, unknown>) : Promise<never> { throw new Error('This feature belongs to the hosted edition'); }
   async login(body: Record<string, unknown>, client = 'unknown', linkToken?: string, meta?: SessionMeta) {
@@ -1813,9 +1814,15 @@ export class SecurityService {
   async revokeOtherSessions(p: Principal) {
     if (p.bootstrap || p.credentialId || !p.sessionId) fail('ACCOUNT_REQUIRED', 'Sign in with an account to sign out other sessions.');
     await this.shard(p.workspaceId).validatePrincipal(p, { account: true });
-    let revoked = 0;
-    for (const id of await this.accountWorkspaceIds(p)) revoked += await this.shard(id).revokeSessionsExcept(p.userId, p.sessionId).catch(() => 0);
+    const ids = await this.accountWorkspaceIds(p); const keep = p.sessionId;
+    const results = await Promise.allSettled(ids.map(id => this.shard(id).revokeSessionsExcept(p.userId, keep)));
+    let revoked = 0; const failed: { workspaceId: string; error: unknown }[] = [];
+    results.forEach((result, index) => { if (result.status === 'fulfilled') revoked += result.value; else failed.push({ workspaceId: ids[index], error: result.reason }); });
     await this.shard(p.workspaceId).audit([{ actorId: p.userId, action: 'account:sessions-revoked' }]);
+    if (failed.length) {
+      for (const failure of failed) logFailure('sessions_revoke_failed', failure.error, { userId: p.userId, workspaceId: failure.workspaceId });
+      throw new ApiError(503, 'SESSIONS_PARTIALLY_REVOKED', `Signed out ${revoked} other ${revoked === 1 ? 'session' : 'sessions'}, but ${failed.length} of ${ids.length} workspaces could not be reached, so sessions there may still be signed in. Try again.`);
+    }
     return { ok: true, revoked };
   }
   async switchWorkspace(p: Principal, workspaceId: string) {
@@ -2260,24 +2267,11 @@ export class SecurityService {
   }
 }
 
-const PUBLIC_METHODS = new Set(['connectionStore', 'projectStore', 'rateLimit', 'signup', 'login', 'legacySession', 'bootstrap', 'authenticate', 'authenticateSession', 'authorize', 'authorizeMetadata', 'check', 'checkMany', 'workspace', 'snapshot', 'account', 'revokeOtherSessions', 'workspaces', 'locateRepository', 'switchWorkspace', 'createWorkspace', 'action', 'authConfig', 'startSetup', 'enrollMfa', 'verifyMfa', 'createInstallationUser', 'registerInvitedUser', 'verifyEmail', 'resendVerification', 'requestPasswordReset', 'confirmPasswordReset', 'cloudflareSigninState', 'cloudflareSignin', 'registerMachine', 'claimMachine', 'acceptInvite', 'clearApprovals', 'auditRepositoryChange', 'clientSession', 'logout', 'recordApproval', 'assertLand', 'demoInstall', 'demoPrincipal']);
 export type SecurityEnv = { GITFLARE_SECURITY: DurableObjectNamespace<GitflareSecurity> } & { [K in keyof SecurityOptions]?: unknown };
-// While a deployment still runs a global instance without the shard protocol, its original methods serve the call
 export function securityClient(env: SecurityEnv): SecurityService {
   const namespace = env.GITFLARE_SECURITY;
   if (!namespace) throw new ApiError(503, 'AUTH_NOT_CONFIGURED', 'The security service is not configured.');
-  const global = namespace.getByName('security') as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
-  const service = new SecurityService(undefined, env as unknown as SecurityOptions, name => namespace.getByName(name) as unknown as SecurityPeer);
-  return new Proxy(service, {
-    get(target, property) {
-      const value = Reflect.get(target, property) as unknown;
-      if (typeof property !== 'string' || typeof value !== 'function' || !PUBLIC_METHODS.has(property)) return value;
-      return async (...args: unknown[]) => {
-        try { return await (value as (...values: unknown[]) => Promise<unknown>).apply(target, args); }
-        catch (error) { if (!missingRpcMethod(error) || typeof global[property] !== 'function') throw error; return global[property](...args); }
-      };
-    },
-  });
+  return new SecurityService(undefined, env as unknown as SecurityOptions, name => namespace.getByName(name) as unknown as SecurityPeer);
 }
 
 export class GitflareSecurity extends DurableObject<AppEnv> {

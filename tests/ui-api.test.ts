@@ -18,4 +18,12 @@ describe('UI request failures', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw aborted; }));
     await expect(request('/api/workspace')).rejects.toBe(aborted);
   });
+
+  it('reads the standard error envelope and tolerates a bare error string', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'FILE_NOT_FOUND', message: 'This file is not in the source release.' } }, { status: 404 })));
+    await expect(request('/api/public/source/file?path=x')).rejects.toMatchObject({ status: 404, code: 'FILE_NOT_FOUND', message: 'This file is not in the source release.' });
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Source release not published' }, { status: 503 })));
+    const legacy = await request('/api/public/source').catch((error: unknown) => error);
+    expect(legacy).toMatchObject({ status: 503, code: undefined, message: 'Source release not published' });
+  });
 });

@@ -7,6 +7,7 @@ import { advertisedRefs, discoverRefs, remoteDetails } from './repository-import
 import { boundedBody, packet, parsePackets, requireGitResponse } from './repository-initialization';
 import type { Principal } from './security';
 import { validGitSha } from './artifacts';
+import { logFailure } from './log';
 
 // Ref advertisements are read through boundedBody's 64 KiB ceiling, which caps how many tags a repository can advertise
 export const RELEASE_LIMIT = 500;
@@ -255,7 +256,10 @@ export async function releaseApi(request: Request, context: ReleaseContext, rele
   if (releaseId === 'notes' && !operation) {
     await access.authorize(principal, 'read', 'repository', repository.id);
     const visible: Mission[] = [];
-    for (const mission of await coordinator.listMissions()) { try { await access.check(principal, 'read', 'repository', repository.id, mission.id); visible.push(mission); } catch {} }
+    for (const mission of await coordinator.listMissions()) {
+      try { await access.check(principal, 'read', 'repository', repository.id, mission.id); visible.push(mission); }
+      catch (error) { if (!(error instanceof ApiError && (error.status === 403 || error.status === 404))) logFailure('release_notes_access_check_failed', error, { repositoryId: repository.id, missionId: mission.id }); }
+    }
     return Response.json(await generateReleaseNotes(connected(context.artifacts, repository), repository, await coordinator.listReleases(), visible, body.targetSha === undefined || body.targetSha === '' ? undefined : commitSha(body.targetSha)));
   }
   const key = requireIdempotencyKey(request);

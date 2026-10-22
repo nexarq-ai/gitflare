@@ -7,7 +7,10 @@ import { pathToFileURL } from 'node:url';
 const root = resolve(import.meta.dirname, '..');
 const wrangler = resolve(root, 'node_modules/wrangler/bin/wrangler.js');
 const INSTALLATION = { marker: 'GITFLARE_INSTALLATION', value: 'gitflare', primary: 'GITFLARE_PRIMARY_WORKER' };
+// Installations deployed from the public template before the rename still carry the GITBRAID_* names
 const DEPRECATED_INSTALLATION = { marker: 'GITBRAID_INSTALLATION', value: 'gitbraid', primary: 'GITBRAID_PRIMARY_WORKER' };
+const DEPRECATED_TOKEN_ENV = ['GITBRAID_CLOUDFLARE_TOKEN', 'GITBRAID_PREVIEWS_API_TOKEN'];
+const STDERR_LIMIT = 4096;
 const permissionHelp = 'In Cloudflare dashboard, select the deployment API token under Workers → Settings → Builds and grant AI Gateway Read/Write and Artifacts Read/Edit for the selected account, alongside the Workers, Containers, Workflows and KV permissions. Never paste this build credential into the application.';
 
 export class ProvisioningError extends Error {
@@ -46,7 +49,7 @@ export async function ensurePreviewsWorker(api, workerName) {
 }
 
 export function installerPreviewsToken(env = process.env) {
-  return (env.GITFLARE_CLOUDFLARE_TOKEN || env.GITBRAID_CLOUDFLARE_TOKEN || env.GITBRAID_PREVIEWS_API_TOKEN || '').trim() || undefined;
+  return [env.GITFLARE_CLOUDFLARE_TOKEN, ...DEPRECATED_TOKEN_ENV.map(name => env[name])].find(Boolean)?.trim() || undefined;
 }
 
 export async function checkInstallerToken(token, accountId, workerName, fetcher = fetch) {
@@ -92,15 +95,26 @@ export async function ensureEncryptionKey(api, worker, existing, generate = () =
   return true;
 }
 
+export function appendTail(current, chunk, limit = STDERR_LIMIT) {
+  const next = current + chunk;
+  return next.length > limit ? next.slice(-limit) : next;
+}
+
+export function commandFailure(code, stderr, secrets = []) {
+  const detail = secrets.filter(secret => typeof secret === 'string' && secret.length >= 8).reduce((text, secret) => text.replaceAll(secret, '[redacted]'), stderr).trim();
+  return new Error(`Deployment command failed (${code}).${detail ? `\n${detail}\n` : ' '}Inspect Cloudflare build diagnostics; secret values are not printed by this helper.`);
+}
+
 function run(args, { capture = false, env = {}, input } = {}) {
   return new Promise((accept, reject) => {
     const child = spawn(process.execPath, args, { cwd: root, env: { ...process.env, ...env }, stdio: [input === undefined ? 'ignore' : 'pipe', capture ? 'pipe' : 'inherit', capture ? 'pipe' : 'inherit'] });
     let output = '';
+    let errors = '';
     if (capture) child.stdout.on('data', value => { output += value; });
-    if (capture) child.stderr.on('data', () => {});
+    if (capture) child.stderr.setEncoding('utf8').on('data', value => { errors = appendTail(errors, value); });
     if (input !== undefined) child.stdin.end(input);
     child.on('error', () => reject(new Error('Deployment command could not start.')));
-    child.on('exit', code => code === 0 ? accept(output) : reject(new Error(`Deployment command failed (${code}). Inspect Cloudflare build diagnostics; secret values are not printed by this helper.`)));
+    child.on('close', code => code === 0 ? accept(output) : reject(commandFailure(code, errors, [...Object.values(env), process.env.CLOUDFLARE_API_TOKEN])));
   });
 }
 

@@ -9,6 +9,7 @@ import { GITHUB_ORIGIN, githubTarget, patToken, type StoredMirror } from './gith
 import type { Action, Principal } from './security';
 import type { StepRunner } from './background-work';
 import { validGitSha } from './artifacts';
+import { logFailure } from './log';
 
 export const GITHUB_API = 'https://api.github.com';
 const STORE_KEY = 'github-import';
@@ -598,7 +599,8 @@ export async function runImportWorkflow(context: ImportRunContext, params: Impor
 export async function runImportInline(context: ImportRunContext, runId: string, slices = 20): Promise<SliceResult> {
   let result: SliceResult = { state: 'done' };
   for (let index = 0; index < slices; index++) {
-    try { result = await runImportSlice(context, runId); } catch { return { state: 'continue' }; }
+    try { result = await runImportSlice(context, runId); }
+    catch (error) { logFailure('github_import_slice_failed', error, { repositoryId: context.repositoryId, runId, slice: index }, 'warn'); return { state: 'continue' }; }
     if (result.state !== 'continue') return result;
   }
   return result;

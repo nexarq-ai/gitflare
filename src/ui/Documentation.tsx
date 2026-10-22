@@ -1,6 +1,6 @@
 import CloudflareDeployButton, { isGitflareDeployUrl } from "./CloudflareDeployButton";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Markdown, { defaultUrlTransform } from "react-markdown";
+import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
@@ -8,7 +8,7 @@ import { ArrowsOutIcon, BookOpenIcon, CheckIcon, CopyIcon, ArrowSquareOutIcon, P
 import { request } from "./api";
 import { SESSION_CHECK_EVENT } from "./session-health";
 import { ErrorNotice } from "./components";
-import { diagrams, type DocumentationDiagram } from "./doc-diagrams";
+import { diagrams, documentationDiagramId, type DocumentationDiagram } from "./doc-diagrams";
 import "./documentation.css";
 import { grammarFor, tokenize } from "./diff-highlight";
 import { DocumentationIllustration, DocumentationSystemDiagram } from "./DocumentationIllustration";
@@ -199,7 +199,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
           </> : loading ? <p role="status">Opening document…</p> : document ? <>
             <nav className="documentation-breadcrumb" aria-label="Breadcrumb"><a href="/docs">Docs</a><span aria-hidden="true">/</span><span>{category}</span></nav>
             <header className="documentation-title"><div className="documentation-meta"><span>{category}</span><span>{readingMinutes} min read</span></div><h1>{document.title}</h1><p>{document.description}</p><div className="documentation-format-actions"><a href={`${publicMode ? "/api/public/docs" : "/api/docs"}/${encodeURIComponent(document.id)}.md`} target="_blank" rel="noopener noreferrer"><ArrowSquareOutIcon size={16} aria-hidden="true" />View Markdown</a><button type="button" onClick={() => void copyMarkdown()}><span aria-hidden="true">{copyState === "copied" ? <CheckIcon size={16} /> : <CopyIcon size={16} />}</span>{copyState === "copied" ? "Copied" : "Copy Markdown"}</button></div><span className="documentation-copy-status" role="status">{copyState === "copied" ? "Markdown copied to clipboard." : copyState === "failed" ? "Copy unavailable. Open View Markdown to copy the text." : ""}</span></header>
-            <div className="documentation-markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={(url) => Object.hasOwn(diagrams, url) ? url : defaultUrlTransform(url)} components={{
+            <div className="documentation-markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml components={{
               pre: ({ children }) => <DocumentationCode key={id + plainText(children)}>{children}</DocumentationCode>,
               p: ({ node, children }) => containsMarkdownImage(node) ? <div className="documentation-media-block">{children}</div> : <p>{children}</p>,
               h1: ({ children }) => <h2 className="documentation-article-heading" id={headingId(plainText(children))} tabIndex={-1}>{children}</h2>,
@@ -207,9 +207,9 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
               h3: ({ children }) => <h3 id={headingId(plainText(children))} tabIndex={-1}>{children}</h3>,
               img: ({ src, alt }) => {
                 if (src === "https://deploy.workers.cloudflare.com/button") return <img src={src} width={200} height={32} alt={alt || "Deploy to Cloudflare"} loading="lazy" />;
-                const diagram = src && Object.hasOwn(diagrams, src) ? diagrams[src] : undefined;
-                const diagramId = src?.replace("gitflare-diagram:", "") ?? "";
-                return diagram ? <div className="documentation-diagram"><DocumentationFigure id={diagramId} /><div className="documentation-diagram-tools"><button type="button" data-diagram-key={`${id}:${src}`} onClick={() => { diagramTrigger.current = `${id}:${src}`; setExpandedDiagram({ ...diagram, key: diagramId, alt: alt || diagram.caption }); }} aria-label={`Expand diagram: ${diagram.title}`}><ArrowsOutIcon size={15} />Expand diagram</button></div></div> : <span className="documentation-image-label">{alt ? `Image: ${alt}` : "Image reference"}</span>;
+                const diagramId = documentationDiagramId(src);
+                const diagram = diagramId ? diagrams[diagramId] : undefined;
+                return diagramId && diagram ? <div className="documentation-diagram"><DocumentationFigure id={diagramId} /><div className="documentation-diagram-tools"><button type="button" data-diagram-key={`${id}:${diagramId}`} onClick={() => { diagramTrigger.current = `${id}:${diagramId}`; setExpandedDiagram({ ...diagram, key: diagramId, alt: alt || diagram.caption }); }} aria-label={`Expand diagram: ${diagram.title}`}><ArrowsOutIcon size={15} />Expand diagram</button></div></div> : <span className="documentation-image-label">{alt ? `Image: ${alt}` : "Image reference"}</span>;
               },
               a: ({ href, children }) => {
                 if (isGitflareDeployUrl(href)) return <CloudflareDeployButton />;

@@ -31,7 +31,9 @@ export default function AiSettingsPanel({ settings, canManage, onChanged }: { se
         <div>
           <h2>AI features {enabled ? "on" : "off"}<InfoTip label="AI features">Turns agents, mission drafting and AI client connections on or off for the whole workspace. With AI off, people can still propose and land changes by hand.</InfoTip></h2>
           <p>
-            {settings?.locked
+            {settings?.unavailable
+              ? "Gitflare could not read this setting, so AI features stay off until it can. Refresh the page to try again."
+              : settings?.locked
               ? "This installation runs without AI (AI_FEATURES=disabled). Repositories, reviews, landing, restores and checkpoints work as usual."
               : enabled
                 ? "Agents, mission drafting, AI model settings and AI client connections are available."
@@ -40,7 +42,7 @@ export default function AiSettingsPanel({ settings, canManage, onChanged }: { se
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
       </div>
-      {!settings?.locked && canManage && (
+      {!settings?.locked && !settings?.unavailable && canManage && (
         <Button variant="secondary" size="base" loading={busy} disabled={busy} onClick={() => void toggle()}>
           {enabled ? "Turn AI off" : "Turn AI on"}
         </Button>

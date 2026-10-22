@@ -10,7 +10,7 @@ ZIP import is for an empty repository (or one holding only untouched Gitflare se
 
 A repository has **Code**, **Issues**, **Proposals**, **Agents**, **Checks**, **Skills**, **Checkpoints** and **Streams**. Agents shows each run with its assignment, fork, revision, changed files and errors. Checks shows each agent's result and the combined result, with the revision each one covers. Skills lists `SKILL.md` files under `.agents/skills/`, `.claude/skills/`, `skills/` and `docs/skills/` at an exact revision, read-only. The skill editor writes `docs/skills/<slug>/SKILL.md` through a deterministic Mission that makes no model call; see the [AI client guide](agents.md).
 
-![From a live default-branch baseline, one to eight isolated task assignments are reviewed together before exact-candidate approval and landing](gitflare-diagram:user-journey)
+![From a live default-branch baseline, one to eight isolated task assignments are reviewed together before exact-candidate approval and landing](../../src/ui/assets/docs/user-journey.svg)
 
 ## Missions
 

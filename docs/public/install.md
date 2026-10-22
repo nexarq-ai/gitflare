@@ -6,7 +6,7 @@ Gitflare's self-hosted edition is Apache-2.0 and published at [nexarq-ai/gitflar
 
 Status: a fresh install through the Deploy button has not yet been tested end to end. If something breaks, open an issue on the repository.
 
-![Cloudflare deploys the GitHub source into your account; account-owned services and secrets are configured there, with preview deployed separately](gitflare-diagram:architecture)
+![Cloudflare deploys the GitHub source into your account; account-owned services and secrets are configured there, with preview deployed separately](../../src/ui/assets/docs/architecture.svg)
 
 ## Before you start
 
@@ -37,7 +37,7 @@ node scripts/install-self-hosted.mjs
 
 The installer writes account-specific main and preview configurations for you to review, then provisions the Gateway, namespace, OAuth KV, encryption key, runner and both Workers. Existing resources and an existing encryption key are reused.
 
-![Your account owns the Worker, Artifacts namespace, AI Gateway, runner image, OAuth storage, email sender, and separate preview origin](gitflare-diagram:trust)
+![Your account owns the Worker, Artifacts namespace, AI Gateway, runner image, OAuth storage, email sender, and separate preview origin](../../src/ui/assets/docs/trust.svg)
 
 ## After the first sign-in
 

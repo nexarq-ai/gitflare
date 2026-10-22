@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 const modulePath = '../scripts/deploy-self-hosted.mjs';
-const { deploymentConfiguration, preflightDeployment, ensureResources, ensureEncryptionKey, ensurePreviewsWorker, ensurePreviewsToken, installerPreviewsToken, checkInstallerToken, previewsWorkerName, ProvisioningError } = await import(modulePath);
+const { deploymentConfiguration, preflightDeployment, ensureResources, ensureEncryptionKey, ensurePreviewsWorker, ensurePreviewsToken, installerPreviewsToken, checkInstallerToken, previewsWorkerName, ProvisioningError, appendTail, commandFailure } = await import(modulePath);
 const input = { name: 'gitflare', compatibility_date: '2026-10-12', vars: { EDITION: 'self-hosted', AI_GATEWAY_ID: 'gitflare' }, workflows: [{ name: 'gitflare-missions' }], containers: [{ name: 'gitflare-runner' }], artifacts: [{ binding: 'ARTIFACTS', namespace: 'gitflare' }] };
 const legacyInput = { ...input, name: 'gitbraid', vars: { ...input.vars, GITBRAID_INSTALLATION: 'gitbraid', GITBRAID_PRIMARY_WORKER: 'gitbraid' }, artifacts: [{ binding: 'ARTIFACTS', namespace: 'gitbraid' }] };
 const bindings = [{ type: 'plain_text', name: 'GITFLARE_INSTALLATION', text: 'gitflare' }, { type: 'plain_text', name: 'GITFLARE_PRIMARY_WORKER', text: 'mine' }];
@@ -98,5 +98,20 @@ describe('self-hosted deployment provisioning', () => {
     const existing = vi.fn(async () => [{ name: 'AUTH_ENCRYPTION_KEY' }]);
     expect(await ensureEncryptionKey(existing, 'mine', false)).toBe(false);
     expect(existing).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the tail of a failed command\'s stderr without echoing credentials', () => {
+    let errors = '';
+    for (let index = 0; index < 100; index += 1) errors = appendTail(errors, `line ${index} ${'x'.repeat(60)}\n`);
+    expect(errors.length).toBe(4096);
+    expect(errors).toContain('line 99');
+    expect(errors).not.toContain('line 0 ');
+    const token = 'cf-secret-token-value-123';
+    const failure = commandFailure(1, `✘ [ERROR] Authentication error [code: 10000] for ${token}\n`, [token, 'a'.repeat(32), undefined]);
+    expect(failure.message).toContain('Deployment command failed (1).');
+    expect(failure.message).toContain('Authentication error [code: 10000]');
+    expect(failure.message).toContain('[redacted]');
+    expect(failure.message).not.toContain(token);
+    expect(commandFailure(2, '  ').message).toBe('Deployment command failed (2). Inspect Cloudflare build diagnostics; secret values are not printed by this helper.');
   });
 });

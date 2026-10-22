@@ -29,6 +29,7 @@ import type { Repository } from '../shared/types';
 import { triggerMirrorSync } from './github-mirror-runtime';
 import { refreshPublicRepository } from './public-discovery';
 import { previewSecretBindings } from './repository-secrets';
+import { logFailure } from './log';
 
 export interface LandingParams { kind: 'land'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimId: string; principal: Principal }
 export interface PreviewParams { kind: 'preview'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; claimId: string; principal: Principal }
@@ -348,7 +349,7 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
     let timer: ReturnType<typeof setTimeout> | undefined;
     const renew = async () => {
       try { await coordinator.renewPreview(missionId, epoch, candidateSha, claimId); }
-      catch {}
+      catch (error) { logFailure('preview_heartbeat_failed', error, { repositoryId, missionId, epoch, claimId }, 'warn'); }
       if (!finished) timer = setTimeout(renew, PREVIEW_HEARTBEAT_MS);
     };
     timer = setTimeout(renew, PREVIEW_HEARTBEAT_MS);
@@ -411,9 +412,9 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
     } catch (error) {
       const message = error instanceof PreviewFailure || error instanceof WorkerPreviewError || error instanceof WorkerBuildFailure ? error.message : error instanceof ApiError ? `The preview could not be started. ${error.detail}` : 'The preview could not be started.';
       const code = setup ?? (error instanceof ApiError && isPreviewSetupCode(error.code) ? error.code : undefined);
-      const released = await coordinator.previewFailed(missionId, claimId, message, code).catch(() => false);
-      await env.SANDBOX?.getByName(`preview-${missionId}-${claimId}`).destroy().catch(() => {});
-      if (released) await catalog.releasePreviewSlot(missionId).catch(() => {});
+      const released = await coordinator.previewFailed(missionId, claimId, message, code).catch(failure => { logFailure('preview_failure_record_failed', failure, { repositoryId, missionId, claimId }); return false; });
+      await env.SANDBOX?.getByName(`preview-${missionId}-${claimId}`).destroy().catch(failure => logFailure('preview_sandbox_destroy_failed', failure, { repositoryId, missionId, claimId }, 'warn'));
+      if (released) await catalog.releasePreviewSlot(missionId).catch(failure => logFailure('preview_slot_release_failed', failure, { workspaceId: principal.workspaceId, missionId }));
     } finally {
       finished = true;
       clearTimeout(timer);

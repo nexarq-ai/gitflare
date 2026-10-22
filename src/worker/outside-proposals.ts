@@ -5,7 +5,6 @@ import { repositoryLabel } from '../shared/repository-names';
 import { ApiError, assertMutationOrigin, readJson, requireIdempotencyKey, requireString } from './domain';
 import { branchName } from './branch-protection';
 import type { ContributorStanding, OutgoingProposal } from './coordinator';
-import { startWithDurableDispatch } from './coordinator';
 import type { AppEnv } from './env';
 import { executionReadiness } from './execution';
 import { upstreamOf } from './forks';
@@ -64,7 +63,7 @@ async function startOrHold(context: OutsideContext, upstream: Repository, missio
   const vouch = await vouchingAuthority(context, standing, upstream.id);
   if (!vouch || !context.env.MISSION_WORKFLOW || !executionReadiness(context.env, 'skill-edit').ready) return records.holdOutsideProposal(mission.id, standing?.landed ? 'returning' : 'first-time');
   const models = await context.catalogOf(upstream.workspaceId ?? 'legacy').getModelConnections();
-  return startWithDurableDispatch(records, `${key.slice(0, 120)}-start`, mission.id, { principal: vouch, workspaceId: upstream.workspaceId ?? 'legacy', creatorId: authorId }, models);
+  return records.startMissionWithDispatch(`${key.slice(0, 120)}-start`, mission.id, { principal: vouch, workspaceId: upstream.workspaceId ?? 'legacy', creatorId: authorId }, models);
 }
 
 export function upstreamProposalView(mission: Mission, origin: string, upstream: { handle: string; repository: Repository } | null): UpstreamProposal {

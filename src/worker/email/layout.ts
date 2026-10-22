@@ -1,6 +1,6 @@
 export const BRAND_ORIGIN = 'https://gitflare.io';
 export const LOGO_URL = `${BRAND_ORIGIN}/logo-512.png`;
-export const COMPANY_LINE = 'nexarq AI (nexarq Technologies Pvt Ltd) · [COMPANY ADDRESS]';
+export const COMPANY_LINE = 'nexarq AI (nexarq Technologies Pvt Ltd)';
 export const SUPPORT_ADDRESS = 'support@gitflare.io';
 
 export type EmailEdition = 'hosted' | 'self-hosted';

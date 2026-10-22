@@ -152,7 +152,7 @@ async function previewHarness() {
   const principal = { userId: 'owner', workspaceId: 'legacy', role: 'Owner' as const };
   const created: { id: string; params: unknown }[] = [];
   const envFor = (runner: unknown) => ({
-    GITFLARE_SECURITY: { getByName: () => ({ check: async () => {}, identityCall: async () => null }) },
+    GITFLARE_SECURITY: { getByName: () => ({ identityCall: async () => null, shardCall: async () => undefined }) },
     GITFLARE_COORDINATOR: { getByName: (name: string) => name.startsWith('catalog') ? catalog : coordinator },
     ARTIFACTS: artifacts, SANDBOX: { getByName: () => runner },
     PREVIEWS_ACCOUNT_ID: accountId, PREVIEWS_WORKER_NAME: 'gitflare-previews', PREVIEWS_API_TOKEN: token,

@@ -359,16 +359,20 @@ describe('MCP HTTP boundaries', () => {
   it('rejects foreign browser origins before dispatching tools', async () => {
     const response = await handleMcp(new Request('https://gitflare.test/mcp', { method: 'POST', headers: { Origin: 'https://foreign.test', 'Content-Type': 'application/json' }, body: '{}' }), readApi);
     expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: { code: 'ORIGIN_REJECTED', message: 'MCP requests from this origin are not allowed.' } });
   });
   it('does not expose an unauthenticated session stream or DELETE transport', async () => {
     for (const method of ['GET', 'DELETE']) {
       const response = await handleMcp(new Request('https://gitflare.test/mcp', { method }), readApi);
       expect(response.status).toBe(405);
+      expect(response.headers.get('Allow')).toBe('POST');
+      expect(await response.json()).toEqual({ error: { code: 'METHOD_NOT_ALLOWED', message: 'This stateless MCP endpoint accepts POST requests.' } });
     }
   });
   it('rejects oversized RPC bodies', async () => {
     const response = await handleMcp(new Request('https://gitflare.test/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'gitflare_list_repositories', arguments: { prompt: 'x'.repeat(20_000) } } }) }), readApi);
     expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: { code: 'REQUEST_TOO_LARGE', message: expect.any(String) } });
   });
   it('bounds create-mission RPC bodies to 256 KiB', async () => {
     const response = await handleMcp(new Request('https://gitflare.test/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'gitflare_create_mission', arguments: { prompt: 'x'.repeat(270_000) } } }) }), readApi);

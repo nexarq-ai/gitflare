@@ -48,6 +48,20 @@ describe('AI on/off', () => {
     expect(await call(env, '/api/missions/draft', { repositoryId: 'r', goal: 'Make this deployable on Workers.' })).toMatchObject({ status: 403 });
   });
 
+  it('keeps AI off and says why when the setting cannot be read', async () => {
+    const env = environment();
+    const catalog = (env.GITFLARE_COORDINATOR as unknown as { getByName(name: string): { getAiEnabled(): Promise<boolean> } }).getByName('catalog');
+    catalog.getAiEnabled = async () => { throw new Error('storage unavailable'); };
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect((await call(env, '/api/settings/ai')).body).toEqual({ enabled: false, locked: false, unavailable: true });
+      const draft = await call(env, '/api/missions/draft', { repositoryId: 'r', goal: 'Make this deployable on Workers.' });
+      expect(draft).toMatchObject({ status: 503, body: { error: { code: 'AI_SETTINGS_UNAVAILABLE', message: expect.stringContaining('stay off') } } });
+      expect(logged.mock.calls.map(([line]) => JSON.parse(String(line)))).toContainEqual({ event: 'ai_settings_read_failed', errorName: 'Error' });
+      expect(JSON.stringify(logged.mock.calls)).not.toContain('storage unavailable');
+    } finally { logged.mockRestore(); }
+  });
+
   it('rejects a malformed setting', async () => {
     expect(await call(environment(), '/api/settings/ai', { enabled: 'no' })).toMatchObject({ status: 400 });
   });
