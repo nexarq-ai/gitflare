@@ -11,6 +11,7 @@ import { personalWorkspaceId, publicPrincipal, securityClient, type FollowKind, 
 import { CACHE_DEPENDENCIES, discoveryCachePaths, purgePublicCache, repositoryCachePaths } from './public-cache';
 import { backfillEmptyIndex, explorePublic, indexedDetails, indexPublicRepository, indexWorkspaceRepositories, pageCursor, publicIndex, refreshIndexedHandle, removeIndexedRepositories, repositoryActivity, searchPublic, searchQuery, updateIndexedStars } from './public-index';
 import { publicTargetById, resolvePublicRepository, siteOrigin, PUBLIC_NOT_FOUND } from './public-repositories';
+import { markdownImages } from './image-proxy';
 
 type Waiter = { waitUntil(promise: Promise<unknown>): void } | undefined;
 const REPOSITORY_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -76,7 +77,8 @@ async function profileReadme(env: AppEnv, access: SecurityService, handle: strin
     try { content = new TextDecoder('utf-8', { fatal: true }).decode(await blob.arrayBuffer()); } catch { break; }
     if (content.includes('\0')) break;
     const name = repositoryLabel(target.repository);
-    return { readme: { path, content, repository: name, url: publicRepositoryPath(handle, name) }, repositoryId: target.repository.id };
+    const images = await markdownImages(env, content);
+    return { readme: { path, content, repository: name, url: publicRepositoryPath(handle, name), commitSha: commit.hash, ...(images ? { images } : {}) }, repositoryId: target.repository.id };
   }
   return { readme: null, repositoryId: target.repository.id };
 }

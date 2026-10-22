@@ -449,7 +449,7 @@ export interface PublicSearch { query: string; type: PublicSearchType; repositor
 export type ProfileShowcase = { kind: 'repository'; name: string } | { kind: 'mission'; repository: string; missionId: string };
 export interface ShowcaseMission { id: string; title: string; repository: string; handle: string; landedAt: string; landedSha: string | null; agents: number; people: number; url: string }
 export type PublicShowcase = { kind: 'repository'; repository: PublicRepositoryCard } | { kind: 'mission'; mission: ShowcaseMission };
-export interface ProfileReadme { path: string; content: string; repository: string; url: string }
+export interface ProfileReadme { path: string; content: string; repository: string; url: string; commitSha?: string; images?: Record<string, string> }
 export interface ProfileFields { displayName: string; bio: string; links: string[]; pinned: string[]; location: string; website: string; showcase: ProfileShowcase | null }
 export interface PublicProfile extends ProfileFields { handle: string; kind: PublicHandleKind; repositories: PublicRepositoryCard[]; starred: PublicRepositoryCard[]; readme: ProfileReadme | null; featured: PublicShowcase | null; url: string }
 export interface ProfileSettings extends ProfileFields { scope: PublicHandleKind; handle: string | null; canChange: boolean; url: string | null }
@@ -461,11 +461,11 @@ export interface SubscriptionList { items: SubscriptionEntry[] }
 export interface StarState { handle: string; repository: string; starred: boolean; watching: boolean; stars: number; watchers: number }
 export interface StarList { starred: PublicRepositoryCard[]; watching: PublicRepositoryCard[] }
 export interface PublicTree { entries: { name: string; path: string; type: 'file' | 'directory' }[]; ref: string; commitSha: string }
-export interface PublicFile { path: string; content: string; commitSha: string }
+export interface PublicFile { path: string; content: string; commitSha: string; images?: Record<string, string> }
 export interface PublicHistory { ref: string; commits: PublicCommit[] }
 export interface PublicBranches { defaultBranch: string; branches: { name: string; headSha: string; default: boolean }[] }
 export interface PublicReleaseAsset { name: string; size: number; contentType: string; sha256: string; downloadUrl: string }
-export interface PublicRelease { tag: string; name: string; notes: string; targetSha: string; prerelease: boolean; publishedAt: string | null; assets?: PublicReleaseAsset[]; advisories?: AdvisoryReference[] }
+export interface PublicRelease { tag: string; name: string; notes: string; targetSha: string; prerelease: boolean; publishedAt: string | null; assets?: PublicReleaseAsset[]; advisories?: AdvisoryReference[]; images?: Record<string, string> }
 export interface PublicReleases { releases: PublicRelease[]; feeds?: FeedLinks }
 
 export interface WorkspaceCloudflareAccount { id: string; name: string; default: boolean }

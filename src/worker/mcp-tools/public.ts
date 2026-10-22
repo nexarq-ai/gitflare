@@ -35,7 +35,7 @@ export function register(server: McpServer, { call }: McpToolContext): void {
     const base = `/api/public/repos/${encodeURIComponent(input.handle)}/${encodeURIComponent(input.repository)}`;
     const query = new URLSearchParams({ ...(input.ref ? { ref: repositoryRef(input.ref) } : {}), ...(input.view === 'tree' || input.view === 'file' ? { path: repositoryPath(input.path) } : {}), ...(input.view === 'history' ? { limit: String(Math.min(input.limit, 100)) } : {}) });
     const value = await call<Record<string, unknown>>(`${base}${input.view === 'summary' ? '' : `/${input.view}`}${query.size ? `?${query}` : ''}`);
-    if (typeof value.content === 'string') return { ...value, content: excerpt(value.content, input.offset, input.limit) };
+    if (typeof value.content === 'string') return { ...value, images: undefined, content: excerpt(value.content, input.offset, input.limit) };
     if (Array.isArray(value.entries)) return { ...value, ...page(value.entries, input.offset, Math.min(input.limit, 50)), entries: undefined };
     return value;
   }));
