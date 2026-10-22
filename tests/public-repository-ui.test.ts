@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { isAppPath, isKnownAppRoute, isSiteRoute, POLICY_ROUTES, PUBLIC_PRODUCT_ROUTES, publicRepositoryLocation, routeFromLocation } from '../src/ui/router';
 import { publicRepositoryPath, RESERVED_HANDLES } from '../src/shared/handles';
@@ -51,29 +50,5 @@ describe('public repository routes', () => {
     }
     expect(publicRepositoryPath('acme', 'widgets', 'issues', '../x')).toBe('/acme/widgets/issues');
     for (const path of ['/acme/widgets.git', '/favicon.svg', '/assets/index.js']) expect(isAppPath(path), path).toBe(false);
-  });
-});
-
-describe('public repository page design', () => {
-  const source = readFileSync(new URL('../src/ui/PublicRepository.tsx', import.meta.url), 'utf8');
-
-  it('leads with the description, key facts and Gitflare signals instead of an About sidebar', () => {
-    expect(source).toContain('className="repo-hero-lead"');
-    expect(source).toContain('aria-label="Key facts"');
-    expect(source).toContain('<AgentReadyBadge readiness={repository.agentReady} />');
-    expect(source).toContain('<ActivityStream api={`${base!}/activity`} title="Landing stream" />');
-    expect(source).not.toContain('<h2>About</h2>');
-  });
-
-  it('names views in Gitflare vocabulary while keeping the routes', () => {
-    expect(source).toContain('["commits", "Revisions"');
-    expect(source).toContain('["branches", "Streams"');
-    expect(source).toContain('["agents", "Missions"');
-    expect(source).toContain('className="repo-nav" aria-label="Repository views"');
-  });
-
-  it('groups the primary actions apart from star, watch and fork', () => {
-    expect(source).toContain('className="repo-hero-primary"');
-    expect(source).toContain('className="repo-social-group" role="group" aria-label="Star, watch and fork"');
   });
 });

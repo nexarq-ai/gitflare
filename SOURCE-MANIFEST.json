@@ -2395,8 +2395,8 @@
     },
     {
       "path": "tests/public-repository-ui.test.ts",
-      "size": 6274,
-      "sha256": "df47f5cf536acb2fe554c9f159b82fa8248043cbcc842cf523dcccdb61123964"
+      "size": 5024,
+      "sha256": "04e1ef1ee7ce56c683effe461a0a01b46d4d094930465603eed5895fd54dc03e"
     },
     {
       "path": "tests/release-assets-ui.test.ts",
