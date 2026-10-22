@@ -9,6 +9,7 @@ import { useConfirm } from "./ConfirmDialog";
 import type { ConfirmFact } from "./deploy-progress";
 import InfoTip from "./InfoTip";
 import "./fix-requests.css";
+import { PageLoading } from "./WorkspaceLoader";
 
 const STATE_LABELS: Record<AgentMissionState, string> = { planning: "Planning", waiting: "Waiting for a maintainer", running: "Agents working", review: "In review", landed: "Landed", closed: "Closed", failed: "Failed" };
 const ABOUT = "An agent proposes a change for the maintainers to review. Uses this project's community AI pool or your own key.";
@@ -87,7 +88,7 @@ export function RequestFix({ api, issueNumber, open, signIn }: { api: string; is
 export function AgentMissions({ api, issueLink }: { api: string; issueLink: (number: number) => ReactNode }) {
   const { data, error } = useQuote(api, "", 0);
   if (error) return <section className="repo-panel"><div className="repo-panel-padding"><div className="error-notice" role="alert">{error}</div></div></section>;
-  if (!data) return <section className="repo-panel" aria-busy="true"><p className="repo-panel-padding" role="status">Loading…</p></section>;
+  if (!data) return <section className="repo-panel" aria-busy="true"><PageLoading /></section>;
   return <section className="repo-panel">
     <div className="repo-panel-heading"><h2><RobotIcon size={16} aria-hidden="true" />Agent work</h2><InfoTip label="agent work">Changes people asked agents to make. Each one is a proposal that a maintainer reviews before it lands.</InfoTip></div>
     {data.missions.length ? <ul className="fix-list fix-list-page">{data.missions.map(entry => <li key={entry.id}>

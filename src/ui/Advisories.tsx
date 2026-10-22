@@ -8,7 +8,7 @@ import { request, RequestError } from "./api";
 import { useConfirm } from "./ConfirmDialog";
 import InfoTip from "./InfoTip";
 import { navigate } from "./router";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import { ADVISORY_DESCRIPTION_MAX, ADVISORY_LIST_MAX, ADVISORY_TITLE_MAX, CLOSE_REASON_LABELS, draftErrors, draftFrom, draftPayload, publishBlockers, SEVERITY_LABELS, STATE_LABELS, type AdvisoryDraft } from "./advisory-data";
 import { AdvisoryCommentBox, AffectedEditor, AdvisoryFacts, AdvisoryMarkdown, AdvisoryStateBadge, AdvisoryThread, AdvisoryTime, EmptyAdvisories, personName, SeverityPill } from "./advisory-ui";
 import "./advisories.css";
@@ -49,7 +49,7 @@ function AdvisoryIndex({ repository, writable }: { repository: Repository; writa
       {list?.maintainer && <Button variant="primary" size="base" icon={PlusIcon} disabled={!writable} title={writable ? undefined : "Requires permission to land changes."} onClick={() => navigate(`${base}/new`)}>New draft</Button>}
     </div>
     {error && <div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => void load()}>Try again</button></div>}
-    {!list ? !error && <RouteProgress /> : <>
+    {!list ? !error && <PageLoading /> : <>
       <div className="repository-work-toolbar">
         <div className="issue-state-toggle" role="group" aria-label="Advisory state">
           {ADVISORY_STATES.map(value => <button key={value} type="button" aria-pressed={effective === value} onClick={() => { setState(value); setChosen(true); }}>{STATE_LABELS[value]} <span className="advisory-count">{list.counts[value] ?? 0}</span></button>)}
@@ -89,7 +89,7 @@ function AdvisoryPage({ repository, advisoryId, writable, onNotify }: { reposito
 
   const back = <a className="header-back release-back" href={`/${base}`}><ArrowLeftIcon size={13} />All advisories</a>;
   if (missing) return <>{back}<div className="error-notice" role="alert">This advisory doesn't exist, or you don't have access to it.</div></>;
-  if (!advisory) return <>{back}{error ? <div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => void load()}>Try again</button></div> : <RouteProgress />}</>;
+  if (!advisory) return <>{back}{error ? <div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => void load()}>Try again</button></div> : <PageLoading />}</>;
   if (editing) return <AdvisoryEditor repository={repository} advisory={advisory} onCancel={() => setEditing(false)} onSaved={saved => { setAdvisory(saved); setEditing(false); onNotify("Advisory saved."); }} />;
 
   const manage = advisory.viewer.maintainer && writable;

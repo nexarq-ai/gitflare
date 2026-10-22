@@ -9,7 +9,7 @@ import { cloudflarePermissionGroups, type CloudflarePermissionPlan } from "../sh
 import { request } from "./api";
 import { ErrorNotice } from "./components";
 import "./cloudflare-connection.css";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import type { DemoMarked } from "../shared/demo-features";
 
@@ -194,7 +194,7 @@ export default function CloudflareConnection({ repository, repositoryId, canMana
       {demoPanels.map((item) => <DemoFeaturePanel key={item.demo!.feature} demo={item.demo} examples={item.examples} />)}
     </> : <>
     {message && <p className="cf-notice" role="status">{message}</p>}
-    {repositoryId && canManage && (status ? <RepositoryAccount status={status} accounts={accounts} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request(`${connectionBase}/select-account`, { accountId }); setRetry((value) => value + 1); })} onConnect={() => setConnectOpen(true)} onDisconnect={() => void perform("disconnect", async () => { await request(`${connectionBase}/disconnect`, {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <RouteProgress /> : <p role="status">Cloudflare account details are unavailable.</p>)}
+    {repositoryId && canManage && (status ? <RepositoryAccount status={status} accounts={accounts} busy={busy} accountId={accountId} onAccount={setAccountId} onUseAccount={() => void perform("account", async () => { await request(`${connectionBase}/select-account`, { accountId }); setRetry((value) => value + 1); })} onConnect={() => setConnectOpen(true)} onDisconnect={() => void perform("disconnect", async () => { await request(`${connectionBase}/disconnect`, {}); setAccounts([]); setResources(null); setRetry((value) => value + 1); })} /> : busy === "load" ? <PageLoading /> : <p role="status">Cloudflare account details are unavailable.</p>)}
     {canManage && <ConnectPermissions plan={status?.permissions} open={connectOpen} busy={busy === "connect"} onOpenChange={setConnectOpen} onContinue={() => void perform("connect", async () => { const result = await request<{ authorizationUrl: string }>(`${connectionBase}/connect`, {}); window.location.assign(result.authorizationUrl); })} />}
     {!canManage && !repositoryId && <p>Only an Owner can manage Cloudflare connections.</p>}
     {repositoryId && project && <>

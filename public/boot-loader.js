@@ -85,13 +85,22 @@ if (!customElements.get("gitflare-loading-signal")) customElements.define("gitfl
   try { theme = localStorage.getItem("gitflare-theme"); } catch {}
   document.documentElement.dataset.theme = location.pathname === "/" ? "dark" : theme === "light" || theme === "dark" ? theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   const template = document.getElementById("boot-loader");
-  const root = document.getElementById("root");
-  if (template && root) {
-    root.append(template.content.cloneNode(true));
-    if (location.pathname === "/") {
-      root.querySelector("h1").textContent = "Loading Gitflare";
-      root.querySelector(".workspace-loading-status p").textContent = "Preparing the page.";
+  if (template && document.body) {
+    const overlay = document.createElement("div");
+    overlay.id = "gitflare-boot";
+    overlay.append(template.content.cloneNode(true));
+    const site = document.querySelector?.('meta[name="gitflare-site-origin"]')?.content;
+    const app = document.querySelector?.('meta[name="gitflare-app-origin"]')?.content;
+    const siteHost = site && app && site !== app && location.origin === site;
+    const workspace = !siteHost && /^\/(?:overview|missions|activity|admin|inbox|settings|mission|repository|proposals|import|account)(?:\/|$)/.test(location.pathname);
+    if (!workspace) {
+      const heading = overlay.querySelector("h1");
+      heading.textContent = "Loading Gitflare";
+      heading.className = "sr-only";
+      overlay.querySelector(".workspace-loading-status p").remove();
     }
+    document.body.append(overlay);
+    document.documentElement.setAttribute("data-booting", "");
   }
 }
 

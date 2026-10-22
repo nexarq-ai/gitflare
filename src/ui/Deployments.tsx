@@ -9,7 +9,7 @@ import { OperationTrack } from "./OperationMotion";
 import { useConfirm } from "./ConfirmDialog";
 import { DeployProgressPanel, Sha, useDeployProgress } from "./DeployProgress";
 import { ACTIVE_STATUSES, environmentLabel, productionPrompt, publishDeployments, type ConfirmPrompt } from "./deploy-progress";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import type { DemoMarked } from "../shared/demo-features";
 import "./cloudflare-connection.css";
@@ -191,7 +191,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
     } finally { setBusy(""); setStarting(""); }
   }
 
-  if (!state) return error ? <ErrorNotice message={error} /> : <RouteProgress />;
+  if (!state) return error ? <ErrorNotice message={error} /> : <PageLoading />;
   const demo = demoOf(state);
   if (demo) return <DemoFeaturePanel demo={demo} examples={state.examples} />;
   const environmentNames = orderEnvironments([...(state.environmentOrder ?? Object.keys(state.environments)), ...Object.keys(detection?.setup.environments ?? {})]);
