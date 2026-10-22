@@ -419,8 +419,18 @@ export type PublicSearchType = 'repositories' | 'paths' | 'people';
 export interface PublicPathMatch { handle: string; repository: string; path: string; url: string }
 export interface PublicPerson { handle: string; kind: PublicHandleKind; displayName: string; url: string }
 export interface PublicSearch { query: string; type: PublicSearchType; repositories: PublicRepositoryCard[]; paths: PublicPathMatch[]; people: PublicPerson[]; nextCursor: number | null; indexed: boolean }
-export interface PublicProfile { handle: string; kind: PublicHandleKind; displayName: string; bio: string; links: string[]; pinned: string[]; repositories: PublicRepositoryCard[]; starred: PublicRepositoryCard[]; url: string }
-export interface ProfileSettings { scope: PublicHandleKind; handle: string | null; displayName: string; bio: string; links: string[]; pinned: string[]; canChange: boolean; url: string | null }
+export type ProfileShowcase = { kind: 'repository'; name: string } | { kind: 'mission'; repository: string; missionId: string };
+export interface ShowcaseMission { id: string; title: string; repository: string; handle: string; landedAt: string; landedSha: string | null; agents: number; people: number; url: string }
+export type PublicShowcase = { kind: 'repository'; repository: PublicRepositoryCard } | { kind: 'mission'; mission: ShowcaseMission };
+export interface ProfileReadme { path: string; content: string; repository: string; url: string }
+export interface ProfileFields { displayName: string; bio: string; links: string[]; pinned: string[]; location: string; website: string; showcase: ProfileShowcase | null }
+export interface PublicProfile extends ProfileFields { handle: string; kind: PublicHandleKind; repositories: PublicRepositoryCard[]; starred: PublicRepositoryCard[]; readme: ProfileReadme | null; featured: PublicShowcase | null; url: string }
+export interface ProfileSettings extends ProfileFields { scope: PublicHandleKind; handle: string | null; canChange: boolean; url: string | null }
+export interface ShowcaseOptions { repositories: string[]; missions: { repository: string; missionId: string; title: string; landedAt: string }[] }
+export type SubscriptionTargetKind = 'person' | 'repository';
+export interface SubscriptionEntry { kind: SubscriptionTargetKind; handle: string; repository: string | null; url: string; at: string }
+export interface SubscriptionStatus { kind: SubscriptionTargetKind; handle: string; repository: string | null; subscribed: boolean; subscribers: number }
+export interface SubscriptionList { items: SubscriptionEntry[] }
 export interface StarState { handle: string; repository: string; starred: boolean; watching: boolean; stars: number; watchers: number }
 export interface StarList { starred: PublicRepositoryCard[]; watching: PublicRepositoryCard[] }
 export interface PublicTree { entries: { name: string; path: string; type: 'file' | 'directory' }[]; ref: string; commitSha: string }

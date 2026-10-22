@@ -16,7 +16,7 @@ export const EMAILS_PER_DAY = 20;
 export const DIGEST_QUEUE_MAX = 200;
 export const DIGEST_HOUR_UTC = 8;
 export const EXCERPT_MAX = 280;
-const REASON_RANK: Record<NotificationReason, number> = { review_requested: 0, mention: 1, approval_needed: 2, deploy_failed: 3, participating: 4, watching: 5 };
+const REASON_RANK: Record<NotificationReason, number> = { review_requested: 0, mention: 1, approval_needed: 2, deploy_failed: 3, participating: 4, watching: 5, subscribed: 6 };
 const MENTION = /(?:^|[^A-Za-z0-9_@/.`-])@([a-z0-9](?:[a-z0-9-]{0,52}[a-z0-9])?)(?![A-Za-z0-9_-])/gi;
 
 export type NotificationRecord = Omit<NotificationItem, 'route' | 'actor'> & { eventIds: string[] };
@@ -273,7 +273,7 @@ export type Receivable = 'member' | 'public' | null | undefined;
 
 export async function receivable(access: Pick<SecurityService, 'recipientAccess'>, userId: string, subject: NotificationSubject, cache = new Map<string, Promise<Receivable>>()): Promise<Receivable> {
   const outsideAuthor = subject.kind === 'proposal' && subject.outsideAuthorId === userId;
-  const allowPublic = subject.kind === 'issue' || outsideAuthor;
+  const allowPublic = subject.kind === 'issue' || subject.kind === 'revision' || subject.kind === 'release' || outsideAuthor;
   const key = `${userId}:${subject.workspaceId}:${subject.repositoryId}:${allowPublic}`;
   let found = cache.get(key);
   if (!found) { found = access.recipientAccess(userId, subject.workspaceId, subject.repositoryId, 'read', allowPublic).catch(() => undefined); cache.set(key, found); }
@@ -285,6 +285,8 @@ export async function receivable(access: Pick<SecurityService, 'recipientAccess'
 export function notificationRoute(subject: NotificationSubject, via: 'member' | 'public'): string {
   if (subject.kind === 'issue') return via === 'public' && subject.publicPath ? `${subject.publicPath}/issues/${subject.number}` : `repository/${subject.repositoryId}/issues/${subject.number}`;
   if (subject.kind === 'proposal') return via === 'public' && subject.forkRepositoryId ? `repository/${subject.forkRepositoryId}/pulls` : `mission/${subject.missionId}/discussion`;
+  if (subject.kind === 'revision') return via === 'public' && subject.publicPath ? `${subject.publicPath}/commits` : `repository/${subject.repositoryId}/code`;
+  if (subject.kind === 'release') return via === 'public' && subject.publicPath ? `${subject.publicPath}/releases` : `repository/${subject.repositoryId}/releases`;
   return `repository/${subject.repositoryId}/settings/deploys`;
 }
 

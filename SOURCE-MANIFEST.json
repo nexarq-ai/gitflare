@@ -250,8 +250,8 @@
     },
     {
       "path": "src/shared/handles.ts",
-      "size": 3614,
-      "sha256": "d74064e8d68b2580fae83b9dcd75448357e392ac4ea965c073a623665bb864e5"
+      "size": 3720,
+      "sha256": "011dda097560d8ca8240fba4ab73814ed14fdb6e6b75390c838b0d747ae90fd2"
     },
     {
       "path": "src/shared/hosts.ts",
@@ -275,8 +275,8 @@
     },
     {
       "path": "src/shared/notifications.ts",
-      "size": 4499,
-      "sha256": "9a9c49dfd0fe7ee754b661a036ed8a1d827033888bb81a42bf8794e59ffce574"
+      "size": 4867,
+      "sha256": "eec931f614de1303a1b0fa3c515f4f9e6d3a2b42b0a2069e8758a2ef41c5199a"
     },
     {
       "path": "src/shared/preview-progress.ts",
@@ -310,8 +310,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 29831,
-      "sha256": "ab2744203e959564cb82f75de56a63fa502296bbfd504162daf21c5aaa7dbebb"
+      "size": 31087,
+      "sha256": "1aaabcfc59f670319fef8977efc83a816f0e6933deb7fd44586dc07fe8fb9075"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -770,13 +770,13 @@
     },
     {
       "path": "src/ui/inbox-data.ts",
-      "size": 6618,
-      "sha256": "3ce640c61dacd8a939f4ab666bf90908753ced228adc166a1d8d87626894ee9e"
+      "size": 6735,
+      "sha256": "d29f1dad51a0c9948c9d295d68630f1a5a2d42f4f0bee2aa58491261f380d301"
     },
     {
       "path": "src/ui/inbox.css",
-      "size": 8212,
-      "sha256": "ba1a5b60b753745958da3d3a5721d5f9c6ed3c64be74c1e09672fe843965f235"
+      "size": 8546,
+      "sha256": "3619f019b0d3c5b5bcd5e05514b2d5efe21c1046c27645e306716c41f56ebfb5"
     },
     {
       "path": "src/ui/Inbox.tsx",
@@ -885,8 +885,8 @@
     },
     {
       "path": "src/ui/NotificationSettings.tsx",
-      "size": 4654,
-      "sha256": "0d7224b9b22e42fbc6a716923115a25495ced88b9f7c0b102503d0366e69f45a"
+      "size": 7513,
+      "sha256": "a8df81e9685a188ff5128d023ca0f241fb12ad2c9460562ec241a1d5876fd027"
     },
     {
       "path": "src/ui/operation-motion.css",
@@ -949,14 +949,24 @@
       "sha256": "6e05a6ba93dc0d1979f8d40abbea28d9b73547c77f19900c3efb8f1f59241727"
     },
     {
+      "path": "src/ui/profile-header.css",
+      "size": 2056,
+      "sha256": "0118f62aa6249de5ee9686691bc6aded05519eddf1c70cba8a6afcf7b39a01e1"
+    },
+    {
       "path": "src/ui/profile-settings.css",
-      "size": 1970,
-      "sha256": "a2f92f94b37c41f6e9e0e7d5d136d714f67e3d39d600bd84272c49929aece307"
+      "size": 4312,
+      "sha256": "316a4b89dd0786a547196c4b65d88441fef84461264b0665e39580e17138093c"
+    },
+    {
+      "path": "src/ui/ProfileHeader.tsx",
+      "size": 2257,
+      "sha256": "003c0ce8e8fb554035aa56e180dc4ed2dff02b3ceaaeb36d9d001b9d2cc7d838"
     },
     {
       "path": "src/ui/ProfileSettings.tsx",
-      "size": 8924,
-      "sha256": "8b776cd8586dcbed3cc131a6dfcacf9ca519bf024b7af6fe33ab768fc02259b1"
+      "size": 15635,
+      "sha256": "c19733f855151b96da37caaeb7a82829489d18008d20dd28d73e17885b03aec2"
     },
     {
       "path": "src/ui/proposal-create.css",
@@ -1127,6 +1137,11 @@
       "path": "src/ui/SubscribeButton.tsx",
       "size": 2856,
       "sha256": "b6dc23e5a9f6cce3fdab74e8a6fc3b6d97ea421e8c04f8d8b5097b07e1f9a7e2"
+    },
+    {
+      "path": "src/ui/SubscriptionButton.tsx",
+      "size": 2406,
+      "sha256": "c00df3617abd9395cb91f74d3468bae05628b5a9b932645b54fa0ebe03a2e546"
     },
     {
       "path": "src/ui/ThemeToggle.tsx",
@@ -1635,8 +1650,8 @@
     },
     {
       "path": "src/worker/mcp-tools/discovery.ts",
-      "size": 5793,
-      "sha256": "12545202a69acd417d8111024b0614d8590ae7a04011e5ace7f3a871408c3fc9"
+      "size": 6855,
+      "sha256": "9ad140bce6a1e06fc529c7094e98a3843fcfc6b8ba46968e29fd07adcefa081b"
     },
     {
       "path": "src/worker/mcp-tools/docs.ts",
@@ -1670,8 +1685,8 @@
     },
     {
       "path": "src/worker/mcp-tools/notifications.ts",
-      "size": 6732,
-      "sha256": "3fadd4ab766671188832b477a76e638303042897bf51af35c34f7ad8be0112ca"
+      "size": 7918,
+      "sha256": "090cbd6f3301d8357adff508d48d4c3333670df724c53ce4cd3dab88a81cd394"
     },
     {
       "path": "src/worker/mcp-tools/public.ts",
@@ -1745,13 +1760,13 @@
     },
     {
       "path": "src/worker/notification-email.ts",
-      "size": 2930,
-      "sha256": "6ced655fe61cb349c7daa59bc8e836ff80499c53717c0b213a92acc7d1709083"
+      "size": 3061,
+      "sha256": "d69424627f15657fccb0eb536c2189d7de3dbb82089749fc3aee9eb07764b396"
     },
     {
       "path": "src/worker/notifications.ts",
-      "size": 20354,
-      "sha256": "8926e34138720001c181b6ecdfda28da0dd9c7e5627024150171f22f0edef4ef"
+      "size": 20754,
+      "sha256": "53155f089135ee85884be4f3ce8fc3ee3a0832eaae068c8525fe644bfcccefd1"
     },
     {
       "path": "src/worker/oauth.ts",
@@ -1810,8 +1825,8 @@
     },
     {
       "path": "src/worker/proposal-notifications.ts",
-      "size": 8233,
-      "sha256": "771859b65e21e7962210774e93a0811b93732240d9733329537cb89120ccbef3"
+      "size": 8407,
+      "sha256": "2f079378d86aa1140c08c90148976359d256bb88cd1cf539322c5c3891e1cc22"
     },
     {
       "path": "src/worker/proposal-review.ts",
@@ -1830,8 +1845,8 @@
     },
     {
       "path": "src/worker/public-discovery.ts",
-      "size": 17307,
-      "sha256": "ec454a5a55a9014e9cd7694a92648794164edc644cebb20106641249f0f7b0d4"
+      "size": 28332,
+      "sha256": "d119b29a2b0c84c697ca0440c875d94517f01f7914096d243f7fcc110d359984"
     },
     {
       "path": "src/worker/public-downloads.ts",
@@ -1930,8 +1945,8 @@
     },
     {
       "path": "src/worker/routes/releases.ts",
-      "size": 2207,
-      "sha256": "737d471e868b64df5476694cb879e628656f5f6a4248c140cecb4f4cd939e2a0"
+      "size": 2636,
+      "sha256": "e56f006b3639a4d52b9e2a3dbb6178c0789142ce22a11ecb4954cc701d8d687f"
     },
     {
       "path": "src/worker/routes/repositories.ts",
@@ -1970,8 +1985,8 @@
     },
     {
       "path": "src/worker/security.ts",
-      "size": 214642,
-      "sha256": "5049127641454000dc572dca1871a35204435ef4a52eb5578b48a4d9cf8e669f"
+      "size": 219928,
+      "sha256": "e7561cff67069be96ab09881fe4f07fcd87e5c02f6a5b8691f5140956e251b72"
     },
     {
       "path": "src/worker/session-meta.ts",
@@ -2007,6 +2022,11 @@
       "path": "src/worker/store.ts",
       "size": 1490,
       "sha256": "1859f4385837b8f43ebd4682b779a91c42f1d6bd665386454e0e7e2a495701e2"
+    },
+    {
+      "path": "src/worker/subscription-notifications.ts",
+      "size": 2481,
+      "sha256": "ce08a37bd5548d6934d23a8352f191e516fc6a879b7accfd69abbc28219ce9b9"
     },
     {
       "path": "src/worker/turnstile.ts",

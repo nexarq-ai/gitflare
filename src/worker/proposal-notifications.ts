@@ -6,6 +6,7 @@ import { ownerHandleGroups, readCodeowners, resolveOwnerGroups } from './codeown
 import { repositorySubject } from './inbox';
 import { excerptOf, mentionHandles, notify, type PublishInput } from './notifications';
 import { securityClient, type CodeownerRequirement, type SecurityService } from './security';
+import { notifyLanded } from './subscription-notifications';
 
 type Waiter = { waitUntil(promise: Promise<unknown>): void } | undefined;
 
@@ -75,7 +76,9 @@ export async function afterLanding(env: AppEnv, repositoryId: string, missionId:
   const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`);
   const [mission, repository] = await Promise.all([records.getMission(missionId), records.getRepository(repositoryId)]);
   if (!mission || !repository || mission.status !== 'integrated') return;
-  await notifyProposal(env, securityClient(env), undefined, repository, mission, { id: `proposal:${repositoryId}:${missionId}:landed`, event: 'landed', actorId, thread: true });
+  const access = securityClient(env);
+  await notifyProposal(env, access, undefined, repository, mission, { id: `proposal:${repositoryId}:${missionId}:landed`, event: 'landed', actorId, thread: true });
+  await notifyLanded(env, access, repository, mission, actorId).catch(() => undefined);
 }
 
 export async function awaitingChecks(env: AppEnv, access: SecurityService, ctx: Waiter, repository: Repository, mission: Mission): Promise<void> {
