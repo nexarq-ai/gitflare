@@ -77,8 +77,6 @@ function AuthField({ label, name, type = "text", autoComplete, minLength }: { la
   return <div className="form-field"><label htmlFor={`auth-${name}`}>{label}</label><Input id={`auth-${name}`} name={name} type={type} required maxLength={name === "code" ? 6 : 256} inputMode={name === "code" ? "numeric" : undefined} pattern={name === "code" ? "[0-9]{6}" : undefined} minLength={minLength} autoComplete={autoComplete}/></div>;
 }
 
-const ACCOUNT_ROUTES = ["forgot-password", "reset-password", "verify-email"];
-export function isAccountRoute(route: string): boolean { return ACCOUNT_ROUTES.includes(route.split("/")[0]); }
 function failureMessage(failure: unknown, fallback: string): string { return failure instanceof Error ? failure.message : fallback; }
 export function AccountScreen({ route, config, authenticated, onChanged }: { route: string; config: AuthConfig; authenticated: boolean; onChanged: () => Promise<void> }) {
   useDarkOnlySurface();

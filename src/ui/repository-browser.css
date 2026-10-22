@@ -1,6 +1,5 @@
 .repository-navigation {
   display: flex;
-  gap: 22px;
   border-bottom: 1px solid var(--gf-color-border);
   margin-bottom: 24px;
   overflow-x: auto;

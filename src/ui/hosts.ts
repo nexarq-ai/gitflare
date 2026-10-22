@@ -38,3 +38,7 @@ export function crossHostTarget(origins: HostOrigins | null, current: string, ro
 export function siteSignedInHint(origins: HostOrigins | null = pageHostOrigins()): boolean {
   return !!origins && typeof document !== "undefined" && window.location.origin === origins.site && hasSignedInHint(document.cookie);
 }
+
+export function anonymousSiteVisit(origins: HostOrigins | null = pageHostOrigins()): boolean {
+  return !!origins && typeof document !== "undefined" && window.location.origin === origins.site && !hasSignedInHint(document.cookie);
+}

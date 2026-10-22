@@ -1,3 +1,4 @@
+import { exploreParams, exploreStateFrom, type ExploreState } from "../shared/explore";
 import { publicProfileLocation, publicRepositoryLocation, routeFromLocation, type PublicRepositoryLocation } from "./router";
 
 export interface PublicRepositoryRequests {
@@ -36,8 +37,13 @@ export function publicProfileRequests(handle: string): { profile: string; activi
   return { profile, activity: `${profile}/activity` };
 }
 
+export function exploreRequest(state: ExploreState, cursor: number | null = null): string {
+  return `/api/public/explore?${exploreParams(state, { cursor: cursor ?? undefined })}`;
+}
+
 export function publicPageRequests(pathname: string, search: string): string[] {
   const route = routeFromLocation(pathname, "");
+  if (route === "explore") return [exploreRequest(exploreStateFrom(new URLSearchParams(search)))];
   const repository = publicRepositoryLocation(route);
   if (repository) return Object.values(publicRepositoryRequests(repository, new URLSearchParams(search).get("ref") ?? "")).filter((url): url is string => !!url);
   const profile = publicProfileLocation(route);
