@@ -16,7 +16,7 @@ Gitflare reads your identity once, then revokes the token at Cloudflare. It is n
 
 An Owner connects an account in **Settings → Cloudflare**, or for one repository in its **Cloudflare** tab. Before Gitflare sends you to Cloudflare, it lists each permission it will request and why. The list comes from the same configuration as the authorization request, so it always matches what Cloudflare shows. MCP clients get the same list from `gitflare_cloudflare_connection` `status` or `gitflare_manage_cloudflare_connection` `connect`.
 
-Every installation requests these:
+Every connection requests these. An installation can replace all of them except `offline_access` by setting `CLOUDFLARE_OAUTH_SCOPES`:
 
 | Permission | Scope | Why |
 | --- | --- | --- |
@@ -28,29 +28,38 @@ Every installation requests these:
 | Account Analytics Read | `account-analytics.read` | Show request, error and query counts for linked Workers and D1 databases. |
 | Containers Read | `containers.read` | List your Container applications to link them to repositories. |
 
-Gitflare asks for the rest feature by feature. When an Owner turns a feature on, Gitflare asks Cloudflare again for the connection's current permissions plus that feature's own (`features` on `POST /api/cloudflare/connect`, or on `gitflare_manage_cloudflare_connection` `connect`). Permissions already granted are kept on every re-authorization. A connect request without `features` asks for the deploy permissions, plus the Access permissions when the installation sets `CLOUDFLARE_ACCESS_SCOPES`, as before. `GET /api/cloudflare` returns `features`: which features the current grant covers and which permissions each one is missing.
+Gitflare asks for the rest feature by feature. When an Owner turns a feature on, Gitflare asks Cloudflare again for the connection's current permissions plus that feature's own (`features` on `POST /api/cloudflare/connect`, or on `gitflare_manage_cloudflare_connection` `connect`). Permissions already granted are kept on every re-authorization. A connect request without `features` adds the Deploy permissions only when the installation sets `CLOUDFLARE_DEPLOY_SCOPES`, and the Access permissions only when it sets `CLOUDFLARE_ACCESS_SCOPES`; otherwise it asks for the permissions above and nothing else. `GET /api/cloudflare` returns `features`: which features the current grant covers and which permissions each one is missing.
+
+Each feature's permissions come from its environment variable. When the variable is not set, Gitflare uses the default shown below. Setting a variable replaces the default; it does not add to it.
 
 **Deploy** (`CLOUDFLARE_DEPLOY_SCOPES`, default `workers-scripts.edit d1.write`):
 
 | Permission | Scope | Why |
 | --- | --- | --- |
 | Workers Scripts Edit | `workers-scripts.edit` | Upload and deploy your Workers and their previews when you land or deploy a change. |
+| D1 Write | `d1.write` | Apply D1 migrations an Owner reviewed and confirmed, and create databases a deploy declares. |
+
+The hosted installation sets `CLOUDFLARE_DEPLOY_SCOPES` to `workers-scripts.edit workers-r2.write queues.write workers-routes.write ai.write`. D1 Write is already part of every connection there, and Deploy adds:
+
+| Permission | Scope | Why |
+| --- | --- | --- |
 | Workers R2 Storage Write | `workers-r2.write` | Create the R2 buckets a deployed Worker declares in its Wrangler configuration. |
 | Queues Write | `queues.write` | Create the queues a deployed Worker produces to or consumes from. |
 | Workers Routes Write | `workers-routes.write` | Attach the custom domains a deployed Worker declares. |
 | Workers AI Write | `ai.write` | Bind Workers AI to a deployed Worker that declares it. |
 
-The hosted installation also asks for R2, Queues, Routes and Workers AI as part of Deploy.
+A self-hosted installation can request the same by setting `CLOUDFLARE_DEPLOY_SCOPES` to that list.
 
 **Previews** (`CLOUDFLARE_PREVIEWS_SCOPES`, default `workers-scripts.admin d1.write`):
 
 | Permission | Scope | Why |
 | --- | --- | --- |
 | Workers Admin | `workers-scripts.admin` | Create Cloudflare Worker Previews of your Workers for proposals, and deploy them. |
+| D1 Write | `d1.write` | Apply D1 migrations an Owner reviewed and confirmed, and create databases a deploy declares. |
 
 Workers Admin also satisfies every check that asks for Workers Scripts Edit.
 
-**Secrets** (`CLOUDFLARE_SECRETS_SCOPES`):
+**Secrets** (`CLOUDFLARE_SECRETS_SCOPES`, default `secrets-store.read secrets-store.write`):
 
 | Permission | Scope | Why |
 | --- | --- | --- |
@@ -68,7 +77,7 @@ These permissions are zone-level. Gitflare protects a deploy environment's hostn
 
 ## Optional permissions
 
-An installation's operator chooses whether to request these. If they are not requested, or the grant lacks them, the rest of the connection keeps working:
+An installation's operator chooses whether to request these by adding them to `CLOUDFLARE_OAUTH_SCOPES`. If they are not requested, or the grant lacks them, the rest of the connection keeps working:
 
 | Permission | Scope | If it is missing |
 | --- | --- | --- |
