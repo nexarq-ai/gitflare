@@ -6,6 +6,8 @@ let holds = 0;
 let started = false;
 let frame = 0;
 let deadline: ReturnType<typeof setTimeout> | undefined;
+let fallback: ReturnType<typeof setTimeout> | undefined;
+const SETTLE_FALLBACK_MS = 120;
 
 function reducedMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -13,6 +15,7 @@ function reducedMotion(): boolean {
 
 export function dismissBootLoader(): void {
   clearTimeout(deadline);
+  clearTimeout(fallback);
   cancelAnimationFrame(frame);
   document.documentElement.removeAttribute("data-booting");
   const overlay = document.getElementById(BOOT_OVERLAY_ID);
@@ -25,10 +28,12 @@ export function dismissBootLoader(): void {
 
 function settle(): void {
   cancelAnimationFrame(frame);
+  clearTimeout(fallback);
   if (!started || holds > 0) return;
   frame = requestAnimationFrame(() => {
     frame = requestAnimationFrame(() => { if (holds === 0) dismissBootLoader(); });
   });
+  fallback = setTimeout(() => { if (holds === 0) dismissBootLoader(); }, SETTLE_FALLBACK_MS);
 }
 
 export function startBootHandoff(): void {
@@ -41,6 +46,7 @@ export function startBootHandoff(): void {
 export function holdBootLoader(): () => void {
   holds += 1;
   cancelAnimationFrame(frame);
+  clearTimeout(fallback);
   let released = false;
   return () => {
     if (released) return;

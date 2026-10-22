@@ -495,8 +495,8 @@
     },
     {
       "path": "src/ui/boot-handoff.ts",
-      "size": 1454,
-      "sha256": "dfe44e920a27cbb5a0e29959312fea49aa80f5367a9cfd108c7f88b599a80c6e"
+      "size": 1715,
+      "sha256": "aa1ef3aa050d665d9ec1c866f5c575279c3d09b0f05add282175957b0305f153"
     },
     {
       "path": "src/ui/branches.css",
