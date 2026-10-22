@@ -395,8 +395,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87371,
-      "sha256": "e1d200c9b5eb4853a8d7b2fff0ef23a46d377b75083b245cf40e5aa845ca991b"
+      "size": 87346,
+      "sha256": "b3ed38d4aa8a7f07cba02fd8ddab549d5ac91e0c3c014ac2f7985487bd9ca941"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -1080,8 +1080,8 @@
     },
     {
       "path": "src/ui/router.ts",
-      "size": 10963,
-      "sha256": "8849345cae59c69f61bbcf117a007dae298a81fb5e6ce7ae8ef1ba6194a3bd90"
+      "size": 10529,
+      "sha256": "e25c66dd277ed15c7d2fe2ebd802acf620b2b39c18aae9ecab4b68a18cf36766"
     },
     {
       "path": "src/ui/secret-settings.css",
@@ -1535,8 +1535,8 @@
     },
     {
       "path": "src/worker/hosted-source.ts",
-      "size": 153,
-      "sha256": "286de5f1c2d6ae937268476342f1fcad464019a0e18fe50a79e153300f13c26f"
+      "size": 141,
+      "sha256": "839302cb38d957cc5420eac5eb983229ca061ce29ad5061121b5f8b2e463f93e"
     },
     {
       "path": "src/worker/inbox.ts",
@@ -1545,8 +1545,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 22328,
-      "sha256": "560612855dad2b8e0836bf19c9184c610c5fd92b1d47c4150e7d3075da95cc23"
+      "size": 22341,
+      "sha256": "165d33dad28253b1c88c187a892f5d9f09885c39cbf6afc622844ba0b2d65c78"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -2182,6 +2182,11 @@
       "path": "tests/git-protocol.test.ts",
       "size": 4955,
       "sha256": "8dbcadb3213f8b09e6d9b53cc2f51966c150fcb914069d53ce4583664637420e"
+    },
+    {
+      "path": "tests/gitflare-public-repository.test.ts",
+      "size": 6391,
+      "sha256": "8958a404838b4ae75d01212143e3155fcc3ea082699dc4a3a33317fe9631fc80"
     },
     {
       "path": "tests/github-import-runtime.test.ts",
