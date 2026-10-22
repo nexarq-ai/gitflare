@@ -115,6 +115,10 @@ export function followsSavedTheme(route: string): boolean {
   return !!publicRepositoryLocation(route) || isPublicDiscoveryRoute(route);
 }
 
+export function publicShellRoute(route: string): boolean {
+  return !legacySourceRoute(route) && followsSavedTheme(route);
+}
+
 export function isAppPath(pathname: string): boolean {
   const route = routeFromLocation(pathname, "");
   return !!legacySourceRoute(route) || !!publicRepositoryLocation(route) || !SERVER_PATH.test(pathname);
@@ -163,6 +167,13 @@ export function isPublicProductRoute(route: string): boolean {
 
 export function isPublicDocumentationRoute(route: string): boolean {
   return route === "docs" || PUBLIC_DOC_IDS.some(id => route === `docs/${id}`);
+}
+
+const ACCOUNT_ROUTES = ["forgot-password", "reset-password", "verify-email"];
+export function isAccountRoute(route: string): boolean { return ACCOUNT_ROUTES.includes(route.split("/")[0]); }
+
+export function isPublicRoute(route: string): boolean {
+  return !!legacySourceRoute(route) || ["home", "signin", "signup", "deploy", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route) || isPublicDocumentationRoute(route) || !isKnownAppRoute(route) || route.startsWith("invite?") || isAccountRoute(route);
 }
 
 export function isKnownAppRoute(route: string): boolean {

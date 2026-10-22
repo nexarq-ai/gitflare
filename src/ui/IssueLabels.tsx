@@ -4,6 +4,7 @@ import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { GithubLogoIcon } from "@phosphor-icons/react";
 import type { ImportedComment, ImportedIssue, IssueLabelDefinition, IssuePerson } from "../shared/types";
 import InfoTip from "./InfoTip";
+import "./issues.css";
 import "./github-import.css";
 
 export function ImportedFrom({ source }: { source?: ImportedIssue | ImportedComment }) {
