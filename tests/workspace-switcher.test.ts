@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isKnownAppRoute, keepsRouteAcrossWorkspaces, routeFromLocation } from '../src/ui/router';
 import { chordMatcher } from '../src/ui/workspace-chord';
 import { rememberedWorkspace, rememberWorkspace } from '../src/ui/api';
-import { workspaceSwitchEntries } from '../src/ui/QuickSearch';
+import { workspaceSwitchEntries } from '../src/ui/command-palette';
 import { invitationCode, joinErrorMessage } from '../src/ui/WorkspaceSwitcher';
 import { RequestError } from '../src/ui/api';
 
@@ -55,7 +55,7 @@ describe('workspace switcher', () => {
 
   it('offers quick-search entries for every other workspace', () => {
     const entries = workspaceSwitchEntries([{ id: 'a', name: 'Acme Platform', role: 'Owner' }, { id: 'b', name: 'Billing', role: 'Viewer' }], 'a');
-    expect(entries).toEqual([{ id: 'workspace:b', workspaceId: 'b', title: 'Switch to Billing', detail: 'Viewer', category: 'Workspace' }]);
+    expect(entries).toEqual([expect.objectContaining({ id: 'workspace:b', workspaceId: 'b', title: 'Switch to Billing', detail: 'Viewer', section: 'actions' })]);
   });
 
   it('accepts a pasted invitation link or bare code and explains a different email', () => {

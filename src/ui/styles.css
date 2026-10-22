@@ -2310,6 +2310,31 @@ a svg {
   line-height: 1.6;
   text-align: center;
 }
+.command-group + .command-group {
+  margin-top: 6px;
+}
+.command-group-label {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--gf-color-text-tertiary);
+}
+.command-group .command-result {
+  padding: 9px 12px;
+}
+.command-group .command-result small {
+  margin-top: 2px;
+}
+.command-group .command-result > svg:last-child {
+  opacity: 0;
+}
+.command-group .command-result.selected > svg:last-child {
+  opacity: 1;
+}
+.command-empty + .command-group {
+  padding-bottom: 4px;
+}
 .command-footer {
   display: flex;
   align-items: center;

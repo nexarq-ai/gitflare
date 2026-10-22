@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
@@ -13,9 +13,9 @@ import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import type { DemoMarked } from "../shared/demo-features";
 import "./people-settings.css";
 
-type Props = { data: AccessSnapshot; repositories: Repository[]; workspaceName: string; selfHosted: boolean; onChanged: () => Promise<void> };
+type Props = { data: AccessSnapshot; repositories: Repository[]; workspaceName: string; selfHosted: boolean; onChanged: () => Promise<void>; inviteRequest?: boolean; onInviteOpened?: () => void };
 
-export default function PeopleSettings({ data, repositories, workspaceName, selfHosted, onChanged }: Props) {
+export default function PeopleSettings({ data, repositories, workspaceName, selfHosted, onChanged, inviteRequest = false, onInviteOpened }: Props) {
   const [inviting, setInviting] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
   const [busy, setBusy] = useState("");
@@ -31,6 +31,7 @@ export default function PeopleSettings({ data, repositories, workspaceName, self
   const organizationIds = new Set(organization.map(item => item.userId));
   const others = data.members.filter(item => item.userId !== data.user.id);
   const alone = others.length === 0 && invitations.length === 0;
+  useEffect(() => { if (!inviteRequest || !owner) return; setInviting(true); onInviteOpened?.(); }, [inviteRequest, owner, onInviteOpened]);
   const members = [...data.members].sort((a, b) => (a.userId === data.user.id ? -1 : b.userId === data.user.id ? 1 : 0) || (a.role === "Owner" ? -1 : 0) - (b.role === "Owner" ? -1 : 0) || (a.user?.name ?? "").localeCompare(b.user?.name ?? ""));
 
   async function act(key: string, action: string, body: Record<string, unknown>, done: string): Promise<boolean> {

@@ -395,8 +395,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 85612,
-      "sha256": "205f8e9ef94800327234ff55c7984b95610e29f6a81b17df8603cd3d1bcd7702"
+      "size": 87371,
+      "sha256": "e1d200c9b5eb4853a8d7b2fff0ef23a46d377b75083b245cf40e5aa845ca991b"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -544,6 +544,11 @@
       "sha256": "a77af4dd97ab7be50314197b0c307182ba6b07db407c07e7de867dcf5570dc71"
     },
     {
+      "path": "src/ui/command-palette.ts",
+      "size": 14212,
+      "sha256": "e58629961a92692ae69ac487b54c14bbfbc0eb644abfb9528c00cd764e93aa10"
+    },
+    {
       "path": "src/ui/CommitMessageField.tsx",
       "size": 1175,
       "sha256": "847e4266f119a02a5de951d991e31344a1437b87bc6e3dcf7cb17468be00ff86"
@@ -670,8 +675,8 @@
     },
     {
       "path": "src/ui/Documentation.tsx",
-      "size": 20209,
-      "sha256": "1f5163f18fe36940b0d0074e233a09c05e3d10c045427ff9eb212b233cf2b4fe"
+      "size": 20271,
+      "sha256": "c0c3b330d99ac8da901188148399d3707be27f42f67ee9c5e0c7ab2c471d5773"
     },
     {
       "path": "src/ui/DocumentationIllustration.tsx",
@@ -910,8 +915,8 @@
     },
     {
       "path": "src/ui/PeopleSettings.tsx",
-      "size": 18724,
-      "sha256": "d22edc074a2b4a9662b98e8911900f2e6648c407c5474f07199abdccd3816ae9"
+      "size": 18969,
+      "sha256": "8eb870075d25b39b13cdab9bf356eae8ca2247e1075a0d0d8c1c9a49765b562e"
     },
     {
       "path": "src/ui/policy-pages.css",
@@ -990,8 +995,8 @@
     },
     {
       "path": "src/ui/QuickSearch.tsx",
-      "size": 6132,
-      "sha256": "6cfc752146e9082218ab591e4cad9ad30ead059e934cd8c4e00f11a55dd696a3"
+      "size": 7711,
+      "sha256": "994c5e13d1f00bca45d3aabb521462431ff06f377e63b21596ffd5efcc6cd30c"
     },
     {
       "path": "src/ui/reauth.ts",
@@ -1105,8 +1110,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 70182,
-      "sha256": "e9befd48e2171a0442ff50bd30d3a82ead1ac6df77b66442dd0b548907036bf0"
+      "size": 70708,
+      "sha256": "f885a0ca8ec4921548576c81e2b46221aacc933f235c00ed0d1fd8dba2ba6014"
     },
     {
       "path": "src/ui/SubscribeButton.tsx",
@@ -2094,6 +2099,11 @@
       "sha256": "2ced968659b59ce4279e33c65d41da22ed90ff27ce4486846c06f1030102ba72"
     },
     {
+      "path": "tests/command-palette.test.ts",
+      "size": 8566,
+      "sha256": "f537b148c88407cafde3754b4b712d19feed5c76d48d5a49daf7413902171616"
+    },
+    {
       "path": "tests/d1-memory.ts",
       "size": 2340,
       "sha256": "ebc0a0203e612bbd1739e4005ee0b5ef836085352881fb2bf4e73f77abb261d5"
@@ -2435,8 +2445,8 @@
     },
     {
       "path": "tests/workspace-switcher.test.ts",
-      "size": 4603,
-      "sha256": "6f003690e9a0820fca8741d65de3670178020b46272f1de6263c0611555b6e3e"
+      "size": 4629,
+      "sha256": "4a1c3d30a22917c1e83cc46059d819f43e52cda0bc0b7b57942b1f83bf76c75d"
     },
     {
       "path": "tsconfig.json",

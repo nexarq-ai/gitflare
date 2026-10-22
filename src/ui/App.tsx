@@ -48,6 +48,8 @@ import {
   Status,
 } from "./components";
 import QuickSearch from "./QuickSearch";
+import type { PaletteAction } from "./command-palette";
+import { setTheme } from "./ThemeToggle";
 import InvitationScreen from "./InvitationScreen";
 import AuthScreen, { AccountScreen, isAccountRoute, type AuthConfig } from "./AuthScreen";
 import NotFoundScreen, { NotFound } from "./NotFound";
@@ -65,7 +67,7 @@ import { useInboxCounts } from "./inbox-count";
 import { badgeLabel } from "./inbox-data";
 import { accountSection } from "./account-data";
 import { eligibleApprovers, knownCheckNames } from "./approvals";
-import { crossHostTarget, pageHostOrigins, siteHref, siteSignedInHint } from "./hosts";
+import { appOrigin, crossHostTarget, pageHostOrigins, siteHref, siteSignedInHint } from "./hosts";
 import { publicRepositoryPath } from "../shared/handles";
 import AccountMenu from "./AccountMenu";
 
@@ -209,6 +211,7 @@ function Workspace() {
   const [modal, setModal] = useState<Modal>(null);
   const [sidebar, setSidebar] = useState(false);
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [inviteRequest, setInviteRequest] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [installationAdmin, setInstallationAdmin] = useState(false);
   const located = useRef(new Set<string>());
@@ -478,7 +481,8 @@ function Workspace() {
 
   function navigate(target: string) {
     goTo(target);
-    startRouteTransition(() => setRoute(target));
+    const next = currentRoute();
+    startRouteTransition(() => setRoute(next));
     setSidebar(false);
   }
 
@@ -582,6 +586,17 @@ function Workspace() {
     (mission) => mission.status === "needs_review",
   ).length;
   const hasAccountSession = authConfig.edition !== "self-hosted" && !!account && "email" in account.user;
+  const paletteRepositoryId = page === "repository" ? route.split("/")[1] : page === "mission" ? workspace.missions.find(mission => mission.id === route.split("/")[1])?.repositoryId : undefined;
+  const paletteRepository = workspace.repositories.find(repository => repository.id === paletteRepositoryId);
+
+  function runPaletteAction(action: PaletteAction) {
+    if (action === "new-mission") createMission();
+    else if (action === "new-repository") setModal("repository");
+    else if (action === "invite") { setInviteRequest(true); navigate("settings/people"); }
+    else if (action === "toggle-theme") setTheme(document.documentElement.dataset.gfTheme === "dark" ? "light" : "dark");
+    else if (action === "sign-out") void signOut();
+    else if (action === "copy-mcp-url") void navigator.clipboard.writeText(new URL("/mcp", appOrigin()).href).then(() => notify("MCP server URL copied."), () => notify("Copy the MCP server URL from Account → AI clients."));
+  }
   const navigation = [
     { id: "overview", label: "Overview", icon: HouseIcon },
     ...(personalAccount ? [{ id: "inbox", label: "Inbox", icon: TrayIcon, count: inboxCounts ? inboxCounts.work + inboxCounts.unread : 0, title: inboxCounts ? `${inboxCounts.work} to do · ${inboxCounts.unread} unread` : undefined }] : []),
@@ -728,7 +743,7 @@ function Workspace() {
                 {route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} />
                   : route === "settings/cloudflare" ? <CloudflareAccounts canManage={permissions.includes("manage")} repositories={workspace.repositories} workspaceName={workspace.name} />
                   : !account ? <RouteProgress />
-                  : route === "settings/people" ? <PeopleSettings data={account} repositories={workspace.repositories} workspaceName={workspace.name} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} />
+                  : route === "settings/people" ? <PeopleSettings data={account} repositories={workspace.repositories} workspaceName={workspace.name} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} inviteRequest={inviteRequest} onInviteOpened={() => setInviteRequest(false)} />
                   : route === "settings/audit" ? <AuditLog data={account} repositories={workspace.repositories} workspaceName={workspace.name} />
                   : <GeneralSettings workspace={workspace} data={account} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onLeft={async remaining => { if (remaining[0]) await switchWorkspace(remaining[0].id); else await load(); }} onOpenInstallation={() => navigate("admin")} />}
               </WorkspaceSettingsLayout>
@@ -1212,11 +1227,24 @@ function Workspace() {
       <QuickSearch
         open={quickSearchOpen}
         workspace={workspace}
-        workspaces={authConfig.edition === "self-hosted" ? [] : account?.workspaces.map(item => ({ id: item.id, name: item.name, role: item.role })) ?? []}
-        currentWorkspaceId={account?.workspace?.id ?? ""}
+        context={{
+          edition: authConfig.edition === "self-hosted" ? "self-hosted" : "hosted",
+          permissions,
+          role: account?.role ?? "",
+          aiEnabled,
+          personalAccount,
+          installationAdmin,
+          connected: workspace.mode === "connected",
+          demo: !!authConfig.demo,
+          repository: paletteRepository ? { id: paletteRepository.id, name: repositoryLabel(paletteRepository) } : undefined,
+          workspaces: account?.workspaces.map(item => ({ id: item.id, name: item.name, role: item.role })) ?? [],
+          currentWorkspaceId: account?.workspace?.id ?? "",
+          canSwitchWorkspace: hasAccountSession,
+        }}
         onClose={() => setQuickSearchOpen(false)}
         onNavigate={navigate}
         onSwitchWorkspace={hasAccountSession ? id => void switchWorkspace(id) : undefined}
+        onAction={runPaletteAction}
       />
       <CreationDialog
         modal={modal}
