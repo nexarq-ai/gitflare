@@ -14,17 +14,23 @@ export function memoryD1(): D1Database & { sqlite: DatabaseSync; statements: str
     first: async <T>() => (execute(sql).get(...params) as T | undefined) ?? null,
     run: async () => ({ success: true as const, meta: { changes: Number(execute(sql).run(...params).changes) } }),
   });
+  let queue: Promise<unknown> = Promise.resolve();
   const database = {
     sqlite, statements,
     prepare: (sql: string) => statement(sql),
-    batch: async (list: Statement[]) => {
-      sqlite.exec('BEGIN');
-      try {
-        const results = [];
-        for (const item of list) results.push(/^\s*select/i.test(item.sql) ? await item.all() : await item.run());
-        sqlite.exec('COMMIT');
-        return results;
-      } catch (error) { sqlite.exec('ROLLBACK'); throw error; }
+    batch: (list: Statement[]) => {
+      const run = async () => {
+        sqlite.exec('BEGIN');
+        try {
+          const results = [];
+          for (const item of list) results.push(/^\s*select/i.test(item.sql) ? await item.all() : await item.run());
+          sqlite.exec('COMMIT');
+          return results;
+        } catch (error) { sqlite.exec('ROLLBACK'); throw error; }
+      };
+      const next = queue.then(run, run);
+      queue = next.catch(() => undefined);
+      return next;
     },
     exec: async (sql: string) => { sqlite.exec(sql); return { count: 1, duration: 0 }; },
   };

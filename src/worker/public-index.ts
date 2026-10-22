@@ -1,5 +1,6 @@
 import schema from '../../migrations/public-index/0001_init.sql?raw';
-import type { ExploreSort, PublicExplore, PublicHandleKind, PublicPathMatch, PublicPerson, PublicRepositoryCard, PublicSearch, PublicSearchType } from '../shared/types';
+import activitySchema from '../../migrations/public-index/0002_activity.sql?raw';
+import type { ActivityWeek, AgentReadiness, ExploreSort, Issue, MissionSummary, PublicActivity, PublicExplore, Release, PublicHandleKind, PublicPathMatch, PublicPerson, PublicRepositoryCard, PublicSearch, PublicSearchType } from '../shared/types';
 import { publicRepositoryPath } from '../shared/handles';
 import { repositoryLabel } from '../shared/repository-names';
 import { ApiError } from './domain';
@@ -7,6 +8,7 @@ import type { AppEnv } from './env';
 import { scanRepository } from './deploy-detect';
 import { detectLicense, publicTargetById } from './public-repositories';
 import { securityClient, type PublicListing, type SecurityService } from './security';
+import { ACTIVITY_WEEKS, activityWeeks, agentReadiness, parseReadiness, READINESS_FILES, sumWeeks, weekStart } from './public-activity';
 
 export const PUBLIC_INDEX_PATH_LIMIT = 20_000;
 export const PUBLIC_INDEX_PAGE = 20;
@@ -28,6 +30,12 @@ const LANGUAGES: Record<string, string> = {
 type RepositoryRow = { repository_id: string; workspace_id: string; handle: string; name: string; description: string; topics: string; language: string | null; license: string | null; stars: number; updated_at: string; published_at: string };
 type PathRow = { repository_id: string; workspace_id: string; handle: string; name: string; path: string };
 type HandleRow = { handle: string; kind: string; display_name: string };
+type ActivityRow = { repository_id: string; week: string; landed_people: number; landed_agents: number; missions_run: number; reviews: number; releases: number; issues_opened: number };
+type ReadinessRow = { repository_id: string; score: number; signals: string };
+type IssuePager = { listIssues(query: { state: 'all'; offset: number; limit: number }): Promise<{ items: Issue[]; nextOffset: number | null }> };
+const ACTIVITY_ISSUE_PAGE = 500;
+const WEEK_MS = 7 * 86_400_000;
+const READINESS_FILE_MAX = 65_536;
 export type IndexEnv = Pick<AppEnv, 'PUBLIC_INDEX' | 'EDITION' | 'DEMO_MODE'>;
 export interface IndexedPage<T> { value: T; repositoryIds: string[]; stale: string[] }
 
@@ -37,7 +45,7 @@ export function publicIndex(env: IndexEnv): D1Database | null {
 
 export async function preparedIndex(db: D1Database): Promise<D1Database> {
   if (ready.has(db)) return db;
-  await db.batch(schema.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => db.prepare(statement)));
+  await db.batch(`${schema}${activitySchema}`.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => db.prepare(statement)));
   ready.add(db);
   return db;
 }
@@ -68,10 +76,11 @@ export function pageCursor(value: string | null): number {
   return cursor;
 }
 
-function card(row: RepositoryRow): PublicRepositoryCard {
+function card(row: RepositoryRow & { readiness_score?: number | null }): PublicRepositoryCard {
+  const readiness = parseReadiness(row.readiness_score, null);
   return {
     handle: row.handle, name: row.name, description: row.description, language: row.language, topics: row.topics ? row.topics.split(',').filter(Boolean) : [], license: row.license,
-    stars: row.stars, updatedAt: row.updated_at, publishedAt: row.published_at, url: publicRepositoryPath(row.handle, row.name),
+    stars: row.stars, updatedAt: row.updated_at, publishedAt: row.published_at, url: publicRepositoryPath(row.handle, row.name), agentReady: readiness && { score: readiness.score, level: readiness.level },
   };
 }
 
@@ -93,7 +102,7 @@ export async function explorePublic(env: IndexEnv, access: SecurityService, sort
   await preparedIndex(db);
   const order = sort === 'new' ? 'published_at DESC' : sort === 'updated' ? 'updated_at DESC' : 'stars DESC, updated_at DESC';
   const filter = language ? 'WHERE language = ?1' : '';
-  const statement = db.prepare(`SELECT * FROM repositories ${filter} ORDER BY ${order}, repository_id LIMIT ${PUBLIC_INDEX_PAGE + 1} OFFSET ${cursor}`);
+  const statement = db.prepare(`SELECT r.*, a.score AS readiness_score FROM repositories r LEFT JOIN readiness a ON a.repository_id = r.repository_id ${filter} ORDER BY ${order}, r.repository_id LIMIT ${PUBLIC_INDEX_PAGE + 1} OFFSET ${cursor}`);
   const [rows, languages] = await Promise.all([
     (language ? statement.bind(language) : statement).all<RepositoryRow>(),
     db.prepare(`SELECT language FROM repositories WHERE language IS NOT NULL GROUP BY language ORDER BY COUNT(*) DESC, language LIMIT ${LANGUAGE_LIMIT}`).all<{ language: string }>(),
@@ -125,18 +134,56 @@ export async function searchPublic(env: IndexEnv, access: SecurityService, query
     const paths: PublicPathMatch[] = matches.map(row => ({ handle: row.handle, repository: row.name, path: row.path, url: publicRepositoryPath(row.handle, row.name, 'blob', row.path) }));
     return { value: { ...empty, paths, nextCursor: nextCursor(cursor, rows.results), indexed: true }, repositoryIds: [...new Set(matches.map(row => row.repository_id))], stale };
   }
-  const rows = await db.prepare(`SELECT * FROM repositories WHERE name LIKE ?1 ESCAPE '\\' OR description LIKE ?1 ESCAPE '\\' OR topics LIKE ?1 ESCAPE '\\' OR handle LIKE ?1 ESCAPE '\\' ORDER BY lower(name) = ?2 DESC, stars DESC, updated_at DESC, repository_id ${page}`).bind(pattern, query.toLowerCase()).all<RepositoryRow>();
+  const rows = await db.prepare(`SELECT r.*, a.score AS readiness_score FROM repositories r LEFT JOIN readiness a ON a.repository_id = r.repository_id WHERE name LIKE ?1 ESCAPE '\\' OR description LIKE ?1 ESCAPE '\\' OR topics LIKE ?1 ESCAPE '\\' OR handle LIKE ?1 ESCAPE '\\' ORDER BY lower(name) = ?2 DESC, stars DESC, updated_at DESC, r.repository_id ${page}`).bind(pattern, query.toLowerCase()).all<RepositoryRow>();
   const { live, stale } = await stillPublic(access, rows.results);
   const items = rows.results.slice(0, PUBLIC_INDEX_PAGE).filter(row => live.has(row.repository_id));
   return { value: { ...empty, repositories: items.map(card), nextCursor: nextCursor(cursor, rows.results), indexed: true }, repositoryIds: items.map(row => row.repository_id), stale };
 }
 
-export async function indexedDetails(env: IndexEnv, repositoryIds: string[]): Promise<Map<string, Pick<PublicRepositoryCard, 'language' | 'license' | 'topics'>>> {
+export async function indexedDetails(env: IndexEnv, repositoryIds: string[]): Promise<Map<string, Pick<PublicRepositoryCard, 'language' | 'license' | 'topics' | 'agentReady'>>> {
   const db = publicIndex(env);
   if (!db || !repositoryIds.length) return new Map();
   await preparedIndex(db);
-  const rows = await db.prepare('SELECT repository_id, language, license, topics FROM repositories WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(repositoryIds)).all<Pick<RepositoryRow, 'repository_id' | 'language' | 'license' | 'topics'>>();
-  return new Map(rows.results.map(row => [row.repository_id, { language: row.language, license: row.license, topics: row.topics ? row.topics.split(',').filter(Boolean) : [] }]));
+  const rows = await db.prepare('SELECT r.repository_id, r.language, r.license, r.topics, a.score FROM repositories r LEFT JOIN readiness a ON a.repository_id = r.repository_id WHERE r.repository_id IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(repositoryIds)).all<Pick<RepositoryRow, 'repository_id' | 'language' | 'license' | 'topics'> & { score: number | null }>();
+  return new Map(rows.results.map(row => {
+    const readiness = parseReadiness(row.score, null);
+    return [row.repository_id, { language: row.language, license: row.license, topics: row.topics ? row.topics.split(',').filter(Boolean) : [], agentReady: readiness && { score: readiness.score, level: readiness.level } }];
+  }));
+}
+
+export async function repositoryReadiness(env: IndexEnv, repositoryId: string): Promise<AgentReadiness | null> {
+  const db = publicIndex(env);
+  if (!db) return null;
+  await preparedIndex(db);
+  const row = await db.prepare('SELECT repository_id, score, signals FROM readiness WHERE repository_id = ?1').bind(repositoryId).first<ReadinessRow>();
+  return row ? parseReadiness(row.score, row.signals) : null;
+}
+
+function activityRow(row: ActivityRow): ActivityWeek {
+  return { week: row.week, people: row.landed_people, agents: row.landed_agents, missions: row.missions_run, reviews: row.reviews, releases: row.releases, issues: row.issues_opened };
+}
+
+export async function repositoryActivity(env: IndexEnv, repositoryIds: string[], now = Date.now()): Promise<PublicActivity> {
+  const db = publicIndex(env);
+  const since = weekStart(now - (ACTIVITY_WEEKS - 1) * WEEK_MS);
+  if (!db || !repositoryIds.length) { const { weeks, totals } = sumWeeks([], now); return { since, weeks, totals, repositories: repositoryIds.length, indexed: !!db }; }
+  await preparedIndex(db);
+  const rows = await db.prepare('SELECT * FROM activity WHERE repository_id IN (SELECT value FROM json_each(?1)) AND week >= ?2').bind(JSON.stringify(repositoryIds), since).all<ActivityRow>();
+  const groups = new Map<string, ActivityWeek[]>();
+  for (const row of rows.results) groups.set(row.repository_id, [...(groups.get(row.repository_id) ?? []), activityRow(row)]);
+  const { weeks, totals } = sumWeeks([...groups.values()], now);
+  return { since, weeks, totals, repositories: repositoryIds.length, indexed: true };
+}
+
+async function collectIssues(records: IssuePager, since: string): Promise<Pick<Issue, 'createdAt'>[]> {
+  const found: Pick<Issue, 'createdAt'>[] = [];
+  for (let offset: number | null = 0; offset !== null;) {
+    const page = await records.listIssues({ state: 'all', offset, limit: ACTIVITY_ISSUE_PAGE });
+    found.push(...page.items.map(issue => ({ createdAt: issue.createdAt })));
+    if (page.items.length && page.items.every(issue => issue.createdAt < since)) break;
+    offset = page.nextOffset;
+  }
+  return found;
 }
 
 export async function removeIndexedRepositories(env: IndexEnv, repositoryIds: string[]): Promise<void> {
@@ -146,6 +193,8 @@ export async function removeIndexedRepositories(env: IndexEnv, repositoryIds: st
   const ids = JSON.stringify(repositoryIds);
   await db.batch([
     db.prepare('DELETE FROM paths WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
+    db.prepare('DELETE FROM activity WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
+    db.prepare('DELETE FROM readiness WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
     db.prepare('DELETE FROM repositories WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
   ]);
 }
@@ -182,13 +231,29 @@ export async function indexPublicRepository(env: AppEnv, repositoryId: string, a
   const writes: D1PreparedStatement[] = [];
   if (!head) {
     language = null; truncated = 0;
-    writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId));
+    writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId), db.prepare('DELETE FROM readiness WHERE repository_id = ?1').bind(repositoryId));
   } else if (head.hash !== existing?.head_sha) {
     const scan = await scanRepository(source, head.hash, PUBLIC_INDEX_PATH_LIMIT);
     const paths = [...scan.files.keys()].sort().slice(0, PUBLIC_INDEX_PATH_LIMIT);
     language = dominantLanguage(paths); truncated = scan.truncated ? 1 : 0;
     writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId));
     for (let start = 0; start < paths.length; start += PATH_CHUNK) writes.push(db.prepare('INSERT OR IGNORE INTO paths (repository_id, path) SELECT ?1, value FROM json_each(?2)').bind(repositoryId, JSON.stringify(paths.slice(start, start + PATH_CHUNK))));
+    const files = Object.fromEntries(await Promise.all(READINESS_FILES.map(async path => [path, scan.files.has(path) ? await source.readFile({ ref: head.hash, path }).then(blob => blob && blob.size <= READINESS_FILE_MAX ? blob.text() : null).catch(() => null) : null] as const)));
+    const readiness = agentReadiness(paths, files);
+    writes.push(db.prepare('INSERT INTO readiness (repository_id, score, signals) VALUES (?1, ?2, ?3) ON CONFLICT (repository_id) DO UPDATE SET score = excluded.score, signals = excluded.signals').bind(repositoryId, readiness.score, JSON.stringify(readiness.signals)));
+  }
+  const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`);
+  const now = Date.now();
+  const since = weekStart(now - (ACTIVITY_WEEKS - 1) * WEEK_MS);
+  const [missions, releases, issues] = await Promise.all([
+    Promise.resolve().then(() => records.listMissionSummaries() as Promise<MissionSummary[]>).catch(() => [] as MissionSummary[]),
+    Promise.resolve().then(() => records.listReleases() as Promise<Release[]>).catch(() => [] as Release[]),
+    collectIssues(records as unknown as IssuePager, since).catch(() => [] as Pick<Issue, 'createdAt'>[]),
+  ]);
+  writes.push(db.prepare('DELETE FROM activity WHERE repository_id = ?1').bind(repositoryId));
+  for (const week of activityWeeks({ missions, releases, issues, now })) {
+    if (!week.people && !week.agents && !week.missions && !week.reviews && !week.releases && !week.issues) continue;
+    writes.push(db.prepare('INSERT INTO activity (repository_id, week, landed_people, landed_agents, missions_run, reviews, releases, issues_opened) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)').bind(repositoryId, week.week, week.people, week.agents, week.missions, week.reviews, week.releases, week.issues));
   }
   const [license, [stats]] = await Promise.all([head ? detectLicense(source, head.hash).catch(() => null) : Promise.resolve(null), access.repositoryStats([repositoryId])]);
   writes.push(db.prepare(`INSERT INTO repositories (repository_id, workspace_id, handle, name, description, topics, language, license, stars, head_sha, paths_truncated, published_at, updated_at, indexed_at)
