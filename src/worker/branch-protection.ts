@@ -1,10 +1,11 @@
 import type { BranchProtection, BranchRule, LanderRole } from '../shared/types';
 import { ApiError } from './domain';
+import { ZERO_SHA } from './git-protocol';
 import type { Role } from './security';
 
 export const MAX_BRANCH_RULES = 20;
 export const MAX_REQUIRED_APPROVALS = 6;
-export const ZERO_SHA = '0'.repeat(40);
+export { ZERO_SHA };
 const LANDER_ROLES: readonly LanderRole[] = ['Maintainer', 'Owner'];
 export interface StoredBranchProtection { rules: BranchRule[]; updatedAt: string; updatedBy: string }
 export interface RefUpdate { oldSha: string; newSha: string; ref: string }

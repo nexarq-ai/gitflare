@@ -2,8 +2,9 @@ import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { ApiError } from './domain';
 import { capStream } from './url-import';
+import { advertisedRefs, boundedPacket, packetLines, readLimited, ZERO_SHA } from './git-protocol';
 
-export const ZERO_SHA = '0'.repeat(40);
+export { ZERO_SHA };
 export const TRANSFER_LIMITS = { advertisementBytes: 4 * 1024 * 1024, reportBytes: 1024 * 1024, packBytes: 512 * 1024 * 1024, discoveryMs: 20_000, transferMs: 600_000, haves: 256 } as const;
 
 export interface GitRemote { url: string; authorization: string; label: string }
@@ -15,9 +16,7 @@ type Service = 'git-upload-pack' | 'git-receive-pack';
 const USER_AGENT = 'git/2.47.0 gitflare-mirror';
 
 function pkt(line: string): Buffer {
-  const payload = Buffer.from(line);
-  if (payload.length + 4 > 65520) throw new ApiError(500, 'GIT_PACKET_TOO_LARGE', 'A Git command was too large.');
-  return Buffer.concat([Buffer.from((payload.length + 4).toString(16).padStart(4, '0')), payload]);
+  return boundedPacket(line, () => new ApiError(500, 'GIT_PACKET_TOO_LARGE', 'A Git command was too large.'));
 }
 
 function protocolError(remote: GitRemote, message: string): ApiError {
@@ -25,31 +24,11 @@ function protocolError(remote: GitRemote, message: string): ApiError {
 }
 
 function packets(remote: GitRemote, bytes: Uint8Array): string[] {
-  const buffer = Buffer.from(bytes); const lines: string[] = []; let offset = 0;
-  while (offset < buffer.length) {
-    const prefix = buffer.subarray(offset, offset + 4).toString('ascii');
-    if (!/^[0-9a-f]{4}$/i.test(prefix)) throw protocolError(remote, 'an invalid Git packet');
-    const length = parseInt(prefix, 16); offset += 4;
-    if (length === 0) { lines.push(''); continue; }
-    if (length < 4 || offset + length - 4 > buffer.length) throw protocolError(remote, 'a truncated Git packet');
-    lines.push(buffer.subarray(offset, offset + length - 4).toString('utf8')); offset += length - 4;
-  }
-  return lines;
+  return packetLines(bytes, { invalid: () => protocolError(remote, 'an invalid Git packet'), badLength: () => protocolError(remote, 'a truncated Git packet') });
 }
 
-async function bounded(remote: GitRemote, body: ReadableStream<Uint8Array> | null, limit: number): Promise<Uint8Array> {
-  if (!body) throw protocolError(remote, 'an empty response');
-  const reader = body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > limit) throw new ApiError(413, 'MIRROR_TOO_LARGE', `${remote.label} advertised more data than the mirror allows.`);
-      chunks.push(value);
-    }
-  } finally { await reader.cancel().catch(() => {}); }
-  return new Uint8Array(Buffer.concat(chunks));
+function bounded(remote: GitRemote, body: ReadableStream<Uint8Array> | null, limit: number): Promise<Uint8Array> {
+  return readLimited(body, limit, { empty: () => protocolError(remote, 'an empty response'), tooLarge: () => new ApiError(413, 'MIRROR_TOO_LARGE', `${remote.label} advertised more data than the mirror allows.`) });
 }
 
 async function send(remote: GitRemote, path: string, init: { method: string; headers: Record<string, string>; body?: ReadableStream<Uint8Array> | Uint8Array; timeoutMs: number }, fetcher: typeof fetch): Promise<Response> {
@@ -69,16 +48,12 @@ function requireType(remote: GitRemote, response: Response, type: string): void 
 }
 
 export function parseAdvertisement(remote: GitRemote, service: Service, bytes: Uint8Array): Advertisement {
-  const lines = packets(remote, bytes);
-  if (lines[0] !== `# service=${service}\n` || lines[1] !== '') throw protocolError(remote, 'an invalid service advertisement');
   const refs = new Map<string, string>(); const capabilities = new Set<string>();
-  for (const [index, line] of lines.slice(2).filter(Boolean).entries()) {
-    const [advertised, caps] = line.replace(/\n$/, '').split('\0');
+  const advertised = advertisedRefs(packets(remote, bytes), service, { header: () => protocolError(remote, 'an invalid service advertisement'), reference: line => protocolError(remote, /^[a-f0-9]{64} /.test(line) ? 'a SHA-256 repository, which is not supported' : 'an invalid reference') });
+  for (const { index, sha, ref, capabilities: caps } of advertised) {
     if (index === 0 && caps) for (const value of caps.split(' ')) if (value) capabilities.add(value);
-    const match = /^([a-f0-9]{40}) (\S+)$/.exec(advertised);
-    if (!match) throw protocolError(remote, /^[a-f0-9]{64} /.test(advertised) ? 'a SHA-256 repository, which is not supported' : 'an invalid reference');
-    if (match[1] === ZERO_SHA || match[2].endsWith('^{}') || !match[2].startsWith('refs/')) continue;
-    refs.set(match[2], match[1]);
+    if (sha === ZERO_SHA || ref.endsWith('^{}') || !ref.startsWith('refs/')) continue;
+    refs.set(ref, sha);
   }
   if ([...capabilities].some(value => value.startsWith('object-format=') && value !== 'object-format=sha1')) throw protocolError(remote, 'a SHA-256 repository, which is not supported');
   return { refs, capabilities };

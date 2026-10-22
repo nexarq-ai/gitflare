@@ -5,6 +5,7 @@ import { createArtifactsRepository, repositoryHead, type ArtifactsBinding } from
 import { ApiError, assertMutationOrigin, readJson, repositoryName, requireIdempotencyKey, requireString, storageRepositoryName } from './domain';
 import type { Action, Principal } from './security';
 import { catalogName } from './capacity';
+import { advertisedRefs, packetLines as gitPacketLines, readLimited } from './git-protocol';
 
 export const URL_IMPORT_LIMITS = {
   packBytes: 256 * 1024 * 1024,
@@ -97,47 +98,22 @@ export function validBranchName(branch: string): boolean {
 }
 
 function packetLines(bytes: Uint8Array): string[] {
-  const buffer = Buffer.from(bytes); const lines: string[] = []; let offset = 0;
-  while (offset < buffer.length) {
-    const prefix = buffer.subarray(offset, offset + 4).toString('ascii');
-    if (!/^[0-9a-f]{4}$/i.test(prefix)) throw new ApiError(502, 'SOURCE_PROTOCOL', 'The source returned an invalid Git response.');
-    const length = parseInt(prefix, 16); offset += 4;
-    if (length === 0) { lines.push(''); continue; }
-    if (length < 4 || offset + length - 4 > buffer.length) throw new ApiError(502, 'SOURCE_PROTOCOL', 'The source returned a truncated Git response.');
-    lines.push(buffer.subarray(offset, offset + length - 4).toString('utf8')); offset += length - 4;
-  }
-  return lines;
+  return gitPacketLines(bytes, { invalid: () => new ApiError(502, 'SOURCE_PROTOCOL', 'The source returned an invalid Git response.'), badLength: () => new ApiError(502, 'SOURCE_PROTOCOL', 'The source returned a truncated Git response.') });
 }
 
-async function limitedBody(response: Response, maxBytes: number): Promise<Uint8Array> {
-  if (!response.body) throw new ApiError(502, 'SOURCE_PROTOCOL', 'The source returned an empty Git response.');
-  const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxBytes) throw new ApiError(413, 'SOURCE_TOO_LARGE', `The source advertises more references than the ${maxBytes / 1024 / 1024} MiB import limit allows.`);
-      chunks.push(value);
-    }
-  } finally { await reader.cancel().catch(() => {}); }
-  return new Uint8Array(Buffer.concat(chunks));
+function limitedBody(response: Response, maxBytes: number): Promise<Uint8Array> {
+  return readLimited(response.body, maxBytes, { empty: () => new ApiError(502, 'SOURCE_PROTOCOL', 'The source returned an empty Git response.'), tooLarge: () => new ApiError(413, 'SOURCE_TOO_LARGE', `The source advertises more references than the ${maxBytes / 1024 / 1024} MiB import limit allows.`) });
 }
 
 export function parseAdvertisement(bytes: Uint8Array): SourceRefs {
-  const lines = packetLines(bytes);
-  if (lines[0] !== '# service=git-upload-pack\n' || lines[1] !== '') throw new ApiError(502, 'SOURCE_PROTOCOL', 'The source returned an invalid Git service advertisement.');
   const heads = new Map<string, string>(); let tags = 0; let symref: string | undefined;
-  for (const [index, line] of lines.slice(2).filter(Boolean).entries()) {
-    const [advertisement, capabilities] = line.replace(/\n$/, '').split('\0');
-    const match = /^([a-f0-9]{40}) (\S+)$/.exec(advertisement);
-    if (!match) throw new ApiError(502, 'SOURCE_PROTOCOL', /^[a-f0-9]{64} /.test(advertisement) ? 'SHA-256 repositories are not supported.' : 'The source returned an invalid reference advertisement.');
+  const advertised = advertisedRefs(packetLines(bytes), 'git-upload-pack', { header: () => new ApiError(502, 'SOURCE_PROTOCOL', 'The source returned an invalid Git service advertisement.'), reference: advertisement => new ApiError(502, 'SOURCE_PROTOCOL', /^[a-f0-9]{64} /.test(advertisement) ? 'SHA-256 repositories are not supported.' : 'The source returned an invalid reference advertisement.') });
+  for (const { index, sha, ref, capabilities } of advertised) {
     if (index === 0 && capabilities) {
       const values = capabilities.split(' ');
       if (values.some(value => value.startsWith('object-format=') && value !== 'object-format=sha1')) throw new ApiError(422, 'SOURCE_UNSUPPORTED', 'SHA-256 repositories are not supported.');
       symref = values.find(value => value.startsWith('symref=HEAD:refs/heads/'))?.slice('symref=HEAD:refs/heads/'.length);
     }
-    const [, sha, ref] = match;
     if (ref.startsWith('refs/heads/')) heads.set(ref.slice('refs/heads/'.length), sha);
     else if (ref.startsWith('refs/tags/') && !ref.endsWith('^{}')) tags++;
   }

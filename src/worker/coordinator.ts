@@ -1,12 +1,9 @@
 import { DurableObject } from 'cloudflare:workers';
-import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion } from '../shared/types';
-import type { Advisory, AgentRetryOverride, AgentRun, AgentSettings, BranchChangeResult, CheckOverride, CheckPlan, CheckSettings, CreateMissionInput, IssueDetail, IssueLabelDefinition, IssueList, Mission, MissionAttempt, MissionEvent, MissionSummary, ModelConnection, OutsideChecksGate, Release, Repository, RepositorySkillChange, ReviewMissionInput } from '../shared/types';
+import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
-import { assertDependenciesAcknowledged, assertDependencyApprover } from './dependency-changes';
+import { assertDependencyApprover } from './dependency-changes';
 import { activeLandingMessage } from '../shared/commit-message';
 import { repositoryLabel } from '../shared/repository-names';
-import { PREVIEW_FAILURE_MAX, type PreviewStep } from '../shared/preview-progress';
-import type { PreviewSetupCode } from '../shared/preview-setup';
 import type { AppEnv } from './env';
 import type { ExecutionResult } from './execution';
 import { SqlStore } from './store';
@@ -25,7 +22,6 @@ import { defaultModelConnections, pinMissionModels, validateModelConnection } fr
 import { readAssist, readPool, requesterRemaining, reservePool, poolUsage, publicPool, writeAssist, writePool, type PoolKind, type StoredPool } from './community-pool';
 import { applyIssueChange, applyLabelChange, applyTriage, issueFingerprint, linkIssueMission, listIssues, listLabelDefinitions, readIssue, recordIssueOutcome, type IssueActor, type IssueChange, type IssueLabelChange, type IssueQuery } from './issues';
 import { branchName, normalizeBranchRules, type StoredBranchProtection } from './branch-protection';
-import { capacityError, catalogName, liveSlots, MISSION_SLOT_GRACE_MS, slotKey, WORKSPACE_MISSION_LIMIT, WORKSPACE_PREVIEW_LIMIT, type CapacitySlot } from './capacity';
 import { missionStepTimeoutMs } from './budgets';
 import { effectiveAgentLimits, normalizeAgentSettings } from './agent-settings';
 import { AUTO_INCREASE_ACTOR, checkDurations, checkPlan, DURATION_SAMPLES, normalizeCheckSettings, withLearnedLimits, type CheckSettingsInput, type LearnedLimits } from './check-settings';
@@ -33,28 +29,21 @@ import type { SavedDetection } from './deploy-detect';
 import { DeployAccessBook, type DeployAccessRecord, type DeployAccessResult } from './deploy-access';
 import { DeploymentLedger, type DeployEnvironment, type DeployEnvironmentSettings, type DeploymentRecord, type DeploymentStatus, type DeploySettings, type DeployState } from './deployments';
 import type { AiCredentials, OperatorModelGrant, OperatorUsageKind, StoredAiGateway, StoredAiKey } from './ai-keys';
-import type { PreviewD1Database } from './worker-bundle';
 import { storedPreviewSettings, type PreviewSettings } from './preview-settings';
 import { applyMirrorChange, type MirrorChange, type MirrorChangeResult, type StoredMirror } from './github-mirror';
 import { NotificationBook, SubscriptionBook, type DigestEntry, type NotificationFilter, type NotificationRecord } from './notifications';
 import { sendNotificationEmail } from './notification-email';
 import type { NotificationEvent, NotificationPreferences, NotificationReason, NotificationSubject, ReviewRequests, SubscriptionState } from '../shared/notifications';
 import { validGitSha } from './artifacts';
+import type { Receipt, ContributorStanding, OutgoingProposal, MissionSummaryCache, CoordinatorHost } from './coordinator-types';
+import { PreviewBook } from './coordinator-previews';
+import { DispatchBook } from './coordinator-dispatch';
+import { IntegrationBook } from './coordinator-integration';
+import { CapacityBook } from './coordinator-capacity';
 
-interface Receipt<T> { fingerprint: string; result: T }
-export interface ContributorStanding { userId: string; landed: number; firstProposalAt: string; vouchedBy?: Principal }
-export interface OutgoingProposal { missionId: string; upstreamWorkspaceId: string; upstreamRepositoryId: string; branch: string; createdAt: string }
-export interface MissionSummaryCache { repositoryId: string; summaries: MissionSummary[]; cachedAt: string }
-export interface IntegrationClaim { claimId?: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimedAt?: number; phase?: 'preparing' | 'pushing'; landedSha?: string }
-const INTEGRATION_PREPARATION_MS = 600_000;
-
-function lastPreview(state: PreviewState, reason: PreviewEndReason, endedAt: number): LastPreview {
-  return {
-    candidateSha: state.candidateSha, epoch: state.epoch, kind: state.worker ? 'worker' : 'container', previewUrl: state.worker?.previewUrl ?? null,
-    ...(state.readyAt ? { readyAt: new Date(state.readyAt).toISOString() } : {}),
-    expiresAt: new Date(state.expiresAt).toISOString(), endedAt: new Date(reason === 'expired' ? state.expiresAt : endedAt).toISOString(), reason,
-  };
-}
+export { PREVIEW_LEASE_MS, PREVIEW_HEARTBEAT_MS, PREVIEW_READY_MS, WORKER_PREVIEW_TTL_MS, DISPATCH_FAST_ATTEMPTS, MISSION_WATCHDOG_MS, WATCHDOG_MISSING_LIMIT, INTEGRATION_UNCONFIRMED_MESSAGE, PREVIEW_STARTING_MESSAGE } from './coordinator-types';
+export type { ContributorStanding, OutgoingProposal, MissionSummaryCache, IntegrationClaim, PreviewCapability, PreviewHost, WorkerPreviewInfo, PreviewLifetime, WorkerPreviewRecord, PreviewExtension, StoppedPreview, PreviewEndReason, LastPreview, PreviewStatus } from './coordinator-types';
+export { integrationPendingMessage } from './coordinator-integration';
 
 function agentDefaults(overrides: CreateMissionInput['agentOverrides']): Pick<AgentRun, 'editScope' | 'overrides'> {
   if (!overrides) return {};
@@ -90,46 +79,6 @@ function eligibleRaceRuns(mission: Mission): Mission['runs'] {
   const checks = mission.raceChecks ?? mission.checks;
   return mission.runs.filter((run) => run.status === 'completed' && !!run.commitSha && !!run.forkName && checks.some((check) => check.runId === run.id && check.status === 'passed' && check.candidateSha === run.commitSha));
 }
-export interface PreviewCapability { workspaceId?: string; principal?: Principal; repositoryId: string; missionId: string; epoch: number; candidateSha: string; sandboxName: string; expiresAt: number; host?: string; isolated?: boolean }
-export type PreviewHost =
-  | { kind: 'connection'; source: 'repository' | 'workspace'; accountId: string; workerName: string; access: 'link' | 'cloudflare-access' }
-  | { kind: 'installation'; accountId: string; workerName: string; access: 'link' };
-export interface WorkerPreviewInfo { previewName: string; previewUrl: string | null; deploymentUrl: string | null; notes: string[]; d1Databases?: PreviewD1Database[]; host?: PreviewHost; baseBindings?: { name: string; type: string }[] }
-export interface PreviewLifetime { lifetimeMs: number; extendMs: number }
-interface PreviewState { claimId: string; epoch: number; candidateSha: string; phase: 'preparing' | 'ready'; expiresAt: number; startedAt?: number; step?: PreviewStep; sandboxName?: string; worker?: WorkerPreviewInfo; notes?: string[]; setup?: PreviewSetupCode; readyAt?: number; extendMs?: number; extended?: boolean }
-export interface WorkerPreviewRecord { previewName: string; claimId: string; expiresAt: number; d1DatabaseIds?: string[]; host?: PreviewHost; principal?: Principal }
-export interface PreviewExtension { expiresAt: number; kind: 'worker' | 'container'; sandboxName?: string }
-export type StoppedPreview = { kind: 'worker'; record: WorkerPreviewRecord } | { kind: 'container'; sandboxName: string } | { kind: 'none' };
-export const PREVIEW_LEASE_MS = 120_000;
-export const PREVIEW_HEARTBEAT_MS = 30_000;
-export const PREVIEW_READY_MS = 900_000;
-export const WORKER_PREVIEW_TTL_MS = 900_000;
-interface PreviewFailureRecord { claimId: string; epoch: number; candidateSha: string; message: string; failedAt: string; setup?: PreviewSetupCode }
-export type PreviewEndReason = 'expired' | 'retired' | 'replaced';
-export interface LastPreview { candidateSha: string; epoch: number; kind: 'worker' | 'container'; previewUrl: string | null; readyAt?: string; expiresAt: string; endedAt: string; reason: PreviewEndReason }
-export interface PreviewStatus { status: 'none' | 'starting' | 'ready' | 'failed'; candidateSha: string | null; last?: LastPreview; expiresAt?: string; readyAt?: string; extended?: boolean; extendable?: boolean; error?: string; message?: string; startedAt?: string; step?: PreviewStep; kind?: 'worker' | 'container'; worker?: WorkerPreviewInfo; notes?: string[]; setup?: PreviewSetupCode; access?: 'link' | 'cloudflare-access' | 'members' }
-interface DispatchIntent { workflowId: string; missionId: string; repositoryId: string; epoch: number; attempts: number; nextAttemptAt: number }
-export const DISPATCH_FAST_ATTEMPTS = 8;
-interface MissionWatch { workflowId: string; missionId: string; epoch: number; deliveredAt: number; lastReportAt: number; checkAt: number; misses: number }
-export const MISSION_WATCHDOG_MS = 900_000;
-export const WATCHDOG_MISSING_LIMIT = 3;
-const WATCHDOG_MISSING_RECHECK_MS = 60_000;
-const ACTIVE_WORKFLOW = ['queued', 'running', 'paused', 'waiting', 'waitingForPause'];
-const TERMINAL_WORKFLOW = ['complete', 'errored', 'terminated'];
-interface ApprovalClear { missionId: string; principal: Principal; queuedAt: string; attempts: number; nextAttemptAt: number }
-const APPROVAL_CLEAR_RETRY_MS = 30_000;
-const APPROVAL_CLEAR_MAX_BACKOFF_MS = 900_000;
-
-const minutes = (ms: number) => Math.ceil(ms / 60_000);
-const landingCause = (reason: string) => failureLine(reason).replace(/\.$/, '');
-
-export function integrationPendingMessage(candidateSha: string): string {
-  return `Landing has not finished: the default branch has not yet confirmed commit ${candidateSha.slice(0, 12)}, so other proposals in this repository cannot land until it does. If landing started in the last ${minutes(INTEGRATION_PREPARATION_MS)} minutes, wait and choose Land again; retries never push twice. If it has been longer, ask a workspace Owner to check the default branch: once it shows ${candidateSha.slice(0, 12)}, choose Land again to record it.`;
-}
-
-export const INTEGRATION_UNCONFIRMED_MESSAGE = 'Landing could not confirm whether the default branch moved to the approved commit, so other proposals in this repository cannot land until it is resolved. Choose Land again to recheck the default branch; it never pushes twice. If the branch does not show the approved commit, ask a workspace Owner to inspect it before landing anything else.';
-
-export const PREVIEW_STARTING_MESSAGE = 'Gitflare is building a preview of this exact revision. It clones the code, installs dependencies and builds it, then publishes it: Cloudflare Workers become a Worker Preview, and other apps run in an isolated preview container. This usually takes about a minute; if a step fails, you see which one and why.';
 
 export class GitflareCoordinator extends DurableObject<AppEnv> {
   private store: SqlStore;
@@ -138,6 +87,28 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     super(ctx, env);
     this.store = new SqlStore(ctx.storage.sql);
   }
+
+  private host(): CoordinatorHost {
+    const store = () => this.store;
+    return {
+      ctx: this.ctx, env: this.env, get store() { return store(); },
+      getMission: (id) => this.getMission(id),
+      requiredMission: (id) => this.requiredMission(id),
+      saveMission: (mission, message, type) => this.saveMission(mission, message, type),
+      archive: (mission, reason) => this.archive(mission, reason),
+      isMissionActive: (id, epoch) => this.isMissionActive(id, epoch),
+      getRepository: (id) => this.getRepository(id),
+      saveRepository: (repository) => this.saveRepository(repository),
+      recordContributorLanding: (mission) => this.recordContributorLanding(mission),
+      recordLinkedIssues: (mission, sha) => this.recordLinkedIssues(mission, sha),
+      ensureDispatchAlarm: (when) => this.ensureDispatchAlarm(when),
+    };
+  }
+
+  private previews() { return new PreviewBook(this.host()); }
+  private dispatches() { return new DispatchBook(this.host()); }
+  private integrations() { return new IntegrationBook(this.host()); }
+  private capacity() { return new CapacityBook(this.host()); }
 
   demoImport(records: [string, unknown][]): number {
     assertDemoMode(this.env);
@@ -706,185 +677,33 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  async savePreviewCapability(hash: string, capability: PreviewCapability): Promise<void> {
-    this.store.put(`preview:${hash}`, capability);
-    await this.ensureDispatchAlarm(capability.expiresAt);
-  }
+  savePreviewCapability(...args: Parameters<PreviewBook['savePreviewCapability']>) { return this.previews().savePreviewCapability(...args); }
 
-  async getPreviewCapability(hash: string): Promise<PreviewCapability | undefined> {
-    const capability = this.store.get<PreviewCapability>(`preview:${hash}`);
-    if (capability && capability.expiresAt > Date.now()) return capability;
-    await this.prunePreviewCapabilities();
-    return undefined;
-  }
+  getPreviewCapability(...args: Parameters<PreviewBook['getPreviewCapability']>) { return this.previews().getPreviewCapability(...args); }
 
-  private async prunePreviewCapabilities(): Promise<void> {
-    const now = Date.now();
-    let next = Infinity;
-    for (const [key, capability] of this.store.entries<PreviewCapability>('preview:')) {
-      if (capability.expiresAt <= now) this.store.delete(key);
-      else next = Math.min(next, capability.expiresAt);
-    }
-    if (next !== Infinity) await this.ensureDispatchAlarm(next);
-  }
+  private prunePreviewCapabilities(...args: Parameters<PreviewBook['prunePreviewCapabilities']>) { return this.previews().prunePreviewCapabilities(...args); }
 
-  claimPreview(key: string, id: string, epoch: number, candidateSha: string): { sandboxName?: string; worker?: WorkerPreviewInfo; notes?: string[]; setup?: PreviewSetupCode; claimId: string; claimed: boolean; expiresAt?: number; previous?: string } {
-    return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      if (mission.epoch !== epoch || mission.candidateSha !== candidateSha || !['needs_review', 'approved', 'integrating', 'integrated'].includes(mission.status)) throw new ApiError(409, 'STALE_PREVIEW', 'Only the current verified candidate can be previewed.');
-      const fingerprint = JSON.stringify(['preview', id, epoch, candidateSha]);
-      const receipt = this.store.get<Receipt<boolean>>(`request:${key}`);
-      if (receipt) assertReplayFingerprint(receipt.fingerprint, fingerprint);
-      const current = this.store.get<PreviewState>(`preview-state:${id}`);
-      if (current?.claimId && current.epoch === epoch && current.candidateSha === candidateSha && current.expiresAt > Date.now()) {
-        if (current.worker) return { worker: current.worker, claimId: current.claimId, claimed: false, expiresAt: current.expiresAt };
-        return current.sandboxName ? { sandboxName: current.sandboxName, claimId: current.claimId, claimed: false, expiresAt: current.expiresAt, ...(current.notes?.length ? { notes: current.notes } : {}), ...(current.setup ? { setup: current.setup } : {}) } : { claimId: current.claimId, claimed: false };
-      }
-      if (current?.phase === 'ready') this.rememberPreview(id, current, current.expiresAt <= Date.now() ? 'expired' : 'replaced');
-      const claimId = crypto.randomUUID();
-      this.store.put(`preview-state:${id}`, { claimId, epoch, candidateSha, phase: 'preparing', startedAt: Date.now(), step: 'queued', expiresAt: Date.now() + PREVIEW_LEASE_MS } satisfies PreviewState);
-      this.store.delete(`preview-failure:${id}`);
-      this.store.put(`request:${key}`, { fingerprint, result: true });
-      return current?.claimId ? { claimId, claimed: true, previous: current.sandboxName ?? `preview-${id}-${current.claimId}` } : { claimId, claimed: true };
-    });
-  }
+  claimPreview(...args: Parameters<PreviewBook['claimPreview']>) { return this.previews().claimPreview(...args); }
 
-  private previewClaim(id: string, epoch: number, candidateSha: string, claimId: string): PreviewState {
-    const mission = this.requiredMission(id);
-    const state = this.store.get<PreviewState>(`preview-state:${id}`);
-    if (mission.epoch !== epoch || mission.candidateSha !== candidateSha || !['needs_review', 'approved', 'integrating', 'integrated'].includes(mission.status) || !state || state.claimId !== claimId || state.epoch !== epoch || state.candidateSha !== candidateSha || state.expiresAt <= Date.now()) throw new ApiError(409, 'STALE_PREVIEW', 'This preview attempt is no longer current.');
-    return state;
-  }
+  renewPreview(...args: Parameters<PreviewBook['renewPreview']>) { return this.previews().renewPreview(...args); }
 
-  renewPreview(id: string, epoch: number, candidateSha: string, claimId: string): void {
-    const state = this.previewClaim(id, epoch, candidateSha, claimId);
-    if (state.phase !== 'preparing') return;
-    this.store.put(`preview-state:${id}`, { ...state, expiresAt: Date.now() + PREVIEW_LEASE_MS });
-  }
+  previewStep(...args: Parameters<PreviewBook['previewStep']>) { return this.previews().previewStep(...args); }
 
-  previewStep(id: string, epoch: number, candidateSha: string, claimId: string, step: PreviewStep): void {
-    this.ctx.storage.transactionSync(() => {
-      const state = this.previewClaim(id, epoch, candidateSha, claimId);
-      if (state.phase !== 'preparing') throw new ApiError(409, 'STALE_PREVIEW', 'This preview attempt is no longer preparing.');
-      this.store.put(`preview-state:${id}`, { ...state, step, expiresAt: Date.now() + PREVIEW_LEASE_MS } satisfies PreviewState);
-    });
-  }
+  previewReady(...args: Parameters<PreviewBook['previewReady']>) { return this.previews().previewReady(...args); }
 
-  previewReady(id: string, epoch: number, candidateSha: string, claimId: string, sandboxName: string, lifetime: PreviewLifetime = { lifetimeMs: PREVIEW_READY_MS, extendMs: PREVIEW_READY_MS }, notes: string[] = [], setup?: PreviewSetupCode): number {
-    const state = this.previewClaim(id, epoch, candidateSha, claimId);
-    if (sandboxName !== `preview-${id}-${claimId}`) throw new ApiError(409, 'STALE_PREVIEW', 'The preview sandbox does not belong to this attempt.');
-    const readyAt = Date.now();
-    const expiresAt = readyAt + lifetime.lifetimeMs;
-    this.store.put(`preview-state:${id}`, { ...state, phase: 'ready', sandboxName, expiresAt, readyAt, extendMs: lifetime.extendMs, ...(notes.length ? { notes: notes.slice(0, 20).map((note) => note.slice(0, 500)) } : {}), ...(setup ? { setup } : {}) } satisfies PreviewState);
-    return expiresAt;
-  }
+  workerPreviewReady(...args: Parameters<PreviewBook['workerPreviewReady']>) { return this.previews().workerPreviewReady(...args); }
 
-  workerPreviewReady(id: string, epoch: number, candidateSha: string, claimId: string, worker: WorkerPreviewInfo, lifetime: PreviewLifetime = { lifetimeMs: WORKER_PREVIEW_TTL_MS, extendMs: WORKER_PREVIEW_TTL_MS }, principal?: Principal): number {
-    return this.ctx.storage.transactionSync(() => {
-      const state = this.previewClaim(id, epoch, candidateSha, claimId);
-      const readyAt = Date.now();
-      const expiresAt = readyAt + lifetime.lifetimeMs;
-      this.store.put(`preview-state:${id}`, { ...state, phase: 'ready', worker, expiresAt, readyAt, extendMs: lifetime.extendMs } satisfies PreviewState);
-      const previous = this.store.get<WorkerPreviewRecord>(`worker-preview:${id}`);
-      const sameHost = previous?.previewName === worker.previewName && previous.host?.accountId === worker.host?.accountId && previous.host?.workerName === worker.host?.workerName;
-      const d1DatabaseIds = sameHost ? previous.d1DatabaseIds ?? [] : [];
-      this.store.put(`worker-preview:${id}`, { previewName: worker.previewName, claimId, expiresAt, ...(d1DatabaseIds.length ? { d1DatabaseIds } : {}), ...(worker.host ? { host: worker.host } : {}), ...(principal ? { principal } : {}) } satisfies WorkerPreviewRecord);
-      return expiresAt;
-    });
-  }
+  extendPreview(...args: Parameters<PreviewBook['extendPreview']>) { return this.previews().extendPreview(...args); }
 
-  extendPreview(id: string): PreviewExtension {
-    return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      const state = this.store.get<PreviewState>(`preview-state:${id}`);
-      if (!state || state.phase !== 'ready' || state.expiresAt <= Date.now() || state.epoch !== mission.epoch || state.candidateSha !== mission.candidateSha) throw new ApiError(409, 'PREVIEW_NOT_READY', 'Only a ready preview of the current candidate can be extended.');
-      if (state.extended) throw new ApiError(409, 'PREVIEW_ALREADY_EXTENDED', 'This preview was already extended once. Prepare a new preview when it expires.');
-      const expiresAt = state.expiresAt + (state.extendMs ?? PREVIEW_READY_MS);
-      this.store.put(`preview-state:${id}`, { ...state, expiresAt, extended: true } satisfies PreviewState);
-      if (state.worker) {
-        const record = this.store.get<WorkerPreviewRecord>(`worker-preview:${id}`);
-        if (record?.claimId === state.claimId) this.store.put(`worker-preview:${id}`, { ...record, expiresAt } satisfies WorkerPreviewRecord);
-        return { expiresAt, kind: 'worker' };
-      }
-      return { expiresAt, kind: 'container', ...(state.sandboxName ? { sandboxName: state.sandboxName } : {}) };
-    });
-  }
+  workerPreview(...args: Parameters<PreviewBook['workerPreview']>) { return this.previews().workerPreview(...args); }
 
-  workerPreview(id: string): WorkerPreviewRecord | undefined { return this.store.get<WorkerPreviewRecord>(`worker-preview:${id}`); }
+  retireWorkerPreview(...args: Parameters<PreviewBook['retireWorkerPreview']>) { return this.previews().retireWorkerPreview(...args); }
 
-  retireWorkerPreview(id: string, claimId?: string): WorkerPreviewRecord | null {
-    return this.ctx.storage.transactionSync(() => {
-      const record = this.store.get<WorkerPreviewRecord>(`worker-preview:${id}`);
-      if (!record || (claimId && record.claimId !== claimId)) return null;
-      this.store.delete(`worker-preview:${id}`);
-      const state = this.store.get<PreviewState>(`preview-state:${id}`);
-      if (state?.worker) {
-        if (state.phase === 'ready') this.rememberPreview(id, state, state.expiresAt <= Date.now() ? 'expired' : 'retired');
-        this.store.delete(`preview-state:${id}`);
-      }
-      return record;
-    });
-  }
+  stopPreview(...args: Parameters<PreviewBook['stopPreview']>) { return this.previews().stopPreview(...args); }
 
-  stopPreview(id: string): StoppedPreview {
-    return this.ctx.storage.transactionSync(() => {
-      const record = this.store.get<WorkerPreviewRecord>(`worker-preview:${id}`);
-      const state = this.store.get<PreviewState>(`preview-state:${id}`);
-      if (record) {
-        this.store.delete(`worker-preview:${id}`);
-        if (state?.worker || state?.claimId === record.claimId) {
-          if (state.phase === 'ready') this.rememberPreview(id, state, state.expiresAt <= Date.now() ? 'expired' : 'retired');
-          this.store.delete(`preview-state:${id}`);
-        }
-        return { kind: 'worker', record };
-      }
-      if (!state) return { kind: 'none' };
-      const sandboxName = state.sandboxName ?? `preview-${id}-${state.claimId}`;
-      if (state.phase !== 'ready') {
-        this.store.delete(`preview-state:${id}`);
-        return { kind: 'container', sandboxName };
-      }
-      this.rememberPreview(id, state, state.expiresAt <= Date.now() ? 'expired' : 'retired');
-      this.store.delete(`preview-state:${id}`);
-      return { kind: 'container', sandboxName };
-    });
-  }
+  previewFailed(...args: Parameters<PreviewBook['previewFailed']>) { return this.previews().previewFailed(...args); }
 
-  private rememberPreview(id: string, state: PreviewState, reason: PreviewEndReason): void {
-    this.store.put(`preview-last:${id}`, lastPreview(state, reason, Date.now()) satisfies LastPreview);
-  }
-
-  previewFailed(id: string, claimId: string, message?: string, setup?: PreviewSetupCode): boolean {
-    return this.ctx.storage.transactionSync(() => {
-      const state = this.store.get<PreviewState>(`preview-state:${id}`);
-      if (state?.claimId !== claimId) return false;
-      this.store.delete(`preview-state:${id}`);
-      if (message) this.store.put(`preview-failure:${id}`, { claimId, epoch: state.epoch, candidateSha: state.candidateSha, message: message.slice(0, PREVIEW_FAILURE_MAX), failedAt: new Date().toISOString(), ...(setup ? { setup } : {}) } satisfies PreviewFailureRecord);
-      return true;
-    });
-  }
-
-  previewStatus(id: string): PreviewStatus {
-    const mission = this.requiredMission(id);
-    const current = (entry?: { epoch: number; candidateSha: string }) => !!entry && entry.epoch === mission.epoch && entry.candidateSha === mission.candidateSha;
-    const state = this.store.get<PreviewState>(`preview-state:${id}`);
-    if (current(state) && state!.expiresAt > Date.now()) {
-      if (state!.phase !== 'ready') return { status: 'starting', candidateSha: mission.candidateSha, message: PREVIEW_STARTING_MESSAGE, ...(state!.startedAt ? { startedAt: new Date(state!.startedAt).toISOString() } : {}), step: state!.step ?? 'queued' };
-      const ready = state!;
-      return {
-        status: 'ready', candidateSha: mission.candidateSha, expiresAt: new Date(ready.expiresAt).toISOString(),
-        ...(ready.readyAt ? { readyAt: new Date(ready.readyAt).toISOString() } : {}),
-        extended: !!ready.extended, extendable: !ready.extended,
-        ...(ready.worker ? { kind: 'worker' as const, worker: ready.worker, access: ready.worker.host?.access ?? 'link' } : { kind: 'container' as const, access: 'members' as const, ...(ready.notes?.length ? { notes: ready.notes } : {}), ...(ready.setup ? { setup: ready.setup } : {}) }),
-      };
-    }
-    const expired = state?.phase === 'ready' && state.expiresAt <= Date.now() ? lastPreview(state, 'expired', Date.now()) : undefined;
-    const last = expired ?? this.store.get<LastPreview>(`preview-last:${id}`);
-    const history = last ? { last } : {};
-    const failure = this.store.get<PreviewFailureRecord>(`preview-failure:${id}`);
-    if (current(failure)) return { status: 'failed', candidateSha: mission.candidateSha, error: failure!.message, ...(failure!.setup ? { setup: failure!.setup } : {}), ...history };
-    return { status: 'none', candidateSha: mission.candidateSha, ...history };
-  }
+  previewStatus(...args: Parameters<PreviewBook['previewStatus']>) { return this.previews().previewStatus(...args); }
 
   createRepository(key: string, repository: Repository): Repository {
     return this.mutate(key, JSON.stringify(['repository', repository.name, repository.description]), () => {
@@ -1050,19 +869,11 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return created;
   }
 
-  private async ensureDispatchAlarm(when: number): Promise<void> {
-    const alarm = await this.ctx.storage.getAlarm();
-    if (alarm === null || alarm > when) await this.ctx.storage.setAlarm(when);
-  }
+  private ensureDispatchAlarm(...args: Parameters<DispatchBook['ensureDispatchAlarm']>) { return this.dispatches().ensureDispatchAlarm(...args); }
 
-  private queueDispatch(mission: Mission): void {
-    const workflowId = `${mission.id}-${mission.epoch}`;
-    if (!this.store.get(`dispatch:${workflowId}`) && !this.store.get(`delivered:${workflowId}`)) this.store.put(`dispatch:${workflowId}`, { workflowId, missionId: mission.id, repositoryId: mission.repositoryId, epoch: mission.epoch, attempts: 0, nextAttemptAt: Date.now() } satisfies DispatchIntent);
-  }
+  private queueDispatch(...args: Parameters<DispatchBook['queueDispatch']>) { return this.dispatches().queueDispatch(...args); }
 
-  listDispatches(): DispatchIntent[] {
-    return this.store.list<DispatchIntent>('dispatch:');
-  }
+  listDispatches(...args: Parameters<DispatchBook['listDispatches']>) { return this.dispatches().listDispatches(...args); }
 
   async startMission(key: string, id: string, authorization?: NonNullable<Mission['authorization']>, models = defaultModelConnections()): Promise<Mission> {
     await this.ensureDispatchAlarm(Date.now() + 1000);
@@ -1199,91 +1010,17 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     return this.startMission(key, id, authorization, models);
   }
 
-  private failDispatch(id: string, epoch: number, error = 'The Workflow ended before mission completion was recorded. Start a new attempt to retry; late results from this attempt will be rejected.', runError = 'Workflow dispatch was not confirmed'): Mission {
-    return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      assertActiveRun(mission.status, mission.epoch, epoch);
-      mission.status = 'failed';
-      mission.error = error;
-      mission.runs = mission.runs.map((run) => ['queued', 'running'].includes(run.status) ? { ...run, status: 'failed', completedAt: new Date().toISOString(), error: runError } : run);
-      this.store.delete(`dispatch:${id}-${epoch}`);
-      this.store.delete(`watch:${id}-${epoch}`);
-      this.saveMission(mission, mission.error, 'error');
-      this.archive(mission, 'completed');
-      return mission;
-    });
-  }
+  private watchMission(...args: Parameters<DispatchBook['watchMission']>) { return this.dispatches().watchMission(...args); }
 
-  private watchdogMs(): number {
-    const seconds = Number(this.env?.MISSION_WATCHDOG_SECONDS);
-    return Number.isFinite(seconds) && seconds >= 60 ? seconds * 1000 : MISSION_WATCHDOG_MS;
-  }
+  listMissionWatches(...args: Parameters<DispatchBook['listMissionWatches']>) { return this.dispatches().listMissionWatches(...args); }
 
-  private watchMission(id: string, epoch: number): void {
-    const key = `watch:${id}-${epoch}`;
-    const now = Date.now();
-    const existing = this.store.get<MissionWatch>(key);
-    this.store.put(key, { workflowId: `${id}-${epoch}`, missionId: id, epoch, deliveredAt: existing?.deliveredAt ?? now, lastReportAt: now, checkAt: now + this.watchdogMs(), misses: 0 } satisfies MissionWatch);
-  }
+  private superviseMissions(...args: Parameters<DispatchBook['superviseMissions']>) { return this.dispatches().superviseMissions(...args); }
 
-  listMissionWatches(): MissionWatch[] {
-    return this.store.list<MissionWatch>('watch:');
-  }
+  private queueApprovalClear(...args: Parameters<DispatchBook['queueApprovalClear']>) { return this.dispatches().queueApprovalClear(...args); }
 
-  private async superviseMissions(): Promise<void> {
-    const due = this.listMissionWatches().filter((watch) => watch.checkAt <= Date.now()).slice(0, 10);
-    for (const watch of due) {
-      const key = `watch:${watch.workflowId}`;
-      if (!this.isMissionActive(watch.missionId, watch.epoch)) { this.store.delete(key); continue; }
-      let status: string | null = null;
-      try { status = (await (await this.env.MISSION_WORKFLOW!.get(watch.workflowId)).status()).status; } catch {}
-      const current = this.store.get<MissionWatch>(key);
-      if (!current || current.lastReportAt !== watch.lastReportAt || !this.isMissionActive(watch.missionId, watch.epoch)) continue;
-      const mission = this.requiredMission(watch.missionId);
-      const budgetMs = missionStepTimeoutMs(mission) + this.watchdogMs();
-      const silentMinutes = Math.max(1, Math.round((Date.now() - watch.lastReportAt) / 60_000));
-      const misses = status ? 0 : watch.misses + 1;
-      const reason = status && TERMINAL_WORKFLOW.includes(status) ? `The Workflow for attempt ${watch.epoch} ${status === 'complete' ? 'completed' : `ended as ${status}`} without reporting a result (no report for ${silentMinutes} min)`
-        : misses >= WATCHDOG_MISSING_LIMIT ? `The Workflow for attempt ${watch.epoch} could not be found after ${misses} checks (no report for ${silentMinutes} min)`
-        : Date.now() - watch.deliveredAt > budgetMs ? `Attempt ${watch.epoch} exceeded its ${Math.round(budgetMs / 60_000)}-minute execution budget without a final report`
-        : null;
-      if (reason) {
-        console.error(JSON.stringify({ event: 'mission_watchdog_failed', missionId: watch.missionId, epoch: watch.epoch, workflowStatus: status, misses }));
-        this.failDispatch(watch.missionId, watch.epoch, `${reason}. Start a new attempt to retry; late results from this attempt will be rejected.`, 'Execution stopped without reporting a result');
-        continue;
-      }
-      this.store.put(key, { ...watch, misses, checkAt: Date.now() + (status && ACTIVE_WORKFLOW.includes(status) ? this.watchdogMs() : WATCHDOG_MISSING_RECHECK_MS) } satisfies MissionWatch);
-    }
-  }
+  listApprovalClears(...args: Parameters<DispatchBook['listApprovalClears']>) { return this.dispatches().listApprovalClears(...args); }
 
-  private queueApprovalClear(missionId: string, principal?: Principal): void {
-    if (!principal) return;
-    this.store.put(`approval-clear:${missionId}`, { missionId, principal, queuedAt: new Date().toISOString(), attempts: 0, nextAttemptAt: Date.now() } satisfies ApprovalClear);
-  }
-
-  listApprovalClears(): ApprovalClear[] {
-    return this.store.list<ApprovalClear>('approval-clear:');
-  }
-
-  async settleApprovalClears(missionId?: string, actor?: Principal, dueOnly = false): Promise<void> {
-    const pending = this.listApprovalClears().filter((entry) => (!missionId || entry.missionId === missionId) && (!dueOnly || entry.nextAttemptAt <= Date.now()));
-    if (!pending.length) return;
-    await this.ensureDispatchAlarm(Date.now() + APPROVAL_CLEAR_RETRY_MS);
-    let failure: unknown;
-    for (const entry of pending) {
-      const key = `approval-clear:${entry.missionId}`;
-      try {
-        await securityClient(this.env).clearApprovals(actor ?? entry.principal, entry.missionId);
-        if (this.store.get<ApprovalClear>(key)?.queuedAt === entry.queuedAt) this.store.delete(key);
-      } catch (error) {
-        failure ??= error;
-        const attempts = entry.attempts + 1;
-        console.error(JSON.stringify({ event: 'approval_clear_failed', missionId: entry.missionId, attempts }));
-        if (this.store.get<ApprovalClear>(key)?.queuedAt === entry.queuedAt) this.store.put(key, { ...entry, attempts, nextAttemptAt: Date.now() + Math.min(APPROVAL_CLEAR_MAX_BACKOFF_MS, APPROVAL_CLEAR_RETRY_MS * 2 ** (attempts - 1)) } satisfies ApprovalClear);
-      }
-    }
-    if (failure && !dueOnly) throw failure;
-  }
+  settleApprovalClears(...args: Parameters<DispatchBook['settleApprovalClears']>) { return this.dispatches().settleApprovalClears(...args); }
 
   async alarm(): Promise<void> {
     await this.deliverNotificationDigest().catch(error => console.warn(JSON.stringify({ event: 'notification_digest_failed', message: error instanceof Error ? error.message.slice(0, 200) : 'unknown' })));
@@ -1296,63 +1033,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     if (next.length) await this.ensureDispatchAlarm(Math.max(Date.now() + 1000, Math.min(...next)));
   }
 
-  private async deliverDispatches(): Promise<void> {
-    const existing = this.listDispatches();
-    if (!existing.length) return;
-    const due = existing.filter((intent) => intent.nextAttemptAt <= Date.now()).slice(0, 10);
-    if (!due.length) {
-      await this.ensureDispatchAlarm(Math.min(...existing.map((intent) => intent.nextAttemptAt)));
-      return;
-    }
-    await this.ensureDispatchAlarm(Date.now() + 60_000);
-    for (const intent of due) {
-      const key = `dispatch:${intent.workflowId}`;
-      if (!this.isMissionActive(intent.missionId, intent.epoch)) {
-        this.store.delete(key);
-        continue;
-      }
-      let confirmed = false;
-      let terminal = false;
-      try {
-        if (!this.env.MISSION_WORKFLOW) throw new Error('Workflow binding unavailable');
-        await this.env.MISSION_WORKFLOW.create({ id: intent.workflowId, params: { repositoryId: intent.repositoryId, missionId: intent.missionId, epoch: intent.epoch } });
-        confirmed = true;
-      } catch {
-        try {
-          const status = await (await this.env.MISSION_WORKFLOW!.get(intent.workflowId)).status();
-          confirmed = ['queued', 'running', 'paused', 'waiting', 'waitingForPause'].includes(status.status);
-          terminal = ['complete', 'errored', 'terminated'].includes(status.status);
-        } catch {}
-      }
-      if (!this.store.get(key)) continue;
-      if (!this.isMissionActive(intent.missionId, intent.epoch)) {
-        this.store.delete(key);
-        continue;
-      }
-      if (confirmed) {
-        this.ctx.storage.transactionSync(() => {
-          this.store.delete(key);
-          this.store.put(`delivered:${intent.workflowId}`, { confirmedAt: new Date().toISOString() });
-          this.watchMission(intent.missionId, intent.epoch);
-          const mission = this.requiredMission(intent.missionId);
-          delete mission.error;
-          this.saveMission(mission, `Workflow dispatch confirmed for attempt ${intent.epoch}.`);
-        });
-        continue;
-      }
-      const attempts = intent.attempts + 1;
-      if (terminal) {
-        this.failDispatch(intent.missionId, intent.epoch);
-        continue;
-      }
-      this.ctx.storage.transactionSync(() => {
-        this.store.put(key, { ...intent, attempts, nextAttemptAt: Date.now() + (attempts >= DISPATCH_FAST_ATTEMPTS ? 300_000 : Math.min(60_000, 1000 * 2 ** attempts)) });
-        const mission = this.requiredMission(intent.missionId);
-        mission.error = `Workflow dispatch is awaiting confirmation after ${attempts} attempts. Automatic retries use the same Workflow ID. Cancel this attempt to reject any late execution.`;
-        this.saveMission(mission, mission.error, 'warning');
-      });
-    }
-  }
+  private deliverDispatches(...args: Parameters<DispatchBook['deliverDispatches']>) { return this.dispatches().deliverDispatches(...args); }
 
   cancelMission(key: string, id: string): Mission {
     return this.mutateMission(key, JSON.stringify(['cancel', id]), id, () => {
@@ -1517,60 +1198,9 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  beginIntegration(key: string, id: string, candidateSha: string, baseSha: string, commitMessage?: string, actorId = 'workspace-owner', vouch?: Principal): { mission: Mission; claimed: boolean; claimId?: string; landedSha?: string } {
-    return this.ctx.storage.transactionSync(() => {
-      const fingerprint = JSON.stringify(['integrate', id, candidateSha, baseSha, ...(commitMessage === undefined ? [] : [commitMessage])]);
-      const receipt = this.store.get<Receipt<boolean>>(`request:${key}`);
-      if (receipt) assertReplayFingerprint(receipt.fingerprint, fingerprint);
-      const mission = this.requiredMission(id);
-      if (mission.candidateSha !== candidateSha || mission.baseSha !== baseSha || !mission.approvedAt) throw new ApiError(409, 'STALE_APPROVAL', 'Approve this exact candidate and base before integration.');
-      if (mission.status === 'integrated') return { mission, claimed: false };
-      assertReviewClear(mission);
-      if (!['approved', 'integrating'].includes(mission.status)) throw new ApiError(409, 'APPROVAL_REQUIRED', 'Approve this candidate before integration.');
-      assertDependenciesAcknowledged(mission, candidateSha, baseSha);
-      const claim = this.store.get<IntegrationClaim>('integration:claim');
-      if (claim) {
-        if (claim.missionId !== id || claim.epoch !== mission.epoch || claim.candidateSha !== candidateSha) throw new ApiError(409, 'INTEGRATION_BUSY', 'Another integration is in progress for this repository.');
-        if (commitMessage !== undefined && commitMessage !== activeLandingMessage(mission)) throw new ApiError(409, 'LANDING_MESSAGE_LOCKED', 'Landing already started with another commit message. Wait for it to finish.');
-        if (!claim.claimId) {
-          claim.claimId = crypto.randomUUID();
-          this.store.put('integration:claim', claim);
-        }
-        return { mission, claimed: false, claimId: claim.claimId, ...(claim.landedSha ? { landedSha: claim.landedSha } : {}) };
-      }
-      if (this.getRepository(mission.repositoryId)?.headSha !== baseSha) throw new ApiError(409, 'STALE_APPROVAL', 'The repository changed after approval. Run and review the change again.');
-      if (!mission.integrationForkName || !mission.checks.some((check) => check.candidateSha === candidateSha && check.status === 'passed') || mission.checks.some((check) => check.status !== 'passed')) throw new ApiError(409, 'CHECKS_REQUIRED', 'The exact candidate must have passing verification and an integration fork.');
-      const claimId = crypto.randomUUID();
-      this.store.put('integration:claim', { claimId, missionId: id, epoch: mission.epoch, candidateSha, baseSha, claimedAt: Date.now(), phase: 'preparing' });
-      this.store.put(`request:${key}`, { fingerprint, result: true });
-      if (vouch && mission.branchChange?.source) this.store.put(`vouch:${id}`, vouch);
-      mission.status = 'integrating';
-      delete mission.error;
-      if (commitMessage !== undefined) mission.landingMessage = { message: commitMessage, candidateSha, baseSha, epoch: mission.epoch, setBy: actorId, setAt: new Date().toISOString() };
-      return { mission: this.saveMission(mission, `Integrating approved commit ${candidateSha.slice(0, 12)} into the default branch.`), claimed: true, claimId };
-    });
-  }
+  beginIntegration(...args: Parameters<IntegrationBook['beginIntegration']>) { return this.integrations().beginIntegration(...args); }
 
-  completeIntegration(id: string, epoch: number, sha: string, claimId: string): Mission {
-    return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      const claim = this.store.get<IntegrationClaim>('integration:claim');
-      if (mission.status === 'integrated' && mission.epoch === epoch && (mission.landedSha ?? mission.candidateSha) === sha) return mission;
-      if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== epoch || (claim.landedSha ?? claim.candidateSha) !== sha || mission.status !== 'integrating') throw new ApiError(409, 'STALE_EXECUTION', 'This integration report does not match the active claim.');
-      const repository = this.getRepository(mission.repositoryId);
-      if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
-      this.saveRepository({ ...repository, headSha: sha, updatedAt: new Date().toISOString() });
-      this.store.delete('integration:claim');
-      mission.status = 'integrated';
-      mission.landedSha = sha;
-      delete mission.error;
-      this.saveMission(mission, sha === claim.candidateSha ? `Verified canonical branch at approved commit ${sha.slice(0, 12)}.` : `Verified canonical branch at commit ${sha.slice(0, 12)}, which carries the approved tree of ${claim.candidateSha.slice(0, 12)} with the chosen commit message.`, 'success');
-      this.archive(mission, 'integrated');
-      this.recordLinkedIssues(mission, sha);
-      this.recordContributorLanding(mission);
-      return mission;
-    });
-  }
+  completeIntegration(...args: Parameters<IntegrationBook['completeIntegration']>) { return this.integrations().completeIntegration(...args); }
 
   contributorStanding(userId: string): ContributorStanding | null { return this.store.get<ContributorStanding>(`contributor:${userId}`) ?? null; }
 
@@ -1614,133 +1244,30 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     if (reverted?.issueNumber !== undefined) recordIssueOutcome(this.store, reverted.issueNumber, 'open', `Reopened because mission ${reverted.title} was reverted (${sha.slice(0, 7)}).`);
   }
 
-  claimIntegrationPush(id: string, epoch: number, claimId: string, landedSha?: string): void {
-    this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      const claim = this.store.get<IntegrationClaim>('integration:claim');
-      if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== epoch || mission.epoch !== epoch || mission.status !== 'integrating' || claim.phase !== 'preparing') throw new ApiError(409, 'STALE_EXECUTION', 'This integration no longer owns a preparation claim.');
-      if (claim.claimedAt === undefined || Date.now() - claim.claimedAt >= INTEGRATION_PREPARATION_MS) throw new ApiError(409, 'INTEGRATION_DEADLINE', 'Landing preparation expired before the canonical push.');
-      if (landedSha !== undefined && !validGitSha(landedSha)) throw new ApiError(400, 'INVALID_COMMIT', 'The landing commit must be a full SHA.');
-      claim.phase = 'pushing';
-      if (landedSha && landedSha !== claim.candidateSha) claim.landedSha = landedSha;
-      this.store.put('integration:claim', claim);
-    });
-  }
+  claimIntegrationPush(...args: Parameters<IntegrationBook['claimIntegrationPush']>) { return this.integrations().claimIntegrationPush(...args); }
 
-  releaseStaleIntegration(id: string, claimId: string): Mission | null {
-    return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      const claim = this.store.get<IntegrationClaim>('integration:claim');
-      if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== mission.epoch || mission.status !== 'integrating') return null;
-      if (claim.phase !== 'preparing' || claim.claimedAt === undefined || Date.now() - claim.claimedAt < INTEGRATION_PREPARATION_MS) return null;
-      this.store.delete('integration:claim');
-      mission.status = 'approved';
-      mission.error = 'Landing preparation expired before permission to push. Its fenced repository claim was released; retry landing.';
-      this.saveMission(mission, mission.error, 'warning');
-      this.archive(mission, 'integration_failed');
-      return mission;
-    });
-  }
+  releaseStaleIntegration(...args: Parameters<IntegrationBook['releaseStaleIntegration']>) { return this.integrations().releaseStaleIntegration(...args); }
 
-  retryIntegration(id: string, epoch: number, claimId: string, reason: string): boolean {
-    return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      const claim = this.store.get<IntegrationClaim>('integration:claim');
-      if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== epoch || mission.epoch !== epoch || mission.status !== 'integrating' || claim.phase !== 'preparing') return false;
-      this.store.put('integration:claim', { ...claim, claimedAt: Date.now() });
-      this.saveMission(mission, `Landing attempt 1 stopped before the canonical push (${landingCause(reason)}). Nothing was pushed and the default branch is unchanged, so landing is retrying once on a fresh runner.`, 'warning');
-      return true;
-    });
-  }
+  retryIntegration(...args: Parameters<IntegrationBook['retryIntegration']>) { return this.integrations().retryIntegration(...args); }
 
-  integrationFailed(id: string, epoch: number, claimId: string, outcome: 'not_pushed' | 'unknown', reason?: string): Mission {
-    return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      const claim = this.store.get<IntegrationClaim>('integration:claim');
-      if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== epoch || mission.status !== 'integrating') throw new ApiError(409, 'STALE_EXECUTION', 'This integration no longer owns the repository claim.');
-      if (outcome === 'not_pushed') {
-        this.store.delete('integration:claim');
-        mission.status = 'approved';
-        mission.error = `Integration stopped before attempting a canonical push${reason ? ` (${landingCause(reason)})` : ''}. Retry integration, or revoke approval to rerun this mission.`;
-      } else {
-        claim.phase = 'pushing';
-        this.store.put('integration:claim', claim);
-        mission.error = INTEGRATION_UNCONFIRMED_MESSAGE;
-      }
-      this.saveMission(mission, outcome === 'unknown' && reason ? `${mission.error} Cause: ${landingCause(reason)}.` : mission.error, 'warning');
-      this.archive(mission, outcome === 'not_pushed' ? 'integration_failed' : 'integration_uncertain');
-      return mission;
-    });
-  }
+  integrationFailed(...args: Parameters<IntegrationBook['integrationFailed']>) { return this.integrations().integrationFailed(...args); }
 
-  integrationClaim(): IntegrationClaim | undefined { return this.store.get<IntegrationClaim>('integration:claim'); }
+  integrationClaim(...args: Parameters<IntegrationBook['integrationClaim']>) { return this.integrations().integrationClaim(...args); }
 
-  private async releaseOnFailure<T>(release: (() => Promise<void>) | undefined, operation: () => T | Promise<T>): Promise<T> {
-    try { return await operation(); }
-    catch (error) { await release?.().catch(() => {}); throw error; }
-  }
+  private releaseOnFailure<T>(release: (() => Promise<void>) | undefined, operation: () => T | Promise<T>): Promise<T> { return this.capacity().releaseOnFailure(release, operation); }
 
-  private async reserveMissionCapacity(key: string, id: string, authorization?: NonNullable<Mission['authorization']>): Promise<(() => Promise<void>) | undefined> {
-    const mission = this.getMission(id);
-    if (!mission || this.store.get(`request:${key}`) || ['queued', 'running', 'checking'].includes(mission.status)) return undefined;
-    const workspaceId = authorization?.workspaceId ?? mission.authorization?.workspaceId ?? this.getRepository(mission.repositoryId)?.workspaceId ?? 'legacy';
-    return this.reserveWorkspaceMission(workspaceId, id, mission.repositoryId, mission.epoch + 1, missionStepTimeoutMs(mission));
-  }
+  private reserveMissionCapacity(...args: Parameters<CapacityBook['reserveMissionCapacity']>) { return this.capacity().reserveMissionCapacity(...args); }
+  private reserveWorkspaceMission(...args: Parameters<CapacityBook['reserveWorkspaceMission']>) { return this.capacity().reserveWorkspaceMission(...args); }
 
-  // Without a coordinator namespace there is no workspace catalog to count against
-  private async reserveWorkspaceMission(workspaceId: string, missionId: string, repositoryId: string, epoch: number, timeoutMs: number): Promise<(() => Promise<void>) | undefined> {
-    if (!this.env?.GITFLARE_COORDINATOR) return undefined;
-    const catalog = this.env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId));
-    const reserved = await catalog.reserveMissionSlot(missionId, repositoryId, epoch, Date.now() + timeoutMs + MISSION_SLOT_GRACE_MS);
-    return reserved ? () => catalog.releaseMissionSlot(missionId, epoch) : undefined;
-  }
+  reserveMissionSlot(...args: Parameters<CapacityBook['reserveMissionSlot']>) { return this.capacity().reserveMissionSlot(...args); }
 
-  async reserveMissionSlot(missionId: string, repositoryId: string, epoch: number, expiresAt: number): Promise<boolean> {
-    const claim = () => this.ctx.storage.transactionSync(() => {
-      const existing = this.store.get<CapacitySlot>(slotKey('mission', missionId));
-      if (existing && existing.expiresAt > Date.now()) {
-        this.store.put(slotKey('mission', missionId), { ...existing, repositoryId, epoch, expiresAt: Math.max(existing.expiresAt, expiresAt) } satisfies CapacitySlot);
-        return false;
-      }
-      if (liveSlots(this.store, 'mission').length >= WORKSPACE_MISSION_LIMIT) return undefined;
-      this.store.put(slotKey('mission', missionId), { id: missionId, repositoryId, epoch, expiresAt } satisfies CapacitySlot);
-      return true;
-    });
-    const first = claim();
-    if (first !== undefined) return first;
-    for (const slot of liveSlots(this.store, 'mission')) {
-      let active = false;
-      if (slot.repositoryId && slot.epoch !== undefined) {
-        try { active = await this.env.GITFLARE_COORDINATOR.getByName(`repository:${slot.repositoryId}`).isMissionActive(slot.id, slot.epoch); }
-        catch { active = true; }
-      }
-      if (!active && this.store.get<CapacitySlot>(slotKey('mission', slot.id))?.epoch === slot.epoch) this.store.delete(slotKey('mission', slot.id));
-    }
-    const second = claim();
-    if (second === undefined) throw capacityError('mission');
-    return second;
-  }
+  releaseMissionSlot(...args: Parameters<CapacityBook['releaseMissionSlot']>) { return this.capacity().releaseMissionSlot(...args); }
 
-  releaseMissionSlot(missionId: string, epoch: number): void {
-    const slot = this.store.get<CapacitySlot>(slotKey('mission', missionId));
-    if (slot && (slot.epoch === undefined || slot.epoch <= epoch)) this.store.delete(slotKey('mission', missionId));
-  }
+  reservePreviewSlot(...args: Parameters<CapacityBook['reservePreviewSlot']>) { return this.capacity().reservePreviewSlot(...args); }
 
-  reservePreviewSlot(missionId: string, expiresAt: number): boolean {
-    return this.ctx.storage.transactionSync(() => {
-      const slots = liveSlots(this.store, 'preview');
-      if (slots.some((slot) => slot.id === missionId)) return false;
-      if (slots.length >= WORKSPACE_PREVIEW_LIMIT) throw capacityError('preview', slots.map((slot) => slot.id));
-      this.store.put(slotKey('preview', missionId), { id: missionId, expiresAt } satisfies CapacitySlot);
-      return true;
-    });
-  }
+  holdPreviewSlot(...args: Parameters<CapacityBook['holdPreviewSlot']>) { return this.capacity().holdPreviewSlot(...args); }
 
-  holdPreviewSlot(missionId: string, expiresAt: number): void {
-    this.store.put(slotKey('preview', missionId), { id: missionId, expiresAt } satisfies CapacitySlot);
-  }
-
-  releasePreviewSlot(missionId: string): void { this.store.delete(slotKey('preview', missionId)); }
+  releasePreviewSlot(...args: Parameters<CapacityBook['releasePreviewSlot']>) { return this.capacity().releasePreviewSlot(...args); }
 
   deployState(): DeployState { return new DeploymentLedger(this.store).state(); }
 
