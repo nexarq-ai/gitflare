@@ -153,7 +153,7 @@ export async function socialMetaTags(request: Request, env: AppEnv): Promise<str
   } catch { return ''; }
 }
 
-const SHARE_TAGS = /<title>[^<]*<\/title>\s*|<meta (?:name="description"|property="og:[^"]+"|name="twitter:[^"]+")[^>]*>\s*/g;
+const SHARE_TAGS = /\s*<title>[^<]*<\/title>|\s*<meta\s+(?:property="og:[^"]*"|name="twitter:[^"]*"|name="description")[^>]*>/g;
 
 export function withSocialMeta(html: string, tags: string): string {
   if (!tags) return html;

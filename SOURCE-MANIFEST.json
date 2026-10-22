@@ -2030,8 +2030,8 @@
     },
     {
       "path": "src/worker/social-cards.ts",
-      "size": 14573,
-      "sha256": "27afe67d1b69b9044ae9c5acc1536a20cf77dd4a9bec44dd36a2be6f67f5000d"
+      "size": 14575,
+      "sha256": "6d4916c67f0b2231a538f4119d234c07687c25add988101ededa0f449bffc0ba"
     },
     {
       "path": "src/worker/social-raster.ts",
