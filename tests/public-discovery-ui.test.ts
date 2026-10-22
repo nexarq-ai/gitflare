@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { followsSavedTheme, publicSearchRoute, isAppPath, isKnownAppRoute, isPublicDiscoveryRoute, isSiteRoute, POLICY_ROUTES, PUBLIC_DOC_IDS, PUBLIC_PRODUCT_ROUTES, publicProfileLocation, publicRepositoryLocation, routeFromLocation } from '../src/ui/router';
 import { RESERVED_HANDLES } from '../src/shared/handles';
 import { appLinks } from './app-links';
+import { exploreParams, exploreStateFrom } from '../src/shared/explore';
 
 const KNOWN_ROUTES = ['home', 'signin', 'signup', 'source/gitflare', 'deploy', 'overview', 'missions', 'activity', 'admin', 'account/profile', 'account/security', 'account/sessions', 'account/clients', 'proposals/new', 'settings', 'settings/people', 'docs', 'docs/overview', 'mission/x', 'repository/x', 'repository/x/code', 'forgot-password', 'reset-password', 'verify-email', 'invite', 'use-cases', 'use-cases/x', 'login', 'access', 'connect', 'repositories', ...PUBLIC_PRODUCT_ROUTES, ...POLICY_ROUTES, ...PUBLIC_DOC_IDS.map(id => `docs/${id}`)];
 
@@ -95,5 +96,22 @@ describe('boot loader theme', () => {
 
   it('uses the saved theme on the app host', () => {
     expect(boot({ origin: 'https://app.gitflare.io', pathname: '/acme', stored: 'light' })).toEqual({ theme: 'light', dark: false });
+  });
+});
+
+describe('explore listing address', () => {
+  it('reads and writes every filter as shareable query parameters', () => {
+    const state = exploreStateFrom(new URLSearchParams('q=widgets&sort=landed&language=TypeScript&license=MIT&topic=cli&releases=1&agent=ready'));
+    expect(state).toEqual({ sort: 'landed', query: 'widgets', language: 'TypeScript', license: 'MIT', topic: 'cli', releases: true, agentReady: true });
+    expect(exploreParams(state, { omitDefaultSort: true }).toString()).toBe('q=widgets&sort=landed&language=TypeScript&license=MIT&topic=cli&releases=1&agent=ready');
+    expect(exploreParams(exploreStateFrom(new URLSearchParams('sort=random&releases=yes')), { omitDefaultSort: true }).toString()).toBe('');
+    expect(exploreParams(exploreStateFrom(new URLSearchParams('')), { cursor: 20 }).toString()).toBe('sort=stars&cursor=20');
+  });
+
+  it('offers one public listing in the site navigation', () => {
+    const shell = readFileSync(new URL('../src/ui/PublicShell.tsx', import.meta.url), 'utf8');
+    expect(shell).toContain('["/explore", "Explore"]');
+    expect(shell).not.toContain('"/repositories"');
+    expect(PUBLIC_PRODUCT_ROUTES).toContain('repositories');
   });
 });

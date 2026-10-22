@@ -1,6 +1,7 @@
 import schema from '../../migrations/public-index/0001_init.sql?raw';
 import activitySchema from '../../migrations/public-index/0002_activity.sql?raw';
-import type { ActivityWeek, AgentReadiness, ExploreSort, Issue, MissionSummary, PublicActivity, PublicExplore, Release, PublicHandleKind, PublicPathMatch, PublicPerson, PublicRepositoryCard, PublicSearch, PublicSearchType } from '../shared/types';
+import factsSchema from '../../migrations/public-index/0003_facts.sql?raw';
+import type { ActivityWeek, AgentReadiness, ExploreFilters, ExploreSort, Issue, MissionSummary, PublicActivity, PublicExplore, Release, PublicHandleKind, PublicPathMatch, PublicPerson, PublicRepositoryCard, PublicSearch, PublicSearchType } from '../shared/types';
 import { publicRepositoryPath } from '../shared/handles';
 import { repositoryLabel } from '../shared/repository-names';
 import { ApiError } from './domain';
@@ -16,6 +17,10 @@ export const PUBLIC_INDEX_CURSOR_MAX = 1000;
 export const PUBLIC_INDEX_CRON = '30 4 * * *';
 const PATH_CHUNK = 1000;
 const LANGUAGE_LIMIT = 12;
+const FACET_LIMIT = 12;
+const TRENDING_WEEKS = 4;
+const READY_SCORE = 70;
+const TOPIC_SCAN = 500;
 const RECONCILE_CONCURRENCY = 4;
 const BACKFILL_INTERVAL_MS = 10 * 60_000;
 const ready = new WeakSet<D1Database>();
@@ -45,7 +50,7 @@ export function publicIndex(env: IndexEnv): D1Database | null {
 
 export async function preparedIndex(db: D1Database): Promise<D1Database> {
   if (ready.has(db)) return db;
-  await db.batch(`${schema}${activitySchema}`.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => db.prepare(statement)));
+  await db.batch(`${schema}${activitySchema}${factsSchema}`.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => db.prepare(statement)));
   ready.add(db);
   return db;
 }
@@ -76,11 +81,14 @@ export function pageCursor(value: string | null): number {
   return cursor;
 }
 
-function card(row: RepositoryRow & { readiness_score?: number | null }): PublicRepositoryCard {
+type CardRow = RepositoryRow & { readiness_score?: number | null; release_count?: number | null; landed_at?: string | null };
+
+function card(row: CardRow): PublicRepositoryCard {
   const readiness = parseReadiness(row.readiness_score, null);
   return {
     handle: row.handle, name: row.name, description: row.description, language: row.language, topics: row.topics ? row.topics.split(',').filter(Boolean) : [], license: row.license,
     stars: row.stars, updatedAt: row.updated_at, publishedAt: row.published_at, url: publicRepositoryPath(row.handle, row.name), agentReady: readiness && { score: readiness.score, level: readiness.level },
+    ...(row.release_count !== undefined ? { releases: row.release_count ?? 0, landedAt: row.landed_at ?? null } : {}),
   };
 }
 
@@ -96,21 +104,53 @@ function nextCursor(cursor: number, rows: unknown[]): number | null {
   return rows.length > PUBLIC_INDEX_PAGE && cursor + PUBLIC_INDEX_PAGE <= PUBLIC_INDEX_CURSOR_MAX ? cursor + PUBLIC_INDEX_PAGE : null;
 }
 
-export async function explorePublic(env: IndexEnv, access: SecurityService, sort: ExploreSort, language: string | null, cursor: number): Promise<IndexedPage<PublicExplore>> {
+function topTopics(lists: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const topic of lists.flatMap(list => list.split(',')).filter(Boolean)) counts.set(topic, (counts.get(topic) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, FACET_LIMIT).map(([topic]) => topic);
+}
+
+const EXPLORE_ORDER: Record<ExploreSort, string> = {
+  stars: 'r.stars DESC, r.updated_at DESC',
+  trending: 'COALESCE(t.recent, 0) DESC, r.stars DESC, r.updated_at DESC',
+  landed: 'COALESCE(f.landed_at, r.updated_at) DESC',
+  updated: 'r.updated_at DESC',
+  new: 'r.published_at DESC',
+  name: 'lower(r.name) ASC, r.handle ASC',
+};
+
+export async function explorePublic(env: IndexEnv, access: SecurityService, sort: ExploreSort, filters: ExploreFilters, cursor: number, now = Date.now()): Promise<IndexedPage<PublicExplore>> {
+  const empty: PublicExplore = { ...filters, sort, items: [], languages: [], licenses: [], topics: [], total: 0, nextCursor: null, indexed: false };
   const db = publicIndex(env);
-  if (!db) return { value: { sort, language, items: [], languages: [], nextCursor: null, indexed: false }, repositoryIds: [], stale: [] };
+  if (!db) return { value: empty, repositoryIds: [], stale: [] };
   await preparedIndex(db);
-  const order = sort === 'new' ? 'published_at DESC' : sort === 'updated' ? 'updated_at DESC' : 'stars DESC, updated_at DESC';
-  const filter = language ? 'WHERE language = ?1' : '';
-  const statement = db.prepare(`SELECT r.*, a.score AS readiness_score FROM repositories r LEFT JOIN readiness a ON a.repository_id = r.repository_id ${filter} ORDER BY ${order}, r.repository_id LIMIT ${PUBLIC_INDEX_PAGE + 1} OFFSET ${cursor}`);
-  const [rows, languages] = await Promise.all([
-    (language ? statement.bind(language) : statement).all<RepositoryRow>(),
-    db.prepare(`SELECT language FROM repositories WHERE language IS NOT NULL GROUP BY language ORDER BY COUNT(*) DESC, language LIMIT ${LANGUAGE_LIMIT}`).all<{ language: string }>(),
+  const conditions: string[] = [];
+  const values: (string | number)[] = [];
+  const bind = (value: string | number) => { values.push(value); return `?${values.length}`; };
+  if (filters.language) conditions.push(`r.language = ${bind(filters.language)}`);
+  if (filters.license) conditions.push(`r.license = ${bind(filters.license)}`);
+  if (filters.topic) conditions.push(`(',' || r.topics || ',') LIKE ${bind(likePattern(`,${filters.topic},`))} ESCAPE '\\'`);
+  if (filters.releases) conditions.push('COALESCE(f.releases, 0) > 0');
+  if (filters.agentReady) conditions.push(`COALESCE(a.score, 0) >= ${READY_SCORE}`);
+  if (filters.query) {
+    const pattern = bind(likePattern(filters.query));
+    conditions.push(`(r.name LIKE ${pattern} ESCAPE '\\' OR r.description LIKE ${pattern} ESCAPE '\\' OR r.topics LIKE ${pattern} ESCAPE '\\' OR r.handle LIKE ${pattern} ESCAPE '\\')`);
+  }
+  const since = weekStart(now - (TRENDING_WEEKS - 1) * WEEK_MS);
+  const recent = sort === 'trending' ? `LEFT JOIN (SELECT repository_id, SUM(landed_people + landed_agents + missions_run + reviews + releases + issues_opened) AS recent FROM activity WHERE week >= ${bind(since)} GROUP BY repository_id) t ON t.repository_id = r.repository_id` : '';
+  const from = `FROM repositories r LEFT JOIN readiness a ON a.repository_id = r.repository_id LEFT JOIN facts f ON f.repository_id = r.repository_id ${recent} ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}`;
+  const facet = (column: string) => db.prepare(`SELECT ${column} AS value FROM repositories WHERE ${column} IS NOT NULL AND ${column} <> '' GROUP BY ${column} ORDER BY COUNT(*) DESC, ${column} LIMIT ${column === 'language' ? LANGUAGE_LIMIT : FACET_LIMIT}`).all<{ value: string }>();
+  const [rows, total, languages, licenses, topics] = await Promise.all([
+    db.prepare(`SELECT r.*, a.score AS readiness_score, f.releases AS release_count, f.landed_at ${from} ORDER BY ${EXPLORE_ORDER[sort]}, r.repository_id LIMIT ${PUBLIC_INDEX_PAGE + 1} OFFSET ${cursor}`).bind(...values).all<CardRow>(),
+    db.prepare(`SELECT COUNT(*) AS count ${from}`).bind(...values).first<{ count: number }>(),
+    facet('language'),
+    facet('license'),
+    db.prepare(`SELECT topics FROM repositories WHERE topics <> '' LIMIT ${TOPIC_SCAN}`).all<{ topics: string }>(),
   ]);
   const { live, stale } = await stillPublic(access, rows.results);
   const items = rows.results.slice(0, PUBLIC_INDEX_PAGE).filter(row => live.has(row.repository_id));
   return {
-    value: { sort, language, items: items.map(card), languages: languages.results.map(row => row.language), nextCursor: nextCursor(cursor, rows.results), indexed: true },
+    value: { ...empty, items: items.map(card), languages: languages.results.map(row => row.value), licenses: licenses.results.map(row => row.value), topics: topTopics(topics.results.map(row => row.topics)), total: Math.max(0, (total?.count ?? 0) - stale.length), nextCursor: nextCursor(cursor, rows.results), indexed: true },
     repositoryIds: items.map(row => row.repository_id), stale,
   };
 }
@@ -195,6 +235,7 @@ export async function removeIndexedRepositories(env: IndexEnv, repositoryIds: st
     db.prepare('DELETE FROM paths WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
     db.prepare('DELETE FROM activity WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
     db.prepare('DELETE FROM readiness WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
+    db.prepare('DELETE FROM facts WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
     db.prepare('DELETE FROM repositories WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
   ]);
 }
@@ -251,6 +292,9 @@ export async function indexPublicRepository(env: AppEnv, repositoryId: string, a
     collectIssues(records as unknown as IssuePager, since).catch(() => [] as Pick<Issue, 'createdAt'>[]),
   ]);
   writes.push(db.prepare('DELETE FROM activity WHERE repository_id = ?1').bind(repositoryId));
+  const landedAt = missions.filter(mission => mission.status === 'integrated').map(mission => mission.updatedAt).sort().at(-1) ?? null;
+  writes.push(db.prepare('INSERT INTO facts (repository_id, releases, landed_at) VALUES (?1, ?2, ?3) ON CONFLICT (repository_id) DO UPDATE SET releases = excluded.releases, landed_at = excluded.landed_at')
+    .bind(repositoryId, releases.filter(release => !release.draft && release.publishedAt).length, landedAt));
   for (const week of activityWeeks({ missions, releases, issues, now })) {
     if (!week.people && !week.agents && !week.missions && !week.reviews && !week.releases && !week.issues) continue;
     writes.push(db.prepare('INSERT INTO activity (repository_id, week, landed_people, landed_agents, missions_run, reviews, releases, issues_opened) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)').bind(repositoryId, week.week, week.people, week.agents, week.missions, week.reviews, week.releases, week.issues));

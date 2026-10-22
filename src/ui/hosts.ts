@@ -32,7 +32,7 @@ export function crossHostTarget(origins: HostOrigins | null, current: string, ro
   if (current !== origins.app || signedIn === null) return null;
   if (route === "home") return `${origins.app}${signedIn ? "/overview" : "/signin"}`;
   if (!isPublicProductRoute(route) || (signedIn && SIGNED_IN_PRODUCT_ROUTES.includes(route))) return null;
-  return `${origins.site}${location}`;
+  return `${origins.site}${route === "repositories" ? "/explore" : location}`;
 }
 
 export function siteSignedInHint(origins: HostOrigins | null = pageHostOrigins()): boolean {

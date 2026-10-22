@@ -315,8 +315,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 31771,
-      "sha256": "8e36bdc0225e7c974bd9053504f29ac6f97083175a64dd3cf66caf688d3bb2fa"
+      "size": 32068,
+      "sha256": "d8066f75c5f4aa12d50d90e3c94e1ef82d6eabe2f77e2d92d4f71651de775ced"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -405,8 +405,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87400,
-      "sha256": "85ac1a2204032ab0441055a0c725ea6c146227412ed7508686ae43cb4cd21efd"
+      "size": 87658,
+      "sha256": "e3e69783e05e0b407a236ef8e6be2447b4b365c785f8bdc1aa94d038935ec7ed"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -560,8 +560,8 @@
     },
     {
       "path": "src/ui/command-palette.ts",
-      "size": 14212,
-      "sha256": "e58629961a92692ae69ac487b54c14bbfbc0eb644abfb9528c00cd764e93aa10"
+      "size": 14282,
+      "sha256": "67146e9b92717441858fc9c81aaa784225890562e77273f4b8e4752b06c3afc7"
     },
     {
       "path": "src/ui/CommitMessageField.tsx",
@@ -765,8 +765,8 @@
     },
     {
       "path": "src/ui/hosts.ts",
-      "size": 1801,
-      "sha256": "c84431f68328296c15e4d112ca91d43d18c6a1f2e7dee8c4096b6910d1f46783"
+      "size": 1841,
+      "sha256": "d31779aef773bee2c2b9e423369e83e4c1cfd06c21dea02f200ce44a42ea72a8"
     },
     {
       "path": "src/ui/inbox-count.ts",
@@ -1560,8 +1560,8 @@
     },
     {
       "path": "src/worker/host-split.ts",
-      "size": 3629,
-      "sha256": "7ee8c2903cec12fccae5314db65d2dc9c4a70c0d39ddd8e5e0f3a9f21cf89d67"
+      "size": 3995,
+      "sha256": "1e58cb879fcb53795c823f57518c5b407086f891868c462dbf73d2909c72bb4e"
     },
     {
       "path": "src/worker/hosted-onboarding.ts",
@@ -1665,8 +1665,8 @@
     },
     {
       "path": "src/worker/mcp-tools/discovery.ts",
-      "size": 6855,
-      "sha256": "9ad140bce6a1e06fc529c7094e98a3843fcfc6b8ba46968e29fd07adcefa081b"
+      "size": 7815,
+      "sha256": "f78c768f1f1ff61dd5f709b6edfb5bee93c74c96a2353d2a7e45a1c284b1bf98"
     },
     {
       "path": "src/worker/mcp-tools/docs.ts",
@@ -1860,8 +1860,8 @@
     },
     {
       "path": "src/worker/public-discovery.ts",
-      "size": 28339,
-      "sha256": "9ced14b31c95012986a7e96e32df0ab4c2283d3e1d026a80c2422ef1de0d6983"
+      "size": 29339,
+      "sha256": "e1f5a7b4e55eb6e5c063951d046510a5ca22cd1b47f2f2b6166a7f25c5f86ede"
     },
     {
       "path": "src/worker/public-downloads.ts",
@@ -1875,8 +1875,8 @@
     },
     {
       "path": "src/worker/public-index.ts",
-      "size": 24039,
-      "sha256": "c28d41de96603118a79981e72446836264fd03d27ead85627ce2e03e047e768c"
+      "size": 27503,
+      "sha256": "5f49e1b6acbc0dc65df995d6f3d39ad10e5f59085255c59046e15821d4fd840c"
     },
     {
       "path": "src/worker/public-issues.ts",
@@ -2410,8 +2410,8 @@
     },
     {
       "path": "tests/public-discovery-ui.test.ts",
-      "size": 5977,
-      "sha256": "bbca181e13ccecfef94ca61226dde1d6ca24edf3dd65385d7362401bd13aa11c"
+      "size": 7251,
+      "sha256": "4c1684e6e5a3121d2a1cd2cf6ae120f1cfe6b30041787c9099a8affec4f1e765"
     },
     {
       "path": "tests/public-issues-ui.test.ts",

@@ -382,6 +382,10 @@ function Workspace() {
   }, [authState, route]);
 
   useEffect(() => {
+    if (route === "repositories" && authState !== "checking" && authState !== "authenticated") goTo("explore", true);
+  }, [authState, route]);
+
+  useEffect(() => {
     if (authState === "authenticated" && ["signin", "signup"].includes(route)) {
       const next = takeReturnRoute();
       goTo(next, true);
@@ -525,6 +529,7 @@ function Workspace() {
   const publicAuthenticated = authState === "authenticated" || siteSignedInHint();
   if (!isKnownAppRoute(route) && authState === "checking") return <WorkspaceLoader />;
   if (!isKnownAppRoute(route) && authState !== "authenticated") return <NotFoundScreen />;
+  if (route === "repositories" && authState !== "authenticated") return <WorkspaceLoader />;
   if (isPublicDocumentationRoute(route)) return <main className="public-documentation"><Documentation publicMode id={route === "docs" ? "overview" : route.slice(5)} /></main>;
   if (route === "home" && (!authConfig || (authConfig.edition === "hosted" && !authConfig.setupRequired))) return <Homepage authenticated={publicAuthenticated} />;
   if (!authConfig && !authConfigError) return <WorkspaceLoader />;
