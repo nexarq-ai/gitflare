@@ -2215,8 +2215,8 @@
     },
     {
       "path": "vitest.config.ts",
-      "size": 217,
-      "sha256": "bc6d2d851404215465231129ff8a3505a8877ab2e4c3cd1d552b78d559440d0f"
+      "size": 409,
+      "sha256": "927eb28c779c7fd6d6de0a9cc8bbee583799d5887692bb31b73c66adaf4df41d"
     },
     {
       "path": "wrangler.jsonc",
