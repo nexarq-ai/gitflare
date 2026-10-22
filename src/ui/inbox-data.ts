@@ -37,6 +37,7 @@ export const REASON_TIPS: Record<NotificationReason, string> = {
   deploy_failed: "A deploy of a repository you can land in failed.",
   participating: "Activity on threads you opened, commented on or reviewed.",
   watching: "Activity on threads you subscribed to or repositories you watch.",
+  subscribed: "Landed revisions and releases of people and repositories you subscribe to. Daily digest by default.",
 };
 
 export function inboxQuery(filters: InboxFilters, offset = 0): string {

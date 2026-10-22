@@ -1,13 +1,54 @@
 import { useEffect, useState } from "react";
 import { Switch } from "@cloudflare/kumo/components/switch";
-import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { BellSlashIcon, BookBookmarkIcon, CheckCircleIcon, UserIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { Button } from "@cloudflare/kumo/components/button";
+import type { SubscriptionEntry, SubscriptionList } from "../shared/types";
 import { EMAIL_MODES, NOTIFICATION_REASONS, REASON_LABELS, type EmailMode, type NotificationReason, type NotificationSettings as Settings } from "../shared/notifications";
-import { request } from "./api";
+import { request, RequestError } from "./api";
 import { ErrorNotice } from "./components";
 import InfoTip from "./InfoTip";
 import { MODE_LABELS, REASON_TIPS, sentTodayLabel, setReasonMode } from "./inbox-data";
 import { PageLoading } from "./WorkspaceLoader";
 import "./inbox.css";
+
+export function Subscriptions() {
+  const [items, setItems] = useState<SubscriptionEntry[] | null>(null);
+  const [hidden, setHidden] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  useEffect(() => {
+    let active = true;
+    request<SubscriptionList>("/api/subscriptions").then(value => { if (active) setItems(value.items); }, failure => {
+      if (!active) return;
+      if (failure instanceof RequestError && (failure.code === "HOSTED_ONLY" || failure.status === 403)) setHidden(true);
+      else setError(failure instanceof Error ? failure.message : "Subscriptions could not be loaded.");
+    });
+    return () => { active = false; };
+  }, []);
+  async function unsubscribe(entry: SubscriptionEntry) {
+    const key = `${entry.kind}:${entry.handle}/${entry.repository ?? ""}`;
+    setBusy(key); setError("");
+    try {
+      await request("/api/subscriptions", { kind: entry.kind, handle: entry.handle, ...(entry.repository ? { repository: entry.repository } : {}), on: false });
+      setItems(current => current ? current.filter(item => item !== entry) : current);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "The subscription could not be removed."); }
+    finally { setBusy(""); }
+  }
+  if (hidden) return null;
+  return <section className="panel">
+    <div className="panel-header"><h2>Subscriptions</h2><InfoTip label="subscriptions">A daily digest of landed revisions and releases from the people and public repositories you subscribe to. Subscribe from any profile or public repository page.</InfoTip></div>
+    {error && <div className="form-error" role="alert">{error}</div>}
+    {items === null ? <div className="panel-body"><p className="people-muted" role="status">Loading subscriptions…</p></div>
+      : !items.length ? <div className="panel-body"><p className="people-muted">No subscriptions yet.</p></div>
+      : <ul className="notification-reasons subscription-list" aria-label="Subscriptions">{items.map(entry => {
+        const key = `${entry.kind}:${entry.handle}/${entry.repository ?? ""}`;
+        return <li key={key}>
+          <a className="subscription-target" href={entry.url}>{entry.kind === "person" ? <UserIcon size={15} aria-hidden="true" /> : <BookBookmarkIcon size={15} aria-hidden="true" />}<span>{entry.kind === "person" ? `@${entry.handle}` : `${entry.handle}/${entry.repository}`}</span></a>
+          <Button variant="ghost" size="sm" icon={BellSlashIcon} loading={busy === key} disabled={!!busy} onClick={() => void unsubscribe(entry)}>Unsubscribe</Button>
+        </li>;
+      })}</ul>}
+  </section>;
+}
 
 export default function NotificationSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -66,5 +107,6 @@ export default function NotificationSettings() {
         </li>)}
       </ul>
     </section>
+    <Subscriptions />
   </>;
 }

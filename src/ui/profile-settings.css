@@ -21,3 +21,28 @@
 @media (max-width: 600px) {
   .profile-settings-readonly > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
+.profile-settings-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: 28px; align-items: start; }
+.profile-settings-fields { min-width: 0; }
+.profile-settings-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.profile-settings-side { display: grid; gap: 16px; min-width: 0; }
+.profile-settings-preview, .profile-settings-guide { padding: 16px; border: 1px solid var(--gf-color-border); border-radius: 12px; background: var(--gf-color-surface); }
+.profile-settings-preview .gfd-profile-head { margin: 0; gap: 14px; flex-direction: column; }
+.profile-settings-preview .gfd-avatar { width: 56px; height: 56px; font-size: 20px; }
+.profile-settings-preview .gfd-profile-head h1 { font-size: 18px; }
+.profile-settings-preview .gfd-handle { font-size: 13px; }
+.profile-settings-preview .gfd-bio { margin-top: 8px; font-size: 13px; }
+.profile-settings-preview .gfd-links { margin-top: 8px; font-size: 12px; gap: 4px 12px; }
+.profile-settings-preview-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: var(--gf-color-text-secondary); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.profile-settings-preview-label small { font-weight: 500; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.profile-settings-tips { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.profile-settings-tips li { display: flex; align-items: center; gap: 8px; color: var(--gf-color-text); }
+.profile-settings-tips li > svg { flex-shrink: 0; color: var(--gf-color-text-tertiary); }
+.profile-settings-tips li[data-done="true"] > svg { color: var(--gf-color-success); }
+.profile-settings-tips li[data-done="true"] > span { color: var(--gf-color-text-secondary); }
+.profile-settings-showcase select { width: 100%; min-height: 36px; padding: 0 10px; border: 1px solid var(--gf-color-border-strong); border-radius: var(--gf-radius-sm, 6px); background: var(--gf-color-surface-raised); color: var(--gf-color-text); font: inherit; font-size: 13px; }
+@media (max-width: 900px) {
+  .profile-settings-columns { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .profile-settings-pair { grid-template-columns: minmax(0, 1fr); }
+}
