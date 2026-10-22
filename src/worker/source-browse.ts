@@ -7,6 +7,8 @@ export type SourceHandle = Awaited<ReturnType<NonNullable<AppEnv['ARTIFACTS']>['
 export type SourceCommit = Awaited<ReturnType<SourceHandle['log']>>[number];
 export interface CandidateSources { find(commitSha: string): Promise<{ missionId: string; forkName?: string } | undefined>; matching?(prefix: string): Promise<string[]>; authorize(missionId: string): Promise<void> }
 
+type SourceBlob = NonNullable<Awaited<ReturnType<SourceHandle['readFile']>>>;
+
 const SHORT_SHA = /^[a-f0-9]{7,39}$/;
 const PREFIX_HISTORY_LIMIT = 1000;
 
@@ -16,6 +18,12 @@ export async function resolveShortSha(source: SourceHandle, repository: Reposito
   for (const sha of await candidates?.matching?.(prefix) ?? []) matches.add(sha);
   if (matches.size > 1) throw new ApiError(409, 'AMBIGUOUS_REF', `Commit prefix ${prefix} matches ${matches.size} commits (${[...matches].slice(0, 5).map((sha) => sha.slice(0, 12)).join(', ')}). Pass more characters or the full SHA.`);
   return matches.size ? [...matches][0]! : null;
+}
+
+export async function firstFile<P extends string>(source: SourceHandle, ref: string, paths: readonly P[], failed?: () => void): Promise<{ path: P; blob: SourceBlob } | null> {
+  const blobs = await Promise.all(paths.map(path => source.readFile({ ref, path }).catch(() => { failed?.(); return null; })));
+  const index = blobs.findIndex(Boolean);
+  return index < 0 ? null : { path: paths[index]!, blob: blobs[index]! };
 }
 
 async function openFork(env: AppEnv, name: string): Promise<SourceHandle | null> {

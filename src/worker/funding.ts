@@ -1,5 +1,5 @@
 import { FUNDING_PLATFORMS, type FundingLink, type FundingPlatform } from '../shared/types';
-import type { SourceHandle } from './source-browse';
+import { firstFile, type SourceHandle } from './source-browse';
 
 export const FUNDING_FILES = ['.gitflare/FUNDING.yml', '.gitflare/FUNDING.yaml', '.github/FUNDING.yml', '.github/FUNDING.yaml'] as const;
 export const FUNDING_FILE_MAX_BYTES = 8192;
@@ -82,12 +82,8 @@ export function parseFunding(text: string): FundingLink[] {
   return links;
 }
 
-export async function readFunding(source: SourceHandle, commitSha: string): Promise<FundingLink[]> {
-  for (const path of FUNDING_FILES) {
-    const blob = await source.readFile({ ref: commitSha, path }).catch(() => null);
-    if (!blob) continue;
-    if (blob.size > FUNDING_FILE_MAX_BYTES) return [];
-    return parseFunding(await blob.text().catch(() => ''));
-  }
-  return [];
+export async function readFunding(source: SourceHandle, commitSha: string, failed?: () => void): Promise<FundingLink[]> {
+  const found = await firstFile(source, commitSha, FUNDING_FILES, failed);
+  if (!found || found.blob.size > FUNDING_FILE_MAX_BYTES) return [];
+  return parseFunding(await found.blob.text().catch(() => { failed?.(); return ''; }));
 }

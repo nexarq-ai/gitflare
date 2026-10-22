@@ -8,9 +8,9 @@ import { catalogName } from './capacity';
 import { listBranches } from './git-http';
 import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { publicPrincipal, securityClient, type Principal, type PublicListing, type SecurityService, type VisibilityRecord } from './security';
-import { CACHE_DEPENDENCIES } from './public-cache';
+import { CACHE_DEPENDENCIES, cachedAtCommit, type CommitValue } from './public-cache';
 import { indexedDetails, repositoryActivity, repositoryReadiness } from './public-index';
-import { sourceView, type SourceHandle } from './source-browse';
+import { sourceView, type SourceCommit, type SourceHandle } from './source-browse';
 import { readFunding } from './funding';
 import { readSecurityPolicy } from './security-policy';
 import { publicDownloadUrl, servedContentType, type StoredAsset } from './release-assets';
@@ -20,6 +20,7 @@ const REPOSITORY_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const LICENSE_FILE = /^(?:licen[cs]e|copying)(?:[.-][a-z0-9.-]{1,20})?$/i;
 const README_FILE = /^readme(?:\.(?:md|markdown|txt))?$/i;
 const LICENSE_READ_MAX = 65_536;
+const LIKELY_LICENSE_FILES = ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'COPYING'];
 const PUBLIC_HISTORY_MAX = 100;
 const PUBLIC_SHA_HISTORY = 1000;
 
@@ -85,19 +86,42 @@ export function detectSpdx(text: string): string | null {
   return rules.find(([pattern]) => pattern.test(head))?.[1] ?? null;
 }
 
+type TreeEntry = NonNullable<Awaited<ReturnType<SourceHandle['readTree']>>>[number];
+export type CommitSummary = Pick<PublicRepositorySummary, 'readme' | 'license' | 'funding' | 'securityPolicy'>;
+
 async function rootEntries(source: SourceHandle, ref: string) {
   const commit = (await source.log({ ref, limit: 1 }).catch(() => []))[0];
   if (!commit) return { commit: undefined, entries: [] };
   return { commit, entries: (await source.readTree(commit.treeHash)) ?? [] };
 }
 
+function rootFile(entries: TreeEntry[], pattern: RegExp): string | null {
+  return entries.filter(entry => entry.type !== 'tree' && pattern.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0]?.name ?? null;
+}
+
+type SourceBlob = Awaited<ReturnType<SourceHandle['readFile']>>;
+
+async function licenseAt(source: SourceHandle, commitSha: string, entries: TreeEntry[], failed?: () => void, read: Map<string, Promise<SourceBlob>> = new Map()): Promise<RepositoryLicense | null> {
+  const path = rootFile(entries, LICENSE_FILE);
+  if (!path) return null;
+  const blob = await (read.get(path) ?? source.readFile({ ref: commitSha, path })).catch(() => { failed?.(); return null; });
+  const text = blob && blob.size <= LICENSE_READ_MAX ? await blob.text().catch(() => { failed?.(); return ''; }) : '';
+  return { spdx: detectSpdx(text), path };
+}
+
 export async function detectLicense(source: SourceHandle, ref: string): Promise<RepositoryLicense | null> {
   const { commit, entries } = await rootEntries(source, ref);
-  const file = entries.filter(entry => entry.type !== 'tree' && LICENSE_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0];
-  if (!commit || !file) return null;
-  const blob = await source.readFile({ ref: commit.hash, path: file.name }).catch(() => null);
-  const text = blob && blob.size <= LICENSE_READ_MAX ? await blob.text().catch(() => '') : '';
-  return { spdx: detectSpdx(text), path: file.name };
+  return commit ? licenseAt(source, commit.hash, entries) : null;
+}
+
+export async function commitSummary(source: SourceHandle, commit: SourceCommit): Promise<CommitValue<CommitSummary>> {
+  let cacheable = true;
+  const failed = () => { cacheable = false; };
+  const licenses = new Map(LIKELY_LICENSE_FILES.map(path => [path, source.readFile({ ref: commit.hash, path })]));
+  for (const pending of licenses.values()) pending.catch(() => null);
+  const [entries, funding, policy] = await Promise.all([source.readTree(commit.treeHash), readFunding(source, commit.hash, failed), readSecurityPolicy(source, commit.hash, failed)]);
+  const license = await licenseAt(source, commit.hash, entries ?? [], failed, licenses);
+  return { value: { readme: rootFile(entries ?? [], README_FILE), license, funding, securityPolicy: !!policy }, cacheable };
 }
 
 export async function visibilitySnapshot(env: AppEnv, access: SecurityService, principal: Principal, repository: Repository, origin: string): Promise<RepositoryVisibility> {
@@ -135,12 +159,20 @@ async function assertSaved(access: SecurityService, principal: Principal, reposi
   if (!!(await access.visibility(principal, repositoryId)) !== published) throw new ApiError(500, 'VISIBILITY_NOT_SAVED', 'The visibility change was not saved. Try again.');
 }
 
-async function publicRef(source: SourceHandle, repository: Repository, value: string | null): Promise<string> {
+async function reachableHashes(env: AppEnv, origin: string, source: SourceHandle, repository: Repository): Promise<string[]> {
+  const head = (await source.log({ ref: repository.defaultBranch, limit: 1 }).catch(() => []))[0];
+  if (!head) return [];
+  return cachedAtCommit(env, origin, repository.id, head.hash, `reachable:${PUBLIC_SHA_HISTORY}`, () => source.log({ ref: head.hash, limit: PUBLIC_SHA_HISTORY }).then(
+    list => ({ value: list.map(commit => commit.hash), cacheable: true }),
+    () => ({ value: [] as string[], cacheable: false }),
+  ));
+}
+
+async function publicRef(env: AppEnv, origin: string, source: SourceHandle, repository: Repository, value: string | null): Promise<string> {
   const ref = repositoryRef(value || repository.defaultBranch);
   if (!/^[a-f0-9]{7,40}$/.test(ref)) return ref;
-  const reachable = await source.log({ ref: repository.defaultBranch, limit: PUBLIC_SHA_HISTORY }).catch(() => []);
-  const match = reachable.filter(commit => commit.hash.startsWith(ref));
-  if (match.length === 1) return match[0]!.hash;
+  const match = (await reachableHashes(env, origin, source, repository)).filter(hash => hash.startsWith(ref));
+  if (match.length === 1) return match[0]!;
   if (match.length > 1) throw new ApiError(409, 'AMBIGUOUS_REF', `Commit prefix ${ref} matches more than one commit. Pass more characters.`);
   throw new ApiError(404, 'REF_NOT_FOUND', `Commit ${ref.slice(0, 12)} is not in the last ${PUBLIC_SHA_HISTORY} commits of ${repository.defaultBranch}. Pass a branch or tag name.`);
 }
@@ -157,20 +189,19 @@ async function publicView(env: AppEnv, access: SecurityService, target: PublicTa
   const { repository, handle } = target;
   using source = await env.ARTIFACTS!.get(repository.name);
   if (view === '') {
-    const { commit, entries } = await rootEntries(source, repository.defaultBranch);
-    const readme = entries.filter(entry => entry.type !== 'tree' && README_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0]?.name ?? null;
-    const urls = publicUrls(origin, handle, repository);
     const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
-    const [[stats], forks, agentReady, details, releases] = await Promise.all([
+    const commit = (await source.log({ ref: repository.defaultBranch, limit: 1 }).catch(() => []))[0];
+    const [files, [stats], forks, agentReady, details, releases] = await Promise.all([
+      commit ? cachedAtCommit(env, origin, repository.id, commit.hash, 'summary', () => commitSummary(source, commit)) : Promise.resolve<CommitSummary>({ readme: null, license: null, funding: [], securityPolicy: false }),
       access.repositoryStats([repository.id]), Promise.resolve().then(() => records.forkCount()).catch(() => 0), repositoryReadiness(env, repository.id).catch(() => null),
       indexedDetails(env, [repository.id]).catch(() => new Map()), Promise.resolve().then(() => records.listReleases() as Promise<Release[]>).catch(() => [] as Release[]),
     ]);
     const latest = releases.filter(release => !release.draft && release.publishedAt).sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''))[0];
-    const [license, funding, policy] = commit ? await Promise.all([detectLicense(source, repository.defaultBranch), readFunding(source, commit.hash).catch(() => []), readSecurityPolicy(source, commit.hash).catch(() => null)]) : [null, [], null];
+    const urls = publicUrls(origin, handle, repository);
     return Response.json({
       handle, name: repositoryLabel(repository), description: repository.description, defaultBranch: repository.defaultBranch, headSha: commit?.hash ?? null, updatedAt: repository.updatedAt,
-      visibility: 'public', license, readme, url: urls.url, cloneUrl: urls.cloneUrl, latestCommit: commit ? commits([commit])[0]! : null,
-      stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0, forks, funding, feeds: feedLinks(origin, urls.path), securityPolicy: !!policy, agentReady,
+      visibility: 'public', license: files.license, readme: files.readme, url: urls.url, cloneUrl: urls.cloneUrl, latestCommit: commit ? commits([commit])[0]! : null,
+      stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0, forks, funding: files.funding, feeds: feedLinks(origin, urls.path), securityPolicy: files.securityPolicy, agentReady,
       language: details.get(repository.id)?.language ?? null, latestRelease: latest ? { tag: latest.tag, name: latest.name, publishedAt: latest.publishedAt! } : null,
     } satisfies PublicRepositorySummary);
   }
@@ -192,27 +223,31 @@ async function publicView(env: AppEnv, access: SecurityService, target: PublicTa
       feeds: feedLinks(origin, urls.path).releases,
     } satisfies PublicReleases);
   }
-  const ref = await publicRef(source, repository, url.searchParams.get('ref'));
+  const ref = await publicRef(env, origin, source, repository, url.searchParams.get('ref'));
   const commit = (await source.log({ ref, limit: 1 }).catch(() => []))[0];
   if (!commit) throw new ApiError(404, 'REF_NOT_FOUND', 'This branch, tag or commit does not exist in this repository.');
+  const atCommit = <T>(part: string, produce: () => Promise<T>) => cachedAtCommit(env, origin, repository.id, commit.hash, part, async () => ({ value: await produce(), cacheable: true }));
   if (view === 'history') {
     const limit = Math.min(PUBLIC_HISTORY_MAX, Math.max(1, Number(url.searchParams.get('limit')) || 30));
-    return Response.json({ ref, commits: commits(await source.log({ ref: commit.hash, limit })) } satisfies PublicHistory);
+    const history = await atCommit(`history:${limit}`, async () => commits(await source.log({ ref: commit.hash, limit })));
+    return Response.json({ ref, commits: history } satisfies PublicHistory);
   }
   if (view === 'readme') {
-    const { entries } = await rootEntries(source, commit.hash);
-    const readme = entries.filter(entry => entry.type !== 'tree' && README_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0];
-    if (!readme) throw new ApiError(404, 'FILE_NOT_FOUND', 'This repository has no README.');
-    return publicSource(await sourceView(source, commit, 'file', readme.name, ref));
+    return Response.json(await atCommit(`readme:${ref}`, async () => {
+      const readme = rootFile((await source.readTree(commit.treeHash)) ?? [], README_FILE);
+      if (!readme) throw new ApiError(404, 'FILE_NOT_FOUND', 'This repository has no README.');
+      return publicSource(await sourceView(source, commit, 'file', readme, ref));
+    }));
   }
   const kind = view === 'file' ? 'file' : 'tree';
-  return publicSource(await sourceView(source, commit, kind, repositoryPath(url.searchParams.get('path') ?? '', kind === 'tree'), ref));
+  const path = repositoryPath(url.searchParams.get('path') ?? '', kind === 'tree');
+  return Response.json(await atCommit(`${kind}:${ref}:${path}`, async () => publicSource(await sourceView(source, commit, kind, path, ref))));
 }
 
-async function publicSource(response: Response): Promise<Response> {
+async function publicSource(response: Response): Promise<PublicTree | PublicFile> {
   const value = await response.json() as (PublicTree | PublicFile) & { missionId?: unknown; source?: unknown };
   const { missionId: _missionId, source: _source, ...rest } = value;
-  return Response.json(rest);
+  return rest;
 }
 
 export async function publicRepositoryIndex(env: AppEnv, origin: string, client: string, limit = 50): Promise<string> {
