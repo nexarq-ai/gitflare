@@ -1475,8 +1475,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 111195,
-      "sha256": "640972f31380da8e3dd0b57a0194cdc7484d7ef30101ffbcff17f7aef1443552"
+      "size": 22328,
+      "sha256": "560612855dad2b8e0836bf19c9184c610c5fd92b1d47c4150e7d3075da95cc23"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -1702,6 +1702,56 @@
       "path": "src/worker/repository-skills.ts",
       "size": 8044,
       "sha256": "9ad35e6e1ef3e44629d6f62a0263f419377433b40851c988b1a70fbcae51d38c"
+    },
+    {
+      "path": "src/worker/request-auth.ts",
+      "size": 5576,
+      "sha256": "00f73a40ee731891e419f733db2367ebf124cedcadc264e591b270dff87384f0"
+    },
+    {
+      "path": "src/worker/route-context.ts",
+      "size": 7566,
+      "sha256": "781c7c96f5bd41418440e514534ec74dbf66f137c746896d3701acd3601b9f3b"
+    },
+    {
+      "path": "src/worker/routes/access.ts",
+      "size": 8794,
+      "sha256": "0f12d98a8fae82a6d965a765526f8b10766c3f3bd43cbac082509dd09433c44d"
+    },
+    {
+      "path": "src/worker/routes/ai.ts",
+      "size": 6938,
+      "sha256": "270a04a98a29354caf3eb32ec52de9eae81e26e4ae4af4c0e5522fbb74ccf51a"
+    },
+    {
+      "path": "src/worker/routes/missions.ts",
+      "size": 28303,
+      "sha256": "12423f15920c376e39cbdaba8705e6a981eaefa66b8771a7508e55749bc5fa82"
+    },
+    {
+      "path": "src/worker/routes/releases.ts",
+      "size": 2207,
+      "sha256": "737d471e868b64df5476694cb879e628656f5f6a4248c140cecb4f4cd939e2a0"
+    },
+    {
+      "path": "src/worker/routes/repositories.ts",
+      "size": 12563,
+      "sha256": "8acd157eda621205d40cbde8d2683c33f00abb30446a2e03dc8bcd7162936283"
+    },
+    {
+      "path": "src/worker/routes/repository-cloudflare.ts",
+      "size": 7136,
+      "sha256": "a59beaaeeb89a45d15a381f79d1afb6490f1ac60e75065f636017fb120c83821"
+    },
+    {
+      "path": "src/worker/routes/repository-settings.ts",
+      "size": 10148,
+      "sha256": "2a62d0437989374b3b45b2a80ac469d5cc453f20a75ff2bf1d654c4afa6cd6c6"
+    },
+    {
+      "path": "src/worker/routes/workspace.ts",
+      "size": 5014,
+      "sha256": "f9006ecd7e2e050080aa93d99bbfc235a473108cfd486019d62c48103403180d"
     },
     {
       "path": "src/worker/secrets-scopes.ts",
