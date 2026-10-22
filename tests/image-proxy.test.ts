@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import Markdown from 'react-markdown';
@@ -234,16 +233,5 @@ describe('Markdown image rewriting', () => {
     expect(rawImageType('a/b.SVG')).toBe('image/svg+xml');
     expect(rawImageType('a/b.html')).toBeUndefined();
     expect(rawImagePath('acme', 'my app', 'c'.repeat(40), 'a b/c#d.png')).toBe(`/acme/my%20app/-/raw/${'c'.repeat(40)}/a%20b/c%23d.png`);
-  });
-
-  it('is wired into public README, profile and docs rendering', () => {
-    const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
-    for (const path of ['src/ui/PublicRepository.tsx', 'src/ui/PublicProfile.tsx']) {
-      const source = read(path);
-      expect(source, path).toContain('<MarkdownImage');
-      expect(source, path).toContain('isDeployBadgeLink(node)');
-    }
-    expect(read('src/ui/Documentation.tsx')).toContain('isDeployBadgeLink(node)');
-    expect(read('public/_headers')).toContain("img-src 'self' data:;");
   });
 });

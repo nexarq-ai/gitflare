@@ -2300,8 +2300,8 @@
     },
     {
       "path": "tests/image-proxy.test.ts",
-      "size": 17516,
-      "sha256": "922441e0a2bc14cee7d4775c426fd1363a5aadd7c59c0a35bcde6ff91eed5db1"
+      "size": 16899,
+      "sha256": "421db11937498b81eeae319e5ad322d81436fd3ad3a5dd3708b6536b58e137de"
     },
     {
       "path": "tests/inbox-ui.test.ts",
