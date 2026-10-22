@@ -51,7 +51,7 @@ import QuickSearch from "./QuickSearch";
 import type { PaletteAction } from "./command-palette";
 import { setTheme } from "./ThemeToggle";
 import InvitationScreen from "./InvitationScreen";
-import AuthScreen, { AccountScreen, isAccountRoute, type AuthConfig } from "./AuthScreen";
+import AuthScreen, { AccountScreen, type AuthConfig } from "./AuthScreen";
 import NotFoundScreen, { NotFound } from "./NotFound";
 import DemoBanner from "./DemoBanner";
 import { DemoReplayCard } from "./DemoReplay";
@@ -59,7 +59,7 @@ import DemoFeaturePanel from "./DemoFeaturePanel";
 import WorkspaceLoader, { PageLoading, RouteProgress } from "./WorkspaceLoader";
 import { startBootHandoff } from "./boot-handoff";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
-import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, legacySourceRoute, POLICY_ROUTES, isPublicProductRoute, keepsRouteAcrossWorkspaces, routeUrl } from "./router";
+import { canonicalizeLegacyHash, currentRoute, isAccountRoute, isPublicRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, keepsRouteAcrossWorkspaces, routeUrl } from "./router";
 import DeployStatusPill from "./DeployProgress";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLayout";
@@ -68,7 +68,7 @@ import { useInboxCounts } from "./inbox-count";
 import { badgeLabel } from "./inbox-data";
 import { accountSection } from "./account-data";
 import { eligibleApprovers, knownCheckNames } from "./approvals";
-import { appOrigin, crossHostTarget, pageHostOrigins, siteHref, siteSignedInHint } from "./hosts";
+import { anonymousSiteVisit, appOrigin, crossHostTarget, pageHostOrigins, siteHref, siteSignedInHint } from "./hosts";
 import { publicRepositoryPath } from "../shared/handles";
 import { requestedPersonalWorkspace } from "../shared/ai-setup";
 import AccountMenu from "./AccountMenu";
@@ -79,6 +79,19 @@ import "./policy-pages.css";
 import "./public-settings.css";
 import { CloudflareConnectPrompt } from "./CloudflareConnectPrompt";
 import { BrandMark } from "./BrandMark";
+import "./repository-browser.css";
+import "./public-install.css";
+import "./auth-loading.css";
+import "./documentation.css";
+import "./repository-skills.css";
+import "./cloudflare-connection.css";
+import "./repository-work.css";
+import "./proposal-create.css";
+import "./repository-import.css";
+import "./model-connections.css";
+import "./issues.css";
+import "./releases.css";
+import "./pull-requests.css";
 
 const AccountSettings = lazy(() => import("./AccountSettings"));
 const Inbox = lazy(() => import("./Inbox"));
@@ -150,10 +163,6 @@ const blankWorkspace: Workspace = {
 const runningStates = ["queued", "running", "checking", "integrating"];
 
 const RETURN_ROUTE_KEY = "gitflare:return-route";
-
-export function isPublicRoute(route: string): boolean {
-  return !!legacySourceRoute(route) || ["home", "signin", "signup", "deploy", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route) || isPublicDocumentationRoute(route) || !isKnownAppRoute(route) || route.startsWith("invite?") || isAccountRoute(route);
-}
 
 function takeReturnRoute(): string {
   try {
@@ -328,6 +337,7 @@ function Workspace() {
   useEffect(() => {
     let active = true;
     const check = () => {
+      if (anonymousSiteVisit()) return;
       void confirmSession().then((status) => {
         if (!active) return;
         if (status === "signed-out") clearSession();
@@ -344,18 +354,17 @@ function Workspace() {
   useEffect(() => () => clearTimeout(retryTimer.current), []);
 
   useEffect(() => {
-    void request<AuthConfig>("/api/auth/config").then(setAuthConfig).catch((failure: unknown) => { setAuthConfigError(failure instanceof Error ? failure.message : "Installation configuration is unavailable."); setAuthState("unavailable"); });
+    if (!anonymousSiteVisit()) void request<AuthConfig>("/api/auth/config").then(setAuthConfig).catch((failure: unknown) => { setAuthConfigError(failure instanceof Error ? failure.message : "Installation configuration is unavailable."); setAuthState("unavailable"); });
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const schedule = () => {
       clearTimeout(timer);
       if (!stopped && document.visibilityState === "visible") timer = setTimeout(poll, workspaceActive.current ? 8000 : 60000);
     };
-    const anonymousSite = () => { const origins = pageHostOrigins(); return !!origins && window.location.origin === origins.site && !siteSignedInHint(origins); };
-    const poll = () => { if (authFlowActive.current || anonymousSite()) schedule(); else void load(true).finally(schedule); };
+    const poll = () => { if (authFlowActive.current || anonymousSiteVisit()) schedule(); else void load(true).finally(schedule); };
     const resume = () => { if (document.visibilityState === "visible") poll(); else clearTimeout(timer); };
     reschedulePoll.current = schedule;
-    if (anonymousSite()) { clearSession(); schedule(); } else void load(true).finally(schedule);
+    if (anonymousSiteVisit()) { clearSession(); schedule(); } else void load(true).finally(schedule);
     document.addEventListener("visibilitychange", resume);
     return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", resume); };
   }, [load, clearSession]);

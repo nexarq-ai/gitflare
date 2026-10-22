@@ -16,6 +16,7 @@ import { ImportedFrom } from "./IssueLabels";
 import { RequestFix } from "./FixRequests";
 import { currentRoute } from "./router";
 import { useTurnstile, type Turnstile } from "./turnstile";
+import "./issues.css";
 import "./public-issues.css";
 import { PageLoading } from "./WorkspaceLoader";
 

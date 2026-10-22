@@ -7,6 +7,7 @@ import { CheckCircleIcon, ProhibitIcon, ShieldWarningIcon, ShieldCheckIcon, Tras
 import type { AdvisoryAffected, AdvisoryComment, AdvisoryCloseReason, AdvisorySeverity, AdvisoryState, IssuePerson } from "../shared/types";
 import { relativeTime } from "./components";
 import { ADVISORY_COMMENT_MAX, ADVISORY_LIST_MAX, CLOSE_REASON_LABELS, emptyAffected, SEVERITY_LABELS, STATE_LABELS } from "./advisory-data";
+import "./issues.css";
 import "./advisories.css";
 
 export function SeverityPill({ severity }: { severity: AdvisorySeverity | null }) {
