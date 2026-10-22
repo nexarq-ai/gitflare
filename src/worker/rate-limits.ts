@@ -5,6 +5,8 @@ export type RateLimitEnv = { MCP_WRITE_RATE_LIMIT?: RateLimitBinding; MCP_READ_R
 export type RateLimitName = keyof RateLimitEnv;
 export type RateLimited = { limit: number; windowSeconds: number; retryAfterSeconds: number };
 
+export function clientIp(request: Request): string { return request.headers.get('CF-Connecting-IP') ?? 'local'; }
+
 // Mirrored by the `ratelimits` bindings in wrangler.jsonc and distribution/wrangler.self-hosted.json; Cloudflare allows only 10 or 60 second periods
 export const RATE_LIMITS: Record<RateLimitName, { namespaceId: string; limit: number; period: 10 | 60 }> = {
   MCP_WRITE_RATE_LIMIT: { namespaceId: '4101', limit: 120, period: 60 },

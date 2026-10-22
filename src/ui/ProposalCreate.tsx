@@ -55,7 +55,7 @@ export function BaseSha({ sha }: { sha: string }) {
 }
 function modelLabel(models: ModelConnection[] | undefined, id: string): string { return models?.find(model => model.id === id)?.label ?? id; }
 
-export default function ProposalCreate({ repositories, repositoryId, canContribute, canManage = false, onImportRepository, onBack, onCreateRepository, onCreated }: { repositories: Repository[]; repositoryId?: string; canContribute: boolean; canManage?: boolean; onImportRepository?: (id: string) => void; onBack: () => void; onCreateRepository: () => void; onCreated: (proposal: Mission) => Promise<void> }) {
+export default function ProposalCreate({ repositories, repositoryId, canContribute, canManage = false, onBack, onCreateRepository, onCreated }: { repositories: Repository[]; repositoryId?: string; canContribute: boolean; canManage?: boolean; onBack: () => void; onCreateRepository: () => void; onCreated: (proposal: Mission) => Promise<void> }) {
   const [entry, setEntry] = useState<'auto' | 'manual'>('auto');
   const [repoId, setRepoId] = useState(repositoryId ?? repositories[0]?.id ?? '');
   const [title, setTitle] = useState('');

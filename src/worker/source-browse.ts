@@ -1,6 +1,7 @@
 import type { Repository } from '../shared/types';
 import { ApiError, repositoryPath, repositoryRef } from './domain';
 import type { AppEnv } from './env';
+import { validGitSha } from './artifacts';
 
 export type SourceHandle = Awaited<ReturnType<NonNullable<AppEnv['ARTIFACTS']>['get']>>;
 export type SourceCommit = Awaited<ReturnType<SourceHandle['log']>>[number];
@@ -34,7 +35,7 @@ export async function browseRepository(env: AppEnv, repository: Repository, kind
     full.searchParams.set('ref', resolved);
     return await browseRepository(env, repository, kind, full, candidates);
   }
-  const fullSha = /^[a-f0-9]{40}$/.test(ref);
+  const fullSha = validGitSha(ref);
   const candidate = fullSha && candidates ? await candidates.find(ref) : undefined;
   if (candidate) {
     await candidates!.authorize(candidate.missionId);

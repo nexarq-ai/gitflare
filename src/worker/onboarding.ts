@@ -7,6 +7,7 @@ import { securityClient } from './security';
 import { requestSessionMeta } from './session-meta';
 import { DEMO_RESET_TIME, demoMode } from './demo';
 import { sessionCookie } from './session-policy';
+import { clientIp } from './rate-limits';
 
 function authenticatedResponse(result: { token: string; user: unknown; workspaceId: string; recoveryCodes?: string[] }): Response {
   const { token, ...body } = result;
@@ -25,7 +26,7 @@ async function handleAccountEmail(request: Request, env: AppEnv, authenticate: A
   if (request.method !== 'POST' || !['/api/auth/verify-email', '/api/auth/resend-verification', '/api/auth/password-reset/request', '/api/auth/password-reset/confirm'].includes(path)) return null;
   assertMutationOrigin(request);
   const service = securityClient(env);
-  await service.rateLimit(`account-email:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 10, 900000);
+  await service.rateLimit(`account-email:${clientIp(request)}`, 10, 900000);
   const body = await readJson(request);
   if (path === '/api/auth/verify-email') return Response.json(await service.verifyEmail(body), noStore);
   if (path === '/api/auth/password-reset/confirm') return Response.json(await service.confirmPasswordReset(body), noStore);
@@ -53,7 +54,7 @@ export async function handleOnboarding(request: Request, env: AppEnv, authentica
   if (account) return account;
   if (request.method !== 'POST' || !['/api/setup/start', '/api/setup/verify', '/api/mfa/verify', '/api/mfa/enroll', '/api/users/create', '/api/invitations/register'].includes(path)) return handleHostedOnboarding(request, env, authenticate);
   assertMutationOrigin(request);
-  await service.rateLimit(`onboarding:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+  await service.rateLimit(`onboarding:${clientIp(request)}`);
   const body = await readJson(request);
   if (path === '/api/setup/start') return Response.json(await service.startSetup(body), { headers: { 'Cache-Control': 'no-store' } });
   if (path === '/api/setup/verify' || path === '/api/mfa/verify') return authenticatedResponse(await service.verifyMfa(body, path === '/api/setup/verify', requestSessionMeta(request)));

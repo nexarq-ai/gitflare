@@ -5,6 +5,7 @@ import type { Repository } from '../shared/types';
 import type { ArtifactRepo, ArtifactsBinding } from './artifacts';
 import { ApiError, requireString } from './domain';
 import { boundedBody, buildInitializationPack, packet, parsePackets, requireGitResponse } from './repository-initialization';
+import { validGitSha } from './artifacts';
 
 export const IMPORT_ZIP_MAX_BYTES = 5 * 1024 * 1024;
 export const IMPORT_REQUEST_MAX_BYTES = Math.ceil(IMPORT_ZIP_MAX_BYTES / 3) * 4 + 2048;
@@ -18,7 +19,7 @@ export interface ImportStatus { allowed: boolean; headSha: string | null; reason
 export interface ImportResult { repository: Repository; headSha: string; files: string[]; skipped: string[] }
 export interface ImportReceipt { fingerprint: string; timestamp: number; candidateSha?: string; files?: string[]; skipped?: string[]; rejection?: { status: number; code: string; message: string }; result?: ImportResult }
 export function validateImportInput(body: Record<string, unknown>): ImportInput {
-  if (body.expectedHeadSha !== null && (typeof body.expectedHeadSha !== 'string' || !/^[a-f0-9]{40}$/.test(body.expectedHeadSha))) throw new ApiError(400, 'INVALID_COMMIT', 'Supply the observed repository head, or null for an empty repository.');
+  if (body.expectedHeadSha !== null && (typeof body.expectedHeadSha !== 'string' || !validGitSha(body.expectedHeadSha))) throw new ApiError(400, 'INVALID_COMMIT', 'Supply the observed repository head, or null for an empty repository.');
   const archiveBase64 = requireString(body.archiveBase64, 'ZIP archive', Math.ceil(IMPORT_ZIP_MAX_BYTES / 3) * 4);
   if (archiveBase64.length % 4 || !isCanonicalBase64(archiveBase64)) throw new ApiError(400, 'INVALID_ARCHIVE', 'The ZIP archive must use standard base64 encoding.');
   const message = body.message === undefined ? 'Import existing code' : requireString(body.message, 'Commit message', 200);
@@ -110,7 +111,7 @@ export function buildImportPack(files: ImportFile[], parentSha: string | null, t
   const root: Tree = { files: new Map(), children: new Map() };
   for (const file of files) { safePath(file.path); const parts = file.path.split('/'); let current = root; for (const part of parts.slice(0, -1)) { if (current.files.has(part)) invalid('Import paths conflict.'); if (!current.children.has(part)) current.children.set(part, { files: new Map(), children: new Map() }); current = current.children.get(part)!; } const name = parts.at(-1)!; if (current.children.has(name) || current.files.has(name)) invalid('Import paths conflict.'); current.files.set(name, file); }
   const tree = (node: Tree): GitObject => { const entries: { name: string; mode: string; hash: Buffer; sort: string }[] = []; for (const [name, file] of node.files) entries.push({ name, mode: file.mode, hash: object('blob', Buffer.from(file.data)).hash, sort: name }); for (const [name, child] of node.children) entries.push({ name, mode: '40000', hash: tree(child).hash, sort: `${name}/` }); entries.sort((a, b) => Buffer.compare(Buffer.from(a.sort), Buffer.from(b.sort))); return object('tree', Buffer.concat(entries.map(entry => Buffer.concat([Buffer.from(`${entry.mode} ${entry.name}\0`), entry.hash])))); };
-  if (!Number.isSafeInteger(timestamp) || timestamp < 0 || parentSha !== null && !/^[a-f0-9]{40}$/.test(parentSha)) throw new ApiError(400, 'INVALID_IMPORT', 'Import commit metadata is invalid.');
+  if (!Number.isSafeInteger(timestamp) || timestamp < 0 || parentSha !== null && !validGitSha(parentSha)) throw new ApiError(400, 'INVALID_IMPORT', 'Import commit metadata is invalid.');
   const rootTree = tree(root);
   const commit = object('commit', Buffer.from(`tree ${rootTree.hash.toString('hex')}\n${parentSha ? `parent ${parentSha}\n` : ''}author Gitflare <gitflare@localhost> ${timestamp} +0000\ncommitter Gitflare <gitflare@localhost> ${timestamp} +0000\n\n${message}\n`));
   const header = Buffer.alloc(12); header.write('PACK'); header.writeUInt32BE(2, 4); header.writeUInt32BE(objects.length, 8);

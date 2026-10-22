@@ -3,7 +3,7 @@ import { HANDLE_PATTERN } from '../shared/handles';
 import { ApiError, assertMutationOrigin, publicError, readJson, requireIdempotencyKey } from './domain';
 import type { AppEnv } from './env';
 import { PUBLIC_NOT_FOUND, resolvePublicRepository } from './public-repositories';
-import { consume, rateLimitedResponse, rateLimitMessage } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse, rateLimitMessage } from './rate-limits';
 import { publicPrincipal, securityClient, type Principal, type SecurityService } from './security';
 import { repositorySecurityPolicy } from './security-policy';
 import { turnstileSiteKey, verifyTurnstile } from './turnstile';
@@ -281,14 +281,12 @@ export async function advisoriesApi(request: Request, context: MemberAdvisoryCon
 
 const PUBLIC_ROUTE = /^\/api\/public\/repos\/([^/]+)\/([^/]+)\/(security|advisories)(?:\/([A-Za-z0-9-]{1,40})(?:\/(comment))?)?$/;
 
-export function isPublicAdvisoryPath(path: string): boolean { return PUBLIC_ROUTE.test(path); }
-
 export async function publicAdvisoriesApi(request: Request, env: AppEnv, signedIn: (request: Request) => Promise<Principal | null>): Promise<Response | null> {
   const url = new URL(request.url);
   const match = PUBLIC_ROUTE.exec(url.pathname);
   if (!match) return null;
   const notFound = (): never => { throw new ApiError(404, 'NOT_FOUND', PUBLIC_NOT_FOUND); };
-  const client = request.headers.get('CF-Connecting-IP') ?? 'local';
+  const client = clientIp(request);
   const read = request.method === 'GET' || request.method === 'HEAD';
   if (read) { const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${client}`); if (limited) return rateLimitedResponse(limited, 'public repository requests'); }
   let handle: string; let name: string;

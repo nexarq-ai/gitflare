@@ -1,7 +1,7 @@
 import type { Issue, IssueList, Release } from '../shared/types';
 import { repositoryLabel } from '../shared/repository-names';
 import type { AppEnv } from './env';
-import { consume, rateLimitedResponse } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { publicUrls, resolvePublicRepository, siteOrigin, type PublicTarget } from './public-repositories';
 import { securityClient, type SecurityService } from './security';
 
@@ -15,8 +15,6 @@ const TYPES: Record<FeedFormat, string> = { atom: 'application/atom+xml; charset
 
 export interface FeedEntry { id: string; title: string; url: string; updated: string; author: string | null; summary: string; categories?: string[] }
 export interface Feed { id: string; title: string; subtitle: string; url: string; self: string; updated: string; entries: FeedEntry[] }
-
-export function isFeedPath(path: string): boolean { return FEED_PATH.test(path); }
 
 export function xml(value: string): string {
   return [...value].filter(char => { const code = char.codePointAt(0)!; return code === 9 || code === 10 || code === 13 || code >= 0x20 && code <= 0xd7ff || code >= 0xe000 && code <= 0xfffd || code >= 0x10000; }).join('').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!);
@@ -78,7 +76,7 @@ export async function feedResponse(request: Request, env: AppEnv): Promise<Respo
   if (!match || request.method !== 'GET' && request.method !== 'HEAD') return null;
   const notFound = () => new Response('Not found\n', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
   if (!env.GITFLARE_SECURITY || !env.ARTIFACTS || env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true') return notFound();
-  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${clientIp(request)}`);
   if (limited) return rateLimitedResponse(limited, 'public repository requests');
   let handle: string; let name: string;
   try { handle = decodeURIComponent(match[1]!).toLowerCase(); name = decodeURIComponent(match[2]!); } catch { return notFound(); }

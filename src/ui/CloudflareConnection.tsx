@@ -1,15 +1,13 @@
-import { repositoryLabel } from "../shared/repository-names";
 import { useEffect, useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { Input } from "@cloudflare/kumo/components/input";
-import { ArrowClockwiseIcon, ArrowLeftIcon, MagnifyingGlassIcon, TrashIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, MagnifyingGlassIcon, TrashIcon } from "@phosphor-icons/react";
 import InfoTip from "./InfoTip";
 import type { ProjectResource, Repository } from "../shared/types";
-import { CLOUDFLARE_PERMISSIONS, cloudflarePermissionGroups, type CloudflarePermissionPlan } from "../shared/cloudflare-permissions";
+import { cloudflarePermissionGroups, type CloudflarePermissionPlan } from "../shared/cloudflare-permissions";
 import { request } from "./api";
 import { ErrorNotice } from "./components";
-import cloudflareIcon from "./assets/cloudflare-icon.svg";
 import "./cloudflare-connection.css";
 import { RouteProgress } from "./WorkspaceLoader";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
@@ -76,7 +74,7 @@ function RepositoryAccount({ status, accounts, busy, accountId, onAccount, onUse
   </section>;
 }
 
-export default function CloudflareConnection({ repository, repositoryId, repositories = [], canManage = false }: { repository?: Repository; repositoryId?: string; repositories?: Repository[]; canManage?: boolean }) {
+export default function CloudflareConnection({ repository, repositoryId, canManage = false }: { repository?: Repository; repositoryId?: string; canManage?: boolean }) {
   const [status, setStatus] = useState<Connection | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [resources, setResources] = useState<Resources | null>(null);

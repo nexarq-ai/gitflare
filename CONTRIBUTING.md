@@ -14,10 +14,14 @@ Thanks for helping improve Gitflare.
 npm ci
 npm run cf:types
 npm run typecheck
+npm run lint
+npm test
 npm run build
 ```
 
 `npm run dev` serves the app locally with local Durable Object storage. It does not prove Cloudflare integrations such as Artifacts, Containers or AI Gateway; say what you verified and how in your pull request.
+
+Tests run with Vitest against in-memory Durable Object and D1 stand-ins; a few spawn `git` and `npm` against fixtures under `runner/fixture`. Linting is `oxlint` with the correctness rules only, configured in `.oxlintrc.json`. There is no formatter: match the surrounding file.
 
 ## Product rules
 

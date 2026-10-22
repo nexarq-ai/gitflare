@@ -9,7 +9,7 @@ import "./public-settings.css";
 
 type Availability = { state: "idle" | "checking" | "available" | "unavailable"; message: string };
 
-export function originHost(origin: string): string {
+function originHost(origin: string): string {
   try { return new URL(origin).host; } catch { return origin.replace(/^https?:\/\//, ""); }
 }
 

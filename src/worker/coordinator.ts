@@ -39,6 +39,7 @@ import { applyMirrorChange, type MirrorChange, type MirrorChangeResult, type Sto
 import { NotificationBook, SubscriptionBook, type DigestEntry, type NotificationFilter, type NotificationRecord } from './notifications';
 import { sendNotificationEmail } from './notification-email';
 import type { NotificationEvent, NotificationPreferences, NotificationReason, NotificationSubject, ReviewRequests, SubscriptionState } from '../shared/notifications';
+import { validGitSha } from './artifacts';
 
 interface Receipt<T> { fingerprint: string; result: T }
 export interface ContributorStanding { userId: string; landed: number; firstProposalAt: string; vouchedBy?: Principal }
@@ -89,7 +90,7 @@ function eligibleRaceRuns(mission: Mission): Mission['runs'] {
   const checks = mission.raceChecks ?? mission.checks;
   return mission.runs.filter((run) => run.status === 'completed' && !!run.commitSha && !!run.forkName && checks.some((check) => check.runId === run.id && check.status === 'passed' && check.candidateSha === run.commitSha));
 }
-export interface PreviewCapability { workspaceId?: string; principal?: import('./security').Principal; repositoryId: string; missionId: string; epoch: number; candidateSha: string; sandboxName: string; expiresAt: number; host?: string; isolated?: boolean }
+export interface PreviewCapability { workspaceId?: string; principal?: Principal; repositoryId: string; missionId: string; epoch: number; candidateSha: string; sandboxName: string; expiresAt: number; host?: string; isolated?: boolean }
 export type PreviewHost =
   | { kind: 'connection'; source: 'repository' | 'workspace'; accountId: string; workerName: string; access: 'link' | 'cloudflare-access' }
   | { kind: 'installation'; accountId: string; workerName: string; access: 'link' };
@@ -122,7 +123,7 @@ const APPROVAL_CLEAR_MAX_BACKOFF_MS = 900_000;
 const minutes = (ms: number) => Math.ceil(ms / 60_000);
 const landingCause = (reason: string) => failureLine(reason).replace(/\.$/, '');
 
-export const EXECUTION_UPDATING_MESSAGE = 'Gitflare is finishing an update and could not start this proposal. Nothing was started. Retry in about a minute; if it still fails after 5 minutes, contact your Gitflare operator.';
+const EXECUTION_UPDATING_MESSAGE = 'Gitflare is finishing an update and could not start this proposal. Nothing was started. Retry in about a minute; if it still fails after 5 minutes, contact your Gitflare operator.';
 
 export function integrationPendingMessage(candidateSha: string): string {
   return `Landing has not finished: the default branch has not yet confirmed commit ${candidateSha.slice(0, 12)}, so other proposals in this repository cannot land until it does. If landing started in the last ${minutes(INTEGRATION_PREPARATION_MS)} minutes, wait and choose Land again; retries never push twice. If it has been longer, ask a workspace Owner to check the default branch: once it shows ${candidateSha.slice(0, 12)}, choose Land again to record it.`;
@@ -398,7 +399,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
         this.archive(mission, 'cancelled');
         return mission;
       }
-      if (!headSha || !/^[a-f0-9]{40}$/.test(headSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Provide the exact branch head commit.');
+      if (!headSha || !validGitSha(headSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Provide the exact branch head commit.');
       if (action === 'reopen' && !change.closedAt) throw new ApiError(409, 'PULL_REQUEST_OPEN', 'This pull request is already open.');
       if (action === 'update' && change.closedAt) throw new ApiError(409, 'PULL_REQUEST_CLOSED', 'Reopen this pull request before updating it from its branch.');
       if (['queued', 'running', 'checking'].includes(mission.status)) throw new ApiError(409, 'MISSION_ACTIVE', 'Checks are already running for this pull request. Wait or cancel them first.');
@@ -1004,10 +1005,10 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const skillChange = input.skillChange ? validateRepositorySkillChange(input.skillChange) : undefined;
       if (skillChange && repository.headSha !== skillChange.baseSha) throw new ApiError(409, 'STALE_SKILL_BASE', 'The repository changed. Refresh the skill before proposing this edit.');
       const revertChange = input.revertChange;
-      if (revertChange && (!/^[a-f0-9]{40}$/.test(revertChange.landedSha) || !/^[a-f0-9]{40}$/.test(revertChange.previousSha))) throw new ApiError(400, 'INVALID_COMMIT', 'A revert needs the exact landed and previous commits.');
+      if (revertChange && (!validGitSha(revertChange.landedSha) || !validGitSha(revertChange.previousSha))) throw new ApiError(400, 'INVALID_COMMIT', 'A revert needs the exact landed and previous commits.');
       if (input.issueNumber !== undefined && !readIssue(this.store, input.issueNumber)) throw new ApiError(404, 'ISSUE_NOT_FOUND', `Issue #${input.issueNumber} could not be found in this repository.`);
       const branchChange = input.branchChange ? { ...input.branchChange, branch: branchName(input.branchChange.branch), targetBranch: repository.defaultBranch } : undefined;
-      if (branchChange && (!/^[a-f0-9]{40}$/.test(branchChange.headSha) || (!branchChange.source && branchChange.branch === repository.defaultBranch))) throw new ApiError(400, 'INVALID_PULL_REQUEST', 'A pull request needs the exact head commit of a branch other than the default branch.');
+      if (branchChange && (!validGitSha(branchChange.headSha) || (!branchChange.source && branchChange.branch === repository.defaultBranch))) throw new ApiError(400, 'INVALID_PULL_REQUEST', 'A pull request needs the exact head commit of a branch other than the default branch.');
       const race = input.mode === 'race' && !revertChange && !branchChange;
       const tasks = skillChange ? [{ name: 'Skill editor', role: 'Trusted skill editor', task: `Apply exactly the submitted Markdown to ${skillChange.path}.` }] : branchChange ? [{ name: 'Branch merger', role: 'Trusted branch merger', task: `Merge ${branchChange.branch} at ${branchChange.headSha.slice(0, 12)} into ${branchChange.targetBranch}, fast-forwarding when possible.` }] : revertChange ? [{ name: 'Revert editor', role: 'Trusted revert editor', task: `Undo exactly the change landed by "${revertChange.title}" (${revertChange.previousSha.slice(0, 12)} to ${revertChange.landedSha.slice(0, 12)}) with a new revert commit.` }] : input.tasks ?? (race ? [
         { name: 'Candidate A', role: 'Independent attempt', task: 'Complete the whole mission with the smallest change that satisfies every criterion.' },
@@ -1630,7 +1631,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const claim = this.store.get<IntegrationClaim>('integration:claim');
       if (!claim || claim.claimId !== claimId || claim.missionId !== id || claim.epoch !== epoch || mission.epoch !== epoch || mission.status !== 'integrating' || claim.phase !== 'preparing') throw new ApiError(409, 'STALE_EXECUTION', 'This integration no longer owns a preparation claim.');
       if (claim.claimedAt === undefined || Date.now() - claim.claimedAt >= INTEGRATION_PREPARATION_MS) throw new ApiError(409, 'INTEGRATION_DEADLINE', 'Landing preparation expired before the canonical push.');
-      if (landedSha !== undefined && !/^[a-f0-9]{40}$/.test(landedSha)) throw new ApiError(400, 'INVALID_COMMIT', 'The landing commit must be a full SHA.');
+      if (landedSha !== undefined && !validGitSha(landedSha)) throw new ApiError(400, 'INVALID_COMMIT', 'The landing commit must be a full SHA.');
       claim.phase = 'pushing';
       if (landedSha && landedSha !== claim.candidateSha) claim.landedSha = landedSha;
       this.store.put('integration:claim', claim);

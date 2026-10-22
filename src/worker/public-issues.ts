@@ -7,7 +7,7 @@ import { allowed, issueNumber, issueRoute, type IssueAccess, type IssueChange, t
 import { excerptOf, mentionHandles, notify, type PublishInput } from './notifications';
 import { repositorySubject } from './inbox';
 import { PUBLIC_NOT_FOUND, resolvePublicRepository } from './public-repositories';
-import { consume, rateLimitedResponse, rateLimitMessage } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse, rateLimitMessage } from './rate-limits';
 import { publicPrincipal, securityClient, type Principal, type SecurityService } from './security';
 import { turnstileSiteKey, verifyTurnstile } from './turnstile';
 
@@ -52,7 +52,7 @@ export async function publicIssuesApi(request: Request, env: AppEnv, signedIn: (
   const url = new URL(request.url);
   const match = ROUTE.exec(url.pathname);
   if (!match) return null;
-  const client = request.headers.get('CF-Connecting-IP') ?? 'local';
+  const client = clientIp(request);
   const read = request.method === 'GET' || request.method === 'HEAD';
   if (read) { const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${client}`); if (limited) return rateLimitedResponse(limited, 'public repository requests'); }
   let handle: string; let name: string;

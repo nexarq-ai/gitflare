@@ -55,7 +55,7 @@ function writeStorage(key: string, value: unknown): void {
   }
 }
 
-export function fileAnchor(path: string): string {
+function fileAnchor(path: string): string {
   return `diff-${path}`;
 }
 

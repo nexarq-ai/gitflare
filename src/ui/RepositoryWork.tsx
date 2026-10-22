@@ -1,13 +1,9 @@
 import { useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
-import {
-  GitBranchIcon,
-  RobotIcon,
-  ShieldCheckIcon,
-} from "@phosphor-icons/react";
+import { RobotIcon, ShieldCheckIcon } from "@phosphor-icons/react";
 import type { Mission, MissionSummary } from "../shared/types";
 import { request } from "./api";
-import { EmptyState, Status, relativeTime } from "./components";
+import { EmptyState, Status } from "./components";
 import { OperationTrack } from "./OperationMotion";
 import AgentAssignment from "./AgentAssignment";
 import "./repository-work.css";
@@ -19,7 +15,7 @@ export default function RepositoryWork({
   onCreate,
   onOpen,
 }: {
-  tab: string;
+  tab: "agents" | "checks";
   missions: MissionSummary[];
   canContribute: boolean;
   onCreate: () => void;
@@ -33,28 +29,6 @@ export default function RepositoryWork({
   const checks = missions.flatMap((mission) =>
     mission.checks.map((check) => ({ mission, check })),
   );
-  const individualPassed = checks.filter(
-    ({ mission, check }) =>
-      check.status === "passed" &&
-      !!check.candidateSha &&
-      mission.runs.some(
-        (run) =>
-          run.commitSha === check.candidateSha &&
-          check.name.startsWith(`${run.name}:`),
-      ),
-  ).length;
-  const combinedVerified = missions.filter((mission) => {
-    const combinedChecks = mission.checks.filter(
-      (check) =>
-        !!mission.candidateSha &&
-        check.candidateSha === mission.candidateSha &&
-        !mission.runs.some((run) => check.name.startsWith(`${run.name}:`)),
-    );
-    return (
-      combinedChecks.length > 0 &&
-      mission.checks.every((check) => check.status === "passed")
-    );
-  }).length;
   const match = (text: string, status: string) =>
     text.toLowerCase().includes(search.toLowerCase()) &&
     (filter === "all" ||
@@ -63,9 +37,6 @@ export default function RepositoryWork({
         : filter === "active"
           ? ["queued", "running", "checking"].includes(status)
           : status === filter));
-  const filteredMissions = missions.filter((mission) =>
-    match(`${mission.title} ${mission.prompt}`, mission.status),
-  );
   const filteredRuns = runs.filter(({ mission, run }) =>
     match(
       `${mission.title} ${run.name} ${run.assignment} ${run.model ?? ""} ${run.branch ?? ""}`,
@@ -78,65 +49,24 @@ export default function RepositoryWork({
       check.status,
     ),
   );
-  const total =
-    tab === "agents"
-      ? runs.length
-      : tab === "checks"
-        ? checks.length
-        : missions.length;
-  const shown =
-    tab === "agents"
-      ? filteredRuns.length
-      : tab === "checks"
-        ? filteredChecks.length
-        : filteredMissions.length;
+  const total = tab === "agents" ? runs.length : checks.length;
+  const shown = tab === "agents" ? filteredRuns.length : filteredChecks.length;
   const filters =
     tab === "agents"
       ? ["all", "active", "completed", "failed", "cancelled"]
-      : tab === "checks"
-        ? ["all", "pending", "running", "passed", "failed", "skipped"]
-        : [
-            "all",
-            "open",
-            "draft",
-            "active",
-            "needs_review",
-            "approved",
-            "integrated",
-            "failed",
-            "cancelled",
-          ];
+      : ["all", "pending", "running", "passed", "failed", "skipped"];
   return (
     <>
       <div className="repository-work-heading">
         <div>
-          <h2>
-            {tab === "agents"
-              ? "Agent runs"
-              : tab === "checks"
-                ? "Checks"
-                : "Proposals"}
-          </h2>
+          <h2>{tab === "agents" ? "Agent runs" : "Checks"}</h2>
           <p>
             {tab === "agents"
               ? "Each agent works in its own fork."
-              : tab === "checks"
-                ? "Recorded agent and combined checks, pinned to the revision they verified."
-                : "Review changes produced by a mission, discuss the exact revision, and land approved work."}
+              : "Recorded agent and combined checks, pinned to the revision they verified."}
           </p>
         </div>
       </div>
-      {tab === "proposals" && (
-        <p className="repository-work-safety">
-          <ShieldCheckIcon size={16} />
-          <span>
-            <strong>
-              {individualPassed} individual checks passed · {combinedVerified}{" "}
-              combined candidates verified
-            </strong>
-          </span>
-        </p>
-      )}
       <div className="repository-work-toolbar">
         <input
           aria-label={`Search ${tab}`}
@@ -162,23 +92,13 @@ export default function RepositoryWork({
       <section className="panel">
         {!shown ? (
           <EmptyState
-            icon={
-              tab === "agents" ? (
-                <RobotIcon size={25} />
-              ) : tab === "checks" ? (
-                <ShieldCheckIcon size={25} />
-              ) : (
-                <GitBranchIcon size={25} />
-              )
-            }
+            icon={tab === "agents" ? <RobotIcon size={25} /> : <ShieldCheckIcon size={25} />}
             title={
               total
                 ? "No matching results"
                 : tab === "agents"
                   ? "No agent runs yet"
-                  : tab === "checks"
-                    ? "No checks recorded"
-                    : "No proposals yet"
+                  : "No checks recorded"
             }
             description={
               total
@@ -255,7 +175,7 @@ export default function RepositoryWork({
               </article>
             ))}
           </div>
-        ) : tab === "checks" ? (
+        ) : (
           <div className="repository-work-list">
             {filteredChecks.map(({ mission, check }) => (
               <article
@@ -304,64 +224,6 @@ export default function RepositoryWork({
                 <CheckOutput missionId={mission.id} checkId={check.id} />
               </article>
             ))}
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table className="resource-table">
-              <thead>
-                <tr>
-                  <th>Mission</th>
-                  <th>Status</th>
-                  <th>Agents</th>
-                  <th>Checks</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMissions.map((mission) => (
-                  <tr key={mission.id}>
-                    <td>
-                      <div className="resource-name">
-                        <GitBranchIcon size={18} />
-                        <div>
-                          <button onClick={() => onOpen(mission.id)}>
-                            {mission.title}
-                          </button>
-                          <small>
-                            {mission.candidateSha
-                              ? `Candidate ${mission.candidateSha.slice(0, 12)}`
-                              : "No combined candidate"}
-                          </small>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <Status status={mission.status} />
-                    </td>
-                    <td>
-                      <button
-                        className="text-link"
-                        onClick={() => onOpen(mission.id, "agents")}
-                      >
-                        {mission.runs.length}{" "}
-                        {mission.epoch > 0 ? "runs" : "planned agents"}
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        className="text-link"
-                        onClick={() => onOpen(mission.id, "checks")}
-                      >
-                        {mission.checks.length
-                          ? `${mission.checks.filter((check) => check.status === "passed").length}/${mission.checks.length} passed`
-                          : "Not run"}
-                      </button>
-                    </td>
-                    <td>{relativeTime(mission.updatedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
       </section>

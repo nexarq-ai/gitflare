@@ -6,7 +6,7 @@ import { ApiError, repositoryPath, repositoryRef } from './domain';
 import type { AppEnv } from './env';
 import { catalogName } from './capacity';
 import { listBranches } from './git-http';
-import { consume, rateLimitedResponse } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { publicPrincipal, securityClient, type Principal, type PublicListing, type SecurityService, type VisibilityRecord } from './security';
 import { CACHE_DEPENDENCIES } from './public-cache';
 import { sourceView, type SourceHandle } from './source-browse';
@@ -232,7 +232,7 @@ export async function publicRepositoryApi(request: Request, env: AppEnv): Promis
   const byId = /^\/api\/public\/repository\/([a-zA-Z0-9-]{1,100})$/.exec(url.pathname);
   if (!repositoryRoute && !byId) return null;
   if (request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Public repositories are read-only here.');
-  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${clientIp(request)}`);
   if (limited) return rateLimitedResponse(limited, 'public repository requests');
   const access = securityClient(env);
   const origin = siteOrigin(env, url.origin);

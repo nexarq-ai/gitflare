@@ -1,9 +1,9 @@
 import type { AgentLimits, AgentOverrides, AgentRetryOverride, AgentRun, MissionStatus } from "../shared/types";
 
-export const RUN_SECONDS_MAX = 1800;
-export const MODEL_ANSWER_SECONDS_MAX = 600;
-export const EDIT_SCOPE_MAX_ENTRIES = 20;
-export const DEFAULT_LIMITS: AgentLimits = { modelAnswerSeconds: null, modelRetries: 2, maxSteps: 32, runSeconds: 600, autoRetry: true };
+const RUN_SECONDS_MAX = 1800;
+const MODEL_ANSWER_SECONDS_MAX = 600;
+const EDIT_SCOPE_MAX_ENTRIES = 20;
+const DEFAULT_LIMITS: AgentLimits = { modelAnswerSeconds: null, modelRetries: 2, maxSteps: 32, runSeconds: 600, autoRetry: true };
 
 export interface LimitFields { editScope: string; runTime: string; maxSteps: string }
 export const emptyLimitFields = (): LimitFields => ({ editScope: "", runTime: "", maxSteps: "" });

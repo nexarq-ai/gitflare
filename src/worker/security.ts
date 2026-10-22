@@ -13,18 +13,18 @@ import { CONTENT_REPORT_REASONS, type ContentReport, type HandleAvailability, ty
 export const ROLES = ['Viewer', 'Triager', 'Contributor', 'Reviewer', 'Maintainer', 'Deployer', 'Owner'] as const;
 export type Role = typeof ROLES[number];
 export type Action = 'read' | 'participate' | 'triage' | 'contribute' | 'execute' | 'review' | 'land' | 'deploy' | 'migrate' | 'manage';
-export const ROLE_ACTIONS: Record<Role, Action[]> = {
+const ROLE_ACTIONS: Record<Role, Action[]> = {
   Viewer: ['read'], Triager: ['read', 'participate', 'triage'], Contributor: ['read', 'participate', 'contribute', 'execute'], Reviewer: ['read', 'participate', 'triage', 'review'],
   Maintainer: ['read', 'participate', 'triage', 'contribute', 'execute', 'review', 'land'], Deployer: ['read', 'deploy'], Owner: ['read', 'participate', 'triage', 'contribute', 'execute', 'review', 'land', 'deploy', 'migrate', 'manage'],
 };
 interface User { id: string; name: string; email: string; salt: string; hash: string; machine?: boolean; emailVerified?: boolean; cloudflareId?: string; revision?: number; reviewer?: { workspaceId: string }; disabled?: boolean; createdAt?: number }
 interface Member { userId: string; workspaceId: string; role: Role; repositoryIds?: string[]; superAdmin?: { previousRole?: Role; previousRepositoryIds?: string[] } }
 interface Session { id: string; userId: string; workspaceId: string; hash: string; expiresAt: number; authenticatedAt?: number; revoked?: boolean; client?: string; sliding?: boolean; kind?: 'browser' | 'token'; device?: string; country?: string; method?: SignInMethod; lastActiveAt?: number }
-export const SIGN_IN_METHODS = ['cloudflare', 'password', 'authenticator', 'owner-token'] as const;
+const SIGN_IN_METHODS = ['cloudflare', 'password', 'authenticator', 'owner-token'] as const;
 export type SignInMethod = typeof SIGN_IN_METHODS[number];
 export interface SessionMeta { device?: string; country?: string; method?: SignInMethod }
 function sessionMeta(meta: SessionMeta | undefined): SessionMeta { return { ...(meta?.device ? { device: String(meta.device).slice(0, 80) } : {}), ...(meta?.country && /^[A-Z]{2}$/.test(meta.country) ? { country: meta.country } : {}), ...(meta?.method && (SIGN_IN_METHODS as readonly string[]).includes(meta.method) ? { method: meta.method } : {}) }; }
-export const SESSION_ACTIVITY_MS = 300_000;
+const SESSION_ACTIVITY_MS = 300_000;
 type PublicSession = Omit<Session, 'hash'>;
 interface WorkspaceRecord { id: string; name: string; bootstrapDisabled?: boolean; agentPending?: boolean }
 export type InvitationScope = { kind: 'organization'; ownerId: string; ownerName?: string } | { kind: 'repository'; repositoryId: string; repositoryName?: string };
@@ -63,7 +63,7 @@ export function personalWorkspaceId(userId: string): string {
   if (!/^[A-Za-z0-9-]{1,54}$/.test(userId) || userId === 'bootstrap-owner') fail('ACCOUNT_REQUIRED', 'Sign in with an account to choose a handle.');
   return `personal-${userId}`;
 }
-export function isPersonalWorkspace(workspaceId: string): boolean { return workspaceId.startsWith('personal-'); }
+function isPersonalWorkspace(workspaceId: string): boolean { return workspaceId.startsWith('personal-'); }
 export type HandleKind = 'user' | 'workspace';
 interface HandleRecord { handle: string; kind: HandleKind; id: string; workspaceId: string; createdAt: string; redirectTo?: string; redirectUntil?: number }
 export interface ResolvedHandle { handle: string; kind: HandleKind; workspaceId: string }
@@ -72,8 +72,8 @@ export interface PublicListing { repositoryId: string; workspaceId: string; name
 export interface VisibilityRecord { visibility: 'public'; publishedAt: string; publishedBy: string; license: RepositoryLicense | null; acknowledgedNoLicense?: boolean }
 interface BlockRecord { repositoryId: string; userId: string; blockedBy: string; blockedAt: string; reason: string }
 export interface AccountStanding { limited: boolean; until: string | null }
-export const LIMITED_ACCOUNT_DAYS = 7;
-export const LIMITED_DAILY_WRITES = 100;
+const LIMITED_ACCOUNT_DAYS = 7;
+const LIMITED_DAILY_WRITES = 100;
 const BLOCKS_PER_REPOSITORY = 500;
 const REPORTS_KEPT = 1000;
 const REPORTS_PER_USER_PER_DAY = 20;
@@ -127,8 +127,6 @@ const LOGIN_LOCK_MS = 900_000;
 const LOGIN_FAILURE_WINDOW_MS = 86_400_000;
 const VERIFY_TOKEN_MS = 86_400_000;
 const RESET_TOKEN_MS = 3_600_000;
-const CLOUDFLARE_STATE_MS = 600_000;
-const CLOUDFLARE_PENDING_LIMIT = 10_000;
 const SWEEP_INTERVAL_MS = 300_000;
 const SWEEP_BATCH = 500;
 const OUTBOX_GRACE_MS = 30_000;
@@ -136,7 +134,7 @@ const MIGRATION_VERSION = 1;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function listSetting(value: string | undefined): string[] { return [...new Set((value ?? '').split(',').map(item => item.trim()).filter(Boolean))]; }
 export function superAdminEmails(value: string | undefined): string[] { return listSetting(value?.toLowerCase()).filter(email => EMAIL_PATTERN.test(email)); }
-export function operatorWorkspaces(value: string | undefined): string[] { return listSetting(value); }
+function operatorWorkspaces(value: string | undefined): string[] { return listSetting(value); }
 function sameHash(left: string, right: string): boolean { const a = encode.encode(left); const b = encode.encode(right); return a.length === b.length && timingSafeEqual(a, b); }
 function liveFailure(failures: LoginFailures | undefined, now: number): failures is LoginFailures { return !!failures && (failures.lockedUntil ? failures.lockedUntil > now : failures.updatedAt + LOGIN_FAILURE_WINDOW_MS > now); }
 

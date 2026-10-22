@@ -10,12 +10,12 @@ const TICK_MS = 250;
 let summaries: Promise<ReplaySummary[]> | null = null;
 let pending: string | null = null;
 
-export function demoReplays(): Promise<ReplaySummary[]> {
+function demoReplays(): Promise<ReplaySummary[]> {
   summaries ??= request<{ replays: ReplaySummary[] }>("/api/demo/replay").then((result) => result.replays, () => { summaries = null; return []; });
   return summaries;
 }
 
-export function requestReplay(missionId: string): void { pending = missionId; }
+function requestReplay(missionId: string): void { pending = missionId; }
 
 function takeRequest(missionId: string): boolean {
   const asked = pending === missionId || new URLSearchParams(window.location.search).has("replay");

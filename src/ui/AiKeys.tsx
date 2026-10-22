@@ -8,7 +8,7 @@ import { request } from './api';
 
 type Send = (path: string, body: unknown, label: string) => Promise<AiKeysSnapshot | null>;
 
-export function useAiKeySender(onChanged: (snapshot: AiKeysSnapshot) => void) {
+function useAiKeySender(onChanged: (snapshot: AiKeysSnapshot) => void) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');

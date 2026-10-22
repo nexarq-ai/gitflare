@@ -33,7 +33,7 @@ export function relativeTime(at: number, now = Date.now()): string {
   return `${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
-export function countryName(code: string | undefined): string | undefined {
+function countryName(code: string | undefined): string | undefined {
   if (!code) return undefined;
   try { return new Intl.DisplayNames(undefined, { type: "region" }).of(code) ?? code; } catch { return code; }
 }

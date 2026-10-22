@@ -13,7 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import type { MissionSummary, Workspace } from "../shared/types";
 
-export const statusLabels: Record<string, string> = {
+const statusLabels: Record<string, string> = {
   draft: "Draft",
   queued: "Queued",
   running: "Running",

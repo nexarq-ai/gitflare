@@ -1,13 +1,11 @@
 import type { Release } from '../shared/types';
 import type { AppEnv } from './env';
-import { consume, rateLimitedResponse } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { resolvePublicRepository } from './public-repositories';
 import { serveAsset, type StoredAsset } from './release-assets';
 import { securityClient } from './security';
 
 const DOWNLOAD_PATH = /^\/([^/]+)\/([^/]+)\/releases\/download\/(.+)\/([^/]+)$/;
-
-export function isPublicDownloadPath(path: string): boolean { return DOWNLOAD_PATH.test(path); }
 
 export async function publicDownloadResponse(request: Request, env: AppEnv): Promise<Response | null> {
   const url = new URL(request.url);
@@ -15,7 +13,7 @@ export async function publicDownloadResponse(request: Request, env: AppEnv): Pro
   if (!match || request.method !== 'GET' && request.method !== 'HEAD') return null;
   const notFound = () => new Response('Not found\n', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
   if (!env.GITFLARE_SECURITY || !env.RELEASE_ASSETS || env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true') return notFound();
-  const limited = await consume(env, 'RELEASE_ASSET_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+  const limited = await consume(env, 'RELEASE_ASSET_RATE_LIMIT', `ip:${clientIp(request)}`);
   if (limited) return rateLimitedResponse(limited, 'downloads');
   let handle: string, name: string, tag: string, file: string;
   try { [handle, name, tag, file] = [decodeURIComponent(match[1]!).toLowerCase(), decodeURIComponent(match[2]!), match[3]!.split('/').map(decodeURIComponent).join('/'), decodeURIComponent(match[4]!)]; } catch { return notFound(); }

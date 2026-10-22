@@ -364,8 +364,6 @@ export function importIssues(store: IssueStore, repositoryId: string, source: st
   return outcome;
 }
 
-export function importedIssueNumber(store: IssueStore, source: string, githubNumber: number): number | undefined { return store.get<number>(githubIssueKey(source, githubNumber)); }
-
 export function importComments(store: IssueStore, source: string, items: CommentImport[]): ImportOutcome {
   const outcome: ImportOutcome = { created: 0, updated: 0, skipped: [] };
   for (const item of items) {

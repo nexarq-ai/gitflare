@@ -1,4 +1,4 @@
-export const OWNER_TOKEN_NOTICE_KEY = "gitflare:owner-token-notice";
+const OWNER_TOKEN_NOTICE_KEY = "gitflare:owner-token-notice";
 
 export const OWNER_TOKEN_NOTICE = {
   title: "Use your Cloudflare login",

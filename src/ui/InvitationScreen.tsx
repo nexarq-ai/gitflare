@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
-import { GitBranchIcon } from "@phosphor-icons/react";
 import AuthScreen, { type AuthConfig } from "./AuthScreen";
 import { request, RequestError, selectWorkspace } from "./api";
 import { navigate as goTo } from "./router";

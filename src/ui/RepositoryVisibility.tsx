@@ -12,7 +12,7 @@ import "./public-settings.css";
 
 type Props = { repository: Repository; onChanged: () => Promise<void> | void; onNotify: (message: string) => void };
 
-export function licenseLabel(license: RepositoryLicense | null): string {
+function licenseLabel(license: RepositoryLicense | null): string {
   if (!license) return "None";
   return license.spdx ?? (license.path ? `${license.path} (unrecognized)` : "Unrecognized");
 }
@@ -21,7 +21,7 @@ export function unsavedVisibility(requested: RepositoryVisibilityKind, saved: Re
   return saved.visibility === requested ? null : `Gitflare did not save this change. ${name} is still ${saved.visibility}. Try again.`;
 }
 
-export function displayAddress(url: string): string {
+function displayAddress(url: string): string {
   return url.replace(/^https?:\/\//, "");
 }
 

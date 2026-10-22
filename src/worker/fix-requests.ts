@@ -10,7 +10,7 @@ import { executionReadiness } from './execution';
 import { planMission, repositorySnapshot } from './mission-draft';
 import { DEFAULT_MODEL } from './model-config';
 import { PUBLIC_NOT_FOUND, resolvePublicRepository } from './public-repositories';
-import { consume, rateLimitedResponse } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { personalWorkspaceId, publicPrincipal, securityClient, type Principal, type SecurityService } from './security';
 import type { AiCredentials } from './ai-keys';
 
@@ -175,7 +175,7 @@ export async function publicFixRequestsApi(request: Request, env: AppEnv, signed
   if (!match) return null;
   const read = request.method === 'GET' || request.method === 'HEAD';
   if (!read && request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET or POST.');
-  if (read) { const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`); if (limited) return rateLimitedResponse(limited, 'public repository requests'); }
+  if (read) { const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${clientIp(request)}`); if (limited) return rateLimitedResponse(limited, 'public repository requests'); }
   let handle: string; let name: string;
   try { handle = decodeURIComponent(match[1]!).toLowerCase(); name = decodeURIComponent(match[2]!); } catch { notFound(); }
   const access = securityClient(env);

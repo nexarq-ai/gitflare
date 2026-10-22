@@ -16,7 +16,7 @@ const CVSS = /^CVSS:(?:3\.[01]|4\.0)\/(?:[A-Z]{1,3}:[A-Z]{1,2})(?:\/[A-Z]{1,3}:[
 export function validCve(value: string): boolean { return CVE.test(value); }
 export function validCvss(value: string): boolean { return CVSS.test(value); }
 
-export function splitList(value: string): string[] {
+function splitList(value: string): string[] {
   return value.split(/[,\n]/).map(item => item.trim()).filter(Boolean);
 }
 

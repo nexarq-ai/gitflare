@@ -2,6 +2,7 @@ import type { CreateMissionInput, RepositorySkillChange } from '../shared/types'
 import type { ArtifactRepo, ArtifactsBinding } from './artifacts';
 import { ApiError } from './domain';
 import { skillFrontmatter } from './repository-skills';
+import { validGitSha } from './artifacts';
 
 export const SKILL_REQUEST_MAX_BYTES = 400_000;
 export const SKILL_CONTENT_MAX_BYTES = 65_536;
@@ -13,7 +14,7 @@ export function validateRepositorySkillChange(value: unknown): RepositorySkillCh
   if (Object.keys(input).some(key => !['action', 'path', 'content', 'baseSha'].includes(key))) throw new ApiError(400, 'INVALID_SKILL_CHANGE', 'Only action, path, content and baseSha are supported.');
   if (input.action !== 'create' && input.action !== 'update') throw new ApiError(400, 'INVALID_SKILL_ACTION', 'Choose create or update.');
   if (typeof input.path !== 'string' || !mutableSkillPath.test(input.path)) throw new ApiError(400, 'INVALID_SKILL_PATH', 'Editable skills use docs/skills/<lowercase slug>/SKILL.md with a 1–64 character slug.');
-  if (typeof input.baseSha !== 'string' || !/^[a-f0-9]{40}$/.test(input.baseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Provide the exact 40 character lowercase base commit SHA.');
+  if (typeof input.baseSha !== 'string' || !validGitSha(input.baseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Provide the exact 40 character lowercase base commit SHA.');
   if (typeof input.content !== 'string' || !input.content.trim() || input.content.includes('\0') || /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(input.content)) throw new ApiError(400, 'INVALID_SKILL_CONTENT', 'Skill content must be nonempty UTF-8 Markdown without NUL characters.');
   if (new TextEncoder().encode(input.content).byteLength > SKILL_CONTENT_MAX_BYTES) throw new ApiError(413, 'SKILL_TOO_LARGE', 'Skill content must not exceed 64 KiB.');
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(input.content)?.[1];

@@ -122,7 +122,7 @@ export async function deploySelfHosted() {
   if (!token) throw new Error('Cloudflare authentication is unavailable.');
   if (!/^[a-f0-9]{32}$/.test(accountId)) throw new Error('Invalid selected account ID.');
   const api = async (method, path, body, allowMissing = false) => {
-    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     if (allowMissing && response.status === 404) return null;
     const envelope = await response.json().catch(() => null);
     if (!response.ok || !envelope?.success) throw new ProvisioningError(response.status, `${method} ${path}`);

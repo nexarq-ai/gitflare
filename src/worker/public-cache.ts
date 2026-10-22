@@ -1,6 +1,6 @@
 import { hostOrigins } from '../shared/hosts';
 import type { AppEnv } from './env';
-import { consume, rateLimitedResponse } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { sessionCookieValue } from './session-policy';
 import { securityClient } from './security';
 
@@ -51,7 +51,7 @@ export async function servePublicCached(request: Request, env: CacheEnv, ctx: Wa
   const key = publicCacheKey(url);
   const cached = await cache.match(key).catch(() => undefined);
   if (cached) {
-    const limited = await consume(env as AppEnv, 'PUBLIC_READ_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+    const limited = await consume(env as AppEnv, 'PUBLIC_READ_RATE_LIMIT', `ip:${clientIp(request)}`);
     if (limited) return rateLimitedResponse(limited, 'public repository requests');
     const ids = dependencies(cached);
     const listings = ids.length && env.GITFLARE_SECURITY ? await securityClient(env as AppEnv).publicListed(ids).catch(() => null) : [];

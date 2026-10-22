@@ -11,7 +11,7 @@ import { personLabel } from "./IssueLabels";
 
 type Reports = { reports: ContentReport[]; people: Record<string, IssuePerson> };
 
-export function reportLink(report: ContentReport): string {
+function reportLink(report: ContentReport): string {
   const [handle, repository] = report.address.split("/");
   return `${publicRepositoryPath(handle ?? "", repository ?? "")}/issues/${report.issueNumber}`;
 }

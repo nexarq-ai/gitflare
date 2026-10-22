@@ -28,7 +28,7 @@ function StateBadge({ state, reason }: { state: string; reason?: IssueCloseReaso
 }
 
 const reasonLabel = (value: string) => value.replace(/-/g, " ");
-export const issueBranchName = (number: number, title: string) => `issue-${number}${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40).replace(/^-+|-+$/g, "").replace(/^(.)/, "-$1")}`;
+const issueBranchName = (number: number, title: string) => `issue-${number}${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40).replace(/^-+|-+$/g, "").replace(/^(.)/, "-$1")}`;
 const splitLabels = (value: string) => value.split(",").map((label) => label.trim()).filter(Boolean);
 
 export default function Issues({ repository, issueNumber, missions = [] }: { repository: Repository; issueNumber?: string; missions?: MissionSummary[] }) {

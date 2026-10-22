@@ -2,7 +2,7 @@ import type { AppEnv } from './env';
 import { handleProblem } from '../shared/handles';
 import { catalogName } from './capacity';
 import { GIT_CHALLENGE, handleGitRequest, serveUploadPack, text, type GitHttpDependencies } from './git-http';
-import { consume, rateLimitMessage } from './rate-limits';
+import { clientIp, consume, rateLimitMessage } from './rate-limits';
 import { findPublicRepository, resolvePublicRepository } from './public-repositories';
 import { securityClient } from './security';
 
@@ -28,7 +28,7 @@ export async function handlePublicGit(request: Request, env: AppEnv, deps: GitHt
   if (request.method !== (kind === 'refs' ? 'GET' : 'POST')) return text(405, 'This Git operation uses a different HTTP method.');
   const access = securityClient(env);
   if (service === 'git-upload-pack') {
-    const limited = await consume(env, 'PUBLIC_GIT_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+    const limited = await consume(env, 'PUBLIC_GIT_RATE_LIMIT', `ip:${clientIp(request)}`);
     if (limited) return text(429, rateLimitMessage(limited, 'anonymous Git requests'), { 'Retry-After': String(limited.retryAfterSeconds) });
     const target = await resolvePublicRepository(env, access, handle, name);
     if (target && 'redirect' in target) return new Response(null, { status: kind === 'refs' ? 302 : 308, headers: { Location: `/${target.redirect}/${name}.git/${operation}${url.search}`, 'Cache-Control': 'no-store' } });
