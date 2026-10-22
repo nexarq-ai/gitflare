@@ -1,18 +1,15 @@
 import type { Repository, SecurityPolicy } from '../shared/types';
 import type { AppEnv } from './env';
-import type { SourceHandle } from './source-browse';
+import { firstFile, type SourceHandle } from './source-browse';
 
 export const SECURITY_POLICY_FILES = ['.gitflare/SECURITY.md', '.github/SECURITY.md', 'SECURITY.md', 'docs/SECURITY.md'] as const;
 const SECURITY_POLICY_MAX = 65_536;
 
-export async function readSecurityPolicy(source: SourceHandle, commitSha: string): Promise<SecurityPolicy | null> {
-  for (const path of SECURITY_POLICY_FILES) {
-    const blob = await source.readFile({ ref: commitSha, path }).catch(() => null);
-    if (!blob) continue;
-    if (blob.size > SECURITY_POLICY_MAX) return { path, content: '' };
-    return { path, content: await blob.text().catch(() => '') };
-  }
-  return null;
+export async function readSecurityPolicy(source: SourceHandle, commitSha: string, failed?: () => void): Promise<SecurityPolicy | null> {
+  const found = await firstFile(source, commitSha, SECURITY_POLICY_FILES, failed);
+  if (!found) return null;
+  if (found.blob.size > SECURITY_POLICY_MAX) return { path: found.path, content: '' };
+  return { path: found.path, content: await found.blob.text().catch(() => { failed?.(); return ''; }) };
 }
 
 export async function repositorySecurityPolicy(env: Pick<AppEnv, 'ARTIFACTS'>, repository: Repository): Promise<SecurityPolicy | null> {

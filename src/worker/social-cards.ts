@@ -153,12 +153,27 @@ export async function socialMetaTags(request: Request, env: AppEnv): Promise<str
   } catch { return ''; }
 }
 
+const SHARE_TAGS = /\s*<title>[^<]*<\/title>|\s*<meta\s+(?:property="og:[^"]*"|name="twitter:[^"]*"|name="description")[^>]*>/g;
+
 export function withSocialMeta(html: string, tags: string): string {
   if (!tags) return html;
-  return html
-    .replace(/<title>[^<]*<\/title>/, '')
-    .replace(/\s*<meta\s+(?:property="og:[^"]*"|name="twitter:[^"]*"|name="description")[^>]*>/g, '')
-    .replace('</head>', `${tags}</head>`);
+  return html.replace(SHARE_TAGS, '').replace('</head>', `${tags}</head>`);
+}
+
+export function streamSocialMeta(html: string, appended: string, tags: Promise<string>): ReadableStream<Uint8Array> | null {
+  const end = html.indexOf('</head>');
+  if (end < 0) return null;
+  const head = html.slice(0, end);
+  const fallback = head.match(SHARE_TAGS)?.join('') ?? '';
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(head.replace(SHARE_TAGS, '')));
+      const social = await tags.catch(() => '');
+      controller.enqueue(encoder.encode(`${social || fallback}${appended}${html.slice(end)}`));
+      controller.close();
+    },
+  });
 }
 
 async function loadFonts(env: AppEnv, origin: string): Promise<Uint8Array[]> {

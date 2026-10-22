@@ -11,6 +11,7 @@ import { listPublicDocs, readPublicDoc, publicSourceResponse } from './distribut
 import { oauthConsent, oauthProvider } from './oauth';
 import { publicPageResponse } from './public-pages';
 import { hostRedirect, withHostOrigins } from './host-split';
+import { withPublicPreloads } from './public-preload';
 import { legacySourceRedirect } from './hosted-source';
 import { requestSessionMeta } from './session-meta';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare } from './cloudflare';
@@ -21,7 +22,7 @@ import { notificationsApi, unsubscribeApi } from './inbox';
 import { publicAdvisoriesApi } from './advisories';
 import { feedResponse } from './feeds';
 import { publicDownloadResponse } from './public-downloads';
-import { socialCardResponse, socialMetaTags } from './social-cards';
+import { socialCardResponse, socialMetaTags, socialPageTarget } from './social-cards';
 import { IMPORT_REQUEST_MAX_BYTES } from './repository-import';
 import { handleGitRequest } from './git-http';
 import { handleUrlImport } from './url-import';
@@ -244,7 +245,10 @@ const application = {
     if (card) return card;
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
-    if (!path.startsWith('/api/') && path !== '/mcp') return withHostOrigins(await env.ASSETS.fetch(request), env, path, await socialMetaTags(request, env));
+    if (!path.startsWith('/api/') && path !== '/mcp') {
+      const social = request.method === 'GET' && socialPageTarget(path) ? socialMetaTags(request, env) : '';
+      return withHostOrigins(await withPublicPreloads(request, env, await env.ASSETS.fetch(request)), env, path, social);
+    }
     let response: Response;
     try {
       if (path === '/mcp') {

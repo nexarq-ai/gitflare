@@ -2,7 +2,7 @@ import { hostOrigins, type HostOrigins } from '../shared/hosts';
 import { followsSavedTheme, isAppPath, isKnownAppRoute, isPublicProductRoute, isSiteRoute, routeFromLocation, SIGNED_IN_PRODUCT_ROUTES } from '../ui/router';
 import { CLOUDFLARE_CALLBACK_PATH, CLOUDFLARE_CONNECT_STATE_COOKIE, CLOUDFLARE_SIGNIN_STATE_COOKIE, requestCookie } from './cloudflare';
 import type { AppEnv } from './env';
-import { withSocialMeta } from './social-cards';
+import { streamSocialMeta, withSocialMeta } from './social-cards';
 
 const CALLBACK_PATHS = new Set([CLOUDFLARE_CALLBACK_PATH, '/api/auth/cloudflare/callback']);
 
@@ -41,12 +41,16 @@ export async function hostRedirect(request: Request, env: AppEnv, signedIn: (req
   return isKnownAppRoute(route) && !isSiteRoute(route) ? redirect(toApp, 302) : null;
 }
 
-export async function withHostOrigins(response: Response, env: AppEnv, pathname = '', head = ''): Promise<Response> {
+export async function withHostOrigins(response: Response, env: AppEnv, pathname = '', head: string | Promise<string> = ''): Promise<Response> {
   const origins = envHostOrigins(env);
   if (!origins || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
   const html = await response.text();
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
   headers.delete('ETag');
-  return new Response(withSocialMeta(html, head).replace('</head>', `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}">${pathname && followsSavedTheme(routeFromLocation(pathname, '')) ? '<meta name="gitflare-theme" content="system">' : ''}</head>`), { status: response.status, statusText: response.statusText, headers });
+  const meta = `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}">${pathname && followsSavedTheme(routeFromLocation(pathname, '')) ? '<meta name="gitflare-theme" content="system">' : ''}`;
+  const init = { status: response.status, statusText: response.statusText, headers };
+  const streamed = typeof head === 'string' ? null : streamSocialMeta(html, meta, head);
+  if (streamed) return new Response(streamed, init);
+  return new Response(withSocialMeta(html, typeof head === 'string' ? head : await head.catch(() => '')).replace('</head>', `${meta}</head>`), init);
 }

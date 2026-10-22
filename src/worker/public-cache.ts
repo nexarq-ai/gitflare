@@ -9,6 +9,8 @@ export const PUBLIC_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate
 const CACHE_PREFIX = '/__gitflare-public-cache/v1';
 const CACHEABLE = /^\/api\/public\/(?:repos\/[^/]+\/[^/]+(?:\/(?!(?:issues|security|advisories)$)[a-z]+)?|explore|search|profiles\/[^/]+(?:\/activity)?)$/;
 const DEPENDENCY_MAX = 100;
+const COMMIT_CACHE_CONTROL = 'public, s-maxage=2592000';
+const COMMIT_SHA = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/;
 
 type CacheEnv = Pick<AppEnv, 'EDITION' | 'DEMO_MODE' | 'SITE_ORIGIN' | 'APP_ORIGIN' | 'GITFLARE_SECURITY'> & Partial<Pick<AppEnv, 'PUBLIC_READ_RATE_LIMIT'>>;
 type Waiter = { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -66,6 +68,24 @@ export async function servePublicCached(request: Request, env: CacheEnv, ctx: Wa
   const put = cache.put(key, new Response(body, { status: 200, headers: stored })).catch(() => undefined);
   if (ctx) ctx.waitUntil(put); else await put;
   return forClient(new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers }), 'miss');
+}
+
+export function commitCacheKey(origin: string, repositoryId: string, commitSha: string, part: string): Request {
+  return new Request(`${origin}${CACHE_PREFIX}/commits/${encodeURIComponent(repositoryId)}/${commitSha}/${encodeURIComponent(part)}`, { method: 'GET' });
+}
+
+export interface CommitValue<T> { value: T; cacheable: boolean }
+
+export async function cachedAtCommit<T>(env: CacheEnv, origin: string, repositoryId: string, commitSha: string, part: string, produce: () => Promise<CommitValue<T>>): Promise<T> {
+  const cache = enabled(env) && COMMIT_SHA.test(commitSha) ? edgeCache() : null;
+  if (!cache) return (await produce()).value;
+  const key = commitCacheKey(origin, repositoryId, commitSha, part);
+  const cached = await cache.match(key).catch(() => undefined);
+  const hit = cached ? await cached.json().catch(() => undefined) as T | undefined : undefined;
+  if (hit !== undefined) return hit;
+  const { value, cacheable } = await produce();
+  if (cacheable) await cache.put(key, Response.json(value, { headers: { 'Cache-Control': COMMIT_CACHE_CONTROL } })).catch(() => undefined);
+  return value;
 }
 
 export function publicCacheOrigins(env: Pick<AppEnv, 'SITE_ORIGIN' | 'APP_ORIGIN'>, fallback?: string): string[] {
