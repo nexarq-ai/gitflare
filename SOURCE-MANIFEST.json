@@ -310,8 +310,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 31666,
-      "sha256": "85feb312479b7560523dfbf060781ffe536357d90938972f9cdb71e05e9d3ff0"
+      "size": 31771,
+      "sha256": "8e36bdc0225e7c974bd9053504f29ac6f97083175a64dd3cf66caf688d3bb2fa"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -1880,8 +1880,8 @@
     },
     {
       "path": "src/worker/public-repositories.ts",
-      "size": 19422,
-      "sha256": "04313c2c6e6717efd9690d7ebd78f639f0d9be092c1d76c078dbccf5fb4a84c4"
+      "size": 19971,
+      "sha256": "57d731cac2875ea4ac002f8c58b0f8b3a762f1fd8a287e3c4ba590506afbf548"
     },
     {
       "path": "src/worker/rate-limits.ts",
@@ -2395,8 +2395,8 @@
     },
     {
       "path": "tests/public-repository-ui.test.ts",
-      "size": 5024,
-      "sha256": "04e1ef1ee7ce56c683effe461a0a01b46d4d094930465603eed5895fd54dc03e"
+      "size": 6274,
+      "sha256": "df47f5cf536acb2fe554c9f159b82fa8248043cbcc842cf523dcccdb61123964"
     },
     {
       "path": "tests/release-assets-ui.test.ts",

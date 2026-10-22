@@ -9,7 +9,7 @@ import { listBranches } from './git-http';
 import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { publicPrincipal, securityClient, type Principal, type PublicListing, type SecurityService, type VisibilityRecord } from './security';
 import { CACHE_DEPENDENCIES } from './public-cache';
-import { repositoryActivity, repositoryReadiness } from './public-index';
+import { indexedDetails, repositoryActivity, repositoryReadiness } from './public-index';
 import { sourceView, type SourceHandle } from './source-browse';
 import { readFunding } from './funding';
 import { readSecurityPolicy } from './security-policy';
@@ -161,12 +161,17 @@ async function publicView(env: AppEnv, access: SecurityService, target: PublicTa
     const readme = entries.filter(entry => entry.type !== 'tree' && README_FILE.test(entry.name)).sort((a, b) => a.name.length - b.name.length)[0]?.name ?? null;
     const urls = publicUrls(origin, handle, repository);
     const records = env.GITFLARE_COORDINATOR.getByName(`repository:${repository.id}`);
-    const [[stats], forks, agentReady] = await Promise.all([access.repositoryStats([repository.id]), Promise.resolve().then(() => records.forkCount()).catch(() => 0), repositoryReadiness(env, repository.id).catch(() => null)]);
+    const [[stats], forks, agentReady, details, releases] = await Promise.all([
+      access.repositoryStats([repository.id]), Promise.resolve().then(() => records.forkCount()).catch(() => 0), repositoryReadiness(env, repository.id).catch(() => null),
+      indexedDetails(env, [repository.id]).catch(() => new Map()), Promise.resolve().then(() => records.listReleases() as Promise<Release[]>).catch(() => [] as Release[]),
+    ]);
+    const latest = releases.filter(release => !release.draft && release.publishedAt).sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''))[0];
     const [license, funding, policy] = commit ? await Promise.all([detectLicense(source, repository.defaultBranch), readFunding(source, commit.hash).catch(() => []), readSecurityPolicy(source, commit.hash).catch(() => null)]) : [null, [], null];
     return Response.json({
       handle, name: repositoryLabel(repository), description: repository.description, defaultBranch: repository.defaultBranch, headSha: commit?.hash ?? null, updatedAt: repository.updatedAt,
       visibility: 'public', license, readme, url: urls.url, cloneUrl: urls.cloneUrl, latestCommit: commit ? commits([commit])[0]! : null,
       stars: stats?.stars ?? 0, watchers: stats?.watchers ?? 0, forks, funding, feeds: feedLinks(origin, urls.path), securityPolicy: !!policy, agentReady,
+      language: details.get(repository.id)?.language ?? null, latestRelease: latest ? { tag: latest.tag, name: latest.name, publishedAt: latest.publishedAt! } : null,
     } satisfies PublicRepositorySummary);
   }
   if (view === 'branches') {

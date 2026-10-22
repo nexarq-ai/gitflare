@@ -422,6 +422,8 @@ export interface PublicRepositorySummary {
   feeds?: RepositoryFeeds;
   securityPolicy?: boolean;
   agentReady?: AgentReadiness | null;
+  language?: string | null;
+  latestRelease?: { tag: string; name: string; publishedAt: string } | null;
 }
 
 export interface ActivityWeek { week: string; people: number; agents: number; missions: number; reviews: number; releases: number; issues: number }
