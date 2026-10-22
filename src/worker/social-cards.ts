@@ -155,7 +155,10 @@ export async function socialMetaTags(request: Request, env: AppEnv): Promise<str
 
 export function withSocialMeta(html: string, tags: string): string {
   if (!tags) return html;
-  return html.replace(/<title>[^<]*<\/title>/, '').replace('</head>', `${tags}</head>`);
+  return html
+    .replace(/<title>[^<]*<\/title>/, '')
+    .replace(/\s*<meta\s+(?:property="og:[^"]*"|name="twitter:[^"]*"|name="description")[^>]*>/g, '')
+    .replace('</head>', `${tags}</head>`);
 }
 
 async function loadFonts(env: AppEnv, origin: string): Promise<Uint8Array[]> {
