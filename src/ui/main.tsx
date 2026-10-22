@@ -1,25 +1,13 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App, { isPublicRoute } from "./App";
-import "./repository-browser.css";
-import "./public-install.css";
-import "./auth-loading.css";
-import "./documentation.css";
-import "./repository-skills.css";
-import "./cloudflare-connection.css";
-import "./repository-work.css";
-import "./proposal-create.css";
-import "./repository-import.css";
-import "./model-connections.css";
-import "./issues.css";
-import "./releases.css";
-import "./pull-requests.css";
 import "./styles.css";
 import "./design-system.css";
 import { initializeTheme } from "./ThemeToggle";
-import { currentRoute, followsSavedTheme } from "./router";
+import { currentRoute, followsSavedTheme, isPublicRoute } from "./router";
+import App from "./App";
 
 const route = currentRoute();
+const shell = Promise.resolve({ default: App });
 initializeTheme(isPublicRoute(route) && !followsSavedTheme(route));
 
 declare global {
@@ -28,10 +16,10 @@ declare global {
   }
 }
 
-void (window.gitflareFontsReady ?? Promise.resolve()).then(() => {
+void Promise.all([shell, window.gitflareFontsReady]).then(([{ default: Root }]) => {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <App />
+      <Root />
     </React.StrictMode>,
   );
 });
