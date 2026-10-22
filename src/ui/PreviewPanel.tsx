@@ -79,7 +79,7 @@ function CopyUrl({ url }: { url: string }) {
   return <Button variant="ghost" size="sm" shape="square" icon={copied ? CheckIcon : CopyIcon} aria-label={copied ? "Preview link copied" : "Copy preview link"} title={copied ? "Copied" : "Copy link"} onClick={() => void navigator.clipboard.writeText(url).then(() => setCopied(true)).catch(() => {})} />;
 }
 
-export function PreviewSetupNotice({ code, viewer }: { code: PreviewSetupCode; viewer: PreviewSetupViewer }) {
+function PreviewSetupNotice({ code, viewer }: { code: PreviewSetupCode; viewer: PreviewSetupViewer }) {
   const fix = previewSetupFix(code, viewer);
   return <div className="preview-card-setup" data-setup={code}>
     <span className="preview-card-reason">{fix.line}</span>

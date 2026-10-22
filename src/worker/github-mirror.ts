@@ -8,6 +8,7 @@ import { advertise, basicAuthorization, transferRefs, ZERO_SHA, type GitRemote, 
 import { githubAppConfig, githubAppInstallUrl, githubInstallationToken, type GitHubAppEnv } from './github-app';
 import type { Action, Principal } from './security';
 import type { StepRunner } from './background-work';
+import { validGitSha } from './artifacts';
 
 export const GITHUB_ORIGIN = 'https://github.com';
 const STORE_KEY = 'github-mirror';
@@ -431,7 +432,7 @@ async function requireMirror(context: MirrorApiContext): Promise<StoredMirror> {
 
 const sha = (value: unknown, field: string): string | null => {
   if (value === null) return null;
-  if (typeof value !== 'string' || !/^[a-f0-9]{40}$/.test(value)) throw new ApiError(400, 'INVALID_COMMIT', `${field} must be the 40-character GitHub commit SHA shown in the mirror status, or null.`);
+  if (typeof value !== 'string' || !validGitSha(value)) throw new ApiError(400, 'INVALID_COMMIT', `${field} must be the 40-character GitHub commit SHA shown in the mirror status, or null.`);
   return value;
 };
 

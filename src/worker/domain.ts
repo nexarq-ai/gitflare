@@ -5,6 +5,7 @@ import type { AgentTask, CreateMissionInput, Repository } from '../shared/types'
 import { normalizeAgentOverrides, normalizeEditScope } from './agent-settings';
 import { validateAttachments } from './mission-context';
 import { modelIdentifier } from './model-config';
+import { validGitSha } from './artifacts';
 
 export const MISSION_REQUEST_MAX_BYTES = 262_144;
 
@@ -91,7 +92,7 @@ export function missionInput(body: Record<string, unknown>): CreateMissionInput 
   if (body.skillChange !== undefined) throw new ApiError(400, 'SKILL_ENDPOINT_REQUIRED', 'Create skill proposals through the repository Skills endpoint.');
   const input: CreateMissionInput = { title: requireString(body.title, 'Title', 120), prompt: requireString(body.prompt, 'Prompt', 8000, 10), repositoryId: requireString(body.repositoryId, 'Repository', 100) };
   if (body.expectedBaseSha !== undefined) {
-    if (typeof body.expectedBaseSha !== 'string' || !/^[a-f0-9]{40}$/.test(body.expectedBaseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Provide the exact lowercase 40 character proposal base commit SHA.');
+    if (typeof body.expectedBaseSha !== 'string' || !validGitSha(body.expectedBaseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Provide the exact lowercase 40 character proposal base commit SHA.');
     input.expectedBaseSha = body.expectedBaseSha;
   }
   if (body.acceptanceCriteria !== undefined) {

@@ -22,7 +22,6 @@ import { URL_IMPORT_LIMITS } from './url-import';
 import { ORG_IMPORT_MAX } from './github-import';
 import { rateLimitMessage, type RateLimited } from './rate-limits';
 import { DEFAULT_MAX_AGENTS, DRAFT_GOAL_MAX, DRAFT_GOAL_MIN, MAX_ALLOWED_MODELS, MAX_MISSION_AGENTS } from '../shared/mission-draft';
-import { DEFAULT_MODEL } from './model-config';
 import { AGENT_SETTINGS_BOUNDS } from './agent-settings';
 import { WORKSPACE_MISSION_LIMIT } from './capacity';
 import { demoToolRestriction } from './demo';

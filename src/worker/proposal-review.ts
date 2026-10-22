@@ -1,6 +1,7 @@
 import { diffHasLine, parseFilePatch } from '../shared/diff';
 import type { Mission, ReviewMissionInput } from '../shared/types';
 import { ApiError, requireString } from './domain';
+import { validGitSha } from './artifacts';
 
 function lineAnchor(body: Record<string, unknown>): Pick<ReviewMissionInput, 'path' | 'line' | 'side'> {
   if (body.path === undefined && body.line === undefined && body.side === undefined) return {};
@@ -22,7 +23,7 @@ export function reviewMissionInput(body: Record<string, unknown>): ReviewMission
   if (!Number.isSafeInteger(body.epoch) || Number(body.epoch) < 1) throw new ApiError(400, 'INVALID_REVIEW', 'An exact execution attempt is required.');
   const candidateSha = requireString(body.candidateSha, 'Candidate commit', 40, 40);
   const baseSha = requireString(body.baseSha, 'Base commit', 40, 40);
-  if (!/^[a-f0-9]{40}$/.test(candidateSha) || !/^[a-f0-9]{40}$/.test(baseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Commit identifiers must be 40 lowercase hexadecimal characters.');
+  if (!validGitSha(candidateSha) || !validGitSha(baseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Commit identifiers must be 40 lowercase hexadecimal characters.');
   const action = body.action as ReviewMissionInput['action'];
   const message = action === 'resolve' ? { reviewId: requireString(body.reviewId, 'Review', 100) } : action === 'approve' ? { body: body.body === undefined || body.body === '' ? '' : requireString(body.body, 'Review message', 8000) } : { body: requireString(body.body, 'Review message', 8000) };
   return { action, epoch: Number(body.epoch), candidateSha, baseSha, ...message, ...(summary ? { summary: true } : {}), ...lineAnchor(body) };

@@ -127,26 +127,6 @@
   }
 }
 
-.repository-work-safety {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border-left: 3px solid var(--gf-color-accent);
-  padding: 10px 14px;
-  margin: 0 0 16px;
-  color: var(--gf-color-text-secondary);
-  font-size: 12px;
-  line-height: 1.6;
-  background: var(--gf-color-surface-raised);
-}
-.repository-work-safety svg {
-  margin-top: 3px;
-  flex-shrink: 0;
-}
-.repository-work-safety strong {
-  color: var(--gf-color-text);
-  font-weight: 500;
-}
 .repository-work-heading > button {
   flex-shrink: 0;
   white-space: nowrap;

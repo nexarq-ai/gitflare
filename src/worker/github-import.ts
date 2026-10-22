@@ -4,10 +4,11 @@ import { ApiError, assertMutationOrigin, readJson, requireIdempotencyKey } from 
 import { decryptAuth, encryptAuth } from './mfa';
 import { GITHUB_AUTHOR_PREFIX, importComments, importIssues, importLabelDefinitions, LABEL_COLOR, LABEL_COLORS, type CommentImport, type ImportOutcome, type IssueImport, type IssueStore } from './issues';
 import { RELEASE_LIMIT, RELEASE_NOTES_MAX, releaseTag } from './releases';
-import { advertise, basicAuthorization, transferRefs, ZERO_SHA, type GitRemote } from './git-transfer';
+import { advertise, transferRefs, ZERO_SHA, type GitRemote } from './git-transfer';
 import { GITHUB_ORIGIN, githubTarget, patToken, type StoredMirror } from './github-mirror';
 import type { Action, Principal } from './security';
 import type { StepRunner } from './background-work';
+import { validGitSha } from './artifacts';
 
 export const GITHUB_API = 'https://api.github.com';
 const STORE_KEY = 'github-import';
@@ -377,7 +378,7 @@ export interface PullHead { number: number; title: string; description: string; 
 
 export function pullFromGithub(raw: RawPull, owner: string, name: string): PullHead | null {
   const number = positive(raw.number);
-  const headSha = typeof raw.head?.sha === 'string' && /^[a-f0-9]{40}$/.test(raw.head.sha) ? raw.head.sha : null;
+  const headSha = typeof raw.head?.sha === 'string' && validGitSha(raw.head.sha) ? raw.head.sha : null;
   if (!number || !headSha) return null;
   const url = githubUrl(raw.html_url, `${GITHUB_ORIGIN}/${owner}/${name}/pull/${number}`);
   const author = authorOf(raw.user);

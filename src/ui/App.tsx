@@ -33,7 +33,6 @@ import {
   ListIcon,
   MagnifyingGlassIcon,
   PlusIcon,
-  ShieldCheckIcon,
   TrayIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -51,15 +50,13 @@ import {
 import QuickSearch from "./QuickSearch";
 import InvitationScreen from "./InvitationScreen";
 import AuthScreen, { AccountScreen, isAccountRoute, type AuthConfig } from "./AuthScreen";
-import OwnerTokenNotice from "./OwnerTokenNotice";
 import NotFoundScreen, { NotFound } from "./NotFound";
 import DemoBanner from "./DemoBanner";
 import { DemoReplayCard } from "./DemoReplay";
 import DemoFeaturePanel from "./DemoFeaturePanel";
-import { showOwnerTokenNotice } from "./owner-token-notice";
 import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
-import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, isPublicProductRoute, SIGNED_IN_PRODUCT_ROUTES, keepsRouteAcrossWorkspaces, routeUrl } from "./router";
+import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, isPublicProductRoute, keepsRouteAcrossWorkspaces, routeUrl } from "./router";
 import DeployStatusPill from "./DeployProgress";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLayout";
@@ -138,7 +135,7 @@ const workspacePages = [loadMissionDetail, loadRepositoryBrowser, loadDocumentat
 // Start the homepage chunk alongside the main bundle instead of after it
 if (currentRoute() === "home") void loadHomepage();
 
-type Modal = "repository" | "connect" | "learn" | "session" | null;
+type Modal = "repository" | "connect" | "learn" | null;
 const blankWorkspace: Workspace = {
   name: "Your workspace",
   mode: "local",
@@ -726,7 +723,7 @@ function Workspace() {
             <ErrorNotice message={error} onRetry={() => void refresh()} />
           )}
           <Suspense fallback={<RouteProgress />}>
-            {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : route === "import/github" ? <GitHubOrgImport canManage={permissions.includes("manage")} onOpen={id => navigate(`repository/${id}/code`)} onImported={() => void load()} /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onImportRepository={id => navigate(`repository/${id}/import`)} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify(proposal.status === "draft" ? "Mission draft created." : "Mission started."); }} /> : page === "settings" ? (
+            {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : route === "import/github" ? <GitHubOrgImport canManage={permissions.includes("manage")} onOpen={id => navigate(`repository/${id}/code`)} onImported={() => void load()} /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify(proposal.status === "draft" ? "Mission draft created." : "Mission started."); }} /> : page === "settings" ? (
               <WorkspaceSettingsLayout route={route}>
                 {route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} />
                   : route === "settings/cloudflare" ? <CloudflareAccounts canManage={permissions.includes("manage")} repositories={workspace.repositories} workspaceName={workspace.name} />
@@ -1224,7 +1221,6 @@ function Workspace() {
       <CreationDialog
         modal={modal}
         demo={!!authConfig.demo}
-        cloudflareAvailable={authConfig.cloudflareSignin === true}
         onClose={() => setModal(null)}
         onImportOrganization={() => { setModal(null); navigate("import/github"); }}
         workspace={workspace}
@@ -1233,10 +1229,6 @@ function Workspace() {
           setModal(null);
           navigate(importCode ? `repository/${item.id}/import` : creatingProposal ? `repository/${item.id}/proposals/new` : `repository/${item.id}`);
           notify("Repository created.");
-        }}
-        onSignedIn={async () => {
-          setModal(null);
-          await load();
         }}
       />
       {toast && (
@@ -1499,7 +1491,7 @@ function RepositoryDetail({
           : subroute === "issues" ? <IssueSettings key={repository.id} repository={repository} canTriage={!!access?.permissions.includes("triage")} publicRepositories={publicRepositories} onNotify={onNotify} />
           : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <RouteProgress />
           : <RepositoryGeneral repository={repository} publicRepositories={publicRepositories} onNotify={onNotify} onRefresh={onRefresh} />}
-      </RepositorySettingsLayout> : ["agents", "checks"].includes(tab) ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "code" ? (
+      </RepositorySettingsLayout> : tab === "agents" || tab === "checks" ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "code" ? (
         <>{repository.fork && <ForkBanner key={`fork-${repository.id}`} repository={repository} onNotify={onNotify} onChanged={onRefresh} />}<RepositoryImportOnboarding key={repository.id} repository={repository} canManage={canManage} onImport={onImport} onRefresh={onRefresh} /><RepositoryBrowser key={repository.id} repository={repository} />{repository.provider === "artifacts" && <GitAccess key={`git-${repository.id}`} repository={repository} publicUrl={publicRepositories && repository.visibility === "public" && workspace.handle ? `${pageHostOrigins()?.site ?? window.location.origin}${publicRepositoryPath(workspace.handle, repositoryLabel(repository))}.git` : undefined} onNotify={onNotify} />}</>
       ) : tab === "overview" ? (
         <>
@@ -1585,18 +1577,14 @@ function CreationDialog({
   onImportOrganization,
   workspace,
   onCreated,
-  onSignedIn,
-  cloudflareAvailable,
   demo = false,
 }: {
   modal: Modal;
   demo?: boolean;
-  cloudflareAvailable: boolean;
   onClose: () => void;
   onImportOrganization: () => void;
   workspace: Workspace;
   onCreated: (item: Repository, importCode?: boolean) => Promise<void>;
-  onSignedIn: () => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -1609,17 +1597,14 @@ function CreationDialog({
   const [gitignore, setGitignore] = useState("none");
   const [license, setLicense] = useState("none");
   const [copyrightHolder, setCopyrightHolder] = useState("");
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [ownerNotice, setOwnerNotice] = useState(false);
   const mutation = useRef<{ signature: string; key: string } | null>(null);
 
   useEffect(() => {
     setName("");
     setDescription("");
     setStart("new"); setSourceUrl(""); setSourceToken(""); setSourceUsername(""); setInitializeReadme(true); setGitignore("none"); setLicense("none"); setCopyrightHolder("");
-    setToken("");
     setError("");
     setBusy(false);
     mutation.current = null;
@@ -1631,17 +1616,12 @@ function CreationDialog({
     setBusy(true);
     setError("");
     const fromUrl = modal === "repository" && start === "url";
-    const body = modal === "session" ? { token } : fromUrl ? { name: name.trim(), description: description.trim(), url: sourceUrl.trim(), ...(sourceToken ? { token: sourceToken } : {}), ...(sourceToken && sourceUsername.trim() ? { username: sourceUsername.trim() } : {}) } : { name: name.trim(), description: description.trim(), ...(modal === "repository" ? { initializeReadme: importCode ? false : initializeReadme, gitignore: importCode ? "none" : gitignore, license: importCode ? "none" : license, copyrightHolder: importCode ? undefined : copyrightHolder.trim() || undefined } : {}) };
+    const body = fromUrl ? { name: name.trim(), description: description.trim(), url: sourceUrl.trim(), ...(sourceToken ? { token: sourceToken } : {}), ...(sourceToken && sourceUsername.trim() ? { username: sourceUsername.trim() } : {}) } : { name: name.trim(), description: description.trim(), ...(modal === "repository" ? { initializeReadme: importCode ? false : initializeReadme, gitignore: importCode ? "none" : gitignore, license: importCode ? "none" : license, copyrightHolder: importCode ? undefined : copyrightHolder.trim() || undefined } : {}) };
     const signature = JSON.stringify({ modal, body });
     if (mutation.current?.signature !== signature)
       mutation.current = { signature, key: crypto.randomUUID() };
     try {
-      if (modal === "session") {
-        await request("/api/session", body, mutation.current.key);
-        setToken("");
-        if (showOwnerTokenNotice(true)) setOwnerNotice(true);
-        else await onSignedIn();
-      } else if (modal === "repository" || modal === "connect") {
+      if (modal === "repository" || modal === "connect") {
         const result = await request<Repository>(
           modal === "connect"
             ? "/api/repositories/connect"
@@ -1668,7 +1648,6 @@ function CreationDialog({
     repository: "Create a repository",
     connect: "Connect an existing repository",
     learn: "From intent to a reviewed change",
-    session: "Sign in to Gitflare",
   }[modal ?? "repository"];
   const descriptionText = {
     repository: "A home for your code and every agent contribution.",
@@ -1676,19 +1655,11 @@ function CreationDialog({
       "Add a repository that already exists in the Artifacts namespace connected to this workspace.",
     learn:
       "Keep the speed of parallel agents, with a clear record of what changed and why.",
-    session:
-      "Enter the owner access token for this workspace. It is used to establish a private session.",
   }[modal ?? "repository"];
 
   return (
-    <>
-    <OwnerTokenNotice
-      open={ownerNotice}
-      cloudflareAvailable={cloudflareAvailable}
-      onContinue={() => { setOwnerNotice(false); void onSignedIn(); }}
-    />
     <Dialog.Root
-      open={modal !== null && !ownerNotice}
+      open={modal !== null}
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
@@ -1754,21 +1725,7 @@ function CreationDialog({
           </div>
         ) : (
           <form onSubmit={(event) => void submit(event)}>
-            {modal === "session" ? (
-              <div className="form-field">
-                <label htmlFor="owner-token">Owner access token</label>
-                <Input
-                  id="owner-token"
-                  aria-label="Owner access token"
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
-                />
-                <small>Your token is not saved in browser storage.</small>
-              </div>
-            ) : modal === "repository" || modal === "connect" ? (
+            {modal === "repository" || modal === "connect" ? (
               <>
                 <div className="form-field">
                   <label htmlFor="repository-name">Repository name</label>
@@ -1838,19 +1795,16 @@ function CreationDialog({
                 type="submit"
                 loading={busy}
               >
-                {modal === "session"
-                  ? "Sign in"
-                  : modal === "repository"
-                    ? start === "url" ? "Import repository" : "Create repository"
-                    : modal === "connect"
-                      ? "Connect repository"
-                      : "Create repository"}
+                {modal === "repository"
+                  ? start === "url" ? "Import repository" : "Create repository"
+                  : modal === "connect"
+                    ? "Connect repository"
+                    : "Create repository"}
               </Button>
             </div>
           </form>
         )}
       </Dialog>
     </Dialog.Root>
-    </>
   );
 }

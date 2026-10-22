@@ -321,8 +321,6 @@ export interface BuiltTarget {
   migrations: D1MigrationSet[];
   uploadAssets?(call: CloudflareCall, accountId: string, workerName: string): Promise<{ jwt: string; config: Record<string, unknown>; uploaded: number; total: number }>;
 }
-export type PublishTarget = <T>(built: BuiltTarget) => Promise<T>;
-
 export interface DeployCoordinator {
   getRepository(repositoryId: string): Promise<Repository | undefined>;
   getDeployment(id: string): Promise<DeploymentRecord | undefined>;

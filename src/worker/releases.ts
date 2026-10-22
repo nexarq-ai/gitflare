@@ -6,6 +6,7 @@ import { ApiError, assertMutationOrigin, publicError, readJson, requireIdempoten
 import { advertisedRefs, discoverRefs, remoteDetails } from './repository-import';
 import { boundedBody, packet, parsePackets, requireGitResponse } from './repository-initialization';
 import type { Principal } from './security';
+import { validGitSha } from './artifacts';
 
 // Ref advertisements are read through boundedBody's 64 KiB ceiling, which caps how many tags a repository can advertise
 export const RELEASE_LIMIT = 500;
@@ -50,7 +51,7 @@ export function releaseTag(value: unknown): string {
 }
 
 function commitSha(value: unknown): string {
-  if (typeof value !== 'string' || !/^[a-f0-9]{40}$/.test(value)) throw invalid('INVALID_COMMIT', 'Target commits must be 40 lowercase hexadecimal characters.');
+  if (typeof value !== 'string' || !validGitSha(value)) throw invalid('INVALID_COMMIT', 'Target commits must be 40 lowercase hexadecimal characters.');
   return value;
 }
 

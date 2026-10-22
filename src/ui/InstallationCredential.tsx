@@ -32,7 +32,7 @@ type UseResult = { stored: true; createdWorker: boolean; status: InstallationCre
 const BASE = "/api/cloudflare/installation-credential";
 const CONNECTION_SCOPES = ["workers-scripts.edit", "d1.write"];
 
-export function loadInstallationCredential() { return request<InstallationCredentialStatus>(BASE); }
+function loadInstallationCredential() { return request<InstallationCredentialStatus>(BASE); }
 
 function stateLabel(status: InstallationCredentialStatus): string {
   if (status.state === "missing") return "Not set up";

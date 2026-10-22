@@ -43,11 +43,6 @@ export function validGitSha(value: string): boolean {
   return /^[a-f0-9]{40}$/.test(value);
 }
 
-export async function getArtifactsHead(env: { ARTIFACTS?: ArtifactsBinding }, repository: { name: string; defaultBranch: string }): Promise<string | null> {
-  if (!env.ARTIFACTS) throw new Error('Artifacts is not configured');
-  return repositoryHead(env.ARTIFACTS, repository.name, repository.defaultBranch);
-}
-
 export async function createArtifactsRepository(env: { ARTIFACTS?: ArtifactsBinding }, input: { name: string; description?: string; defaultBranch?: string }): Promise<{ remote: string; headSha: null }> {
   if (!env.ARTIFACTS) throw new Error('Artifacts is not configured');
   const created = await env.ARTIFACTS.create(input.name, { description: input.description, setDefaultBranch: input.defaultBranch ?? 'main' });

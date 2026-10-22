@@ -1,5 +1,4 @@
 import type { AgentRun, BranchChange, Check, CheckPlan, FileChange, ManifestDependencyChanges, Mission, MissionEvent, Repository, RepositorySkillChange, RevertChange, ModelConnection, ModelUsage } from '../shared/types';
-import type { PreviewStep } from '../shared/preview-progress';
 import { activeLandingMessage, withMissionTrailer } from '../shared/commit-message';
 import { branchName } from './branch-protection';
 import { forkRepository, validGitSha, type ArtifactInfo, type ArtifactsBinding } from './artifacts';
@@ -7,12 +6,11 @@ import { failureLine } from './domain';
 import type { CommandResult, GitPermission, PrepareOptions } from '../../runner/sandbox';
 import { loadRepositorySkillContext } from './repository-skills';
 import { validateRepositorySkillChange } from './skill-edit';
-import { assertPinnedModel, defaultModelConnections, resolveModelConnection, DEFAULT_MODEL, ESCALATION_MODEL } from './model-config';
+import { assertPinnedModel, defaultModelConnections, resolveModelConnection, DEFAULT_MODEL } from './model-config';
 import { inferenceMessage, ModelHttpError, ModelLocationError, ModelResponseError, ModelTimeoutError, type InputItem, type ModelEnv, type ModelMessage } from './model-adapter';
-export { DEFAULT_MODEL, ESCALATION_MODEL } from './model-config';
 import { classifyPreview, LEGACY_PREVIEW, previewPlan, workerPreviewBuildCommand } from './preview-plan';
 import { containerFallbackNote } from './preview-host';
-import { PREVIEW_FAILURE_MAX } from '../shared/preview-progress';
+import { PREVIEW_FAILURE_MAX, type PreviewStep } from '../shared/preview-progress';
 import { buildWorkerBundle, DEPLOY_BUILD_TIMEOUT_MS, deployBuildScript, readWorkerConfig, WorkerBuildFailure, workerConfigPath, type BundleSandbox, type ResolvedWorkerConfig, type WorkerBundle } from './worker-bundle';
 import { collectAndUploadAssets, type AssetsOptions } from './worker-assets';
 import { migrationDatabases, readMigrationFiles, type D1MigrationSet } from './d1-migrations';
@@ -26,6 +24,8 @@ import { addsStarterPolicyFile, protectionReason, DEFAULT_EDITABLE, escalatedLim
 import { agentRules, agentSystemPrompt } from './agent-rules';
 import { dependencySummary, reviewManifest } from './dependency-changes';
 import { editScopeFailure, outsideEditScope } from './agent-settings';
+import { checkFailureSummary, checkFromCommand, commandOutput, outputLimit, timeoutNotice } from './check-evidence';
+export { checkFailureSummary, checkFromCommand, commandOutput, testReport, type CheckLimits, type ReportFormat, type TestReport } from './check-evidence';
 
 export interface SandboxRunner {
   prepare(repositories: GitPermission[], options?: PrepareOptions): Promise<void>;
@@ -65,7 +65,6 @@ const unrestricted: AuthorityGuard = async () => {};
 export function selectedModel(env: ExecutionEnv, models = defaultModelConnections()): string {
   return resolveModelConnection(models, env.MODEL ?? DEFAULT_MODEL).id;
 }
-const outputLimit = 12_000;
 
 export function executionReadiness(env: ExecutionEnv, mode: 'agent' | 'skill-edit' = 'agent'): { ready: boolean; missing: string[] } {
   const missing = [];
@@ -78,8 +77,8 @@ export function executionReadiness(env: ExecutionEnv, mode: 'agent' | 'skill-edi
   return { ready: missing.length === 0, missing };
 }
 
-export const MIN_AGENTS = 1;
-export const MAX_AGENTS = MAX_MISSION_AGENTS;
+const MIN_AGENTS = 1;
+const MAX_AGENTS = MAX_MISSION_AGENTS;
 
 export async function runConcurrent<T>(jobs: (() => Promise<T>)[]): Promise<PromiseSettledResult<T>[]> {
   if (jobs.length < MIN_AGENTS || jobs.length > MAX_AGENTS) throw new Error(`A proposal requires one to ${MAX_AGENTS} agent tasks`);
@@ -94,121 +93,6 @@ export async function runConcurrent<T>(jobs: (() => Promise<T>)[]): Promise<Prom
   }
   await Promise.all(Array.from({ length: Math.min(AGENT_CONCURRENCY, jobs.length) }, () => worker()));
   return outcomes;
-}
-
-function reportedTests(stdout: string, passingOnly: boolean): Map<string, number> {
-  const names = new Map<string, number>();
-  for (const line of stdout.split('\n')) {
-    const match = /^\s*(not )?ok \d+ - (.+?)(\s+# (?:SKIP|TODO)\b.*)?$/i.exec(line);
-    if (match && !(passingOnly && (match[1] || match[3]))) names.set(match[2], (names.get(match[2]) ?? 0) + 1);
-  }
-  return names;
-}
-
-export function missingBaselineTests(baselineStdout: string, candidateStdout: string): string[] {
-  const passing = reportedTests(candidateStdout, true);
-  return [...reportedTests(baselineStdout, false)].filter(([name, count]) => (passing.get(name) ?? 0) < count).map(([name]) => name);
-}
-
-const FAILURE_LINE = /^\s*not ok\b|^\s*(npm ERR!|npm error)|\b(Error|ERR_[A-Z_]+|FAIL|failed|Cannot find|not found|No test files|exceeded its execution deadline|Timed out after)\b/;
-
-export function checkFailureSummary(output: string): string {
-  const lines = output.split('\n').map((line) => line.trim()).filter((line) => line && !/^# (tests|suites|pass|cancelled|skipped|todo|duration_ms) /.test(line) && !/^(TAP version|1\.\.\d+|---|\.\.\.)$/.test(line));
-  const picked = lines.filter((line) => FAILURE_LINE.test(line)).slice(0, 3);
-  const summary = (picked.length ? picked : lines.slice(-3)).join(' · ');
-  return summary ? summary.slice(0, 400) : 'the test command produced no output. Open Checks for details.';
-}
-
-export type CheckLimits = Pick<RepositoryPolicy, 'testTimeoutMs' | 'testTimeoutSource' | 'runner' | 'runnerSource'>;
-
-const LIMIT_SOURCE = { owner: 'limit an Owner set for this proposal', 'gitflare.json': 'limit from gitflare.json timeoutSeconds', repository: 'limit from the repository check settings', learned: 'limit learned from recent check durations', auto: 'automatically increased limit', default: 'default limit' } as const;
-
-function lastCharacters(text: string, limit: number): string {
-  if (text.length <= limit) return text;
-  const keep = Math.max(0, limit - 48);
-  return `[${text.length - keep} earlier characters omitted]\n${keep ? text.slice(text.length - keep) : ''}`;
-}
-
-export function commandOutput(result: Pick<CommandResult, 'stdout' | 'stderr'>, limit = outputLimit): string {
-  const stdout = result.stdout.replace(/\s+$/, '');
-  const stderr = result.stderr.replace(/\s+$/, '');
-  if (!stderr) return lastCharacters(stdout, limit);
-  if (!stdout) return lastCharacters(stderr, limit);
-  const stdoutHeader = '--- stdout ---\n', stderrHeader = '\n--- stderr ---\n';
-  const room = limit - stdoutHeader.length - stderrHeader.length;
-  const stderrRoom = Math.min(stderr.length, Math.max(Math.floor(room / 3), room - stdout.length));
-  return `${stdoutHeader}${lastCharacters(stdout, room - stderrRoom)}${stderrHeader}${lastCharacters(stderr, stderrRoom)}`;
-}
-
-export function timeoutNotice(result: CommandResult, limits: CheckLimits | undefined, subject = ''): string {
-  if (!result.timedOut) return '';
-  const limit = limits ? ` after ${Math.round(limits.testTimeoutMs / 1000)} s on ${limits.runner} (${LIMIT_SOURCE[limits.testTimeoutSource]})` : '';
-  return `${subject}Timed out${limit}. Raise the check time limit (repository check settings, or timeoutSeconds in gitflare.json, up to 900 s) or choose a larger runner.\n`;
-}
-
-export type ReportFormat = 'tap' | 'node-spec' | 'vitest' | 'jest' | 'mocha';
-export interface TestReport { format: ReportFormat; tests: number; passed: number; failed: number }
-
-const REPORTER_NAMES: Record<ReportFormat, string> = { tap: 'TAP', 'node-spec': 'node:test spec', vitest: 'Vitest', jest: 'Jest', mocha: 'Mocha' };
-const count = (text: string, pattern: RegExp): number | undefined => { const match = pattern.exec(text); return match ? Number(match[1]) : undefined; };
-
-export function testReport(stdout: string, stderr = ''): TestReport | null {
-  const text = `${stdout}\n${stderr}`.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
-  const tapTests = count(text, /^# tests (\d+)$/m);
-  if (tapTests !== undefined) return { format: 'tap', tests: tapTests, passed: count(text, /^# pass (\d+)$/m) ?? 0, failed: count(text, /^# fail (\d+)$/m) ?? 0 };
-  const specTests = count(text, /^\s*ℹ tests (\d+)\s*$/m);
-  if (specTests !== undefined) return { format: 'node-spec', tests: specTests, passed: count(text, /^\s*ℹ pass (\d+)\s*$/m) ?? 0, failed: (count(text, /^\s*ℹ fail (\d+)\s*$/m) ?? 0) + (count(text, /^\s*ℹ cancelled (\d+)\s*$/m) ?? 0) };
-  const vitest = /^\s*Tests\s+(.+?)\s+\((\d+)\)\s*$/m.exec(text);
-  if (vitest) return { format: 'vitest', tests: Number(vitest[2]), passed: count(vitest[1]!, /(\d+) passed/) ?? 0, failed: count(vitest[1]!, /(\d+) failed/) ?? 0 };
-  const jest = /^\s*Tests:\s+(.+?(\d+) total)\s*$/m.exec(text);
-  if (jest) return { format: 'jest', tests: Number(jest[2]), passed: count(jest[1]!, /(\d+) passed/) ?? 0, failed: count(jest[1]!, /(\d+) failed/) ?? 0 };
-  const passing = count(text, /^\s*(\d+) passing\b/m);
-  if (passing !== undefined) { const failed = count(text, /^\s*(\d+) failing\b/m) ?? 0; return { format: 'mocha', tests: passing + failed, passed: passing, failed }; }
-  return null;
-}
-
-type EvidenceContext = CheckLimits & Partial<Pick<RepositoryPolicy, 'evidenceSource' | 'testCommand'>>;
-
-function evidenceSetting(context: EvidenceContext | undefined): string {
-  if (context?.evidenceSource === 'owner') return 'The repository check settings (Owner override of gitflare.json) set "evidence": "tap"';
-  if (context?.evidenceSource === 'gitflare.json') return 'gitflare.json sets "evidence": "tap"';
-  return 'No "evidence" setting is configured, so Gitflare expects TAP';
-}
-
-const EVIDENCE_ADVICE = 'Make the test command print TAP (for node:test add --test-reporter=tap), or set "evidence": "exit-code" in gitflare.json; an Owner can also override evidence and the test command in the repository check settings.';
-
-export function checkFromCommand(id: string, name: string, candidateSha: string, result: CommandResult, durationMs: number, baseline?: CommandResult, evidence: RepositoryPolicy['evidence'] = 'tap', limits?: EvidenceContext): Check {
-  const tests = result.stdout.match(/^# tests (\d+)$/m);
-  const passed = result.stdout.match(/^# pass (\d+)$/m);
-  const hasCompleteEvidence = !!tests && !!passed && Number(tests[1]) > 0 && Number(passed[1]) === Number(tests[1]) && /^# fail 0$/m.test(result.stdout) && /^# cancelled 0$/m.test(result.stdout) && /^# duration_ms [\d.]+$/m.test(result.stdout);
-  const truncated = result.stdout.includes('[output truncated]') || result.stderr.includes('[output truncated]');
-  const timedOut = timeoutNotice(result, limits) + (baseline ? timeoutNotice(baseline, limits, 'Base commit test run: ') : '');
-  const body = (prefix: string) => `${prefix}${commandOutput(result, outputLimit - prefix.length)}`;
-  const timeout = (result.timedOut || baseline?.timedOut) && limits ? { timeout: { seconds: Math.round(limits.testTimeoutMs / 1000), runner: limits.runner, timeoutSource: limits.testTimeoutSource, runnerSource: limits.runnerSource } } : {};
-  if (evidence === 'exit-code') return { id, name: `${name} (exit code only)`, candidateSha, durationMs, status: result.exitCode === 0 && !result.timedOut && !truncated ? 'passed' : 'failed', output: body(timedOut), ...timeout };
-  const implicit = !limits?.evidenceSource || limits.evidenceSource === 'default';
-  const command = limits?.testCommand ? `\`${limits.testCommand}\`` : 'The test command';
-  if (!tests) {
-    const report = testReport(result.stdout, result.stderr);
-    if (!implicit || !report) {
-      const notice = `${evidenceSetting(limits)}, but ${command} printed no TAP summary ("# tests N", "# pass N")${report ? ` (it printed the ${REPORTER_NAMES[report.format]} reporter)` : ' and no recognised test report'}. ${EVIDENCE_ADVICE}\n`;
-      return { id, name, candidateSha, durationMs, status: 'failed', output: body(`${timedOut}${notice}`), ...timeout };
-    }
-    const base = baseline ? testReport(baseline.stdout, baseline.stderr) : null;
-    const fewer = !!base && base.format === report.format && report.tests < base.tests;
-    const ok = result.exitCode === 0 && !result.timedOut && !truncated && !baseline?.timedOut && report.tests > 0 && report.failed === 0 && report.passed > 0 && !fewer;
-    const notice = `${evidenceSetting(limits)}; ${command} printed the ${REPORTER_NAMES[report.format]} reporter instead (${report.tests} tests, ${report.passed} passed, ${report.failed} failed), so this check used the exit code and that summary.${baseline && !base ? ' The base commit printed no recognised report, so tests were not compared with it.' : ''}${fewer ? ` The candidate reported fewer tests than the base commit (${report.tests} < ${base!.tests}).` : ''} ${EVIDENCE_ADVICE}\n`;
-    return { id, name: `${name} (exit code and ${REPORTER_NAMES[report.format]} summary)`, candidateSha, durationMs, status: ok ? 'passed' : 'failed', output: body(`${timedOut}${notice}`), ...timeout };
-  }
-  const baselineCount = baseline?.stdout.match(/^# tests (\d+)$/m);
-  const baselineComplete = !baseline || (!!baselineCount && Number(baselineCount[1]) > 0 && /^# duration_ms [\d.]+$/m.test(baseline.stdout) && !`${baseline.stdout}\n${baseline.stderr}`.includes('[output truncated]'));
-  const baselineReport = baseline && !baselineCount ? testReport(baseline.stdout, baseline.stderr) : null;
-  const baselineSkipped = !baselineComplete && implicit && !!baselineReport && baseline!.exitCode === 0 && !baseline!.timedOut;
-  const retainedCount = !baselineCount || (!!tests && Number(tests[1]) >= Number(baselineCount[1]));
-  const missing = baseline && baselineCount ? missingBaselineTests(baseline.stdout, result.stdout) : [];
-  const coverageNotice = baselineSkipped ? `The base commit printed the ${REPORTER_NAMES[baselineReport?.format ?? 'tap']} reporter instead of TAP, so the candidate's tests were not compared with it by name. ${EVIDENCE_ADVICE}\n` : !baselineComplete ? `The base test report was incomplete; candidate coverage cannot be verified. ${evidenceSetting(limits)}, and the base commit's run of ${command} did not print a complete TAP report. ${EVIDENCE_ADVICE}\n` : !retainedCount ? 'The candidate reported fewer tests than the base commit.\n' : '';
-  const notice = missing.length ? `Tests reported at the base commit did not run and pass on this candidate: ${missing.slice(0, 20).join('; ')}\n` : '';
-  return { id, name, candidateSha, durationMs, status: result.exitCode === 0 && !result.timedOut && hasCompleteEvidence && !truncated && (baselineComplete || baselineSkipped) && retainedCount && !missing.length ? 'passed' : 'failed', output: body(`${timedOut}${coverageNotice}${notice}`), ...timeout };
 }
 
 const shellTool = { type: 'function', name: 'shell', description: 'Run one bash command in the isolated repository (working directory /workspace/repo, 45 s limit, output truncated). Use it to read and write files, inspect git status and diff, and run tests. No network access.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false }, strict: true };
@@ -340,11 +224,11 @@ export const OUTPUT_TOKEN_LIMITS: Record<ModelConnection['protocol'], { initial:
 };
 export const MAX_OUTPUT_CONTINUATIONS = 4;
 export const OUTPUT_LIMIT_CONTINUATION = 'Your previous response reached the output token limit before it finished, so none of it was applied and no tool ran. Continue from where you were in smaller steps: write a large file with several shell commands of at most about 200 lines each (create it, then append with cat >>), and keep each response short.';
-export const MODEL_RETRY_BACKOFF_MS = 1000;
+const MODEL_RETRY_BACKOFF_MS = 1000;
 
 interface ModelRetryOptions { step: number; retries: number; answerMs?: number; onModelCall?: (usage: ModelUsage | undefined) => void; onRetry?: (message: string) => Promise<void>; startExtended?: boolean }
 interface AgentClock { at: number; ms: number }
-export const DEFAULT_MODEL_RETRIES = MODEL_ATTEMPTS - 1;
+const DEFAULT_MODEL_RETRIES = MODEL_ATTEMPTS - 1;
 export const MIN_MODEL_RETRY_MS = 30_000;
 
 function providerStatus(error: unknown): number {
@@ -432,11 +316,11 @@ function gitNetworkFailure(operation: 'clone' | 'fetch', result: CommandResult, 
   return { message: `Git ${operation} ${outcome} on attempt ${attempt} of ${CLONE_ATTEMPTS}${detail ? `: ${detail}` : ''}`, transient: timedOut || TRANSIENT_CLONE.test(detail) };
 }
 
-export class RunnerKilledError extends Error {
+class RunnerKilledError extends Error {
   constructor(message: string) { super(message); this.name = 'RunnerKilledError'; }
 }
 
-export async function cloneOnFreshRunner(sandbox: SandboxRunner, replace: () => Promise<SandboxRunner>, fork: ArtifactInfo, baseSha: string, onRetry: CloneRetry = async () => {}): Promise<SandboxRunner> {
+async function cloneOnFreshRunner(sandbox: SandboxRunner, replace: () => Promise<SandboxRunner>, fork: ArtifactInfo, baseSha: string, onRetry: CloneRetry = async () => {}): Promise<SandboxRunner> {
   try {
     await clone(sandbox, fork, baseSha, onRetry);
     return sandbox;
@@ -450,7 +334,7 @@ export async function cloneOnFreshRunner(sandbox: SandboxRunner, replace: () => 
   }
 }
 
-export function moveAsideCommand(attempt: number): string[] {
+function moveAsideCommand(attempt: number): string[] {
   return ['/bin/sh', '-c', 'if [ -e /workspace/repo ]; then mv -- /workspace/repo "/workspace/.failed-clone-$1"; fi', 'gitflare-clone-cleanup', String(attempt)];
 }
 
@@ -809,7 +693,7 @@ async function touchedFiles(sandbox: SandboxRunner): Promise<string[] | null> {
   return status.stdout.split('\n').map((line) => line.slice(3).trim()).filter(Boolean).sort().slice(0, 200);
 }
 
-export function mergeLearnedLimits(current: LearnedLimits | undefined, next: LearnedLimits): LearnedLimits {
+function mergeLearnedLimits(current: LearnedLimits | undefined, next: LearnedLimits): LearnedLimits {
   const runners = ['standard-1', 'standard-2', 'standard-3', 'standard-4'];
   const seconds = Math.max(current?.testTimeoutSeconds ?? 0, next.testTimeoutSeconds ?? 0);
   const runner = [current?.runner, next.runner].filter((value): value is NonNullable<LearnedLimits['runner']> => !!value).sort((a, b) => runners.indexOf(b) - runners.indexOf(a))[0];
@@ -1142,7 +1026,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
         },
         team: teamFor(run),
         independent: race,
-        maxTurns: limits?.maxSteps ?? 32,
+        maxTurns: limits?.maxSteps ?? MAX_MAX_TURNS,
         ...(limits ? { budgetMs: limits.runSeconds * 1000, modelRetries: limits.modelRetries, ...(limits.modelAnswerSeconds ? { modelAnswerMs: limits.modelAnswerSeconds * 1000 } : {}) } : {}),
         onModelCall: (usage) => {
           const total = run.usage ??= { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, unreportedCalls: 0 };

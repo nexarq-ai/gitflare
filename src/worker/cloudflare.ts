@@ -21,10 +21,8 @@ export interface CloudflareAuthorization { action: Action; resourceType: string;
 export interface CloudflareApiOptions { method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; body?: unknown; authorization?: CloudflareAuthorization; expectedAccountId?: string }
 interface Store { connectionStore(p: Principal | null, operation: CloudflareStoreOperation, body: Record<string, unknown>): Promise<unknown>; projectStore(p: Principal, repositoryId: string, operation: 'get' | 'account', body?: Record<string, unknown>): Promise<unknown>; check(p: Principal, action: Action, resourceType?: string, resourceId?: string): Promise<void>; rateLimit(key: string, max?: number, windowMs?: number): Promise<void> }
 interface Account { id: string; name: string }
-export type CloudflareVault = Vault;
 export interface CloudflareIdentity {
   id: string; email: string; name: string;
-  // GET /user and the id_token carry no email-verification claim, so nothing sets this until Cloudflare provides one
   emailVerified?: boolean;
 }
 interface Vault { accessToken: string; refreshToken?: string; expiresAt: number; account?: Account; scopes: string[]; clientId: string }
@@ -138,7 +136,6 @@ export async function resolveCloudflareConnection(env: AppEnv, p: Principal, aut
   const opened = await openConnection(env,p,resolved.record,slotNamed(resolved.slot));
   return {...opened,vault:resolved.account?{...opened.vault,account:resolved.account}:opened.vault,source:resolved.source,selection:resolved.selection};
 }
-const loadPreferred = resolveCloudflareConnection;
 function selectedAccount(vault: Vault, source: CloudflareConnectionSource): Account {
   if (!vault.account) throw new ApiError(409,'ACCOUNT_SELECTION_REQUIRED',`Select the Cloudflare account for this ${source} first.`);
   return vault.account;
@@ -182,23 +179,23 @@ function accountsValue(result: unknown): Account[] {
   return result.filter(a=>a && typeof a.id==='string' && /^[a-f0-9]{32}$/i.test(a.id) && typeof a.name==='string').map(a=>({id:a.id,name:a.name.slice(0,200)}));
 }
 function checkAccount(vault: Vault, expectedAccountId?: string) { if(expectedAccountId && vault.account?.id!==expectedAccountId) throw new ApiError(409,'CLOUDFLARE_ACCOUNT_CHANGED','The selected Cloudflare account changed. Update the project resource mapping before continuing.'); }
-export async function cloudflareAccount(env: AppEnv,p:Principal,authorization?:CloudflareAuthorization,repositoryId?:string):Promise<Account> { const {vault,source}=await loadPreferred(env,p,authorization,repositoryId); const account=selectedAccount(vault,source); checkAccount(vault,authorization?.expectedAccountId); return account; }
+export async function cloudflareAccount(env: AppEnv,p:Principal,authorization?:CloudflareAuthorization,repositoryId?:string):Promise<Account> { const {vault,source}=await resolveCloudflareConnection(env,p,authorization,repositoryId); const account=selectedAccount(vault,source); checkAccount(vault,authorization?.expectedAccountId); return account; }
 export async function cloudflareApiRequest(env:AppEnv,p:Principal,path:string,options:CloudflareApiOptions={},repositoryId?:string):Promise<unknown> {
   if(!/^\/(?:workers\/|d1\/|workflows(?:\/|$)|containers\/applications(?:\/|$))/.test(path) || /(?:\.\.|%|[?#\\])/.test(path) || !/^\/[A-Za-z0-9_./-]+$/.test(path)) throw new ApiError(400,'INVALID_CLOUDFLARE_PATH','Use a resource path inside the selected Cloudflare account.');
-  const {vault,source}=await loadPreferred(env,p,options.authorization,repositoryId); const account=selectedAccount(vault,source);
+  const {vault,source}=await resolveCloudflareConnection(env,p,options.authorization,repositoryId); const account=selectedAccount(vault,source);
   checkAccount(vault,options.expectedAccountId??options.authorization?.expectedAccountId);
   if (resourceLists[path] && (!options.method || options.method === 'GET')) return listResources(env, vault, path);
   return api(env,vault,`/accounts/${account.id}${path}`,options);
 }
 export async function cloudflareAnalyticsRequest(env:AppEnv,p:Principal,body:{query:string;variables:Record<string,unknown>},authorization?:CloudflareAuthorization,repositoryId?:string):Promise<unknown> {
   if (![WORKER_USAGE_QUERY,D1_USAGE_QUERY].includes(body.query)) throw new ApiError(400,'INVALID_ANALYTICS_QUERY','Use the supported project usage queries.');
-  const {vault,source}=await loadPreferred(env,p,authorization,repositoryId); const account=selectedAccount(vault,source);
+  const {vault,source}=await resolveCloudflareConnection(env,p,authorization,repositoryId); const account=selectedAccount(vault,source);
   checkAccount(vault,authorization?.expectedAccountId);
   const response=await jsonRequest(`${apiOrigin}/graphql`,{method:'POST',headers:{Authorization:`Bearer ${vault.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({query:body.query,variables:{...body.variables,accountTag:account.id}})}) as {data?:unknown;errors?:unknown[]};
   if(response.errors?.length) throw new ApiError(502,'CLOUDFLARE_ANALYTICS_REJECTED','Cloudflare could not return usage for this project. Check analytics permissions.'); return response.data;
 }
 export async function cloudflareDeployAccess(env: AppEnv, p: Principal, authorization: CloudflareAuthorization, repositoryId?: string, environment?: string): Promise<CloudflareDeployAccess> {
-  const {vault,source,selection}=await loadPreferred(env,p,authorization,repositoryId,environment); const account=selectedAccount(vault,source);
+  const {vault,source,selection}=await resolveCloudflareConnection(env,p,authorization,repositoryId,environment); const account=selectedAccount(vault,source);
   checkAccount(vault,authorization.expectedAccountId);
   return {accessToken:vault.accessToken,accountId:account.id,...(account.name?{accountName:account.name}:{}),scopes:grantedScopes(vault.scopes),source,selection};
 }
@@ -228,7 +225,6 @@ export async function cloudflareIdentity(env:AppEnv,vault:Vault):Promise<Cloudfl
   if(typeof value.id!=='string'||!/^[A-Za-z0-9-]{8,64}$/.test(value.id)||email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError(502,'CLOUDFLARE_IDENTITY_UNAVAILABLE','Cloudflare did not return a usable user identity.');
   if(value.suspended===true) throw new ApiError(403,'CLOUDFLARE_USER_SUSPENDED','This Cloudflare user is suspended.');
   const name=[value.first_name,value.last_name].filter(part=>typeof part==='string'&&part.trim()).join(' ').trim().slice(0,100)||email.split('@')[0].slice(0,100);
-  // Owner decision (Oct 17): a Cloudflare account email counts as verified; Cloudflare's /user has no verification flag
   return {id:value.id,email,name,emailVerified:true};
 }
 export async function cloudflareAccounts(env:AppEnv,vault:Vault):Promise<Account[]> { return accountsValue(await api(env,vault,'/accounts')); }
@@ -414,7 +410,7 @@ async function dispatchRepository(env:AppEnv,p:Principal,action:string,body:Reco
   if(action==='disconnect') return disconnect(env,p,repositoryId);
   if(action==='accounts') {const {vault}=await load(env,p,undefined,repositorySlot(repositoryId));return {accounts:accountsValue(await api(env,vault,'/accounts'))};}
   if(action==='select-account') return {source:'repository',...await selectAccount(env,p,body,repositoryId)};
-  if(action==='resources') {const {vault,source}=await loadPreferred(env,p,undefined,repositoryId);return {source,...await resourceCatalog(env,vault,source,body.includeGitflare===true)};}
+  if(action==='resources') {const {vault,source}=await resolveCloudflareConnection(env,p,undefined,repositoryId);return {source,...await resourceCatalog(env,vault,source,body.includeGitflare===true)};}
   throw new ApiError(404,'NOT_FOUND','This Cloudflare connection operation is unavailable.');
 }
 export async function dispatchCloudflare(env:AppEnv,p:Principal,action:string,body:Record<string,unknown>={},origin='',repositoryId?:string):Promise<unknown> {

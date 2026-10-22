@@ -8,7 +8,7 @@ import { ErrorNotice } from "./components";
 import { durationField, formatDuration, parseDuration } from "./agent-limits";
 import "./check-settings.css";
 
-export interface AgentSettingsForm { modelAnswer: string; modelRetries: string; maxSteps: string; runTime: string; autoRetry: boolean }
+interface AgentSettingsForm { modelAnswer: string; modelRetries: string; maxSteps: string; runTime: string; autoRetry: boolean }
 
 export function agentSettingsForm(current: RepositoryAgentSettings): AgentSettingsForm {
   const { effective } = current;

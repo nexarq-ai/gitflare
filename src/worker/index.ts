@@ -1,9 +1,8 @@
 import { listRepositorySkills } from './repository-skills';
-import { assertReviewClear, reviewMissionInput } from './proposal-review';
 import { timingSafeEqual } from 'node:crypto';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AiSettings, IntegrationStatus, Mission, ModelConnection, Repository, Workspace } from '../shared/types';
-import { createArtifactsRepository, repositoryHead } from './artifacts';
+import { createArtifactsRepository, repositoryHead, validGitSha } from './artifacts';
 import { assertDependencyApproval } from './dependency-changes';
 import { agentRunIds, ApiError, assertMutationOrigin, COMMIT_MESSAGE_REQUEST_MAX_BYTES, commitMessageInput, findRepositoryByName, isLocalRequest, MISSION_REQUEST_MAX_BYTES, missionInput, publicError, readJson, repositoryName, requireIdempotencyKey, requireString, retryGuidance, storageRepositoryName } from './domain';
 import { repositoryLabel } from '../shared/repository-names';
@@ -17,12 +16,11 @@ import { backgroundPrincipal, deploymentsApi, deployWorkflowId, type DeployParam
 import { deployAccessDeps } from './deploy-access-deps';
 import { repositorySecretsApi } from './repository-secrets';
 import { secretsApiContext, secretsBlocker } from './secrets-wiring';
-import type { ProjectSnapshot } from './cloudflare-projects';
 import { PREVIEW_STEP_MS } from './budgets';
 import { handleMcp, mcpToolNames } from './mcp';
 import { integrationPendingMessage, startWithDurableDispatch } from './coordinator';
 import { hashToken, personalWorkspaceId, publicPrincipal, securityClient, wellFormedToken, type Principal, type Action, type InvitationScope } from './security';
-import { consume, gitRateLimits, rateLimitedResponse, rateSubject } from './rate-limits';
+import { clientIp, consume, gitRateLimits, rateLimitedResponse, rateSubject } from './rate-limits';
 import { listDocs, readDoc } from './docs';
 import { documentationImage, documentationMarkdown } from './docs-markdown';
 import { handleOnboarding } from './onboarding';
@@ -35,7 +33,7 @@ import { deliverInvitation } from './email';
 import { ADMIN_PUBLIC_INDEX_PATH, ADMIN_STATUS_PATH, installationAdminStatus, OPERATOR_AI_PATH, operatorAiStatus, rebuildPublicIndex } from './installation-admin';
 import { requestSessionMeta } from './session-meta';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare, handleRepositoryCloudflare, cloudflareAccount, cloudflareApiRequest, cloudflareAnalyticsRequest, cloudflareDeployAccess } from './cloudflare';
-import { dispatchCloudflareProject, projectDependencies, type ProjectOperation } from './cloudflare-projects';
+import { dispatchCloudflareProject, projectDependencies, type ProjectOperation, type ProjectSnapshot } from './cloudflare-projects';
 import { validateRepositoryInitialization, initializeArtifactsRepository } from './repository-initialization';
 import { SKILL_REQUEST_MAX_BYTES, validateRepositorySkillChange, verifyRepositorySkillChange } from './skill-edit';
 import { autoDraftRequest, draftMission, draftRequest, planMission, repositorySnapshot } from './mission-draft';
@@ -43,7 +41,7 @@ import { handleIssues } from './issues';
 import { issueServices, publicIssuesApi } from './public-issues';
 import { notificationsApi, unsubscribeApi } from './inbox';
 import { codeownerRequirement, notifyProposal, proposalOpened, proposalReviewed } from './proposal-notifications';
-import { REVIEW_VERDICTS } from './proposal-review';
+import { assertReviewClear, REVIEW_VERDICTS, reviewMissionInput } from './proposal-review';
 import { releaseApi, type ReleaseExtras } from './releases';
 import { assetView, releaseAssetsApi, usage as assetUsage, type StoredAsset } from './release-assets';
 import { advisoriesApi, publicAdvisoriesApi, releaseAdvisories } from './advisories';
@@ -85,6 +83,10 @@ export { ModelRelay } from './model-relay';
 export { AgentSandbox, BootstrapOutbound, GitOutbound, ImportOutbound, RegistryOutbound } from '../../runner/sandbox';
 
 const encoder = new TextEncoder();
+const HOUR_MS = 3_600_000;
+const AI_KEY_WRITE_LIMIT = { max: 20, windowMs: HOUR_MS };
+const MISSION_DRAFT_LIMIT = { max: 30, windowMs: HOUR_MS };
+const OAUTH_POST_LIMIT = { max: 60, windowMs: 60_000 };
 
 export class PreviewRelay extends WorkerEntrypoint<AppEnv> {
   async fetch(request: Request): Promise<Response> {
@@ -137,18 +139,17 @@ async function aiCredentials(catalog: { getAiCredentials?(): Promise<AiCredentia
   return typeof catalog.getAiCredentials === 'function' ? catalog.getAiCredentials() : { keys: [], gateway: null };
 }
 function catalogName(workspaceId: string) { return workspaceId === 'legacy' ? 'catalog:owner' : `catalog:${workspaceId}`; }
-const cookieValue = sessionCookieValue;
 const sessionRenewals = new WeakMap<Request, string>();
 function sessionResponse(result: { token?: string; user?: unknown; workspaceId?: string; mfaRequired?: boolean }, clearLink = false) { const headers = new Headers(); if (clearLink) headers.append('Set-Cookie', `${CLOUDFLARE_LINK_COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`); if (!result.token) return Response.json(result, { headers }); const { token, ...body } = result; headers.append('Set-Cookie', sessionCookie(token)); return Response.json({ ok: true, ...body }, { headers }); }
 async function authorize(request: Request, env: AppEnv, bearerOnly = false): Promise<Principal> {
   const authorization = request.headers.get('Authorization'); const bearer = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
   if (demoMode(env) && !bearer) return demoVisitor(env);
-  if (env.EDITION !== 'self-hosted' && !bearerOnly && isLocalRequest(request, env.APP_ENV) && !bearer && !cookieValue(request)) return security(env).bootstrap();
+  if (env.EDITION !== 'self-hosted' && !bearerOnly && isLocalRequest(request, env.APP_ENV) && !bearer && !sessionCookieValue(request)) return security(env).bootstrap();
   if (env.EDITION !== 'self-hosted' && bearer && env.OWNER_TOKEN && env.OWNER_TOKEN.length >= 32 && await tokenMatches(bearer, env.OWNER_TOKEN)) {
     const workspace = request.headers.get('X-Gitflare-Workspace'); if (workspace && workspace !== 'legacy') throw new ApiError(403, 'FORBIDDEN', 'The legacy key cannot access other workspaces.'); return security(env).bootstrap();
   }
   if (bearer) return security(env).authenticate(bearer, request.headers.get('X-Gitflare-Workspace') ?? undefined);
-  const cookie = bearerOnly ? undefined : cookieValue(request);
+  const cookie = bearerOnly ? undefined : sessionCookieValue(request);
   if (cookie) {
     const { principal, renewedUntil } = await security(env).authenticateSession(cookie, request.headers.get('X-Gitflare-Workspace') ?? undefined);
     if (renewedUntil !== undefined) sessionRenewals.set(request, sessionCookie(cookie, renewedUntil - Date.now()));
@@ -159,7 +160,7 @@ async function authorize(request: Request, env: AppEnv, bearerOnly = false): Pro
 
 function signedInPrincipal(env: AppEnv) {
   return async (request: Request): Promise<Principal | null> => {
-    if (demoMode(env) || !request.headers.get('Authorization') && !cookieValue(request)) return null;
+    if (demoMode(env) || !request.headers.get('Authorization') && !sessionCookieValue(request)) return null;
     try { return await authorize(request, env); }
     catch (error) { if (publicError(error).status === 401) return null; throw error; }
   };
@@ -267,7 +268,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (demoMode(env)) {
     const restricted = demoRouteRestriction(request.method, url.pathname);
     if (restricted) throw demoRestrictionError(restricted);
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) await security(env).rateLimit(`demo-write:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, DEMO_WRITE_LIMIT.max, DEMO_WRITE_LIMIT.windowMs);
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) await security(env).rateLimit(`demo-write:${clientIp(request)}`, DEMO_WRITE_LIMIT.max, DEMO_WRITE_LIMIT.windowMs);
   }
   if (request.method === 'GET' && url.pathname === '/api/public/docs') return Response.json({ items: listPublicDocs() });
   if (request.method === 'GET' && url.pathname.startsWith('/api/public/docs/diagrams/')) return documentationImage(url.pathname.slice('/api/public/docs/diagrams/'.length));
@@ -297,9 +298,9 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
   if (onboarding) return onboarding;
   if (request.method === 'POST' && ['/api/login', '/api/session'].includes(url.pathname)) {
     assertMutationOrigin(request);
-    await security(env).rateLimit(`auth:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+    await security(env).rateLimit(`auth:${clientIp(request)}`);
     const body = await readJson(request);
-    if (url.pathname === '/api/login') { const link = requestCookie(request, CLOUDFLARE_LINK_COOKIE); return sessionResponse(await security(env).login(body, request.headers.get('CF-Connecting-IP') ?? 'local', link, requestSessionMeta(request)), !!link); }
+    if (url.pathname === '/api/login') { const link = requestCookie(request, CLOUDFLARE_LINK_COOKIE); return sessionResponse(await security(env).login(body, clientIp(request), link, requestSessionMeta(request)), !!link); }
     const token = requireString(body.token, 'Token', 1024, 32);
     if (env.EDITION === 'self-hosted' || !env.OWNER_TOKEN || !await tokenMatches(token, env.OWNER_TOKEN)) throw new ApiError(401, 'AUTH_REQUIRED', 'The owner token was not accepted.');
     return sessionResponse({ token: await security(env).legacySession(), workspaceId: 'legacy' });
@@ -439,7 +440,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const provider = aiKeyProvider(body.provider);
     if (body.action === 'remove') return Response.json(aiKeysSnapshot(env, principal.workspaceId, await catalog.removeAiKey(provider)));
     await requireAi(env, catalog);
-    await security(env).rateLimit(`ai-key:${principal.workspaceId}`, 20, 3_600_000);
+    await security(env).rateLimit(`ai-key:${principal.workspaceId}`, AI_KEY_WRITE_LIMIT.max, AI_KEY_WRITE_LIMIT.windowMs);
     const credentials = await aiCredentials(catalog);
     const key = body.action === 'add' ? providerKey(body.key) : await storedProviderKey(env, principal.workspaceId, credentials, provider);
     const model = verificationModel(provider, await coordinatorRead('getModelConnections', () => catalog.getModelConnections()), typeof body.modelId === 'string' ? body.modelId : undefined);
@@ -879,7 +880,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     const repository = await catalog.getRepository(repositoryId);
     if (!repository) throw new ApiError(404, 'REPOSITORY_NOT_FOUND', 'This repository could not be found.');
     await access.authorize(principal, 'contribute', 'repository', repositoryId);
-    await security(env).rateLimit(`mission-draft:${principal.userId}`, 30, 3_600_000);
+    await security(env).rateLimit(`mission-draft:${principal.userId}`, MISSION_DRAFT_LIMIT.max, MISSION_DRAFT_LIMIT.windowMs);
     const model = resolveModelConnection(models, typeof body.model === 'string' ? body.model : effectiveDefaultModel(models, storedDefault));
     const credentials = await aiCredentials(catalog);
     assertModelAccess(env, principal.workspaceId, credentials, [model]);
@@ -1065,7 +1066,7 @@ async function apiRoutes(request: Request, env: AppEnv, ctx?: ExecutionContext):
     }
     const candidateSha = requireString(body.candidateSha, 'Candidate commit', 40, 40);
     const baseSha = requireString(body.baseSha, 'Base commit', 40, 40);
-    if (!/^[a-f0-9]{40}$/.test(candidateSha) || !/^[a-f0-9]{40}$/.test(baseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Commit identifiers must be 40 lowercase hexadecimal characters.');
+    if (!validGitSha(candidateSha) || !validGitSha(baseSha)) throw new ApiError(400, 'INVALID_COMMIT', 'Commit identifiers must be 40 lowercase hexadecimal characters.');
     if (body.commitMessage !== undefined && match[2] !== 'approve' && match[2] !== 'integrate') throw new ApiError(400, 'INVALID_INPUT', 'commitMessage applies only to approving or landing.');
     const commitMessage = commitMessageInput(body.commitMessage);
     if (match[2] === 'revoke') { const result = await coordinator.revokeApproval(key, mission.id, candidateSha, baseSha, principal); await coordinator.settleApprovalClears(mission.id, principal); return Response.json(result); }
@@ -1121,7 +1122,7 @@ async function requireAi(env: AppEnv, catalog: { getAiEnabled(): Promise<boolean
 const ENTRY_PATHS = new Set(['/', '/signin', '/signup']);
 
 async function hasSession(request: Request, env: AppEnv): Promise<boolean> {
-  const session = cookieValue(request);
+  const session = sessionCookieValue(request);
   return session ? security(env).authenticate(session).then(() => true, () => false) : false;
 }
 
@@ -1150,7 +1151,7 @@ const application = {
     if (isPublicGitPath(path)) return gitResponse(() => handlePublicGit(request, env, gitDependencies(env)));
     if (path === '/oauth/authorize') return oauthConsent(request, env, authorize);
     const publicPage = publicPageResponse(request, env);
-    if (publicPage && path === '/llms.txt' && request.method === 'GET' && publicPage.ok) return new Response(`${await publicPage.text()}${await publicRepositoryIndex(env, siteOrigin(env, new URL(request.url).origin), request.headers.get('CF-Connecting-IP') ?? 'local')}`, { headers: publicPage.headers });
+    if (publicPage && path === '/llms.txt' && request.method === 'GET' && publicPage.ok) return new Response(`${await publicPage.text()}${await publicRepositoryIndex(env, siteOrigin(env, new URL(request.url).origin), clientIp(request))}`, { headers: publicPage.headers });
     if (publicPage) return publicPage;
     if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     const feed = await feedResponse(request, env);
@@ -1174,7 +1175,7 @@ const application = {
       } else {
         assertCookieRequestOrigin(request);
         const bearer = request.headers.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
-        const limited = bearer ? await consume(env, 'API_RATE_LIMIT', `token:${await hashToken(bearer)}`) : demoMode(env) ? await consume(env, 'API_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`) : null;
+        const limited = bearer ? await consume(env, 'API_RATE_LIMIT', `token:${await hashToken(bearer)}`) : demoMode(env) ? await consume(env, 'API_RATE_LIMIT', `ip:${clientIp(request)}`) : null;
         const demoRoute = limited ? null : await handleDemoRoute(request, env);
         response = limited ? rateLimitedResponse(limited, 'API requests') : demoRoute ?? (path.startsWith('/api/public/') ? await servePublicCached(request, env, ctx, () => api(request, env, ctx)) : await api(request, env, ctx));
       }
@@ -1203,7 +1204,7 @@ export default {
       if (hostMove) return hostMove;
       const path = new URL(request.url).pathname;
       if (env.OAUTH_KV && (path === '/mcp' || path.startsWith('/oauth/') || path.startsWith('/.well-known/'))) {
-        if (path.startsWith('/oauth/') && request.method === 'POST') await security(env).rateLimit(`oauth:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 60, 60000);
+        if (path.startsWith('/oauth/') && request.method === 'POST') await security(env).rateLimit(`oauth:${clientIp(request)}`, OAUTH_POST_LIMIT.max, OAUTH_POST_LIMIT.windowMs);
         return await oauthProvider(new URL(request.url).origin, application, authorize).fetch(request, env, ctx!);
       }
       return withSignedInHint(request, await application.fetch(request, env, ctx), env);

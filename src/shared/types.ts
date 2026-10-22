@@ -464,8 +464,6 @@ export interface BranchList { repositoryId: string; defaultBranch: string; gitUr
 export interface CreatePullRequestInput { title: string; description?: string; branch: string; target?: 'self' | 'upstream' }
 export interface RepositorySkillChange { action: 'create' | 'update'; path: string; content: string; baseSha: string }
 export interface CreateMissionInput { attachments?: MissionAttachment[]; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; fixRequest?: FixRequest; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
-export interface CreateRepositoryInput { name: string; description?: string }
-export interface ApproveMissionInput { candidateSha: string; baseSha: string }
 export interface ApiError { error: { code: string; message: string } }
 
 export interface CandidateSource { missionId?: string; source?: 'mission-candidate' }
@@ -474,8 +472,6 @@ export interface RepositoryFile extends CandidateSource { path: string; content:
 
 export type AccessSnapshot = Awaited<ReturnType<import('../worker/security').SecurityService['snapshot']>>;
 export type AccountSnapshot = Awaited<ReturnType<import('../worker/security').SecurityService['account']>>;
-export type WorkspaceRole = import('../worker/security').Role;
-
 export interface ProjectResource {
   type: 'worker' | 'd1' | 'durable_object' | 'container' | 'workflow';
   id: string;

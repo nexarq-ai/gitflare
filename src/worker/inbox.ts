@@ -9,7 +9,7 @@ import { notificationRoute, notificationStore, receivable, type NotificationFilt
 import { publicPrincipal, type Action, type Principal, type SecurityService } from './security';
 import { resolvePublicRepository } from './public-repositories';
 import { unsubscribeUrl } from './notification-email';
-import { consume, rateLimitedResponse } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 
 const PAGE_MAX = 50;
 const INBOX_REPOSITORIES_MAX = 100;
@@ -217,7 +217,7 @@ function unsubscribePage(title: string, message: string, form?: string): Respons
 export async function unsubscribeApi(request: Request, env: AppEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== '/api/public/notifications/unsubscribe') return null;
-  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${clientIp(request)}`);
   if (limited) return rateLimitedResponse(limited, 'requests');
   const userId = url.searchParams.get('user') ?? '', token = url.searchParams.get('token') ?? '', reason = url.searchParams.get('reason') ?? 'all';
   const valid = /^[A-Za-z0-9-]{1,64}$/.test(userId) && /^[a-f0-9]{48}$/.test(token) && (reason === 'all' || (NOTIFICATION_REASONS as readonly string[]).includes(reason));

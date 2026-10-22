@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": { "correctness": "error" },
+  "rules": {
+    "no-unused-vars": ["error", { "args": "none", "varsIgnorePattern": "^_", "ignoreRestSiblings": true }],
+    "no-control-regex": "off",
+    "no-useless-escape": "off",
+    "unicorn/no-new-array": "off",
+    "unicorn/no-useless-fallback-in-spread": "off",
+    "unicorn/no-useless-spread": "off",
+    "unicorn/prefer-string-starts-ends-with": "off"
+  },
+  "ignorePatterns": ["dist/", "node_modules/", ".wrangler/", "worker-configuration.d.ts", "public/", "docs/", "distribution/"]
+}

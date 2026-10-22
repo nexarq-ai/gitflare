@@ -4,7 +4,7 @@ import { repositoryLabel } from '../shared/repository-names';
 import { ApiError, assertMutationOrigin, readJson } from './domain';
 import type { AppEnv } from './env';
 import { catalogName } from './capacity';
-import { consume, rateLimitedResponse } from './rate-limits';
+import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { personalWorkspaceId, publicPrincipal, securityClient, type FollowKind, type HandleKind, type Principal, type ProfileRecord, type SecurityService } from './security';
 import { CACHE_DEPENDENCIES, discoveryCachePaths, purgePublicCache, repositoryCachePaths } from './public-cache';
 import { backfillEmptyIndex, explorePublic, indexedDetails, indexPublicRepository, indexWorkspaceRepositories, pageCursor, publicIndex, refreshIndexedHandle, removeIndexedRepositories, searchPublic, searchQuery, updateIndexedStars } from './public-index';
@@ -77,7 +77,7 @@ export async function publicDiscoveryApi(request: Request, env: AppEnv, ctx?: Wa
   const profile = /^\/api\/public\/profiles\/([^/]+)$/.exec(url.pathname);
   if (url.pathname !== '/api/public/explore' && url.pathname !== '/api/public/search' && !profile) return null;
   if (request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Explore, search and profiles are read-only here.');
-  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`);
+  const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${clientIp(request)}`);
   if (limited) return rateLimitedResponse(limited, 'public repository requests');
   const access = securityClient(env);
   if (profile) {

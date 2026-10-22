@@ -10,7 +10,7 @@ import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
 import type { DemoMarked } from "../shared/demo-features";
 import "./check-settings.css";
 
-export const RUNNER_LABELS: Record<RunnerSize, string> = {
+const RUNNER_LABELS: Record<RunnerSize, string> = {
   "standard-1": "standard-1 · 1/2 vCPU, 4 GiB",
   "standard-2": "standard-2 · 1 vCPU, 6 GiB",
   "standard-3": "standard-3 · 2 vCPU, 8 GiB",

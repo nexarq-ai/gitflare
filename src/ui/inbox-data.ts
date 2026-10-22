@@ -15,7 +15,7 @@ export interface InboxFilters {
   archived: boolean;
 }
 
-export const INBOX_PAGE = 30;
+const INBOX_PAGE = 30;
 export const DEFAULT_INBOX_FILTERS: InboxFilters = { segment: "work", repository: "", kind: "", reason: "", age: "", filter: "unread", archived: false };
 
 export const KIND_LABELS: Record<InboxKind, string> = {
@@ -108,7 +108,7 @@ export function threadRoute(thread: string): string | null {
   return null;
 }
 
-export function workspaceRoute(route: string): boolean {
+function workspaceRoute(route: string): boolean {
   return /^(?:repository|mission)\//.test(route);
 }
 

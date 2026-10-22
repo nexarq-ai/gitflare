@@ -19,7 +19,7 @@ function cleanLinks(links: string[]) {
   return links.map(link => link.trim()).filter(Boolean);
 }
 
-export function linkProblem(link: string): string | null {
+function linkProblem(link: string): string | null {
   if (link.length > PROFILE_LIMITS.linkLength) return `Use at most ${PROFILE_LIMITS.linkLength} characters.`;
   try {
     if (new URL(link).protocol === "https:") return null;

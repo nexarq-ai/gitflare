@@ -4,6 +4,7 @@ import type { CommandResult, GitPermission } from '../../runner/sandbox';
 import { createArtifactsRepository, repositoryHead, type ArtifactsBinding } from './artifacts';
 import { ApiError, assertMutationOrigin, readJson, repositoryName, requireIdempotencyKey, requireString, storageRepositoryName } from './domain';
 import type { Action, Principal } from './security';
+import { catalogName } from './capacity';
 
 export const URL_IMPORT_LIMITS = {
   packBytes: 256 * 1024 * 1024,
@@ -295,7 +296,6 @@ export interface UrlImportEnv {
   GITFLARE_SECURITY?: { getByName(name: string): { check(principal: Principal, action: Action, resourceType?: string, resourceId?: string): Promise<void> } };
 }
 
-function catalogName(workspaceId: string) { return workspaceId === 'legacy' ? 'catalog:owner' : `catalog:${workspaceId}`; }
 
 export function importJobDependencies(env: UrlImportEnv): ImportJobDependencies {
   return {
