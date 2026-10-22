@@ -2189,11 +2189,6 @@
       "sha256": "80d808c586dc001996c9811df3dc068e2b253ca6e0f4b230001377ec870082b5"
     },
     {
-      "path": "tests/workspace-prefetch.test.ts",
-      "size": 1013,
-      "sha256": "bff4c4b33910cd2934a795f1a1fdeea85d1fe8dd05c0969b47aa3378222cca17"
-    },
-    {
       "path": "tests/workspace-switcher.test.ts",
       "size": 4603,
       "sha256": "6f003690e9a0820fca8741d65de3670178020b46272f1de6263c0611555b6e3e"
