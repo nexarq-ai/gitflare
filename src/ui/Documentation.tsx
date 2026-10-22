@@ -70,7 +70,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
   const copyGeneration = useRef(0);
   const [expandedDiagram, setExpandedDiagram] = useState<(DocumentationDiagram & { alt: string; key: string }) | null>(null);
   const [activeHeading, setActiveHeading] = useState("");
-  const [guideQuery, setGuideQuery] = useState("");
+  const [guideQuery, setGuideQuery] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 760px)").matches);
 
   useEffect(() => {
