@@ -2020,8 +2020,8 @@
     },
     {
       "path": "src/worker/social-cards.ts",
-      "size": 13816,
-      "sha256": "39fc45f9499de7e680e42c8b2ada49944289d94be1b697c089b7e5ea03aa63f5"
+      "size": 13928,
+      "sha256": "6b5f661b7f1154c2e9c42862c6cde453e92e73e4c540b103b6d7d8ed9a81a4e3"
     },
     {
       "path": "src/worker/social-raster.ts",
