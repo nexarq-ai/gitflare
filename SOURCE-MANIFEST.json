@@ -395,8 +395,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87425,
-      "sha256": "cc9eb1b57c39843ce07ad86f7bef3d43e8c9852ba584ceaa2a3e34bd707812fc"
+      "size": 87400,
+      "sha256": "85ac1a2204032ab0441055a0c725ea6c146227412ed7508686ae43cb4cd21efd"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -1085,8 +1085,8 @@
     },
     {
       "path": "src/ui/router.ts",
-      "size": 11154,
-      "sha256": "960d8557975915f8194f4846b1548770f396487f12cce71cd4f602c14bb84b89"
+      "size": 10720,
+      "sha256": "de8d4c9d13e96ee1f127ac86632ebca601ce732c0043b6a8f9ef870f9132584a"
     },
     {
       "path": "src/ui/secret-settings.css",
@@ -1540,8 +1540,8 @@
     },
     {
       "path": "src/worker/hosted-source.ts",
-      "size": 153,
-      "sha256": "286de5f1c2d6ae937268476342f1fcad464019a0e18fe50a79e153300f13c26f"
+      "size": 141,
+      "sha256": "839302cb38d957cc5420eac5eb983229ca061ce29ad5061121b5f8b2e463f93e"
     },
     {
       "path": "src/worker/import-exclusions.ts",
@@ -1555,8 +1555,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 22328,
-      "sha256": "560612855dad2b8e0836bf19c9184c610c5fd92b1d47c4150e7d3075da95cc23"
+      "size": 22341,
+      "sha256": "165d33dad28253b1c88c187a892f5d9f09885c39cbf6afc622844ba0b2d65c78"
     },
     {
       "path": "src/worker/installation-admin.ts",
