@@ -8,6 +8,7 @@ import { boundedBody, packet, parsePackets, requireGitResponse } from './reposit
 import type { Principal } from './security';
 import { validGitSha } from './artifacts';
 import { logFailure } from './log';
+import { ZERO_SHA } from './git-protocol';
 
 // Ref advertisements are read through boundedBody's 64 KiB ceiling, which caps how many tags a repository can advertise
 export const RELEASE_LIMIT = 500;
@@ -15,7 +16,6 @@ export const RELEASE_NOTES_MAX = 20_000;
 export const RELEASE_REQUEST_MAX_BYTES = 131_072;
 export const RELEASE_HISTORY_LIMIT = 1000;
 export const RELEASE_CLAIM_STALE_MS = 300_000;
-const zero = '0'.repeat(40);
 const emptyPackHeader = Buffer.from([0x50, 0x41, 0x43, 0x4b, 0, 0, 0, 2, 0, 0, 0, 0]);
 export const EMPTY_PACK = new Uint8Array(Buffer.concat([emptyPackHeader, createHash('sha1').update(emptyPackHeader).digest()]));
 
@@ -147,7 +147,7 @@ export async function pushReleaseTag(artifacts: ArtifactsBinding, repository: Re
     if (!capabilities.has('report-status')) throw new ApiError(502, 'RELEASE_PROTOCOL', 'Git does not support receive status.');
     await assertAuthority();
     attempted = true;
-    const response = await fetcher(`${base}/git-receive-pack`, { method: 'POST', headers: { authorization: `Bearer ${token.plaintext}`, 'content-type': 'application/x-git-receive-pack-request', accept: 'application/x-git-receive-pack-result' }, body: new Uint8Array(Buffer.concat([packet(`${zero} ${targetSha} ${ref}\0report-status\n`), Buffer.from('0000'), EMPTY_PACK])), redirect: 'manual', signal: AbortSignal.timeout(15000) });
+    const response = await fetcher(`${base}/git-receive-pack`, { method: 'POST', headers: { authorization: `Bearer ${token.plaintext}`, 'content-type': 'application/x-git-receive-pack-request', accept: 'application/x-git-receive-pack-result' }, body: new Uint8Array(Buffer.concat([packet(`${ZERO_SHA} ${targetSha} ${ref}\0report-status\n`), Buffer.from('0000'), EMPTY_PACK])), redirect: 'manual', signal: AbortSignal.timeout(15000) });
     requireGitResponse(response, 'application/x-git-receive-pack-result');
     const status = parsePackets(await boundedBody(response)).filter(Boolean).map(line => line.trimEnd());
     if (status.length === 2 && status[1].startsWith(`ng ${ref} `)) throw new ReleaseTagFailure('not_pushed', new ApiError(409, 'TAG_REJECTED', `Git refused to create tag ${tag}: ${status[1].slice(ref.length + 4, ref.length + 204)}`));

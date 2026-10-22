@@ -2,6 +2,7 @@ import type { BranchInfo, BranchRule, Repository } from '../shared/types';
 import type { ArtifactRepo, ArtifactsBinding } from './artifacts';
 import { evaluatePush, ruleFor, ZERO_SHA, type PushDecision, type RefUpdate } from './branch-protection';
 import { rateLimitMessage, type GitRateLimits, type RateLimited } from './rate-limits';
+import { pktLine } from './git-protocol';
 import type { Action, Principal } from './security';
 
 export const GIT_PUSH_MAX_BYTES = 104_857_600;
@@ -12,6 +13,8 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 export const GIT_CHALLENGE = { 'WWW-Authenticate': 'Basic realm="Gitflare", charset="UTF-8"' };
 const challenge = GIT_CHALLENGE;
+
+export { pktLine };
 
 export interface GitHttpDependencies {
   authenticate(token: string): Promise<Principal>;
@@ -34,14 +37,6 @@ export function text(status: number, message: string, headers: Record<string, st
 
 function rejectedTokens(limited: RateLimited): Response {
   return text(429, `Too many rejected Gitflare tokens from this address. Wait ${limited.retryAfterSeconds} seconds, then retry with a valid personal token.`, { 'Retry-After': String(limited.retryAfterSeconds) });
-}
-
-export function pktLine(payload: string | Uint8Array): Uint8Array {
-  const bytes = typeof payload === 'string' ? encoder.encode(payload) : payload;
-  const line = new Uint8Array(bytes.length + 4);
-  line.set(encoder.encode((bytes.length + 4).toString(16).padStart(4, '0')));
-  line.set(bytes, 4);
-  return line;
 }
 
 function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {

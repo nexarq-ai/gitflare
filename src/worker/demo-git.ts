@@ -4,6 +4,7 @@ import { deflateSync } from 'node:zlib';
 import type { ArtifactsBinding } from './artifacts';
 import { ApiError } from './domain';
 import { boundedBody, packet, parsePackets, requireGitResponse } from './repository-initialization';
+import { ZERO_SHA } from './git-protocol';
 
 export interface DemoPerson { name: string; email: string }
 export interface DemoCommit { id: string; parent?: string; message: string; author: DemoPerson; at: number; changes: Record<string, string | null> }
@@ -11,7 +12,6 @@ export interface DemoHistory { commits: DemoCommit[]; refs: Record<string, strin
 export interface BuiltDemoHistory { pack: Uint8Array; shas: Record<string, string>; refs: Record<string, string>; snapshots: Record<string, Record<string, string>>; objectCount: number }
 
 type GitObject = { type: 'blob' | 'tree' | 'commit'; data: Buffer; hash: string };
-const zero = '0'.repeat(40);
 
 function gitObject(type: GitObject['type'], data: Buffer): GitObject {
   return { type, data, hash: createHash('sha1').update(`${type} ${data.length}\0`).update(data).digest('hex') };
@@ -91,9 +91,9 @@ export async function pushDemoHistory(artifacts: ArtifactsBinding, name: string,
     const discovery = await fetcher(`${base}/info/refs?service=git-receive-pack`, { headers, redirect: 'manual', signal: AbortSignal.timeout(15000) });
     requireGitResponse(discovery, 'application/x-git-receive-pack-advertisement');
     const advertised = parsePackets(await boundedBody(discovery)).slice(2).filter(Boolean);
-    if (advertised.some((line) => !line.startsWith(zero))) throw new ApiError(409, 'REPOSITORY_NOT_EMPTY', `Demo repository ${name} already has history; reset refuses to overwrite it.`);
+    if (advertised.some((line) => !line.startsWith(ZERO_SHA))) throw new ApiError(409, 'REPOSITORY_NOT_EMPTY', `Demo repository ${name} already has history; reset refuses to overwrite it.`);
     const refs = Object.entries(built.refs);
-    const commands = refs.map(([ref, sha], index) => packet(`${zero} ${sha} ${ref}${index === 0 ? '\0report-status' : ''}\n`));
+    const commands = refs.map(([ref, sha], index) => packet(`${ZERO_SHA} ${sha} ${ref}${index === 0 ? '\0report-status' : ''}\n`));
     const response = await fetcher(`${base}/git-receive-pack`, { method: 'POST', headers: { ...headers, 'content-type': 'application/x-git-receive-pack-request', accept: 'application/x-git-receive-pack-result' }, body: new Uint8Array(Buffer.concat([...commands, Buffer.from('0000'), built.pack])), redirect: 'manual', signal: AbortSignal.timeout(30000) });
     requireGitResponse(response, 'application/x-git-receive-pack-result');
     const status = parsePackets(await boundedBody(response)).filter(Boolean).map((line) => line.trimEnd());
