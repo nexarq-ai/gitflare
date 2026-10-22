@@ -6,13 +6,13 @@ import type { ArtifactRepo, ArtifactsBinding } from './artifacts';
 import { ApiError, requireString } from './domain';
 import { boundedBody, buildInitializationPack, packet, parsePackets, requireGitResponse } from './repository-initialization';
 import { validGitSha } from './artifacts';
+import { ZERO_SHA } from './git-protocol';
 
 export const IMPORT_ZIP_MAX_BYTES = 5 * 1024 * 1024;
 export const IMPORT_REQUEST_MAX_BYTES = Math.ceil(IMPORT_ZIP_MAX_BYTES / 3) * 4 + 2048;
 export const IMPORT_EXPANDED_MAX_BYTES = 10 * 1024 * 1024;
 export const IMPORT_FILE_MAX_BYTES = 1024 * 1024;
 export const IMPORT_MAX_FILES = 500;
-const zero = '0'.repeat(40);
 export interface ImportFile { path: string; data: Uint8Array; mode: '100644' | '100755' }
 export interface ImportInput { archiveBase64: string; expectedHeadSha: string | null; message: string }
 export interface ImportStatus { allowed: boolean; headSha: string | null; reason: string; branch: string; remote: string | null }
@@ -136,7 +136,7 @@ export async function discoverRefs(base: string, service: string, token: string,
   const lines = parsePackets(await boundedBody(response));
   if (lines[0] !== `# service=${service}\n` || lines[1] !== '') throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git returned an invalid service advertisement.');
   const refs = new Map<string, string>(), capabilities = new Set<string>();
-  for (const line of lines.slice(2).filter(Boolean)) { const [advertisement, text] = line.trimEnd().split('\0'); const match = /^([a-f0-9]{40}) (.+)$/.exec(advertisement); if (!match) throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git returned an invalid reference advertisement.'); if (match[1] !== zero) { if (refs.has(match[2])) throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git returned duplicate references.'); refs.set(match[2], match[1]); } else if (match[2] !== 'capabilities^{}') throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git returned an invalid empty reference.'); for (const value of text?.split(' ') ?? []) capabilities.add(value); }
+  for (const line of lines.slice(2).filter(Boolean)) { const [advertisement, text] = line.trimEnd().split('\0'); const match = /^([a-f0-9]{40}) (.+)$/.exec(advertisement); if (!match) throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git returned an invalid reference advertisement.'); if (match[1] !== ZERO_SHA) { if (refs.has(match[2])) throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git returned duplicate references.'); refs.set(match[2], match[1]); } else if (match[2] !== 'capabilities^{}') throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git returned an invalid empty reference.'); for (const value of text?.split(' ') ?? []) capabilities.add(value); }
   if ([...capabilities].some(value => value.startsWith('object-format=') && value !== 'object-format=sha1')) throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git must use SHA-1 object identifiers.');
   return { refs, capabilities };
 }
@@ -180,7 +180,7 @@ export async function pushRepositoryImport(artifacts: ArtifactsBinding, reposito
     if (!requireOnlyDefault(refs, ref, expectedHeadSha)) throw new ApiError(409, 'STALE_IMPORT_HEAD', 'The repository changed before import. Refresh its current commit.');
     if (!capabilities.has('report-status')) throw new ApiError(502, 'IMPORT_PROTOCOL', 'Git does not support receive status.');
     await assertAuthority();
-    const command = packet(`${expectedHeadSha ?? zero} ${built.commitSha} ${ref}\0report-status\n`);
+    const command = packet(`${expectedHeadSha ?? ZERO_SHA} ${built.commitSha} ${ref}\0report-status\n`);
     attempted = true;
     const response = await fetcher(`${base}/git-receive-pack`, { method: 'POST', headers: { authorization: `Bearer ${token.plaintext}`, 'content-type': 'application/x-git-receive-pack-request', accept: 'application/x-git-receive-pack-result' }, body: new Uint8Array(Buffer.concat([command, Buffer.from('0000'), built.pack])), redirect: 'manual', signal: AbortSignal.timeout(15000) });
     requireGitResponse(response, 'application/x-git-receive-pack-result');
