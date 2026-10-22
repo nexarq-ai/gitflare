@@ -1,18 +1,20 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button } from "@cloudflare/kumo/components/button";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import { Button, LinkButton } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
 import { RobotIcon, SparkleIcon } from "@phosphor-icons/react";
+import { aiSetupPath, REQUEST_CHANGE_PARAM } from "../shared/ai-setup";
 import type { AgentMissionEntry, AgentMissionState, FixQuote, FixRequest, FixRequests, MissionStatus } from "../shared/types";
 import { request } from "./api";
 import { relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
+import { appHref } from "./hosts";
 import type { ConfirmFact } from "./deploy-progress";
 import InfoTip from "./InfoTip";
 import "./fix-requests.css";
 import { PageLoading } from "./WorkspaceLoader";
 
 const STATE_LABELS: Record<AgentMissionState, string> = { planning: "Planning", waiting: "Waiting for a maintainer", running: "Agents working", review: "In review", landed: "Landed", closed: "Closed", failed: "Failed" };
-const ABOUT = "An agent proposes a change for the maintainers to review. Uses this project's community AI pool or your own key.";
+const ABOUT = "An agent drafts the change in an isolated fork without secrets. Maintainers review it and decide whether it lands.";
 
 function requester(entry: AgentMissionEntry): string {
   return entry.requester.handle ? `@${entry.requester.handle}` : entry.requester.name;
@@ -71,7 +73,9 @@ export function RequestFix({ api, issueNumber, open, signIn }: { api: string; is
 
   const action = !quote ? null
     : !quote.signedIn ? signIn
-    : !quote.available ? <span className="fix-action"><Button variant="secondary" size="sm" icon={SparkleIcon} disabled>{quote.reason.startsWith("Add an AI key") ? "Add an AI key to request fixes" : "Request fix"}</Button><InfoTip label="requesting fixes">{quote.reason}</InfoTip></span>
+    : !quote.available ? quote.setup
+      ? <span className="fix-action"><LinkButton variant="secondary" size="sm" icon={SparkleIcon} href={appHref(aiSetupPath(`${window.location.pathname}${window.location.search}`, quote.setup.handleRequired))}>Connect AI model</LinkButton><InfoTip label="requesting fixes">{quote.reason}</InfoTip></span>
+      : <span className="fix-action"><span className="fix-requests-note">Fix requests aren't available</span><InfoTip label="requesting fixes">{quote.reason}</InfoTip></span>
     : open ? <span className="fix-action"><Button variant="secondary" size="sm" icon={SparkleIcon} loading={busy} onClick={() => void start()}>Request fix</Button><InfoTip label="requesting fixes">{ABOUT} {quote.reason}</InfoTip></span>
     : null;
 
@@ -99,14 +103,82 @@ export function AgentMissions({ api, issueLink }: { api: string; issueLink: (num
   </section>;
 }
 
+const CHANGE_BODY = "What should change:\n\n\nHow to tell it works:\n";
+
+export function changeTitle(quote: FixQuote | null): string {
+  if (!quote || quote.available) return "Request a change";
+  if (!quote.signedIn) return "Sign in to request a change";
+  return quote.setup ? "Connect an AI model to request changes" : "Requests aren't available here";
+}
+
+export function paidBy(quote: FixQuote): string {
+  return quote.source === "pool" ? "this project's AI pool" : `your AI key${quote.model ? ` (${quote.model.label})` : ""}`;
+}
+
+export function askMaintainersHref(api: string): string {
+  const repository = api.replace(/^\/api\/public\/repos/, "");
+  return `${repository}/issues/new?${new URLSearchParams({ body: CHANGE_BODY })}`;
+}
+
+function openedFromReturn(): boolean {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get(REQUEST_CHANGE_PARAM) !== "1") return false;
+  params.delete(REQUEST_CHANGE_PARAM);
+  const query = params.toString();
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
+  return true;
+}
+
+interface ChangeBodyProps {
+  api: string;
+  quote: FixQuote | null;
+  error: string;
+  done: string;
+  goal: string;
+  busy: boolean;
+  first?: Ref<HTMLElement>;
+  onGoal: (goal: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}
+
+export function RequestChangeBody({ api, quote, error, done, goal, busy, first, onGoal, onSubmit, onClose }: ChangeBodyProps) {
+  const ask = askMaintainersHref(api);
+  if (!quote) return error
+    ? <><p className="fix-change-line" role="alert">{error}</p><div className="dialog-actions"><Button ref={first as Ref<HTMLButtonElement>} variant="secondary" size="base" type="button" onClick={onClose}>Close</Button></div></>
+    : <div className="fix-change-loading" aria-busy="true"><PageLoading label="Checking who pays" /></div>;
+  if (!quote.signedIn) return <>
+    <p className="fix-change-line">An agent drafts the change; maintainers review it.</p>
+    <div className="dialog-actions"><Button variant="secondary" size="base" type="button" onClick={onClose}>Cancel</Button><LinkButton ref={first as Ref<HTMLAnchorElement>} variant="primary" size="base" href={appHref("/signin")}>Sign in</LinkButton></div>
+  </>;
+  if (!quote.available) return <>
+    <p className="fix-change-line">{quote.reason}{quote.setup && <InfoTip label="connecting an AI model">Your key stays in your personal workspace and pays only for your own requests. Maintainers still review every change.</InfoTip>}</p>
+    <div className="dialog-actions">{quote.setup
+      ? <><LinkButton variant="secondary" size="base" href={ask}>Ask maintainers instead</LinkButton><LinkButton ref={first as Ref<HTMLAnchorElement>} variant="primary" size="base" href={quote.setup.url}>Connect AI model</LinkButton></>
+      : <><Button variant="secondary" size="base" type="button" onClick={onClose}>Close</Button><LinkButton ref={first as Ref<HTMLAnchorElement>} variant="primary" size="base" href={ask}>Ask maintainers instead</LinkButton></>}</div>
+  </>;
+  return <form onSubmit={event => { event.preventDefault(); onSubmit(); }}>
+    <p className="fix-change-line">Paid by {paidBy(quote)}.<InfoTip label="requested changes">{ABOUT} {quote.waitsForMaintainer ? "It starts when a maintainer starts it." : "Agents start right away."}{quote.remainingToday !== null ? ` ${quote.remainingToday} left today.` : ""}</InfoTip></p>
+    <div className="form-field fix-change-field"><label htmlFor="fix-goal">What should change?</label><textarea ref={first as Ref<HTMLTextAreaElement>} id="fix-goal" className="fix-goal" rows={5} maxLength={4000} value={goal} disabled={busy} onChange={event => onGoal(event.target.value)} placeholder="Describe the change and how to tell it works." /></div>
+    {error && <div className="error-notice" role="alert">{error}</div>}
+    {done && <p className="fix-change-line" role="status">{done}</p>}
+    <div className="dialog-actions">
+      <Button variant="secondary" size="base" type="button" onClick={onClose}>{done ? "Close" : "Cancel"}</Button>
+      <Button variant="primary" size="base" type="submit" loading={busy} disabled={goal.trim().length < 10}>Request change</Button>
+    </div>
+  </form>;
+}
+
 export function RequestChange({ api, authenticated, signIn }: { api: string; authenticated: boolean; signIn: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => authenticated && openedFromReturn());
   const [goal, setGoal] = useState("");
   const [quote, setQuote] = useState<FixQuote | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const key = useRef(crypto.randomUUID());
+  const first = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -116,8 +188,15 @@ export function RequestChange({ api, authenticated, signIn }: { api: string; aut
     return () => { active = false; };
   }, [api, open]);
 
+  useEffect(() => {
+    if (!open || (!quote && !error)) return;
+    const frame = requestAnimationFrame(() => first.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open, quote, error]);
+
   async function submit() {
-    setBusy(true); setError("");
+    if (busy || goal.trim().length < 10) return;
+    setBusy(true); setError(""); setDone("");
     try {
       const result = await request<{ waitingForMaintainer: boolean }>(`${api}/fix-requests`, { goal: goal.trim() }, key.current);
       key.current = crypto.randomUUID();
@@ -130,20 +209,10 @@ export function RequestChange({ api, authenticated, signIn }: { api: string; aut
   if (!authenticated) return <div className="fix-change">{signIn}</div>;
   return <div className="fix-change">
     <Button variant="secondary" size="sm" icon={SparkleIcon} onClick={() => setOpen(true)}>Request a change</Button>
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog size="sm" className="dialog-content">
-        <Dialog.Title className="dialog-title">Request a change</Dialog.Title>
-        <Dialog.Description className="dialog-description">{ABOUT}</Dialog.Description>
-        {quote && (quote.available
-          ? <dl className="confirm-facts">{quoteFacts(quote).map(fact => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}</dl>
-          : <p className="fix-requests-note" role="status">{quote.reason}</p>)}
-        <div className="form-field"><label htmlFor="fix-goal">What should change?</label><textarea id="fix-goal" className="fix-goal" rows={5} maxLength={4000} value={goal} disabled={busy || !quote?.available} onChange={event => setGoal(event.target.value)} placeholder="Describe the change and how to tell it works." /></div>
-        {error && <div className="error-notice" role="alert">{error}</div>}
-        {done && <p className="fix-requests-note" role="status">{done}</p>}
-        <div className="dialog-actions">
-          <Button variant="secondary" size="base" type="button" onClick={() => setOpen(false)}>Close</Button>
-          <Button variant="primary" size="base" type="button" loading={busy} disabled={!quote?.available || goal.trim().length < 10} onClick={() => void submit()}>Request change</Button>
-        </div>
+    <Dialog.Root open={open} onOpenChange={value => { if (!busy) setOpen(value); }}>
+      <Dialog size="sm" className="dialog-content fix-change-dialog">
+        <Dialog.Title className="dialog-title fix-change-title">{changeTitle(quote)}</Dialog.Title>
+        <RequestChangeBody api={api} quote={quote} error={error} done={done} goal={goal} busy={busy} first={first} onGoal={setGoal} onSubmit={() => void submit()} onClose={() => setOpen(false)} />
       </Dialog>
     </Dialog.Root>
   </div>;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Mission } from '../../shared/types';
+import type { FixQuote, Mission } from '../../shared/types';
 import { ApiError } from '../domain';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { repositoryId, missionId, requestKey, offset, pageLimit, readOnly, mutation, destructive, external, issueNumber, publicAddress, publicIssuesPath } from '../mcp-schemas';
@@ -18,11 +18,18 @@ export function register(server: McpServer, { call }: McpToolContext): void {
     return { ...rest, ...page(missions, input.offset, input.limit) };
   }));
   server.registerTool('gitflare_request_fix', {
-    title: 'Request an agent fix on a public repository', description: 'Ask agents to fix an open issue (issue_number) or make a change (goal) on a public repository. Agents work in isolated forks without secrets; maintainers review and land the proposal. Paid by the project’s community AI pool within its daily limits, else by your personal-workspace AI key; never by Gitflare. Check gitflare_fix_requests with quote true first. Needs write access.',
+    title: 'Request an agent fix on a public repository', description: 'Ask agents to fix an open issue (issue_number) or make a change (goal) on a public repository. Agents work in isolated forks without secrets; maintainers review and land the proposal. Paid by the project’s community AI pool within its daily limits, else by your personal-workspace AI key; never by Gitflare. When neither can pay, returns needsAiSetup with a browser URL where the user connects a model (keys are never taken over MCP). Needs write access.',
     inputSchema: z.object({ ...publicAddress, issue_number: issueNumber.optional(), goal: z.string().min(10).max(4000).optional().describe('What to change, when there is no issue.'), idempotency_key: requestKey }).strict(), annotations: external,
   }, (input) => guarded(async () => {
     if (!input.issue_number === !input.goal) throw new ApiError(400, 'INVALID_INPUT', 'Pass either issue_number or goal.');
-    return call<Record<string, unknown>>(`${publicIssuesPath(input.handle, input.repository)}/fix-requests`, input.issue_number ? { issueNumber: input.issue_number } : { goal: input.goal }, input.idempotency_key);
+    const path = `${publicIssuesPath(input.handle, input.repository)}/fix-requests`;
+    try { return await call<Record<string, unknown>>(path, input.issue_number ? { issueNumber: input.issue_number } : { goal: input.goal }, input.idempotency_key); }
+    catch (error) {
+      if (!(error instanceof ApiError) || error.code !== 'AI_SOURCE_REQUIRED') throw error;
+      const { quote } = await call<{ quote: FixQuote | null }>(`${path}?quote=1`);
+      if (!quote?.setup) throw error;
+      return { requested: false, needsAiSetup: { url: quote.setup.url, handleRequired: quote.setup.handleRequired, reason: quote.reason } };
+    }
   }));
   server.registerTool('gitflare_community_pool', {
     title: 'Read a repository’s community AI settings', description: 'Read the community AI pool (funded models, agent runs, agent answers and fix requests per person a day, who funded it), today’s usage, agent triage and agent review switches, models this workspace can fund, and whether platform-funded triage is granted. Read-only.',

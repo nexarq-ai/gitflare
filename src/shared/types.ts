@@ -583,7 +583,8 @@ export interface AgentAssistSettings { triage: boolean; review: boolean; updated
 export interface CommunityPoolUsage { day: string; missions: number; drafts: number; requests: number }
 export interface CommunityAiModel { id: string; label: string }
 export interface CommunityAiSettings { repositoryId: string; public: boolean; pool: CommunityPool | null; assist: AgentAssistSettings; usage: CommunityPoolUsage; eligibleModels: CommunityAiModel[]; operatorTriage: boolean; canManage: boolean }
-export interface FixQuote { signedIn: boolean; available: boolean; source: FixFundingSource | null; model: CommunityAiModel | null; reason: string; waitsForMaintainer: boolean; remainingToday: number | null }
+export interface AiSetup { url: string; handleRequired: boolean }
+export interface FixQuote { signedIn: boolean; available: boolean; source: FixFundingSource | null; model: CommunityAiModel | null; reason: string; waitsForMaintainer: boolean; remainingToday: number | null; setup: AiSetup | null }
 export type AgentMissionState = 'planning' | 'waiting' | 'running' | 'review' | 'landed' | 'closed' | 'failed';
 export interface AgentMissionEntry { id: string; title: string; issueNumber: number | null; requester: IssuePerson; source: FixFundingSource; state: AgentMissionState; createdAt: string; landedSha: string | null }
 export interface FixRequests { missions: AgentMissionEntry[]; quote: FixQuote | null }

@@ -70,6 +70,7 @@ import { accountSection } from "./account-data";
 import { eligibleApprovers, knownCheckNames } from "./approvals";
 import { appOrigin, crossHostTarget, pageHostOrigins, siteHref, siteSignedInHint } from "./hosts";
 import { publicRepositoryPath } from "../shared/handles";
+import { requestedPersonalWorkspace } from "../shared/ai-setup";
 import AccountMenu from "./AccountMenu";
 
 import ConnectionError from "./ConnectionError";
@@ -256,7 +257,7 @@ function Workspace() {
     try {
       const [data, access] = await Promise.all([request<Workspace>("/api/workspace"), request<AccessSnapshot>("/api/access")]);
       if (generation !== loadGeneration.current) return;
-      const remembered = selectedWorkspace() ? null : rememberedWorkspace(access.user.id);
+      const remembered = requestedPersonalWorkspace(window.location.search, access.user.id, access.workspaces) ?? (selectedWorkspace() ? null : rememberedWorkspace(access.user.id));
       if (remembered && remembered !== access.workspace?.id && access.workspaces.some(item => item.id === remembered)) {
         selectWorkspace(remembered);
         restore = true;

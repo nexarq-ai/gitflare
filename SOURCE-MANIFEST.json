@@ -209,6 +209,11 @@
       "sha256": "17ffc265a5951aed6b29b32afcdf3e9d9f2b006da9877a795ca8a7fba6634937"
     },
     {
+      "path": "src/shared/ai-setup.ts",
+      "size": 1329,
+      "sha256": "056996704bb8156c61bd2cfc796b15a1b978e45ab4c20aa7d2d218d1f1b82dce"
+    },
+    {
       "path": "src/shared/cloudflare-permissions.ts",
       "size": 7806,
       "sha256": "df78193c2817e32f4c83a2d96335a4258a3a4cf28b54895a4ff0edc183c19540"
@@ -315,8 +320,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 31771,
-      "sha256": "8e36bdc0225e7c974bd9053504f29ac6f97083175a64dd3cf66caf688d3bb2fa"
+      "size": 31860,
+      "sha256": "3567bc1c466d89e914ba65b629a8fe540479195e28a3d7728dbde5d0c36a4d09"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -405,8 +410,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87400,
-      "sha256": "85ac1a2204032ab0441055a0c725ea6c146227412ed7508686ae43cb4cd21efd"
+      "size": 87556,
+      "sha256": "9b4db77cf09a62c9bef969f571198897c3481581cf5d8aa48c02f3b5b2f4deb5"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -700,13 +705,13 @@
     },
     {
       "path": "src/ui/fix-requests.css",
-      "size": 3153,
-      "sha256": "01363b93b4d635d6f7d0c9058dc89b1a95d2a301413fa1e3fdabb493861c6661"
+      "size": 4391,
+      "sha256": "f32c6a756dfea507a8fe774e4637041172a8dbefe9d60e6016c547463afbb2c8"
     },
     {
       "path": "src/ui/FixRequests.tsx",
-      "size": 10246,
-      "sha256": "d16613551eb530a9c65ce60c3b7e14c26cea61988a55883d9d46db5b7e41e7dc"
+      "size": 14367,
+      "sha256": "48ff3f048df9caf8c1e72713fc8f56edb5af88ac679cf300d67456bdbeb90477"
     },
     {
       "path": "src/ui/ForkBanner.tsx",
@@ -760,8 +765,8 @@
     },
     {
       "path": "src/ui/HandleSettings.tsx",
-      "size": 7894,
-      "sha256": "e79e266858fe5c169eb9925ed99b00b9298b592741d98cefb7c80e2412b12788"
+      "size": 8308,
+      "sha256": "1da7901c4798cfefe2439e7c85e044c48e7c2e81de9ffc5a57d888172d5c378d"
     },
     {
       "path": "src/ui/hosts.ts",
@@ -865,13 +870,13 @@
     },
     {
       "path": "src/ui/model-connections.css",
-      "size": 5214,
-      "sha256": "1b5334575e10cf47a20523f52de4d8ab8fdae7f4f557da52d71d7456db3ff8c3"
+      "size": 5545,
+      "sha256": "7dd105f33a6619af58b1152d6ba9dd42baa1df7edc4e2363dc2d3ee2249d86a9"
     },
     {
       "path": "src/ui/ModelConnections.tsx",
-      "size": 10988,
-      "sha256": "8d76835ccf7ce126bf633cc05df47e57b18579db134d767479d041b8785ce6c8"
+      "size": 11524,
+      "sha256": "3dd20ff88380e88fe8f826793e3af9fc14d1bc245e63fe0cde2091bfbee09455"
     },
     {
       "path": "src/ui/models-data.ts",
@@ -1005,8 +1010,8 @@
     },
     {
       "path": "src/ui/PublicIssues.tsx",
-      "size": 36802,
-      "sha256": "894f818a8c1572111218738d5dce635b3ba42d63cc21d05c8e1f3837010e70ec"
+      "size": 37152,
+      "sha256": "54be707bedbf5f72790823066351269c571807ad72b909ce4be000a221fac356"
     },
     {
       "path": "src/ui/pull-requests.css",
@@ -1500,8 +1505,8 @@
     },
     {
       "path": "src/worker/fix-requests.ts",
-      "size": 17238,
-      "sha256": "c590b002e38a2ea17cd54a8f15ce3ce4d351ff66b87859a4a1d0126ae62d97d3"
+      "size": 18192,
+      "sha256": "305c5b96f6a8f4a30d834df2a932c1d2777dce00572d829d04180682fb7bf1c4"
     },
     {
       "path": "src/worker/forks.ts",
@@ -1640,8 +1645,8 @@
     },
     {
       "path": "src/worker/mcp-tools/assist.ts",
-      "size": 8621,
-      "sha256": "006354a5fd29d4b06342b8ba495746be234ee0249414a822e5868eb1769bfd4f"
+      "size": 9124,
+      "sha256": "19c73850a3926101ddf2d6a62a721ff2a6cc59caf13254d739f7cf254ab703f9"
     },
     {
       "path": "src/worker/mcp-tools/branches.ts",
@@ -2437,6 +2442,11 @@
       "path": "tests/repository-skills.test.ts",
       "size": 7925,
       "sha256": "14bd03a92191e856416cc59f3cf7ecad5316331af50a56dac75edf1e381d612d"
+    },
+    {
+      "path": "tests/request-change-ui.test.ts",
+      "size": 5110,
+      "sha256": "f9d892be96f00dc7c12c1c62ffc5cba0bd1267fbf689876c60456322fe647ea6"
     },
     {
       "path": "tests/retry-agents.test.ts",
