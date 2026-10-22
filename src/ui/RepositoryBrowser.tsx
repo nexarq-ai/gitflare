@@ -20,7 +20,7 @@ import { request } from "./api";
 import { grammarFor, tokenize } from "./diff-highlight";
 import { EmptyState, ErrorNotice } from "./components";
 import "./repository-browser.css";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 
 type Selection = { path: string; kind: "directory" | "file" };
 
@@ -202,7 +202,7 @@ export default function RepositoryBrowser({
           </span>
         </div>
         {busy ? (
-          <RouteProgress />
+          <PageLoading />
         ) : file ? (
           <>
             <div className="source-file-actions">

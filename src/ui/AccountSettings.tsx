@@ -5,7 +5,7 @@ import type { AccountSnapshot } from "../shared/types";
 import { request, RequestError } from "./api";
 import { VerifyEmailNotice, type AuthConfig } from "./AuthScreen";
 import { SettingsLayout } from "./SettingsLayout";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import { ErrorNotice } from "./components";
 import DemoFeaturePanel from "./DemoFeaturePanel";
 import { UserHandleCard } from "./HandleSettings";
@@ -34,7 +34,7 @@ export default function AccountSettings({ section, config, onChanged, onSwitchWo
   return <SettingsLayout title="Your account" items={accountSections.map(item => ({ href: `/account/${item.id}`, label: item.label, current: item.id === section, ai: item.id === "clients" }))}>
     <div className="page-heading"><div><h1>{titles[section][0]}</h1><p>{titles[section][1]}</p></div></div>
     {error && <ErrorNotice message={error} onRetry={() => void load()} />}
-    {section === "notifications" ? <NotificationSettings /> : !data ? !error && <RouteProgress /> : section === "profile" ? <Profile data={data} config={config} onSwitchWorkspace={onSwitchWorkspace} onChanged={async () => { await load(); await onChanged(); }} />
+    {section === "notifications" ? <NotificationSettings /> : !data ? !error && <PageLoading /> : section === "profile" ? <Profile data={data} config={config} onSwitchWorkspace={onSwitchWorkspace} onChanged={async () => { await load(); await onChanged(); }} />
       : config.demo && (section === "security" || section === "sessions") ? <DemoFeaturePanel feature="account-security" />
       : section === "security" ? <Security data={data} config={config} onChanged={async () => { await load(); await onChanged(); }} />
       : section === "sessions" ? <Sessions data={data} reload={load} onSignOut={onSignOut} />

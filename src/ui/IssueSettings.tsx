@@ -8,7 +8,7 @@ import { relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
 import InfoTip from "./InfoTip";
 import { LABEL_SWATCHES, LabelChip } from "./IssueLabels";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import "./issues.css";
 
 type Draft = { original: string | null; name: string; color: string; description: string };
@@ -64,7 +64,7 @@ export default function IssueSettings({ repository, canTriage, publicRepositorie
     finally { setBusy(""); }
   }
 
-  if (!labels) return <RouteProgress />;
+  if (!labels) return <PageLoading />;
   const validColor = draft ? /^#[0-9a-f]{6}$/i.test(draft.color) : false;
   return <>
     <section className="panel">
@@ -90,7 +90,7 @@ export default function IssueSettings({ repository, canTriage, publicRepositorie
     </section>
     {showBlocks && <section className="panel">
       <div className="panel-header"><h2>Blocked people</h2><InfoTip label="blocked people">Blocked accounts see this repository's issues as not found and cannot open issues or comment. Block someone from their issue or comment.</InfoTip></div>
-      {!blocks ? <RouteProgress /> : blocks.length ? <ul className="issue-blocks">{blocks.map(block => <li key={block.userId}>
+      {!blocks ? <PageLoading /> : blocks.length ? <ul className="issue-blocks">{blocks.map(block => <li key={block.userId}>
         <span><strong>{block.person?.handle ? `@${block.person.handle}` : block.person?.name ?? "Deleted account"}</strong>{block.reason ? `${block.reason} · ` : ""}{relativeTime(block.blockedAt)}</span>
         <Button variant="secondary" size="sm" loading={busy === `unblock-${block.userId}`} disabled={!!busy} onClick={() => void unblock(block)}>Unblock</Button>
       </li>)}</ul> : <div className="panel-body"><p className="issue-muted">No one is blocked.</p></div>}

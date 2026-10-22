@@ -56,7 +56,8 @@ import NotFoundScreen, { NotFound } from "./NotFound";
 import DemoBanner from "./DemoBanner";
 import { DemoReplayCard } from "./DemoReplay";
 import DemoFeaturePanel from "./DemoFeaturePanel";
-import WorkspaceLoader, { RouteProgress } from "./WorkspaceLoader";
+import WorkspaceLoader, { PageLoading, RouteProgress } from "./WorkspaceLoader";
+import { startBootHandoff } from "./boot-handoff";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
 import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, isPublicProductRoute, keepsRouteAcrossWorkspaces, routeUrl } from "./router";
 import DeployStatusPill from "./DeployProgress";
@@ -163,8 +164,9 @@ function takeReturnRoute(): string {
 }
 
 export default function App() {
+  useEffect(startBootHandoff, []);
   return (
-    <Suspense fallback={<WorkspaceLoader publicPage={currentRoute() === "home"} />}>
+    <Suspense fallback={<WorkspaceLoader />}>
       <Workspace />
     </Suspense>
   );
@@ -737,12 +739,12 @@ function Workspace() {
           {error && (
             <ErrorNotice message={error} onRetry={() => void refresh()} />
           )}
-          <Suspense fallback={<RouteProgress />}>
+          <Suspense fallback={<PageLoading />}>
             {!isKnownAppRoute(route) ? <NotFound authenticated /> : importingRepository && authConfig.demo ? <DemoFeaturePanel feature="repository-creation" /> : importingRepository ? importRepository ? <RepositoryImport key={importRepository.id} repository={importRepository} canManage={permissions.includes("manage")} canContribute={permissions.includes("contribute")} onBack={() => navigate(`repository/${importRepository.id}/code`)} onImported={item => setWorkspace(current => ({ ...current, repositories: current.repositories.map(repo => repo.id === item.id ? item : repo) }))} onCreateProposal={() => createMission(importRepository.id)} /> : <ErrorNotice message="This repository could not be found." /> : route === "import/github" ? <GitHubOrgImport canManage={permissions.includes("manage")} onOpen={id => navigate(`repository/${id}/code`)} onImported={() => void load()} /> : creatingProposal ? <ProposalCreate key={route} repositories={workspace.repositories} repositoryId={proposalRepositoryId} canContribute={permissions.includes("contribute")} canManage={permissions.includes("manage")} onBack={() => navigate(proposalRepositoryId ? `repository/${proposalRepositoryId}/pulls/new` : "missions")} onCreateRepository={() => setModal("repository")} onCreated={async proposal => { await load(); navigate(`mission/${proposal.id}`); notify(proposal.status === "draft" ? "Mission draft created." : "Mission started."); }} /> : page === "settings" ? (
               <WorkspaceSettingsLayout route={route}>
                 {route === "settings/models" ? <ModelConnections canManage={permissions.includes("manage")} />
                   : route === "settings/cloudflare" ? <CloudflareAccounts canManage={permissions.includes("manage")} repositories={workspace.repositories} workspaceName={workspace.name} />
-                  : !account ? <RouteProgress />
+                  : !account ? <PageLoading />
                   : route === "settings/people" ? <PeopleSettings data={account} repositories={workspace.repositories} workspaceName={workspace.name} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} inviteRequest={inviteRequest} onInviteOpened={() => setInviteRequest(false)} />
                   : route === "settings/audit" ? <AuditLog data={account} repositories={workspace.repositories} workspaceName={workspace.name} />
                   : <GeneralSettings workspace={workspace} data={account} selfHosted={authConfig.edition === "self-hosted"} onChanged={load} onLeft={async remaining => { if (remaining[0]) await switchWorkspace(remaining[0].id); else await load(); }} onOpenInstallation={() => navigate("admin")} />}
@@ -1517,7 +1519,7 @@ function RepositoryDetail({
           : subroute === "cloudflare" ? <CloudflareConnection key={repository.id} canManage={canManage} repository={repository} repositoryId={repository.id} />
           : subroute === "community" && publicRepositories ? <CommunityAiSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
           : subroute === "issues" ? <IssueSettings key={repository.id} repository={repository} canTriage={!!access?.permissions.includes("triage")} publicRepositories={publicRepositories} onNotify={onNotify} />
-          : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <RouteProgress />
+          : subroute === "access" ? access ? <RepositoryAccess data={access} repository={repository} repositories={workspace.repositories} workspaceName={workspace.name} onChanged={onAccessChanged} /> : <PageLoading />
           : <RepositoryGeneral repository={repository} publicRepositories={publicRepositories} onNotify={onNotify} onRefresh={onRefresh} />}
       </RepositorySettingsLayout> : tab === "agents" || tab === "checks" ? <RepositoryWork key={`${repository.id}-${tab}`} tab={tab} missions={missions} canContribute={canContribute} onCreate={() => onMission(repository.id)} onOpen={onOpenMission} /> : tab === "skills" ? <RepositorySkills key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} demo={demo} onOpenMission={onOpenMission} /> : tab === "code" ? (
         <>{repository.fork && <ForkBanner key={`fork-${repository.id}`} repository={repository} onNotify={onNotify} onChanged={onRefresh} />}<RepositoryImportOnboarding key={repository.id} repository={repository} canManage={canManage} onImport={onImport} onRefresh={onRefresh} /><RepositoryBrowser key={repository.id} repository={repository} />{repository.provider === "artifacts" && <GitAccess key={`git-${repository.id}`} repository={repository} publicUrl={publicRepositories && repository.visibility === "public" && workspace.handle ? `${pageHostOrigins()?.site ?? window.location.origin}${publicRepositoryPath(workspace.handle, repositoryLabel(repository))}.git` : undefined} onNotify={onNotify} />}</>
