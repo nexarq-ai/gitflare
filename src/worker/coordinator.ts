@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput } from '../shared/types';
+import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChange, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependencyApprover } from './dependency-changes';
 import { activeLandingMessage } from '../shared/commit-message';
@@ -44,6 +44,19 @@ import { CapacityBook } from './coordinator-capacity';
 export { PREVIEW_LEASE_MS, PREVIEW_HEARTBEAT_MS, PREVIEW_READY_MS, WORKER_PREVIEW_TTL_MS, DISPATCH_FAST_ATTEMPTS, MISSION_WATCHDOG_MS, WATCHDOG_MISSING_LIMIT, INTEGRATION_UNCONFIRMED_MESSAGE, PREVIEW_STARTING_MESSAGE } from './coordinator-types';
 export type { ContributorStanding, OutgoingProposal, MissionSummaryCache, IntegrationClaim, PreviewCapability, PreviewHost, WorkerPreviewInfo, PreviewLifetime, WorkerPreviewRecord, PreviewExtension, StoppedPreview, PreviewEndReason, LastPreview, PreviewStatus } from './coordinator-types';
 export { integrationPendingMessage } from './coordinator-integration';
+
+const BRANCH_MERGER = { name: 'Branch merger', role: 'Trusted branch merger' } as const;
+
+export function branchMergerTask(change: Pick<BranchChange, 'branch' | 'headSha' | 'targetBranch'>): string {
+  return `Merge ${change.branch} at ${change.headSha.slice(0, 12)} into ${change.targetBranch}, fast-forwarding when possible.`;
+}
+
+export function retaskBranchMerger(run: AgentRun, change: Pick<BranchChange, 'branch' | 'headSha' | 'targetBranch'>): AgentRun {
+  const assignment = branchMergerTask(change);
+  if (run.assignment === assignment) return run;
+  const task = run.assignment && run.task.includes(run.assignment) ? run.task.replace(run.assignment, assignment) : run.task.replace(/Merge \S+ at [0-9a-f]{7,40} into \S+, fast-forwarding when possible\./, assignment);
+  return { ...run, task, assignment };
+}
 
 function agentDefaults(overrides: CreateMissionInput['agentOverrides']): Pick<AgentRun, 'editScope' | 'overrides'> {
   if (!overrides) return {};
@@ -373,6 +386,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       }
       const { closedAt: _closedAt, closedBy: _closedBy, ...open } = change;
       mission.branchChange = { ...open, headSha };
+      mission.runs = mission.runs.map((run) => run.name === BRANCH_MERGER.name ? retaskBranchMerger(run, mission.branchChange!) : run);
       return this.saveMission(mission, action === 'reopen' ? `${actorId} reopened this pull request at ${headSha.slice(0, 12)}.` : `${actorId} updated this pull request from ${change.branch} at ${headSha.slice(0, 12)}. Earlier approvals no longer apply.`);
     });
   }
@@ -638,11 +652,11 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  prepareRepositoryImport(key: string, fingerprint: string, candidateSha: string, files: string[], skipped: string[]): void {
+  prepareRepositoryImport(key: string, fingerprint: string, candidateSha: string, files: string[], skipped: string[], details: Pick<ImportReceipt, 'exclusions' | 'warnings' | 'install'> = {}): void {
     this.ctx.storage.transactionSync(() => {
       const receipt = this.getImportRequest(key, fingerprint);
       if (!receipt || this.store.get<string>('repository-import-active') !== key || receipt.candidateSha) throw new ApiError(409, 'IMPORT_PENDING', 'This import has already been prepared or is no longer active.');
-      this.store.put(`repository-import:${key}`, { ...receipt, candidateSha, files, skipped } satisfies ImportReceipt);
+      this.store.put(`repository-import:${key}`, { ...receipt, candidateSha, files, skipped, ...details } satisfies ImportReceipt);
     });
   }
 
@@ -661,7 +675,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       if (!receipt?.candidateSha || repository.headSha !== receipt.candidateSha) throw new ApiError(409, 'IMPORT_UNCONFIRMED', 'The canonical import commit has not been confirmed.');
       if (receipt.result) return receipt.result;
       if (this.store.get<string>('repository-import-active') !== key) throw new ApiError(409, 'IMPORT_PENDING', 'This import is no longer active.');
-      const result = { repository, headSha: receipt.candidateSha, files: receipt.files ?? [], skipped: receipt.skipped ?? [] } satisfies ImportResult;
+      const result = { repository, headSha: receipt.candidateSha, files: receipt.files ?? [], skipped: receipt.skipped ?? [], ...(receipt.exclusions ? { exclusions: receipt.exclusions } : {}), ...(receipt.warnings ? { warnings: receipt.warnings } : {}), ...(receipt.install !== undefined ? { install: receipt.install } : {}) } satisfies ImportResult;
       this.saveRepository(repository);
       this.store.put(`repository-import:${key}`, { ...receipt, result } satisfies ImportReceipt);
       this.store.delete('repository-import-active');
@@ -818,7 +832,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const branchChange = input.branchChange ? { ...input.branchChange, branch: branchName(input.branchChange.branch), targetBranch: repository.defaultBranch } : undefined;
       if (branchChange && (!validGitSha(branchChange.headSha) || (!branchChange.source && branchChange.branch === repository.defaultBranch))) throw new ApiError(400, 'INVALID_PULL_REQUEST', 'A pull request needs the exact head commit of a branch other than the default branch.');
       const race = input.mode === 'race' && !revertChange && !branchChange;
-      const tasks = skillChange ? [{ name: 'Skill editor', role: 'Trusted skill editor', task: `Apply exactly the submitted Markdown to ${skillChange.path}.` }] : branchChange ? [{ name: 'Branch merger', role: 'Trusted branch merger', task: `Merge ${branchChange.branch} at ${branchChange.headSha.slice(0, 12)} into ${branchChange.targetBranch}, fast-forwarding when possible.` }] : revertChange ? [{ name: 'Revert editor', role: 'Trusted revert editor', task: `Undo exactly the change landed by "${revertChange.title}" (${revertChange.previousSha.slice(0, 12)} to ${revertChange.landedSha.slice(0, 12)}) with a new revert commit.` }] : input.tasks ?? (race ? [
+      const tasks = skillChange ? [{ name: 'Skill editor', role: 'Trusted skill editor', task: `Apply exactly the submitted Markdown to ${skillChange.path}.` }] : branchChange ? [{ ...BRANCH_MERGER, task: branchMergerTask(branchChange) }] : revertChange ? [{ name: 'Revert editor', role: 'Trusted revert editor', task: `Undo exactly the change landed by "${revertChange.title}" (${revertChange.previousSha.slice(0, 12)} to ${revertChange.landedSha.slice(0, 12)}) with a new revert commit.` }] : input.tasks ?? (race ? [
         { name: 'Candidate A', role: 'Independent attempt', task: 'Complete the whole mission with the smallest change that satisfies every criterion.' },
         { name: 'Candidate B', role: 'Independent attempt', task: 'Complete the whole mission, favouring clarity and explicit error handling.' },
       ] : [

@@ -54,8 +54,14 @@ export async function repositorySettingsRoutes(context: RouteContext): Promise<R
     if (overrideChanged && (principal.role !== 'Owner' || principal.credentialId)) throw new ApiError(403, 'OWNER_REQUIRED', 'Only a workspace Owner can override the check settings of gitflare.json. Leave policyOverride out to keep the current override.');
     if (overrideChanged && input.policyOverride) input.policyOverride = { ...input.policyOverride, updatedAt: new Date().toISOString(), updatedBy: principal.userId };
     else if (!overrideChanged && current?.policyOverride) input.policyOverride = current.policyOverride;
+    const installChanged = body.install !== undefined && input.install?.value !== current?.install?.value;
+    if (installChanged && (principal.role !== 'Owner' || principal.credentialId)) throw new ApiError(403, 'OWNER_REQUIRED', 'Only a workspace Owner can change dependency install. Leave install out to keep the current setting.');
+    if (installChanged && input.install) input.install = { value: input.install.value, updatedAt: new Date().toISOString(), updatedBy: principal.userId };
+    else if (!installChanged && current?.install) input.install = current.install;
+    else if (!installChanged) delete input.install;
     const saved = await coordinator.setCheckSettings(key, input, principal.userId);
     await access.auditRepositoryChange(principal, overrideChanged ? 'repository.check-settings.policy-override' : 'repository.check-settings', repository.id);
+    if (installChanged) await access.auditRepositoryChange(principal, 'repository.check-settings.install', repository.id);
     return Response.json(checkSettingsSnapshot(repository.id, saved, await coordinator.getCheckDurations()));
   }
   const agentSettingsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/agent-settings$/.exec(url.pathname);

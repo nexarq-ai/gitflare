@@ -7,6 +7,7 @@ import { validateRepositoryInitialization, initializeArtifactsRepository } from 
 import { validateRepositorySkillChange, verifyRepositorySkillChange } from '../skill-edit';
 import { RepositoryImportFailure, buildImportPack, importFingerprint, inspectRepositoryImport, parseImportArchive, pushRepositoryImport, validateImportInput } from '../repository-import';
 import { triggerMirrorSync } from '../github-mirror-runtime';
+import { withInstall } from '../check-settings';
 import { browseRepository } from '../source-browse';
 import { type RouteContext, records, requireRepository, currentRepository, inBackground } from '../route-context';
 
@@ -39,6 +40,23 @@ export async function repositoryWrites(context: RouteContext, repositoryMatch: R
     if (!env.ARTIFACTS || repository.provider !== 'artifacts') throw new ApiError(409, 'REPOSITORY_NOT_CONNECTED', 'Connect an Artifacts repository before importing code.');
     const input = validateImportInput(body), fingerprint = importFingerprint(input);
     const coordinator = records(env, repository.id);
+    if (input.dryRun) {
+      const archive = parseImportArchive(input.archiveBase64, input.keep);
+      const { bootstrap: _bootstrap, ...state } = await inspectRepositoryImport(env.ARTIFACTS, repository, await coordinator.repositoryBootstrapSha());
+      const preview: import('../repository-import').ImportPreview = { dryRun: true, allowed: state.allowed && state.headSha === input.expectedHeadSha, reason: state.headSha !== input.expectedHeadSha ? 'The repository commit changed. Refresh before importing.' : state.reason, headSha: state.headSha, files: archive.files.map(file => file.path), skipped: archive.skipped, exclusions: archive.exclusions, warnings: archive.warnings, install: archive.install };
+      return Response.json(preview);
+    }
+    if (input.enableInstall && (principal.role !== 'Owner' || principal.credentialId)) throw new ApiError(403, 'OWNER_REQUIRED', 'Only a workspace Owner can turn on dependency install. Import without enableInstall, or ask an Owner.');
+    const enableInstall = async (result: import('../repository-import').ImportResult) => {
+      const suggestion = result.install;
+      if (!input.enableInstall || !suggestion || suggestion.automatic) return result;
+      const current = await coordinator.getCheckSettings();
+      if (current?.install?.value !== suggestion.manager) {
+        await coordinator.setCheckSettings(`${key}:install`, withInstall(current, { value: suggestion.manager, updatedAt: new Date().toISOString(), updatedBy: principal.userId }), principal.userId);
+        await access.auditRepositoryChange(principal, 'repository.check-settings.install', repository.id);
+      }
+      return { ...result, install: { ...suggestion, enabled: true, message: `Dependency install with ${suggestion.manager}${suggestion.lockfile ? ` from ${suggestion.lockfile}` : ''} is on for checks. Change it in the repository check settings.` } };
+    };
     const reconcile = async (receipt: import('../repository-import').ImportReceipt) => {
       if (receipt.rejection) throw new ApiError(receipt.rejection.status, receipt.rejection.code, receipt.rejection.message);
       if (receipt.result) { await catalog.saveRepository(receipt.result.repository); return receipt.result; }
@@ -50,17 +68,17 @@ export async function repositoryWrites(context: RouteContext, repositoryMatch: R
       return result;
     };
     const previous = await coordinator.getImportRequest(key, fingerprint);
-    if (previous) return Response.json(await reconcile(previous));
-    const archive = parseImportArchive(input.archiveBase64);
+    if (previous) return Response.json(await enableInstall(await reconcile(previous)));
+    const archive = parseImportArchive(input.archiveBase64, input.keep);
     const state = await inspectRepositoryImport(env.ARTIFACTS, repository, await coordinator.repositoryBootstrapSha());
     if (state.headSha !== input.expectedHeadSha) throw new ApiError(409, 'STALE_IMPORT_HEAD', 'The repository commit changed. Refresh before importing.');
     if (!state.allowed) throw new ApiError(409, 'IMPORT_NOT_ALLOWED', state.reason);
     const files = [...archive.files, ...state.bootstrap.filter(file => !archive.files.some(imported => imported.path === file.path))];
     buildImportPack(files, input.expectedHeadSha, Math.floor(Date.now() / 1000), input.message);
     const claim = await coordinator.claimRepositoryImport(key, fingerprint);
-    if (!claim.claimed) return Response.json(await reconcile(claim.receipt));
+    if (!claim.claimed) return Response.json(await enableInstall(await reconcile(claim.receipt)));
     const built = buildImportPack(files, input.expectedHeadSha, claim.receipt.timestamp, input.message);
-    await coordinator.prepareRepositoryImport(key, fingerprint, built.commitSha, files.map(file => file.path), archive.skipped);
+    await coordinator.prepareRepositoryImport(key, fingerprint, built.commitSha, files.map(file => file.path), archive.skipped, { exclusions: archive.exclusions, warnings: archive.warnings, install: archive.install });
     try { await pushRepositoryImport(env.ARTIFACTS, repository, input.expectedHeadSha, built, () => access.check(principal, 'manage', 'repository', repository.id)); }
     catch (error) {
       const actual = await repositoryHead(env.ARTIFACTS, repository.name, repository.defaultBranch).catch(() => null);
@@ -70,7 +88,7 @@ export async function repositoryWrites(context: RouteContext, repositoryMatch: R
       }
     }
     await inBackground(ctx, triggerMirrorSync(env, repository.id, principal.workspaceId, 'import', [`refs/heads/${repository.defaultBranch}`], ctx));
-    return Response.json(await reconcile({ ...claim.receipt, candidateSha: built.commitSha }));
+    return Response.json(await enableInstall(await reconcile({ ...claim.receipt, candidateSha: built.commitSha })));
   }
   if (repositoryMatch?.[2] === 'skills') {
     const repository = await requireRepository(catalog, repositoryMatch[1]);

@@ -59,7 +59,7 @@ import DemoFeaturePanel from "./DemoFeaturePanel";
 import WorkspaceLoader, { PageLoading, RouteProgress } from "./WorkspaceLoader";
 import { startBootHandoff } from "./boot-handoff";
 import RepositoryImport, { RepositoryImportOnboarding, quoteGitArgument } from "./RepositoryImport";
-import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, publicSourceLocation, POLICY_ROUTES, isPublicProductRoute, keepsRouteAcrossWorkspaces, routeUrl } from "./router";
+import { canonicalizeLegacyHash, currentRoute, navigate as goTo, onRouteChange, isKnownAppRoute, isPublicDocumentationRoute, legacySourceRoute, POLICY_ROUTES, isPublicProductRoute, keepsRouteAcrossWorkspaces, routeUrl } from "./router";
 import DeployStatusPill from "./DeployProgress";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { RepositorySettingsLayout, WorkspaceSettingsLayout } from "./SettingsLayout";
@@ -151,7 +151,7 @@ const runningStates = ["queued", "running", "checking", "integrating"];
 const RETURN_ROUTE_KEY = "gitflare:return-route";
 
 export function isPublicRoute(route: string): boolean {
-  return !!publicSourceLocation(route) || ["home", "signin", "signup", "source/gitflare", "deploy", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route) || isPublicDocumentationRoute(route) || !isKnownAppRoute(route) || route.startsWith("invite?") || isAccountRoute(route);
+  return !!legacySourceRoute(route) || ["home", "signin", "signup", "deploy", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route) || isPublicDocumentationRoute(route) || !isKnownAppRoute(route) || route.startsWith("invite?") || isAccountRoute(route);
 }
 
 function takeReturnRoute(): string {

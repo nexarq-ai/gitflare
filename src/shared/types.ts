@@ -179,11 +179,20 @@ export interface CheckPolicyOverride {
   updatedBy?: string;
 }
 
+export type InstallSetting = 'npm' | 'pnpm' | 'yarn' | 'auto' | 'none';
+
+export interface CheckInstall {
+  value: InstallSetting;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface CheckSettings {
   testTimeoutSeconds?: number;
   runner?: RunnerSize;
   autoIncrease?: AutoIncrease;
   policyOverride?: CheckPolicyOverride;
+  install?: CheckInstall;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -198,6 +207,22 @@ export interface CheckOverride {
 export interface CheckPlan extends CheckSettings {
   learnedTimeoutSeconds?: number;
   override?: CheckOverride;
+}
+
+export type ImportExclusionReason = 'secret' | 'git' | 'dependencies' | 'system' | 'generated';
+
+export interface ImportExclusion {
+  path: string;
+  reason: ImportExclusionReason;
+  keepable: boolean;
+}
+
+export interface ImportInstallSuggestion {
+  manager: 'npm' | 'pnpm' | 'yarn';
+  lockfile: string | null;
+  automatic: boolean;
+  enabled?: boolean;
+  message: string;
 }
 
 export interface RepositoryCheckSettings extends CheckSettings {
