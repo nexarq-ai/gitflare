@@ -1264,9 +1264,34 @@
       "sha256": "b067192d2fe5b8cb50920ecdc6a01f7ce45ec9f849aab4be9eb7293ac01a0e8a"
     },
     {
+      "path": "src/worker/coordinator-capacity.ts",
+      "size": 4855,
+      "sha256": "b8195695c131d42732ca0efef1daa81e167c162389c3715847fb1e768fa98a5e"
+    },
+    {
+      "path": "src/worker/coordinator-dispatch.ts",
+      "size": 10141,
+      "sha256": "77019cdbe1c5eea916987f1b26ac9c433059187166c51c7ff4fa37a46f9ad07d"
+    },
+    {
+      "path": "src/worker/coordinator-integration.ts",
+      "size": 11457,
+      "sha256": "02c49d461a4bcccbb5ca35d0d2c516d261c7ab77c7b03c4e7997f6352b08d483"
+    },
+    {
+      "path": "src/worker/coordinator-previews.ts",
+      "size": 14147,
+      "sha256": "82b3c9d23fae918872e8df2ddfaf63a328cafd79b1966daf746e6eeb394afb79"
+    },
+    {
+      "path": "src/worker/coordinator-types.ts",
+      "size": 6000,
+      "sha256": "ae1d5993ea66d723c9b5c94749b1e475de4ed589ab179ece1b97f99e94e1931a"
+    },
+    {
       "path": "src/worker/coordinator.ts",
-      "size": 130406,
-      "sha256": "1c565eb0c273e7f5d1ac9f1dc033ee7f4862f15c63a0369127e3172544724fd1"
+      "size": 97052,
+      "sha256": "5676fb63da0d792aafa6d286b3589cb93c9d65284cde7148435de2bfbef8bfb9"
     },
     {
       "path": "src/worker/d1-migrations.ts",
