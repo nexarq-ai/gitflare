@@ -10,7 +10,7 @@ import InfoTip from "./InfoTip";
 import { AGE_OPTIONS, DEFAULT_INBOX_FILTERS, inboxCommand, inboxQuery, KIND_LABELS, moveSelection, notificationLine, notificationsQuery, openTarget, personName, reasonList, rowReference, selectionAfterRemoval, threadFromSearch, threadRoute, withinAge, type InboxFilters, type NotificationFilter } from "./inbox-data";
 import type { InboxCounts } from "./inbox-count";
 import { navigate } from "./router";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import "./inbox.css";
 
 type Props = {
@@ -175,7 +175,7 @@ export default function Inbox({ currentWorkspaceId, onSwitchWorkspace, onCounts 
 
   function change(patch: Partial<InboxFilters>) { setFilters(current => ({ ...current, ...patch })); }
 
-  if (resolving) return <RouteProgress />;
+  if (resolving) return <PageLoading />;
   const segmentFilter = filters.segment === "work" ? (filters.archived ? "archived" : "open") : filters.filter;
   const filtered = filters.segment === "work" ? !!(filters.kind || filters.repository || filters.age) : !!(filters.reason || filters.repository || filters.age);
   return (
@@ -218,7 +218,7 @@ export default function Inbox({ currentWorkspaceId, onSwitchWorkspace, onCounts 
         {filters.segment === "notifications" && filters.filter !== "archived" && !!notes?.unread && <Button variant="ghost" size="sm" icon={CheckCircleIcon} loading={busy === "read-all:all"} disabled={!!busy} onClick={() => void markNotifications("read-all")}>Mark all read</Button>}
       </div>
       {error && <ErrorNotice message={error} onRetry={() => void load()} />}
-      {!items ? !error && <RouteProgress /> : (
+      {!items ? !error && <PageLoading /> : (
         <section className="panel inbox-panel">
           {!items.length ? (
             filters.segment === "work"

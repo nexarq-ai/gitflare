@@ -17,6 +17,7 @@ import { RequestFix } from "./FixRequests";
 import { currentRoute } from "./router";
 import { useTurnstile, type Turnstile } from "./turnstile";
 import "./public-issues.css";
+import { PageLoading } from "./WorkspaceLoader";
 
 const RETURN_ROUTE_KEY = "gitflare:return-route";
 const SYSTEM_AUTHOR = "gitflare";
@@ -104,7 +105,7 @@ export default function PublicIssues({ api, path, href, link, go, onNotFound, fe
   }, [api, retry]);
 
   if (error) return <section className="repo-panel"><div className="repo-panel-padding"><div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => setRetry(value => value + 1)}>Try again</button></div></div></section>;
-  if (!viewer) return <section className="repo-panel" aria-busy="true"><p className="repo-panel-padding" role="status">Loading…</p></section>;
+  if (!viewer) return <section className="repo-panel" aria-busy="true"><PageLoading /></section>;
   const context: Context = { api, viewer, userId: viewer.userId ?? "", colors: new Map(labels.flatMap(label => labelColor(label.color) ? [[label.name, label.color] as [string, string]] : [])), href, link, go, onNotFound, feed };
   if (path === "new") return <NewIssue context={context} />;
   if (path) return <IssueThread key={path} context={context} number={path} />;
@@ -218,7 +219,7 @@ function IssueIndex({ context }: { context: Context }) {
     </div>
     {error && <div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => void load()}>Try again</button></div>}
     <section className="repo-panel pub-issue-panel" aria-busy={!data && !error}>
-      {!data ? !error && <p className="repo-panel-padding" role="status">Loading…</p>
+      {!data ? !error && <PageLoading />
         : !data.items.length ? <div className="pub-issues-empty">
           <ChatCircleIcon size={22} aria-hidden="true" />
           <strong>{filtered ? "No matching issues" : state === "open" ? "No open issues" : "No closed issues"}</strong>
@@ -316,7 +317,7 @@ function NewIssue({ context }: { context: Context }) {
   const back = context.link(context.href(), <><ArrowLeftIcon size={13} aria-hidden="true" />Issues</>, "pub-issue-back");
   if (!viewer.signedIn) return <div className="pub-issues">{back}<section className="repo-panel pub-issue-gate"><CircleDashedIcon size={22} aria-hidden="true" /><strong>Sign in to open an issue</strong><SignIn primary>Sign in</SignIn></section></div>;
   if (!viewer.canParticipate) return <div className="pub-issues">{back}<section className="repo-panel pub-issue-gate"><ProhibitIcon size={22} aria-hidden="true" /><strong>Your account can't open issues in this repository.</strong></section></div>;
-  if (!templates) return <div className="pub-issues">{back}<section className="repo-panel" aria-busy="true"><p className="repo-panel-padding" role="status">Loading…</p></section></div>;
+  if (!templates) return <div className="pub-issues">{back}<section className="repo-panel" aria-busy="true"><PageLoading /></section></div>;
 
   if (templates.length && template === undefined) return <div className="pub-issues">
     {back}
@@ -526,7 +527,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
 
   const back = context.link(context.href(), <><ArrowLeftIcon size={13} aria-hidden="true" />Issues</>, "pub-issue-back");
   if (missing) return <div className="pub-issues">{back}<section className="repo-panel pub-issue-gate"><CircleIcon size={22} aria-hidden="true" /><strong>This issue doesn't exist.</strong></section></div>;
-  if (!issue) return <div className="pub-issues">{back}<section className="repo-panel" aria-busy={!error}>{error ? <div className="repo-panel-padding"><div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => setRetry(value => value + 1)}>Try again</button></div></div> : <p className="repo-panel-padding" role="status">Loading…</p>}</section></div>;
+  if (!issue) return <div className="pub-issues">{back}<section className="repo-panel" aria-busy={!error}>{error ? <div className="repo-panel-padding"><div className="error-notice" role="alert">{error} <button type="button" className="text-link" onClick={() => setRetry(value => value + 1)}>Try again</button></div></div> : <PageLoading />}</section></div>;
 
   const name = (id: string) => personLabel(id, people);
   const own = (authorId: string) => !!userId && authorId === userId;

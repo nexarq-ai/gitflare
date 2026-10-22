@@ -7,7 +7,7 @@ import { ErrorNotice, Status } from "./components";
 import InstallationCredential, { type WorkspaceConnection } from "./InstallationCredential";
 import ContentReports from "./ContentReports";
 import OperatorAi from "./OperatorAi";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import "./people-settings.css";
 
 export type AdminStatus = { edition: "hosted" | "self-hosted"; superAdmins: string[]; cloudflareOAuth: boolean; email: boolean; previewsWorker: string | null; scopes: { signin: string[]; connect: string[]; access: string[] }; publicIndex: { configured: boolean; repositories: number | null } };
@@ -28,7 +28,7 @@ export default function InstallationAdmin({ workspace, notFound }: { workspace: 
     return () => { active = false; };
   }, [workspace.name]);
   if (error) return <ErrorNotice message={error} />;
-  if (status === undefined) return <RouteProgress />;
+  if (status === undefined) return <PageLoading />;
   if (status === null) return <>{notFound}</>;
   const hosted = status.edition === "hosted";
   return <>

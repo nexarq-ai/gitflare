@@ -52,6 +52,45 @@ html[data-gf-theme='light'] main.workspace-loading-screen {
 
 body:has(> #root > .workspace-loading-screen) { margin: 0; }
 
+#gitflare-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  transition: opacity .22s ease;
+}
+
+#gitflare-boot[data-leaving] { opacity: 0; pointer-events: none; }
+
+html[data-booting] body { overflow: hidden; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.page-loading {
+  --workspace-loader-bg: var(--gf-color-bg, #08090b);
+  --workspace-loader-border: var(--gf-color-border, rgba(255, 255, 255, .09));
+  --workspace-loader-accent: var(--gf-color-accent, #f6821f);
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  padding: 32px 16px;
+  animation: page-loading-in .2s ease .15s both;
+}
+
+.page-loading .page-loading-signal { width: 82px; height: 64px; margin: 0; }
+.page-loading .page-loading-signal::before { inset: -24px; }
+
+@keyframes page-loading-in { from { opacity: 0; } to { opacity: 1; } }
+
 .workspace-loading-scaffold {
   position: absolute;
   z-index: -1;
@@ -133,6 +172,8 @@ body:has(> #root > .workspace-loading-screen) { margin: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  #gitflare-boot { transition: none; }
+  .page-loading { animation: none; }
   .workspace-signal-flow { stroke-dasharray: none; opacity: .5; }
   .workspace-signal-core { opacity: 1; }
 }

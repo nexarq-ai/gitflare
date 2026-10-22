@@ -8,6 +8,7 @@ import { request } from "./api";
 import InfoTip from "./InfoTip";
 import ProfileHeader from "./ProfileHeader";
 import "./profile-settings.css";
+import { PageLoading } from "./WorkspaceLoader";
 
 export { PROFILE_LIMITS };
 
@@ -93,7 +94,7 @@ export default function ProfileSettingsCard({ scope }: { scope: "user" | "worksp
   const header = <div className="panel-header"><h2 className="field-label">Public profile<InfoTip label="Public profile">{tip}</InfoTip></h2>{settings?.url && <a className="profile-settings-view" href={settings.url}>View<ArrowUpRightIcon size={13} aria-hidden="true" /></a>}</div>;
 
   if (loadError) return <section className="panel">{header}<div className="panel-body"><div className="form-error" role="alert">{loadError}</div></div></section>;
-  if (!settings || !draft) return <section className="panel">{header}<div className="panel-body"><p className="people-muted" role="status">Loading profile…</p></div></section>;
+  if (!settings || !draft) return <section className="panel">{header}<div className="panel-body"><PageLoading label="Loading profile" /></div></section>;
   if (!settings.handle) return <section className="panel">{header}<div className="panel-body"><p className="people-muted">Choose a handle first.</p></div></section>;
 
   if (!settings.canChange) return <section className="panel">{header}<div className="panel-body">
@@ -157,7 +158,7 @@ export default function ProfileSettingsCard({ scope }: { scope: "user" | "worksp
           </fieldset>
           <fieldset className="form-field">
             <legend className="profile-settings-label">Pinned repositories<small>{draft.pinned.length}/{PROFILE_LIMITS.pinned}</small></legend>
-            {options === null ? <p className="people-muted" role="status">Loading repositories…</p>
+            {options === null ? <PageLoading label="Loading repositories" />
               : !choices.length ? <p className="people-muted">No public repositories yet.</p>
               : <div className="check-chips" role="group" aria-label="Pinned repositories">{choices.map(name => {
                 const on = draft.pinned.includes(name);
@@ -166,7 +167,7 @@ export default function ProfileSettingsCard({ scope }: { scope: "user" | "worksp
           </fieldset>
           <fieldset className="form-field">
             <legend className="profile-settings-label"><span>Featured<InfoTip label="Featured">One public repository or one landed mission, shown above your repositories.</InfoTip></span></legend>
-            {options === null ? <p className="people-muted" role="status">Loading…</p>
+            {options === null ? <PageLoading label="Loading" />
               : !options.repositories.length ? <p className="people-muted">No public repositories yet.</p>
               : <div className="profile-settings-showcase">
                 <select aria-label="Featured" value={current} onChange={event => {

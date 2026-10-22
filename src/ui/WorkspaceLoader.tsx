@@ -1,8 +1,41 @@
-import { createElement } from "react";
+import { createElement, useLayoutEffect } from "react";
+import { holdBootLoader } from "./boot-handoff";
 import { useRouteMotion } from "./OperationMotion";
+import { currentRoute, isWorkspaceRoute } from "./router";
 import "./auth-loading.css";
 
-export default function WorkspaceLoader({ publicPage = false }: { publicPage?: boolean }) {
+export function useBootHold(): void {
+  useLayoutEffect(() => holdBootLoader(), []);
+}
+
+export function LoadingSignal({ className }: { className: string }) {
+  return createElement("gitflare-loading-signal", { className, "aria-hidden": true },
+    <svg viewBox="0 0 164 128" fill="none">
+      <path className="workspace-signal-grid" d="M20 28H144M20 64H144M20 100H144M48 8V120M116 8V120"/>
+      <circle className="workspace-signal-halo" cx="82" cy="64" r="53"/>
+      <path className="workspace-signal-wire" d="M48 40V88M116 40V44C116 68 48 56 48 80V88"/>
+      <path className="workspace-signal-flow" pathLength="100" d="M48 40V88"/>
+      <path className="workspace-signal-flow workspace-signal-branch" pathLength="100" d="M116 40V44C116 68 48 56 48 80V88"/>
+      <circle className="workspace-signal-node" cx="48" cy="28" r="10"/>
+      <circle className="workspace-signal-node" cx="116" cy="28" r="10"/>
+      <circle className="workspace-signal-node workspace-signal-destination" cx="48" cy="100" r="10"/>
+      <circle className="workspace-signal-core" cx="48" cy="100" r="3"/>
+    </svg>,
+  );
+}
+
+export function PageLoading({ label = "Loading" }: { label?: string }) {
+  useBootHold();
+  return (
+    <div className="page-loading" role="status">
+      <LoadingSignal className="workspace-loading-signal page-loading-signal" />
+      <span className="sr-only">{label}</span>
+    </div>
+  );
+}
+
+export default function WorkspaceLoader({ workspace = isWorkspaceRoute(currentRoute()) }: { workspace?: boolean }) {
+  useBootHold();
   return (
     <main className="workspace-loading-screen" aria-busy="true">
       <svg className="workspace-loading-scaffold" viewBox="0 0 880 440" fill="none" aria-hidden="true">
@@ -16,22 +49,9 @@ export default function WorkspaceLoader({ publicPage = false }: { publicPage?: b
       </svg>
       <div className="workspace-loading-content">
         <div className="workspace-loading-status" role="status">
-          {createElement("gitflare-loading-signal", { className: "workspace-loading-signal", "aria-hidden": true },
-            <svg viewBox="0 0 164 128" fill="none">
-              <path className="workspace-signal-grid" d="M20 28H144M20 64H144M20 100H144M48 8V120M116 8V120"/>
-              <circle className="workspace-signal-halo" cx="82" cy="64" r="53"/>
-              <path className="workspace-signal-wire" d="M48 40V88M116 40V44C116 68 48 56 48 80V88"/>
-              <path className="workspace-signal-flow" pathLength="100" d="M48 40V88"/>
-              <path className="workspace-signal-flow workspace-signal-branch" pathLength="100" d="M116 40V44C116 68 48 56 48 80V88"/>
-              <circle className="workspace-signal-node" cx="48" cy="28" r="10"/>
-              <circle className="workspace-signal-node" cx="116" cy="28" r="10"/>
-              <circle className="workspace-signal-node workspace-signal-destination" cx="48" cy="100" r="10"/>
-              <circle className="workspace-signal-core" cx="48" cy="100" r="3"/>
-            </svg>,
-          )}
+          <LoadingSignal className="workspace-loading-signal" />
           <div className="workspace-loading-brand" aria-hidden="true">gitflare</div>
-          <h1>{publicPage ? "Loading Gitflare" : "Loading workspace"}</h1>
-          <p>{publicPage ? "Preparing the page." : "Gathering your repositories and workspace."}</p>
+          {workspace ? <><h1>Loading workspace</h1><p>Gathering your repositories and workspace.</p></> : <h1 className="sr-only">Loading Gitflare</h1>}
         </div>
       </div>
     </main>
@@ -39,6 +59,7 @@ export default function WorkspaceLoader({ publicPage = false }: { publicPage?: b
 }
 
 export function RouteProgress() {
+  useBootHold();
   const ref = useRouteMotion();
   return <div ref={ref} className="route-progress operation-route" role="progressbar" aria-label="Loading page" aria-busy="true"><span /></div>;
 }

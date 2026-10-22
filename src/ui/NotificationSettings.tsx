@@ -8,7 +8,7 @@ import { request, RequestError } from "./api";
 import { ErrorNotice } from "./components";
 import InfoTip from "./InfoTip";
 import { MODE_LABELS, REASON_TIPS, sentTodayLabel, setReasonMode } from "./inbox-data";
-import { RouteProgress } from "./WorkspaceLoader";
+import { PageLoading } from "./WorkspaceLoader";
 import "./inbox.css";
 
 export function Subscriptions() {
@@ -76,7 +76,7 @@ export default function NotificationSettings() {
   }
 
   if (loadError) return <ErrorNotice message={loadError} onRetry={() => setAttempt(value => value + 1)} />;
-  if (!settings) return <RouteProgress />;
+  if (!settings) return <PageLoading />;
   const { preferences, email } = settings;
   const canEmail = email.configured && !!email.address;
   const quiet = [preferences.email ? sentTodayLabel(email.sentToday, email.dailyLimit) : "", preferences.email && email.nextDigestAt ? `Next digest ${new Date(email.nextDigestAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}` : ""].filter(Boolean).join(" · ");

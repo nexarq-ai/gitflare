@@ -6,7 +6,7 @@ import { Input } from '@cloudflare/kumo/components/input';
 import { CloudIcon, KeyIcon, PlusIcon, TrashIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
 import type { AiKeysSnapshot, ModelConnection, ModelConnectionsSnapshot } from '../shared/types';
 import { request } from './api';
-import { RouteProgress } from './WorkspaceLoader';
+import { PageLoading } from './WorkspaceLoader';
 import { OwnGatewayDialog, ProviderKeysDialog } from './AiKeys';
 import DemoFeaturePanel, { demoOf } from './DemoFeaturePanel';
 import type { DemoMarked } from '../shared/demo-features';
@@ -48,7 +48,7 @@ export default function ModelConnections({ canManage }: { canManage: boolean }) 
     <div className="page-heading"><div><h1>AI models</h1><p>The models your agents can use. New missions start with the default.</p></div></div>
     {error && <div className="error-notice" role="alert">{error}</div>}
     {notice && <p className="models-notice" role="status">{notice}</p>}
-    {!snapshot ? !error && <RouteProgress /> : demo ? <DemoFeaturePanel demo={demo} examples={snapshot.examples} /> : <>
+    {!snapshot ? !error && <PageLoading /> : demo ? <DemoFeaturePanel demo={demo} examples={snapshot.examples} /> : <>
       {route && <p className={`models-route models-route-${route.tone}`}>{route.tone === 'warn' ? <WarningCircleIcon size={16} aria-hidden="true" /> : <CloudIcon size={16} aria-hidden="true" />}{route.text}</p>}
       <section className="panel">
         <div className="panel-header"><h2>Models<InfoTip label="model status">Ready: usable now. Needs a key: add the provider's key. Not verified: Verify sends one small billed request.</InfoTip></h2><span className="number-tag">{snapshot.models.length}</span></div>
