@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { COREPACK_ENV, describeInstall, detectPackageManager, INSTALL_EXCLUDES, installCommand, registryHosts, type InstallPlan } from '../src/worker/package-manager';
-import { isProtectedPath, parseNameStatus, parseRepositoryPolicy, protectedChanges } from '../src/worker/repository-policy';
+import { installPreflight, isProtectedPath, needsPackages, parseNameStatus, parseRepositoryPolicy, protectedChanges } from '../src/worker/repository-policy';
 import { isRegistryRequest } from '../runner/sandbox';
 
 vi.mock('cloudflare:workers', () => ({ DurableObject: class {}, WorkerEntrypoint: class {} }));
@@ -133,5 +133,33 @@ describe('protected package manager files', () => {
     expect(isProtectedPath('apps/api/src/index.ts', editable)).toBe(false);
     const policy = parseRepositoryPolicy(null, 'x', ['package.json', 'pnpm-lock.yaml', 'tests/a.test.ts'], pkg(deps));
     expect(protectedChanges(parseNameStatus('A\tpnpm-workspace.yaml\nA\t.pnpmfile.cjs\nA\t.yarnrc.yml\nA\tpackages/db/yarn.lock\nM\tpnpm-lock.yaml\nA\tsrc/new.ts'), policy)).toEqual(['pnpm-workspace.yaml', '.pnpmfile.cjs', '.yarnrc.yml']);
+  });
+});
+
+describe('Owner dependency install setting', () => {
+  const files = ['package.json', 'package-lock.json', 'src/main.ts'];
+  const manifest = pkg({ scripts: { build: 'tsc && vite build' }, devDependencies: { typescript: '5.9.3', vite: '7.1.0' } });
+  const owner = (value: 'npm' | 'pnpm' | 'yarn' | 'auto' | 'none', test = 'npm run build') => ({ install: { value }, policyOverride: { test } });
+
+  it('installs from the base revision when gitflare.json sets no install, and gitflare.json wins when it does', () => {
+    expect(parseRepositoryPolicy(null, 'x', files, manifest, null, owner('npm'))).toMatchObject({ testCommand: 'npm run build', untested: false, install: { installer: 'npm', lockfile: 'package-lock.json' }, installSource: 'owner' });
+    expect(parseRepositoryPolicy(null, 'x', files, manifest, null, owner('auto')).install?.installer).toBe('npm');
+    expect(parseRepositoryPolicy('{"test":"npm run build"}', 'x', files, manifest, null, { install: { value: 'npm' } })).toMatchObject({ install: { installer: 'npm' }, installSource: 'owner' });
+    expect(parseRepositoryPolicy('{"install":false}', 'x', files, manifest, null, owner('npm'))).toMatchObject({ install: null, installSource: 'gitflare.json' });
+    expect(parseRepositoryPolicy('{"install":"pnpm"}', 'x', files, manifest, null, owner('npm')).install?.installer).toBe('pnpm');
+    expect(parseRepositoryPolicy(null, 'x', ['package.json', 'pnpm-lock.yaml', 'tests/a.test.mjs'], pkg({ ...deps, scripts: { test: 'vitest run' } }), null, { install: { value: 'none' } })).toMatchObject({ testCommand: 'pnpm test', install: null, installSource: 'owner' });
+    expect(parseRepositoryPolicy(null, 'x', ['src/index.js'], null, null, owner('npm')).install).toBeNull();
+  });
+
+  it('fails before running a test command that needs packages while install is off', () => {
+    const off = parseRepositoryPolicy(null, 'x', files, manifest, null, { policyOverride: { test: 'npm run build' } });
+    expect(off).toMatchObject({ install: null, dependencies: true, untested: false });
+    expect(installPreflight(off)).toContain('needs installed packages');
+    expect(installPreflight(parseRepositoryPolicy(null, 'x', files, manifest, null, owner('npm')))).toBeNull();
+    expect(installPreflight(parseRepositoryPolicy(null, 'x', files, manifest, null, owner('none')))).toBeNull();
+    expect(installPreflight(parseRepositoryPolicy('{"install":false,"test":"npx vitest run"}', 'x', files, manifest))).toBeNull();
+    expect(installPreflight(parseRepositoryPolicy(null, 'x', ['package.json', 'tests/a.test.mjs'], pkg(), null, { policyOverride: { test: 'npm run build' } }))).toBeNull();
+    for (const command of ['npm run build', 'npx tsc', 'tsc --noEmit', 'vite build', 'cd app && pnpm run test', 'yarn test']) expect(needsPackages(command)).toBe(true);
+    for (const command of ['node --test', 'python -m pytest', 'make check', 'bash scripts/test.sh']) expect(needsPackages(command)).toBe(false);
   });
 });
