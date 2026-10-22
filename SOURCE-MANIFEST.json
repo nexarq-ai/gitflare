@@ -94,6 +94,11 @@
       "sha256": "26ebbe06d9c64b7c0f45948d1b8631fb8050fadbf7845cd94bb8b3963c7bce5d"
     },
     {
+      "path": "migrations/public-index/0002_activity.sql",
+      "size": 545,
+      "sha256": "eda41028c2cf370fffd0d549c6d0e0c08c660a193d3d6ba819957df3c0f1be86"
+    },
+    {
       "path": "NOTICE",
       "size": 240,
       "sha256": "04c9f24f38d52febd7ab2efcbc8e7af284d551784f1e610a78d07f7a99002296"
@@ -305,8 +310,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 29693,
-      "sha256": "c0cb31bcf9abf968732785c6b2f95fc3ea55719210d3a7c46d3ac80100d4b423"
+      "size": 30410,
+      "sha256": "9d2c75724b736fbbecb8bc2a262b9adc9f668bda15fb0f7ecf74c4f9f7290de7"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -1675,8 +1680,8 @@
     },
     {
       "path": "src/worker/mcp-tools/public.ts",
-      "size": 9890,
-      "sha256": "1db234102f7ae9da40e63da3ee89e1e37ec861681de59209b279d12c0c74611c"
+      "size": 9981,
+      "sha256": "455752114fc0580f4bada541b1e752ff56a5e2b8a6e5b6d45a633e9ee16db296"
     },
     {
       "path": "src/worker/mcp-tools/releases.ts",
@@ -1819,14 +1824,19 @@
       "sha256": "cdf19a3b042473d8382a87da9b355473818e20cbf63ed5ba963487382ecd0be4"
     },
     {
+      "path": "src/worker/public-activity.ts",
+      "size": 6936,
+      "sha256": "9066e7dcd08c40de13dbd42e5a5290b0389ab93c11f492242eecf7644ffd8160"
+    },
+    {
       "path": "src/worker/public-cache.ts",
-      "size": 5204,
-      "sha256": "1beb935fd4d9919ff1c8890bd3647b3c27ae4539350153eb60c5d5a9df81cc85"
+      "size": 5302,
+      "sha256": "3e6b6d670e41ad3292fc3173a84242b71e213a19978089362c22ea7807f49f66"
     },
     {
       "path": "src/worker/public-discovery.ts",
-      "size": 16999,
-      "sha256": "c80d06ab07a35ccb7aac1b4e410974a5f0ffd50f1cff8be53b6f999165d5de54"
+      "size": 17307,
+      "sha256": "ec454a5a55a9014e9cd7694a92648794164edc644cebb20106641249f0f7b0d4"
     },
     {
       "path": "src/worker/public-downloads.ts",
@@ -1840,8 +1850,8 @@
     },
     {
       "path": "src/worker/public-index.ts",
-      "size": 18366,
-      "sha256": "d6156c62e7d2bcd1b8e62d24fee3340ad55babafebd02394486246cb321538ce"
+      "size": 24039,
+      "sha256": "c28d41de96603118a79981e72446836264fd03d27ead85627ce2e03e047e768c"
     },
     {
       "path": "src/worker/public-issues.ts",
@@ -1855,8 +1865,8 @@
     },
     {
       "path": "src/worker/public-repositories.ts",
-      "size": 19156,
-      "sha256": "f3a41aca94e282e43ac1e9bc25fcca566c1635637010be6c76747ea02c9719f8"
+      "size": 19422,
+      "sha256": "04313c2c6e6717efd9690d7ebd78f639f0d9be092c1d76c078dbccf5fb4a84c4"
     },
     {
       "path": "src/worker/rate-limits.ts",
@@ -2120,8 +2130,8 @@
     },
     {
       "path": "tests/d1-memory.ts",
-      "size": 2340,
-      "sha256": "ebc0a0203e612bbd1739e4005ee0b5ef836085352881fb2bf4e73f77abb261d5"
+      "size": 2543,
+      "sha256": "18700346908e3760ca5daf0d7ffb36c340f24429eb94038290a0c962c415affb"
     },
     {
       "path": "tests/d1-migrations.test.ts",

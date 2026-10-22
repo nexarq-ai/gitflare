@@ -8,7 +8,7 @@ import { catalogName } from './capacity';
 import { clientIp, consume, rateLimitedResponse } from './rate-limits';
 import { personalWorkspaceId, publicPrincipal, securityClient, type FollowKind, type HandleKind, type Principal, type ProfileRecord, type SecurityService } from './security';
 import { CACHE_DEPENDENCIES, discoveryCachePaths, purgePublicCache, repositoryCachePaths } from './public-cache';
-import { backfillEmptyIndex, explorePublic, indexedDetails, indexPublicRepository, indexWorkspaceRepositories, pageCursor, publicIndex, refreshIndexedHandle, removeIndexedRepositories, searchPublic, searchQuery, updateIndexedStars } from './public-index';
+import { backfillEmptyIndex, explorePublic, indexedDetails, indexPublicRepository, indexWorkspaceRepositories, pageCursor, publicIndex, refreshIndexedHandle, removeIndexedRepositories, repositoryActivity, searchPublic, searchQuery, updateIndexedStars } from './public-index';
 import { publicTargetById, resolvePublicRepository, siteOrigin, PUBLIC_NOT_FOUND } from './public-repositories';
 
 type Waiter = { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -58,11 +58,15 @@ async function cardsFor(env: AppEnv, access: SecurityService, repositoryIds: str
   return { cards: targets.map((target, index) => cardOf(target.repository, target.handle, stats[index]?.stars ?? 0, details.get(target.repository.id), target.listing.publishedAt)), ids: targets.map(target => target.repository.id) };
 }
 
-async function publicProfile(env: AppEnv, access: SecurityService, value: string, origin: string): Promise<Response> {
+async function publicProfile(env: AppEnv, access: SecurityService, value: string, origin: string, view: string): Promise<Response> {
   if (!HANDLE_PATTERN.test(value)) notFound();
   const resolved = await access.resolveHandle(value);
   if (!resolved) throw new ApiError(404, 'NOT_FOUND', 'This profile does not exist.');
-  if ('redirect' in resolved) return new Response(null, { status: 308, headers: { Location: `/api/public/profiles/${resolved.redirect}` } });
+  if ('redirect' in resolved) return new Response(null, { status: 308, headers: { Location: `/api/public/profiles/${resolved.redirect}${view ? `/${view}` : ''}` } });
+  if (view === 'activity') {
+    const owned = await workspaceRepositories(env, access, resolved.workspaceId, resolved.handle);
+    return withDependencies(await repositoryActivity(env, owned.ids), owned.ids);
+  }
   const [profile, owned, follows] = await Promise.all([access.profileOf(resolved.workspaceId), workspaceRepositories(env, access, resolved.workspaceId, resolved.handle), resolved.kind === 'user' ? access.userFollows(resolved.workspaceId) : Promise.resolve([])]);
   const starred = await cardsFor(env, access, follows.map(item => item.repositoryId), STARRED_ON_PROFILE);
   const names = new Set(owned.cards.map(card => card.name));
@@ -75,7 +79,7 @@ async function publicProfile(env: AppEnv, access: SecurityService, value: string
 
 export async function publicDiscoveryApi(request: Request, env: AppEnv, ctx?: Waiter): Promise<Response | null> {
   const url = new URL(request.url);
-  const profile = /^\/api\/public\/profiles\/([^/]+)$/.exec(url.pathname);
+  const profile = /^\/api\/public\/profiles\/([^/]+)(?:\/(activity))?$/.exec(url.pathname);
   if (url.pathname !== '/api/public/explore' && url.pathname !== '/api/public/search' && !profile) return null;
   if (request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Explore, search and profiles are read-only here.');
   const limited = await consume(env, 'PUBLIC_READ_RATE_LIMIT', `ip:${clientIp(request)}`);
@@ -85,7 +89,7 @@ export async function publicDiscoveryApi(request: Request, env: AppEnv, ctx?: Wa
     if (env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true') throw new ApiError(404, 'NOT_FOUND', 'This profile does not exist.');
     let handle: string;
     try { handle = decodeURIComponent(profile[1]!).toLowerCase(); } catch { notFound(); }
-    return publicProfile(env, access, handle, siteOrigin(env, url.origin));
+    return publicProfile(env, access, handle, siteOrigin(env, url.origin), profile[2] ?? '');
   }
   const cursor = pageCursor(url.searchParams.get('cursor'));
   if (url.pathname === '/api/public/explore') {

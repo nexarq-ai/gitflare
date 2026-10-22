@@ -1,0 +1,16 @@
+CREATE TABLE IF NOT EXISTS activity (
+  repository_id TEXT NOT NULL,
+  week TEXT NOT NULL,
+  landed_people INTEGER NOT NULL DEFAULT 0,
+  landed_agents INTEGER NOT NULL DEFAULT 0,
+  missions_run INTEGER NOT NULL DEFAULT 0,
+  reviews INTEGER NOT NULL DEFAULT 0,
+  releases INTEGER NOT NULL DEFAULT 0,
+  issues_opened INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (repository_id, week)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS readiness (
+  repository_id TEXT PRIMARY KEY,
+  score INTEGER NOT NULL DEFAULT 0,
+  signals TEXT NOT NULL DEFAULT '[]'
+);

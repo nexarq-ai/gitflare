@@ -421,7 +421,15 @@ export interface PublicRepositorySummary {
   funding?: FundingLink[];
   feeds?: RepositoryFeeds;
   securityPolicy?: boolean;
+  agentReady?: AgentReadiness | null;
 }
+
+export interface ActivityWeek { week: string; people: number; agents: number; missions: number; reviews: number; releases: number; issues: number }
+export type ActivityTotals = Omit<ActivityWeek, 'week'>;
+export interface PublicActivity { since: string; weeks: ActivityWeek[]; totals: ActivityTotals; repositories: number; indexed: boolean }
+export type AgentReadyLevel = 'ready' | 'partial' | 'none';
+export interface AgentReadySignal { id: string; label: string; present: boolean; hint: string; weight: number }
+export interface AgentReadiness { score: number; level: AgentReadyLevel; signals: AgentReadySignal[] }
 export const FUNDING_PLATFORMS = ['github', 'patreon', 'open_collective', 'ko_fi', 'tidelift', 'community_bridge', 'liberapay', 'issuehunt', 'lfx_crowdfunding', 'polar', 'buy_me_a_coffee', 'thanks_dev', 'custom'] as const;
 export type FundingPlatform = typeof FUNDING_PLATFORMS[number];
 export interface FundingLink { platform: FundingPlatform; label: string; url: string }
@@ -429,7 +437,7 @@ export interface FeedLinks { atom: string; rss: string }
 export interface RepositoryFeeds { releases: FeedLinks; commits: FeedLinks; issues: FeedLinks }
 export interface PublicCommit { sha: string; message: string }
 export type PublicHandleKind = 'user' | 'workspace';
-export interface PublicRepositoryCard { handle: string; name: string; description: string; language: string | null; topics: string[]; license: string | null; stars: number; updatedAt: string; publishedAt: string; url: string }
+export interface PublicRepositoryCard { handle: string; name: string; description: string; language: string | null; topics: string[]; license: string | null; stars: number; updatedAt: string; publishedAt: string; url: string; agentReady?: Pick<AgentReadiness, 'score' | 'level'> | null }
 export type ExploreSort = 'stars' | 'new' | 'updated';
 export interface PublicExplore { sort: ExploreSort; language: string | null; items: PublicRepositoryCard[]; languages: string[]; nextCursor: number | null; indexed: boolean }
 export type PublicSearchType = 'repositories' | 'paths' | 'people';
