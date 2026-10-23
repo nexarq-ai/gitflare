@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Mission, Repository } from '../src/shared/types';
 import type { ArtifactRepo, ArtifactsBinding } from '../src/worker/artifacts';
 import { agentRules, agentSystemPrompt, draftWarnings, KNOWN_GOOD_VERSIONS, WORKERS_COMPATIBILITY_DATE } from '../src/worker/agent-rules';
-import { agentCommitMessage, agentInstall, agentLoopPrompt, agentTests, DependencyInstallError, executeMission, installDependencies, mergeStartingCandidates, runAgentLoop, type ExecutionEnv, type SandboxRunner } from '../src/worker/execution';
+import { agentCommitMessage, agentInstall, agentLoopPrompt, agentTests, COORDINATOR_VERIFIED_NOTE, DependencyInstallError, executeMission, failedAgentsError, installDependencies, mergeStartingCandidates, runAgentLoop, type ExecutionEnv, type SandboxRunner } from '../src/worker/execution';
 import { installFailureExcerpt, type InstallPlan } from '../src/worker/package-manager';
 import { parseRepositoryPolicy } from '../src/worker/repository-policy';
 
@@ -348,6 +348,37 @@ describe('mission coordinator', () => {
     const coord = result.runs.find((run) => run.id === 'coord')!;
     expect(coord.error ?? '').not.toContain('without changing any files');
     expect(coord.startFrom?.reason).toBe('coordinator');
+  });
+
+  it('completes a coordinator that verifies the combined work without changing files', async () => {
+    let fetched = '';
+    const command = vi.fn(async (argv: string[]) => {
+      if (argv[1] === 'fetch') { fetched = argv.some((arg) => arg.includes('ui-fork')) ? partShas['ui-fork']! : argv.some((arg) => arg.includes('api-fork')) ? partShas['api-fork']! : '5'.repeat(40); return { exitCode: 0, stdout: '', stderr: '' }; }
+      if (argv[1] === 'rev-parse' && argv[2] === 'FETCH_HEAD') return { exitCode: 0, stdout: fetched, stderr: '' };
+      if (argv[1] === 'rev-parse') return { exitCode: 0, stdout: sha, stderr: '' };
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+    const env = { ...modelEnv(done('The merged parts already pass the full suite; nothing to change.')), ARTIFACTS: artifacts, SANDBOX: { getByName: () => ({ prepare: vi.fn(), destroy: vi.fn(), command }) } };
+    const result = await executeMission({ repository: { name: 'canonical', headSha: sha } as Repository, mission: mission([part('ui', 'ui-fork'), part('api', 'api-fork'), coordinator]), testCommand: 'node --test' }, env);
+    const coord = result.runs.find((run) => run.id === 'coord')!;
+    expect(coord).toMatchObject({ status: 'completed', changedFiles: [] });
+    expect(coord.error).toBeUndefined();
+    expect(coord.commitSha).toBeUndefined();
+    expect(coord.summary).toContain(COORDINATOR_VERIFIED_NOTE);
+    expect(result.events?.some((event) => event.runId === 'coord' && event.message.includes(COORDINATOR_VERIFIED_NOTE))).toBe(true);
+    expect(command.mock.calls.some(([argv]) => argv[1] === 'commit')).toBe(false);
+    expect(result.error ?? '').not.toContain('Coordinator');
+  });
+
+  it('names each failed agent and its reason in the mission error', () => {
+    expect(failedAgentsError([
+      { name: 'Visibility', status: 'completed' },
+      { name: 'Coordinator', status: 'failed', error: 'Agent finished without changing any files' },
+    ])).toBe('An agent failed, so no combined candidate was made. Coordinator: Agent finished without changing any files');
+    expect(failedAgentsError([
+      { name: 'Stage', status: 'failed', error: 'Candidate checks failed: 2 tests\nstack' },
+      { name: 'HUD', status: 'failed' },
+    ])).toBe('2 agents failed, so no combined candidate was made. Stage: Candidate checks failed: 2 tests · HUD: failed without a recorded reason');
   });
 
   it('does not start while a part has no passing candidate', async () => {

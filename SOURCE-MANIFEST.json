@@ -734,6 +734,16 @@
       "sha256": "dc8b0354caf07dd16d96af2f0b89b621fafc3754a9aef01170e13d5bd2cc863c"
     },
     {
+      "path": "src/ui/failed-agents-banner.css",
+      "size": 446,
+      "sha256": "85eeae714534f5f5ca072b40c995af62437a40302f0623cb7d024da31fecc094"
+    },
+    {
+      "path": "src/ui/FailedAgentsBanner.tsx",
+      "size": 2366,
+      "sha256": "b615665faff204c1db1f82347a47e8810b3c03c0039ed09d53a7f4a0364927d6"
+    },
+    {
       "path": "src/ui/fix-requests.css",
       "size": 4473,
       "sha256": "2231df009854840d0ec16da6ae8a762b79854324dbc13b7237e7a15fe200923e"
@@ -905,8 +915,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 73530,
-      "sha256": "f9a076379e0a72237f7a912bedbc28f15519c9599f29d21adf1ddaa332021ae8"
+      "size": 74079,
+      "sha256": "bffadd6c7a0afaec90aaf154f58e563122b349c90c0225a7e53511f4a4e303cc"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -1515,8 +1525,8 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 46190,
-      "sha256": "c296c07473333a43a2ffe0888b39349cc52270dae6b77c618b40db719c421b05"
+      "size": 47536,
+      "sha256": "d14da7d17fe5a9b158a68d659ff6b14ac0930bb3dae6f253acb341e8c6123167"
     },
     {
       "path": "src/worker/execution/agent-loop.ts",
@@ -1690,8 +1700,8 @@
     },
     {
       "path": "src/worker/mcp-results.ts",
-      "size": 8525,
-      "sha256": "b4d351388786db6cbfc5e1dd2af61052b0190e65aa964b45e8c4f3a1b6ff578d"
+      "size": 8695,
+      "sha256": "1784e225243ba131370736b6dd211ad5adc06dc6d1de2577d8e4b6df393435f4"
     },
     {
       "path": "src/worker/mcp-schemas.ts",
@@ -1820,8 +1830,8 @@
     },
     {
       "path": "src/worker/mission-draft.ts",
-      "size": 22643,
-      "sha256": "b0fb89761d367b77d8a38f076b6c1279361f09dba65b901f8c94cbb9cbb92a49"
+      "size": 22752,
+      "sha256": "e62a9b8726dc19cb01b4f968803915e0fba8b3852567d186738660735e9bed42"
     },
     {
       "path": "src/worker/mission-storage.ts",
@@ -2195,8 +2205,8 @@
     },
     {
       "path": "tests/agent-runtime.test.ts",
-      "size": 31824,
-      "sha256": "02a647a975f5cd0169011a119668e6c10284556bc1642c4887b361784b2aa1f1"
+      "size": 34271,
+      "sha256": "efa7ae5b0a5edc60b4e49f1d2671b10a676f80e693a5642342be3b9e550200a7"
     },
     {
       "path": "tests/agent-settings-ui.test.ts",
@@ -2320,8 +2330,13 @@
     },
     {
       "path": "tests/execution.test.ts",
-      "size": 93150,
-      "sha256": "6c92e4de22f15f741887059be7c747c5caf44edbcf897bfcaae02623eafb6fbf"
+      "size": 93353,
+      "sha256": "2ad03feb226cdfbb3334e857b87b7c50023bf09a7aa4b4d022ebbe4210410aa7"
+    },
+    {
+      "path": "tests/failed-agents-banner.test.ts",
+      "size": 4024,
+      "sha256": "f0abea34f9ba7d45f876d6bcb79a7a1485b2c43987fa77d2fe8308a9b9304886"
     },
     {
       "path": "tests/forks-ui.test.ts",
@@ -2540,8 +2555,8 @@
     },
     {
       "path": "tests/retry-agents.test.ts",
-      "size": 21893,
-      "sha256": "8813e9a261cb24de5e0ccfd2ab43d9902b8cf7036e9af937e8270d93f6e183ec"
+      "size": 23473,
+      "sha256": "4955166d467955410763383ad8a66589cc8fb5e918f586c29d33686cc16753ac"
     },
     {
       "path": "tests/revert.test.ts",

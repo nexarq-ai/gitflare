@@ -1,0 +1,6 @@
+.failed-agents .alert-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.failed-agents-list { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.failed-agents-list li { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.failed-agents-name { font-weight: 600; }
+.failed-agents-reason { overflow-wrap: anywhere; }
+.failed-agents-list .agent-retry { margin-top: 4px; }

@@ -958,6 +958,7 @@ it('delivers the mission criteria, pinned base and individual role to both actua
   expect(command.mock.calls.filter(([argv]) => argv[1] === 'checkout').map(([argv]) => argv[3])).toEqual([sha, sha]);
   expect(result.runs.every((run) => run.status === 'failed' && run.error?.includes('without changing'))).toBe(true);
   expect(result.candidateSha).toBeNull();
+  expect(result.error).toBe('2 agents failed, so no combined candidate was made. Batch agent: Agent finished without changing any files · Concurrency agent: Agent finished without changing any files');
 });
 
 it('rejects a revoked queued execution before allocating forks or calling the model', async () => {

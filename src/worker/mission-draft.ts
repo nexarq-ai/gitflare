@@ -139,7 +139,7 @@ export function draftInput(request: DraftRequest, snapshot: RepositorySnapshot):
   ];
 }
 
-export const COORDINATOR_DUTY = 'You are the coordinator. You start after the other agents finish, with their candidates merged into your fork. Integrate their parts, resolve merge conflicts, run the full test suite and fix what fails, and prepare the combined candidate for review. Do not add new features.';
+export const COORDINATOR_DUTY = 'You are the coordinator. You start after the other agents finish, with their candidates merged into your fork. Integrate their parts, resolve merge conflicts, run the full test suite and fix what fails, and prepare the combined candidate for review. Do not add new features. If the combined work already passes its tests, finish without changing any files and say so in your summary.';
 
 export function autoDraftInput(request: AutoDraftRequest, snapshot: RepositorySnapshot): InputItem[] {
   const models = request.allowedModels.map((model, index) => ({ id: model.id, label: model.label, rank: index + 1 }));

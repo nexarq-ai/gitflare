@@ -155,7 +155,7 @@ export async function mergeStartingCandidates(sandbox: SandboxRunner, startFrom:
   }
   const names = merged.join(', ');
   if (startFrom.reason === 'coordinator') {
-    const note = `${merged.length ? `HEAD already contains the merged candidates of ${names}.` : 'None of the other candidates could be merged here.'}${conflicted.length ? ` These files still contain Git conflict markers that you must resolve: ${conflicted.slice(0, 50).join(', ')}.` : ''}${unavailable.length ? ` Not merged: ${unavailable.join(', ')}.` : ''} Integrate the parts, run the full test suite and fix what fails. Do not add new features.`;
+    const note = `${merged.length ? `HEAD already contains the merged candidates of ${names}.` : 'None of the other candidates could be merged here.'}${conflicted.length ? ` These files still contain Git conflict markers that you must resolve: ${conflicted.slice(0, 50).join(', ')}.` : ''}${unavailable.length ? ` Not merged: ${unavailable.join(', ')}.` : ''} Integrate the parts, run the full test suite and fix what fails. Do not add new features. If the combined work already passes, finish without changing any files.`;
     return { reason: 'coordinator', mergedCandidates: merged, ...(conflicted.length ? { conflictedFiles: conflicted.slice(0, 50) } : {}), ...(unavailable.length ? { unavailableCandidates: unavailable } : {}), note };
   }
   const note = startFrom.reason === 'retry'
@@ -374,8 +374,18 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
       if (!branchChange) {
         await checked(sandbox, ['git', '-c', 'core.hooksPath=/dev/null', 'add', '-A']);
         const changed = await checked(sandbox, ['git', 'diff', '--no-renames', '--cached', '--name-only']);
-        const integratedOnly = !changed && !!run.coordinator && startFrom?.reason === 'coordinator' && await checked(sandbox, ['git', 'rev-parse', 'HEAD']) !== baseSha;
-        if (!changed && !integratedOnly) throw new Error('Agent finished without changing any files');
+        const verifiedOnly = !changed && !!run.coordinator && startFrom?.reason === 'coordinator';
+        if (!changed && !verifiedOnly) throw new Error('Agent finished without changing any files');
+        const integratedOnly = verifiedOnly && await checked(sandbox, ['git', 'rev-parse', 'HEAD']) !== baseSha;
+        if (verifiedOnly) {
+          agentSummary = `${COORDINATOR_VERIFIED_NOTE} ${agentSummary}`.slice(0, 4000);
+          result.events = [...(result.events ?? []), { id: `${key}-verified-only`, timestamp: new Date().toISOString(), runId: run.id, type: 'info', message: `${run.name}: ${COORDINATOR_VERIFIED_NOTE}` }];
+        }
+        if (verifiedOnly && !integratedOnly) {
+          run.summary = agentSummary;
+          run.status = 'completed';
+          return;
+        }
         const staged = changed.split('\n').filter(Boolean);
         const outside = outsideEditScope(staged, run.editScope);
         if (outside.length) throw new Error(editScopeFailure(run.name, outside, run.editScope!));
@@ -509,11 +519,12 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
   }
   const included = result.runs.filter((run) => run.status !== 'skipped').sort((a, b) => Number(!!b.coordinator && coordinated) - Number(!!a.coordinator && coordinated));
   if (settled.some((entry) => entry.status === 'rejected') || !included.length || included.some((run) => run.status !== 'completed')) {
-    result.error = 'One or more agents failed; no integration candidate was approved.';
+    result.error = failedAgentsError(result.runs);
     return result;
   }
-  if (included.length === 1) {
-    const only = included[0]!;
+  const candidates = included.filter((run) => !!run.commitSha);
+  if (candidates.length === 1) {
+    const only = candidates[0]!;
     const single = result.checks.find((item) => item.runId === only.id);
     const fork = forks.get(only.id);
     if (only.commitSha && fork && single?.status === 'passed' && validGitSha(only.commitSha) && (only.candidateBaseSha ?? baseSha) === baseSha) {
@@ -544,7 +555,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     const policy = sharedPolicy ?? await loadPolicy(sandbox, baseSha, input.testCommand, input.checkSettings);
     const keptGenerated = new Set<string>();
     let keptLockfile: string | null = null;
-    for (const run of included) {
+    for (const run of candidates) {
       const candidate = forks.get(run.id)!;
       const fetched = await fetchRef(sandbox, candidate.remote, 'refs/heads/gitflare-candidate');
       if (fetched !== run.commitSha) throw new Error('Candidate changed after verification');
@@ -606,6 +617,15 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
   } catch (error) { result.error = error instanceof Error ? error.message : 'Integration failed'; }
   finally { await sandbox.destroy(); }
   return result;
+}
+
+export const COORDINATOR_VERIFIED_NOTE = 'Coordinator verified the combined work; no changes needed.';
+
+export function failedAgentsError(runs: Pick<AgentRun, 'name' | 'status' | 'error'>[]): string {
+  const failed = runs.filter((run) => run.status === 'failed' || run.status === 'cancelled');
+  if (!failed.length) return 'Agents did not finish, so no combined candidate was made.';
+  const reasons = failed.map((run) => `${oneLine(run.name)}: ${failureLine(run.error ?? (run.status === 'cancelled' ? 'cancelled' : 'failed without a recorded reason'))}`);
+  return `${failed.length === 1 ? 'An agent' : `${failed.length} agents`} failed, so no combined candidate was made. ${reasons.join(' · ')}`.slice(0, 2000);
 }
 
 export function isProtectedCheckFile(path: string): boolean {
