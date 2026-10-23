@@ -1268,7 +1268,7 @@ describe('team awareness and race execution', () => {
     expect(result.checks.map((check) => [check.runId, check.status])).toEqual(expect.arrayContaining([['run-1', 'passed'], ['run-2', 'failed'], ['run-3', 'passed']]));
     expect([...runners.keys()].some((name) => name.includes('integration'))).toBe(false);
     const [, request] = vi.mocked(env.AI!.run).mock.calls[0] as [string, { tools: { name: string }[] }];
-    expect(request.tools.map((tool) => tool.name)).toEqual(['shell', 'team_status', 'install_dependencies', 'run_tests']);
+    expect(request.tools.map((tool) => tool.name)).toEqual(['shell', 'team_status', 'install_dependencies', 'run_tests', 'view_ui']);
   });
 
   function reuseSetup(agents: number, reused: number[], options: { candidateBase?: string; forkHead?: (name: string) => string; skipped?: number[] } = {}) {

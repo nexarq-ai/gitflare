@@ -1,4 +1,6 @@
-import type { AgentRun, Check, CheckPlan, FileChange, ManifestDependencyChanges, Mission, MissionEvent, Repository, RepositorySkillChange, ModelConnection } from '../shared/types';
+import type { AgentRun, Check, CheckPlan, FileChange, ManifestDependencyChanges, Mission, MissionEvent, Repository, RepositorySkillChange, ModelConnection, VisualSettings } from '../shared/types';
+import { AgentViewer } from './visual/agent-view';
+import { effectiveVisualConfig } from './visual/config';
 import { forkRepository, validGitSha, type ArtifactInfo, type ArtifactsBinding } from './artifacts';
 import { failureLine } from './domain';
 import { loadRepositorySkillContext } from './repository-skills';
@@ -40,7 +42,7 @@ export interface ExecutionResult {
   dependencyChanges?: ManifestDependencyChanges[];
 }
 
-export interface ExecutionInput { repository: Repository; mission: Mission; testCommand: string; modelConnections?: ModelConnection[]; checkSettings?: CheckPlan | null }
+export interface ExecutionInput { repository: Repository; mission: Mission; testCommand: string; modelConnections?: ModelConnection[]; checkSettings?: CheckPlan | null; visualSettings?: VisualSettings | null }
 
 export type ReportExecution = (result: ExecutionResult) => Promise<void>;
 
@@ -325,11 +327,13 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
           await publish();
         };
         const limits = run.limits;
+        const viewer = new AgentViewer(sandbox, policy, effectiveVisualConfig(policy.visual, input.visualSettings));
         const loopOptions: AgentLoopOptions = {
         policy,
         workspace: {
           install: (remainingMs) => agentInstall(sandbox, remainingMs, assertAuthority, isActive),
           test: (remainingMs) => agentTests(sandbox, policy, remainingMs),
+          view: (raw, remainingMs) => viewer.view(raw, remainingMs),
         },
         team: teamFor(run),
         independent: race,
@@ -366,7 +370,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
           run.summary = 'Model did not answer in time. Retrying the agent once automatically';
           await publish();
           agentSummary = await runAgentLoop(env, sandbox, JSON.stringify({ ...agentBrief, resume: RESUME_NOTE }, null, 2), active, onTool, run.modelConfig, loopOptions);
-        }
+        } finally { await viewer.close(); }
       }
       run.summary = 'Agent finished editing. Recording its Git candidate';
       await publish();

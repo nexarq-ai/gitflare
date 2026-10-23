@@ -1295,8 +1295,8 @@
     },
     {
       "path": "src/worker/agent-rules.ts",
-      "size": 14788,
-      "sha256": "2cf151b503dd1aba4da0ab1472b2f5bdcc3a578e917a9f2d9951b8acdf1582ec"
+      "size": 15381,
+      "sha256": "c7de0ac5bfd7030dd33338c176711479761d11b72103ed68c99346656f3189ad"
     },
     {
       "path": "src/worker/agent-settings.ts",
@@ -1310,8 +1310,8 @@
     },
     {
       "path": "src/worker/anthropic-adapter.ts",
-      "size": 14883,
-      "sha256": "a61801042a1812fd43ca423bd2c06c338d903a2c19ac359637f5d74cf09a448d"
+      "size": 15596,
+      "sha256": "ff955cf18845d76506cead2d7c3ffa536a15ab95f7fa991e6de4fb9933dc97c6"
     },
     {
       "path": "src/worker/artifacts.ts",
@@ -1540,13 +1540,13 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 47536,
-      "sha256": "d14da7d17fe5a9b158a68d659ff6b14ac0930bb3dae6f253acb341e8c6123167"
+      "size": 47920,
+      "sha256": "b82de7cc1ab184c89167da3d4854eb38aa000253cf69c787835bd7e165ad6f9b"
     },
     {
       "path": "src/worker/execution/agent-loop.ts",
-      "size": 14874,
-      "sha256": "7bbbb477cd788444bb81fc8c26074a6eabeadb293ad77f4d415f31f77c89b806"
+      "size": 18045,
+      "sha256": "5e5779e938e39290be63b3d48ad4f259a67c164004c8a0da9690cb0f41af2c7a"
     },
     {
       "path": "src/worker/execution/dependencies.ts",
@@ -1855,8 +1855,8 @@
     },
     {
       "path": "src/worker/model-adapter.ts",
-      "size": 27358,
-      "sha256": "3c2d6dbceadcb98f75c632e49d18a9ecc603d758cd25f7e73b5d0a861da9cadc"
+      "size": 28226,
+      "sha256": "4815788282d589b9d83552edd0a11151668e98372a2f2829feb2f8cfb4740568"
     },
     {
       "path": "src/worker/model-config.ts",
@@ -2184,6 +2184,11 @@
       "sha256": "d05ee48552cc233cd62c30442395d8162e2de2c35f60055d365b1295c2390955"
     },
     {
+      "path": "src/worker/visual/agent-view.ts",
+      "size": 8462,
+      "sha256": "7e81a08242bc0c8b86eb1157af8b3d934203f48ff1c816de412dc7dac4b2530a"
+    },
+    {
       "path": "src/worker/visual/capture.ts",
       "size": 7504,
       "sha256": "c0c7f60f784306afd3728a3caf5a9656d271cd1ded17c38006f21972ea11b3f1"
@@ -2220,8 +2225,8 @@
     },
     {
       "path": "src/worker/workflow.ts",
-      "size": 9539,
-      "sha256": "a569a188594028431f0daacb12461c0ae77ddaaee212f38718ebc7acb12cc496"
+      "size": 9683,
+      "sha256": "7ca64e3c2ba79b70bf777a77ce8b1d156fd9d0727f562e1947e8a49751a852f0"
     },
     {
       "path": "src/worker/workspace-summaries.ts",
@@ -2360,8 +2365,8 @@
     },
     {
       "path": "tests/execution.test.ts",
-      "size": 93397,
-      "sha256": "62cd34752a69a0fffd1c911a38539e4bcc515d1b491b2cd267ce38a3b399ac8d"
+      "size": 93408,
+      "sha256": "229106bf5678f7dc531559f4469ae70ae6610caae7e7a34b02a231ad08954cc3"
     },
     {
       "path": "tests/failed-agents-banner.test.ts",
@@ -2627,6 +2632,11 @@
       "path": "tests/ui-api.test.ts",
       "size": 1953,
       "sha256": "11fff8116bb8ff9d3537a1461e9c10150094ad42d93356b18c8a27b63482e97a"
+    },
+    {
+      "path": "tests/visual-agent-view.test.ts",
+      "size": 11007,
+      "sha256": "1e05244203182ce0083d84ff9d29e9883e5dedc0c34e6e660861166ca54864d7"
     },
     {
       "path": "tests/visual-capture.test.ts",

@@ -137,15 +137,23 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-export function chatMessages(input: InputItem[]): InputItem[] {
+type ContentPart = { type?: string; text?: string; image_url?: string };
+
+function userParts(item: InputItem): ContentPart[] | null {
+  return item.role === 'user' && Array.isArray(item.content) && item.content.some((part: ContentPart) => part.type === 'input_image') ? item.content as ContentPart[] : null;
+}
+
+export function chatMessages(input: InputItem[], images = true): InputItem[] {
   const result: InputItem[] = [];
   for (const item of input) {
+    const parts = userParts(item);
     if (item.type === 'function_call') {
       const previous = result.at(-1);
       const call = { id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments } };
       if (previous?.role === 'assistant' && Array.isArray(previous.tool_calls)) previous.tool_calls.push(call);
       else result.push({ role: 'assistant', content: null, tool_calls: [call] });
     } else if (item.type === 'function_call_output') result.push({ role: 'tool', tool_call_id: item.call_id, content: item.output });
+    else if (parts) result.push(images ? { role: 'user', content: parts.flatMap((part): Record<string, unknown>[] => part.type === 'input_text' && typeof part.text === 'string' ? [{ type: 'text', text: part.text }] : part.type === 'input_image' && typeof part.image_url === 'string' ? [{ type: 'image_url', image_url: { url: part.image_url } }] : []) } : { role: 'user', content: parts.filter(part => part.type === 'input_text' && typeof part.text === 'string').map(part => part.text).join('\n') });
     else if (item.role && typeof item.content === 'string') result.push({ role: item.role, content: item.content });
     else if (item.type === 'message' && Array.isArray(item.content)) result.push({ role: 'assistant', content: item.content.filter(content => content.type === 'output_text').map(content => content.text).join('\n') });
   }
@@ -157,7 +165,7 @@ export function workersAIMessages(input: InputItem[]): InputItem[] {
   return input.flatMap(item => {
     if (item.type === 'function_call') return [{ role: 'assistant', content: JSON.stringify({ tool_calls: [{ name: item.name, arguments: JSON.parse(String(item.arguments)) }] }) }];
     if (item.type === 'function_call_output') return [{ role: 'tool', name: names.get(item.call_id), content: String(item.output) }];
-    return chatMessages([item]);
+    return chatMessages([item], false);
   });
 }
 
