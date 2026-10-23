@@ -734,6 +734,16 @@
       "sha256": "dc8b0354caf07dd16d96af2f0b89b621fafc3754a9aef01170e13d5bd2cc863c"
     },
     {
+      "path": "src/ui/failed-agents-banner.css",
+      "size": 446,
+      "sha256": "85eeae714534f5f5ca072b40c995af62437a40302f0623cb7d024da31fecc094"
+    },
+    {
+      "path": "src/ui/FailedAgentsBanner.tsx",
+      "size": 2366,
+      "sha256": "b615665faff204c1db1f82347a47e8810b3c03c0039ed09d53a7f4a0364927d6"
+    },
+    {
       "path": "src/ui/fix-requests.css",
       "size": 4473,
       "sha256": "2231df009854840d0ec16da6ae8a762b79854324dbc13b7237e7a15fe200923e"
