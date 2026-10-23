@@ -12,6 +12,8 @@ if (process.env.CLOUDFLARE_ENV === 'demo' && existsSync('src/worker/hosted-signi
 
 export const KUMO_PRIMARY_BUTTON_SELECTOR = '.bg-\\(--kumo-button-emphasis-bg\\)';
 export const KUMO_SOURCES_FILE = 'node_modules/.gitflare/kumo-sources.css';
+export const KUMO_DOCS_SOURCES_FILE = 'node_modules/.gitflare/kumo-docs-sources.css';
+const DOCS_KUMO_IMPORTERS = ['src/ui/Documentation.tsx', 'src/ui/components.tsx'];
 
 export function requireKumoStyles(): Plugin {
   return {
@@ -32,14 +34,14 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-export function kumoComponentFiles(sourceRoot = 'src', dist = resolve('node_modules/@cloudflare/kumo/dist')): string[] {
+export function kumoComponentFiles(sourceRoot = 'src', dist = resolve('node_modules/@cloudflare/kumo/dist'), importers = sourceFiles(sourceRoot)): string[] {
   const files = new Set<string>();
   const visit = (file: string) => {
     if (files.has(file) || !existsSync(file)) return;
     files.add(file);
     for (const match of readFileSync(file, 'utf8').matchAll(/(?:from|import)\s*["'](\.{1,2}\/[^"']+)["']/g)) visit(resolve(dirname(file), match[1]!));
   };
-  for (const file of sourceFiles(sourceRoot)) for (const match of readFileSync(file, 'utf8').matchAll(/["']@cloudflare\/kumo\/components\/([\w-]+)["']/g)) visit(join(dist, 'components', `${match[1]}.js`));
+  for (const file of importers) for (const match of readFileSync(file, 'utf8').matchAll(/["']@cloudflare\/kumo\/components\/([\w-]+)["']/g)) visit(join(dist, 'components', `${match[1]}.js`));
   return [...files].sort();
 }
 
@@ -48,7 +50,9 @@ export function kumoSources(): Plugin {
     name: 'gitflare:kumo-sources',
     config() {
       mkdirSync(dirname(KUMO_SOURCES_FILE), { recursive: true });
-      writeFileSync(KUMO_SOURCES_FILE, kumoComponentFiles().map((file) => `@source ${JSON.stringify(file)};\n`).join(''));
+      const sources = (files: string[]) => files.map((file) => `@source ${JSON.stringify(file)};\n`).join('');
+      writeFileSync(KUMO_SOURCES_FILE, sources(kumoComponentFiles()));
+      writeFileSync(KUMO_DOCS_SOURCES_FILE, sources(kumoComponentFiles('src', undefined, DOCS_KUMO_IMPORTERS)));
     },
   };
 }
