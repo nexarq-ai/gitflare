@@ -701,7 +701,7 @@ describe('MCP connection access levels', () => {
     expect(requiredAccess('gitflare_deploy', { readOnlyHint: false }, { action: 'detect' })).toBe('land');
     expect(requiredAccess('gitflare_deploy', { readOnlyHint: false }, { action: 'apply_detected' })).toBe('land');
     const { tools } = await (await connectAs(null, readApi)).listTools();
-    expect(tools).toHaveLength(133);
+    expect(tools).toHaveLength(134);
   });
 
   it('describes every tool with annotations, a required level and parameter descriptions', async () => {
@@ -763,7 +763,7 @@ describe('MCP connection access levels', () => {
       expect(annotation(read), read).toMatchObject({ readOnlyHint: true, destructiveHint: false });
       expect(annotation(write)?.readOnlyHint, write).toBe(false);
     }
-    expect(tools.filter(tool => tool.annotations?.readOnlyHint)).toHaveLength(61);
+    expect(tools.filter(tool => tool.annotations?.readOnlyHint)).toHaveLength(62);
     expect(tools.filter(tool => tool.annotations?.destructiveHint)).toHaveLength(40);
   });
 

@@ -383,6 +383,7 @@ export interface Mission {
   dependencyApproval?: DependencyApproval;
   landingMessage?: LandingMessage;
   landedSha?: string;
+  visual?: VisualEvidence[];
   error?: string;
 }
 
@@ -398,7 +399,7 @@ export interface LandingMessage {
 export type AgentRunSummary = Omit<AgentRun, 'task' | 'modelConfig' | 'skills' | 'skillWarnings' | 'usage'> & { assignment: string };
 export type CheckSummary = Omit<Check, 'output'>;
 
-export interface MissionSummary extends Omit<Mission, 'attachments' | 'authorization' | 'landingMessage' | 'skillChange' | 'raceChecks' | 'raceChanges' | 'runs' | 'checks' | 'changes' | 'events' | 'reviews'> {
+export interface MissionSummary extends Omit<Mission, 'attachments' | 'authorization' | 'landingMessage' | 'skillChange' | 'raceChecks' | 'raceChanges' | 'runs' | 'checks' | 'changes' | 'events' | 'reviews' | 'visual'> {
   runs: AgentRunSummary[];
   checks: CheckSummary[];
   events: MissionEvent[];

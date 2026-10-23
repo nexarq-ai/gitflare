@@ -1,3 +1,4 @@
+import { candidateVerified } from '../shared/checks';
 import type { Mission, MissionAttempt, MissionEvent, Repository } from '../shared/types';
 import { ApiError, assertReplayFingerprint, failureLine } from './domain';
 import { assertDependenciesAcknowledged } from './dependency-changes';
@@ -55,7 +56,7 @@ export class IntegrationBook {
         return { mission, claimed: false, claimId: claim.claimId, ...(claim.landedSha ? { landedSha: claim.landedSha } : {}) };
       }
       if (this.getRepository(mission.repositoryId)?.headSha !== baseSha) throw new ApiError(409, 'STALE_APPROVAL', 'The repository changed after approval. Run and review the change again.');
-      if (!mission.integrationForkName || !mission.checks.some((check) => check.candidateSha === candidateSha && check.status === 'passed') || mission.checks.some((check) => check.status !== 'passed')) throw new ApiError(409, 'CHECKS_REQUIRED', 'The exact candidate must have passing verification and an integration fork.');
+      if (!mission.integrationForkName || !candidateVerified(mission.checks, candidateSha)) throw new ApiError(409, 'CHECKS_REQUIRED', 'The exact candidate must have passing verification and an integration fork.');
       const claimId = crypto.randomUUID();
       this.store.put('integration:claim', { claimId, missionId: id, epoch: mission.epoch, candidateSha, baseSha, claimedAt: Date.now(), phase: 'preparing' });
       this.store.put(`request:${key}`, { fingerprint, result: true });

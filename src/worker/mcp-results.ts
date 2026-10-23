@@ -46,10 +46,19 @@ export function candidateRef(mission: Mission, runIds: string[]): string | undef
   return mission.candidateSha ?? undefined;
 }
 
-export function missionEvidence(mission: Mission, input: { view: 'summary' | 'context' | 'runs' | 'changes' | 'checks' | 'events' | 'reviews'; offset: number; limit: number; detail_offset: number; detail_limit: number }): Record<string, unknown> {
+export function visualView(mission: Mission, detail: (value: string) => ReturnType<typeof excerpt>): Record<string, unknown>[] {
+  return (mission.visual ?? []).map((evidence) => ({
+    id: evidence.id, runId: evidence.runId, runName: evidence.runId ? mission.runs.find((run) => run.id === evidence.runId)?.name : undefined, candidateSha: evidence.candidateSha, baseSha: evidence.baseSha, epoch: evidence.epoch, mode: evidence.mode, browser: evidence.browser, capturedAt: evidence.capturedAt, warnings: evidence.warnings,
+    captures: evidence.captures.map((capture) => ({ id: capture.id, side: capture.side, route: capture.route, label: capture.label, frame: capture.frame, viewport: capture.viewport, theme: capture.theme, width: capture.width, height: capture.height, format: capture.format, bytes: capture.bytes, consoleErrors: capture.consoleErrors, overflow: capture.overflow, diff: capture.diff, outline: detail(capture.outline), ...(capture.bytes ? { image: { tool: 'gitflare_mission_screenshot', mission_id: mission.id, capture_id: capture.id, path: `/api/missions/${mission.id}/visual/${capture.id}` } } : {}) })),
+    rounds: evidence.rounds,
+  }));
+}
+
+export function missionEvidence(mission: Mission, input: { view: 'summary' | 'context' | 'runs' | 'changes' | 'checks' | 'events' | 'reviews' | 'visual'; offset: number; limit: number; detail_offset: number; detail_limit: number }): Record<string, unknown> {
   if (input.view === 'summary') return missionSummary(mission);
   const detail = (value: string) => excerpt(value, input.detail_offset, input.detail_limit);
   const reference = { missionId: mission.id, status: mission.status, candidateSha: mission.candidateSha, baseSha: mission.baseSha, epoch: mission.epoch, view: input.view };
+  if (input.view === 'visual') return { ...reference, ...page(visualView(mission, detail), input.offset, input.limit), guidance: 'Captures are recorded by the trusted runner for the base and the candidate in the same container; a changedRatio is the share of pixels that differ from the base. Fetch an image with gitflare_mission_screenshot.' };
   if (input.view === 'context') return { ...reference, title: mission.title, prompt: detail(mission.prompt), acceptanceCriteria: mission.acceptanceCriteria ?? [], attachments: (mission.attachments ?? []).slice(input.offset, input.offset + input.limit).map((file) => ({ name: file.name, bytes: new TextEncoder().encode(file.content).length, content: detail(file.content) })), attachmentCount: mission.attachments?.length ?? 0, skillChange: mission.skillChange ? { ...mission.skillChange, content: detail(mission.skillChange.content) } : undefined };
   const values: Record<string, unknown>[] = input.view === 'reviews' ? (mission.reviews ?? []).map(({ body, ...review }) => ({ ...review, outdated: isOutdatedReview(mission, review), body: detail(body) })) : input.view === 'changes' ? (mission.raceChanges ?? mission.changes).map(({ patch, ...change }) => ({ ...change, patch: detail(patch), ...(candidateRef(mission, change.runIds) ? { readFile: { tool: 'gitflare_read_file', ref: candidateRef(mission, change.runIds), path: change.path } } : {}) })) : input.view === 'checks' ? (mission.raceChecks ?? mission.checks).map(({ output, ...check }) => ({ ...check, output: detail(output ?? '') })) : input.view === 'runs' ? mission.runs.map(({ task, assignment, summary, ...run }) => ({ ...run, task: detail(task), assignment: detail(assignment ?? ''), summary: detail(summary ?? '') })) : mission.events.map((event) => ({ ...event, message: detail(event.message) }));
   return { ...reference, ...page(values, input.offset, input.limit), ...(input.view === 'changes' ? { patchGuidance: CHANGES_GUIDANCE } : {}) };

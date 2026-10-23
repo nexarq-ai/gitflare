@@ -25,6 +25,7 @@ export interface ExecutionEnv {
   TEST_COMMAND?: string;
   assertModelAllowed?: (model: ModelConnection) => Promise<void>;
   modelAccess?: ModelEnv['modelAccess'];
+  evidence?: { putImage(missionId: string, image: { id: string; format: 'png' | 'jpeg'; data: string }): Promise<void> };
 }
 
 export type AuthorityGuard = () => Promise<void>;

@@ -35,6 +35,8 @@ import FailedAgentsBanner, { failedAgents } from "./FailedAgentsBanner";
 import { retryAgentBody } from "./agent-limits";
 import AttemptHistory from "./AttemptHistory";
 import { CheckEscalationNote, CheckTimeoutPanel } from "./CheckSettings";
+import VisualEvidencePanel, { evidenceFor } from "./VisualEvidence";
+import { blockingChecks, candidateVerified } from "../shared/checks";
 import DiffView, {
   lineAnchor,
   type LineAnchor,
@@ -100,6 +102,7 @@ export default function MissionDetail({
     "overview",
     "changes",
     "checks",
+    "visual",
     "agents",
     "discussion",
     "activity",
@@ -665,17 +668,13 @@ export default function MissionDetail({
   const readyForReview =
     unresolvedRequests.length === 0 &&
     mission.status === "needs_review" &&
-    !!mission.candidateSha &&
     !!mission.baseSha &&
-    mission.checks.length > 0 &&
-    mission.checks.every((check) => check.status === "passed");
+    candidateVerified(mission.checks, mission.candidateSha);
   const canPreview =
     ["needs_review", "approved", "integrating", "integrated"].includes(
       mission.status,
     ) &&
-    !!mission.candidateSha &&
-    mission.checks.length > 0 &&
-    mission.checks.every((check) => check.status === "passed");
+    candidateVerified(mission.checks, mission.candidateSha);
   const previewViewer = { installationAdmin, owner: permissions.includes("manage") };
   const currentPreview =
     preview &&
@@ -683,9 +682,10 @@ export default function MissionDetail({
     Date.parse(preview.expiresAt) > Date.now()
       ? preview
       : null;
-  const passed = mission.checks.filter(
+  const passed = blockingChecks(mission.checks).filter(
     (check) => check.status === "passed",
   ).length;
+  const visualEvidence = evidenceFor(mission.visual, mission.selectedRunId, isRace);
   const reviewRequests = currentReviewRequests(mission);
   const currentApproval = approval && approval.candidateSha === mission.candidateSha ? approval : null;
   const ownerGroups = reviewRequests ? ownerGroupStatus(reviewRequests.groups, currentApproval?.missingOwners) : [];
@@ -1032,8 +1032,9 @@ export default function MissionDetail({
             },
             {
               value: "checks",
-              label: `Checks${mission.checks.length ? ` (${passed}/${mission.checks.length})` : ""}`,
+              label: `Checks${mission.checks.length ? ` (${passed}/${blockingChecks(mission.checks).length})` : ""}`,
             },
+            ...(visualEvidence.length ? [{ value: "visual", label: "Visual" }] : []),
             { value: "agents", label: `Agents (${mission.runs.length})` },
             {
               value: "discussion",
@@ -1364,8 +1365,9 @@ export default function MissionDetail({
                     <ClockIcon size={20} />
                   )}
                   <div>
-                    <h3>{check.name}</h3>
+                    <h3>{check.name}{check.advisory && <span className="check-advisory">Advisory<InfoTip label="advisory check">Shown with its evidence; blocks landing only when a stream rule names it.</InfoTip></span>}</h3>
                     <p>
+                      {check.captureIds?.length ? <button type="button" className="text-link" onClick={() => onTabChange("visual")}>View screenshots</button> : null}
                       {check.candidateSha === mission.candidateSha &&
                       mission.candidateSha
                         ? "Combined candidate"
@@ -1427,6 +1429,14 @@ export default function MissionDetail({
               invalidates that approval.
             </div>
           )}
+        </>
+      )}
+      {tab === "visual" && (
+        <>
+          <p className="mission-prompt">
+            Before and after, per route, width and theme.<InfoTip label="visual evidence">Recorded by the trusted runner for the base and the candidate when a passing candidate changes UI files. Pink boxes outline changed regions.</InfoTip>
+          </p>
+          <VisualEvidencePanel missionId={mission.id} evidence={visualEvidence} runs={mission.runs} checks={mission.raceChecks ?? mission.checks} />
         </>
       )}
       {tab === "discussion" && (

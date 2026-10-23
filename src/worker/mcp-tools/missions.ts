@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Mission, MissionAttempt, Workspace } from '../../shared/types';
-import { ApiError, RETRY_GUIDANCE_MAX } from '../domain';
+import { ApiError, publicError, RETRY_GUIDANCE_MAX } from '../domain';
 import { DEFAULT_MAX_AGENTS, DRAFT_GOAL_MAX, DRAFT_GOAL_MIN, MAX_ALLOWED_MODELS, MAX_MISSION_AGENTS } from '../../shared/mission-draft';
 import { WORKSPACE_MISSION_LIMIT } from '../capacity';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -8,7 +8,26 @@ import { identifier, repositoryId, missionId, requestKey, offset, pageLimit, rea
 import { page, missionSummary, missionEvidence, withMcpFieldNames, guarded } from '../mcp-results';
 import type { McpToolContext } from './context';
 
-export function registerReads(server: McpServer, { call }: McpToolContext): void {
+export function registerReads(server: McpServer, { call, fetchBytes }: McpToolContext): void {
+  server.registerTool('gitflare_mission_screenshot', {
+    title: 'Fetch a mission screenshot', description: 'Return one screenshot recorded as visual evidence for a mission candidate (base or candidate side, route, viewport, theme) as an image, with its outline, console errors and diff summary as text. Capture IDs come from gitflare_inspect_mission with view visual. Read-only.',
+    inputSchema: z.object({ mission_id: missionId, capture_id: z.string().min(1).max(200).regex(/^[A-Za-z0-9._-]+$/).describe('Capture ID from the visual view, or a diff image ID ending in .diff.') }).strict(), annotations: readOnly,
+  }, async (input) => {
+    try {
+      const mission = await call<Mission>(`/api/missions/${input.mission_id}`);
+      const capture = (mission.visual ?? []).flatMap((evidence) => evidence.captures).find((item) => item.id === input.capture_id || item.diff?.imageId === input.capture_id);
+      if (!capture) throw new ApiError(404, 'NOT_FOUND', 'This capture is not part of the mission evidence.');
+      if (!fetchBytes) throw new ApiError(503, 'UNAVAILABLE', 'Screenshots are not available over this connection.');
+      const { bytes, contentType } = await fetchBytes(`/api/missions/${input.mission_id}/visual/${input.capture_id}`);
+      let binary = '';
+      for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+      const summary = { captureId: input.capture_id, side: capture.side, route: capture.route, label: capture.label, frame: capture.frame, viewport: capture.viewport, theme: capture.theme, width: capture.width, height: capture.height, consoleErrors: capture.consoleErrors, overflow: capture.overflow, diff: capture.diff, outline: capture.outline };
+      return { content: [{ type: 'image', data: btoa(binary), mimeType: contentType.startsWith('image/') ? contentType : 'image/png' }, { type: 'text', text: JSON.stringify(summary) }], structuredContent: summary };
+    } catch (error) {
+      const failure = publicError(error);
+      return { content: [{ type: 'text', text: JSON.stringify({ error: failure }) }], isError: true };
+    }
+  });
   server.registerTool('gitflare_list_missions', {
     title: 'List repository missions', description: 'List missions with status, base and candidate SHAs and update time, optionally filtered by repository or status. Use gitflare_inspect_mission for evidence. Read-only.',
     inputSchema: z.object({ repository_id: repositoryId.optional(), status: z.enum(['draft', 'queued', 'running', 'checking', 'needs_review', 'approved', 'integrating', 'integrated', 'failed', 'cancelled']).optional().describe('Only missions in this status.'), offset, limit: pageLimit }).strict(), annotations: readOnly,

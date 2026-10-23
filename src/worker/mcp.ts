@@ -130,7 +130,15 @@ export function createGitflareMcpServer(api: McpApi, origin: string, access: Acc
     }
     return response.json() as Promise<T>;
   }
-  registerTools(server, { call, origin });
+  async function fetchBytes(path: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+    const response = await api(new Request(new URL(path, origin), { method: 'GET' }));
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
+      throw new ApiError(response.status, error.error?.code ?? 'API_ERROR', error.error?.message ?? 'The Gitflare operation failed.');
+    }
+    return { bytes: new Uint8Array(await response.arrayBuffer()), contentType: response.headers.get('content-type') ?? 'application/octet-stream' };
+  }
+  registerTools(server, { call, fetchBytes, origin });
 
   return server;
 }

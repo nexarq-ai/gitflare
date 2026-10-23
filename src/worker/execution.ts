@@ -1,6 +1,7 @@
-import type { AgentRun, Check, CheckPlan, FileChange, ManifestDependencyChanges, Mission, MissionEvent, Repository, RepositorySkillChange, ModelConnection, VisualSettings } from '../shared/types';
+import type { AgentRun, Check, CheckPlan, FileChange, ManifestDependencyChanges, Mission, MissionEvent, Repository, RepositorySkillChange, ModelConnection, VisualEvidence, VisualSettings } from '../shared/types';
 import { AgentViewer } from './visual/agent-view';
 import { effectiveVisualConfig } from './visual/config';
+import { captureCandidateEvidence } from './visual/evidence';
 import { forkRepository, validGitSha, type ArtifactInfo, type ArtifactsBinding } from './artifacts';
 import { failureLine } from './domain';
 import { loadRepositorySkillContext } from './repository-skills';
@@ -40,6 +41,7 @@ export interface ExecutionResult {
   learnedLimits?: LearnedLimits;
   events?: MissionEvent[];
   dependencyChanges?: ManifestDependencyChanges[];
+  visual?: VisualEvidence[];
 }
 
 export interface ExecutionInput { repository: Repository; mission: Mission; testCommand: string; modelConnections?: ModelConnection[]; checkSettings?: CheckPlan | null; visualSettings?: VisualSettings | null }
@@ -244,6 +246,19 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
       });
     },
   });
+  const visualEvidence = async (key: string, fork: ArtifactInfo, sha: string, policy: RepositoryPolicy, changedFiles: string[], run?: AgentRun) => {
+    if (!env.evidence || !changedFiles.length) return;
+    const onStep = async (message: string) => { if (run) run.summary = message; else for (const item of result.runs) if (item.status === 'completed') item.summary = `Combined candidate: ${message}`; await publish(); };
+    try {
+      const captured = await captureCandidateEvidence({ SANDBOX }, { key, fork, baseSha, candidateSha: sha, policy, config: effectiveVisualConfig(policy.visual, input.visualSettings), changedFiles, epoch: mission.epoch, runId: run?.id, assertAuthority, isActive, store: (image) => env.evidence!.putImage(mission.id, image), onStep });
+      if (!captured) return;
+      result.visual = [...(result.visual ?? []).filter((item) => item.runId !== run?.id), captured.evidence];
+      result.checks.push(...captured.checks);
+    } catch (error) {
+      if (!await isActive()) throw error;
+      result.events = [...(result.events ?? []), { id: `${key}-visual`, timestamp: new Date().toISOString(), ...(run ? { runId: run.id } : {}), type: 'warning', message: `${run ? `${run.name}: ` : 'Combined candidate: '}visual evidence could not be captured: ${failureLine(error instanceof Error ? error.message : String(error))}`.slice(0, 1200) }];
+    }
+  };
   const runAgent = async (run: AgentRun) => {
     const key = `gf-${mission.id}-${mission.epoch}-${run.id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     let modelRetries = 0;
@@ -452,6 +467,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
       check.name = `${run.name}: ${check.name.replace('Repository test suite', 'repository tests')}`;
       check.runId = run.id;
       result.checks.push(check);
+      if (check.status === 'passed' && !trusted) await visualEvidence(`${key}`, fork, sha, policy, run.changedFiles, run);
       run.summary = agentSummary;
       run.status = check.status === 'passed' ? 'completed' : 'failed';
       if (check.status !== 'passed') run.error = `Candidate checks failed: ${checkFailureSummary(check.output ?? '')}`;
@@ -618,6 +634,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     check.name = check.name.replace('Repository test suite', 'Combined candidate tests');
     result.checks.push(check);
     if (check.status !== 'passed') result.error = 'Combined candidate failed its test suite';
+    else await visualEvidence(key, fork, sha, policy, result.changes.map((change) => change.path));
   } catch (error) { result.error = error instanceof Error ? error.message : 'Integration failed'; }
   finally { await sandbox.destroy(); }
   return result;

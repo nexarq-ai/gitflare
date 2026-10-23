@@ -35,12 +35,13 @@ import { NotificationBook, SubscriptionBook, type DigestEntry, type Notification
 import { sendNotificationEmail } from './notification-email';
 import type { NotificationEvent, NotificationPreferences, NotificationReason, NotificationSubject, ReviewRequests, SubscriptionState } from '../shared/notifications';
 import { validGitSha } from './artifacts';
-import type { Receipt, ContributorStanding, OutgoingProposal, MissionSummaryCache, CoordinatorHost } from './coordinator-types';
+import type { Receipt, ContributorStanding, OutgoingProposal, MissionSummaryCache, CoordinatorHost, StoredVisualImage } from './coordinator-types';
 import { PreviewBook } from './coordinator-previews';
 import { DispatchBook } from './coordinator-dispatch';
 import { IntegrationBook } from './coordinator-integration';
 import { CapacityBook } from './coordinator-capacity';
 import { parseVisualSettings } from './visual/config';
+import { candidateVerified } from '../shared/checks';
 
 export { PREVIEW_LEASE_MS, PREVIEW_HEARTBEAT_MS, PREVIEW_READY_MS, WORKER_PREVIEW_TTL_MS, DISPATCH_FAST_ATTEMPTS, MISSION_WATCHDOG_MS, WATCHDOG_MISSING_LIMIT, INTEGRATION_UNCONFIRMED_MESSAGE, PREVIEW_STARTING_MESSAGE } from './coordinator-types';
 export type { ContributorStanding, OutgoingProposal, MissionSummaryCache, IntegrationClaim, PreviewCapability, PreviewHost, WorkerPreviewInfo, PreviewLifetime, WorkerPreviewRecord, PreviewExtension, StoppedPreview, PreviewEndReason, LastPreview, PreviewStatus } from './coordinator-types';
@@ -281,6 +282,14 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   getAgentSettings(): AgentSettings | undefined { return this.store.get<AgentSettings>('agent-settings'); }
 
   getVisualSettings(): VisualSettings | undefined { return this.store.get<VisualSettings>('visual-settings'); }
+
+  putVisualImage(missionId: string, image: StoredVisualImage): void {
+    this.store.put(`visual-image:${missionId}:${image.id}`, image);
+  }
+
+  visualImage(missionId: string, captureId: string): StoredVisualImage | undefined {
+    return this.store.get<StoredVisualImage>(`visual-image:${missionId}:${captureId}`);
+  }
 
   setVisualSettings(key: string, input: VisualSettings, actorId: string): VisualSettings {
     const normalized = parseVisualSettings(input, 'settings');
@@ -1100,6 +1109,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     }
     for (const event of result.events ?? []) if (!mission.events.some((existing) => existing.id === event.id)) mission.events.push(event);
     if (result.checks) mission.checks = result.checks;
+    if (result.visual) mission.visual = result.visual;
     if (result.changes) mission.changes = result.changes;
     if (result.candidateSha !== undefined) mission.candidateSha = result.candidateSha;
     if (result.integrationForkName !== undefined) mission.integrationForkName = result.integrationForkName;
@@ -1112,7 +1122,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const race = mission.mode === 'race';
       const passed = race
         ? eligibleRaceRuns(mission).length > 0
-        : !!mission.candidateSha && mission.checks.some((check) => check.candidateSha === mission.candidateSha) && mission.checks.every((check) => check.status === 'passed') && mission.runs.every((run) => run.status === 'completed' || run.status === 'skipped') && mission.runs.some((run) => run.status === 'completed');
+        : candidateVerified(mission.checks, mission.candidateSha) && mission.runs.every((run) => run.status === 'completed' || run.status === 'skipped') && mission.runs.some((run) => run.status === 'completed');
       mission.status = passed && !result.error ? 'needs_review' : 'failed';
       mission.error = result.error;
       return this.ctx.storage.transactionSync(() => {
@@ -1183,7 +1193,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const mission = this.requiredMission(id);
       const repository = this.getRepository(mission.repositoryId);
       assertReviewClear(mission);
-      assertApproval({ status: mission.status, candidateSha: mission.candidateSha, baseSha: mission.baseSha, currentHead: repository?.headSha, requestedCandidate: candidateSha, requestedBase: baseSha, checksPassed: mission.checks.some((check) => check.candidateSha === mission.candidateSha) && mission.checks.every((check) => check.status === 'passed') });
+      assertApproval({ status: mission.status, candidateSha: mission.candidateSha, baseSha: mission.baseSha, currentHead: repository?.headSha, requestedCandidate: candidateSha, requestedBase: baseSha, checksPassed: candidateVerified(mission.checks, mission.candidateSha) });
       assertDependencyApprover(mission, dependencyApprover);
       mission.status = 'approved';
       mission.approvedAt = new Date().toISOString();

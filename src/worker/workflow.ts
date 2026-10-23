@@ -30,6 +30,7 @@ interface Coordinator {
   getMission(missionId: string): Promise<Mission | undefined>;
   getCheckPlan?(missionId?: string): Promise<CheckPlan>;
   getVisualSettings?(): Promise<VisualSettings | undefined>;
+  putVisualImage?(missionId: string, image: { id: string; format: 'png' | 'jpeg'; data: string }): Promise<void>;
   applyLearnedCheckLimits?(missionId: string, epoch: number, learned: LearnedLimits): Promise<CheckSettings | null>;
   isMissionActive(missionId: string, epoch: number): Promise<boolean>;
   recordExecution(missionId: string, epoch: number, result: ExecutionResult, complete?: boolean): Promise<unknown>;
@@ -88,7 +89,7 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
         const modelConnections = funded ? await funded.models() : await catalog.getModelConnections();
         const result = await executeMission(
           { repository, mission, modelConnections, checkSettings, visualSettings, testCommand: this.env.TEST_COMMAND ?? 'node --test --test-reporter=tap tests/*.test.mjs' },
-          funded ? { ...this.env, assertModelAllowed: funded.assertModelAllowed, modelAccess: funded.modelAccess } : { ...this.env, assertModelAllowed: async model => assertPinnedModel(await catalog.getModelConnections(), model), modelAccess: createModelAccess(this.env, authorization.workspaceId, catalog) },
+          { ...(funded ? { ...this.env, assertModelAllowed: funded.assertModelAllowed, modelAccess: funded.modelAccess } : { ...this.env, assertModelAllowed: async model => assertPinnedModel(await catalog.getModelConnections(), model), modelAccess: createModelAccess(this.env, authorization.workspaceId, catalog) }), evidence: { putImage: async (id, image) => { await coordinator.putVisualImage?.(id, image); } } },
           async (progress) => { await coordinator.recordExecution(missionId, epoch, progress, false); },
           () => coordinator.isMissionActive(missionId, epoch),
           assertAuthority,
