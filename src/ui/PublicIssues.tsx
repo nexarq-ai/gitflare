@@ -271,10 +271,12 @@ export function human(turnstile: Turnstile): Record<string, string> {
 
 function NewIssue({ context }: { context: Context }) {
   const { api, viewer } = context;
+  const [prefill] = useState(() => { const params = new URLSearchParams(window.location.search); return { title: (params.get("title") ?? "").slice(0, 200), body: (params.get("body") ?? "").slice(0, 8000) }; });
+  const prefilled = !!(prefill.title || prefill.body);
   const [templates, setTemplates] = useState<IssueTemplate[] | null>(null);
-  const [template, setTemplate] = useState<IssueTemplate | null | undefined>(undefined);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [template, setTemplate] = useState<IssueTemplate | null | undefined>(prefilled ? null : undefined);
+  const [title, setTitle] = useState(prefill.title);
+  const [body, setBody] = useState(prefill.body);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const key = useRef(crypto.randomUUID());
@@ -297,7 +299,7 @@ function NewIssue({ context }: { context: Context }) {
     setError("");
   }
 
-  const pristine = title === (template?.title ?? "") && body === (template?.body ?? "");
+  const pristine = template ? title === template.title && body === template.body : title === prefill.title && body === prefill.body;
   async function leave(to: () => void) {
     if (pristine || await confirm({ title: "Discard this issue?", description: "What you wrote is not saved.", confirmLabel: "Discard", tone: "danger" })) to();
   }

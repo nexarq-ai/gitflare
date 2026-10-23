@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import InfoTip from "./InfoTip";
-import { Button } from '@cloudflare/kumo/components/button';
+import { Button, LinkButton } from '@cloudflare/kumo/components/button';
 import { Dialog } from '@cloudflare/kumo/components/dialog';
 import { Input } from '@cloudflare/kumo/components/input';
 import { CloudIcon, KeyIcon, PlusIcon, TrashIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
+import { returnPathFrom } from '../shared/ai-setup';
 import type { AiKeysSnapshot, ModelConnection, ModelConnectionsSnapshot } from '../shared/types';
 import { request } from './api';
 import { PageLoading } from './WorkspaceLoader';
@@ -22,6 +23,7 @@ export default function ModelConnections({ canManage }: { canManage: boolean }) 
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [dialog, setDialog] = useState<Dialogs>(null);
+  const [back] = useState(() => returnPathFrom(window.location.search));
 
   useEffect(() => {
     let active = true;
@@ -44,10 +46,12 @@ export default function ModelConnections({ canManage }: { canManage: boolean }) 
 
   const demo = demoOf(snapshot);
   const route = inferenceRoute(keys);
+  const ready = !!snapshot && snapshot.models.some(model => modelStatus(model, keys, snapshot) === 'ready');
   return <>
     <div className="page-heading"><div><h1>AI models</h1><p>The models your agents can use. New missions start with the default.</p></div></div>
     {error && <div className="error-notice" role="alert">{error}</div>}
     {notice && <p className="models-notice" role="status">{notice}</p>}
+    {back && snapshot && !demo && <div className="models-return" role="status"><p>{ready ? 'Your AI model is ready.' : 'Add a provider key, then go back to your request.'}</p><LinkButton variant={ready ? 'primary' : 'secondary'} size="base" href={back}>Back to request</LinkButton></div>}
     {!snapshot ? !error && <PageLoading /> : demo ? <DemoFeaturePanel demo={demo} examples={snapshot.examples} /> : <>
       {route && <p className={`models-route models-route-${route.tone}`}>{route.tone === 'warn' ? <WarningCircleIcon size={16} aria-hidden="true" /> : <CloudIcon size={16} aria-hidden="true" />}{route.text}</p>}
       <section className="panel">

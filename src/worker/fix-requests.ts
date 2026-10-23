@@ -1,4 +1,6 @@
-import type { AgentMissionEntry, AgentMissionState, FixQuote, FixRequest, FixRequests, IssuePerson, Mission, MissionSummary, ModelConnection, Repository } from '../shared/types';
+import type { AgentMissionEntry, AgentMissionState, AiSetup, FixQuote, FixRequest, FixRequests, IssuePerson, Mission, MissionSummary, ModelConnection, Repository } from '../shared/types';
+import { aiSetupPath, requestChangePath } from '../shared/ai-setup';
+import { hostOrigins } from '../shared/hosts';
 import { DRAFT_GOAL_MAX } from '../shared/mission-draft';
 import { ApiError, assertMutationOrigin, publicError, readJson, requireIdempotencyKey, requireString } from './domain';
 import type { AppEnv } from './env';
@@ -71,7 +73,9 @@ function aiReady(env: AppEnv): boolean {
   return env.AI_FEATURES !== 'disabled' && !!env.MISSION_WORKFLOW && executionReadiness({ ...env, MODEL: env.MODEL ?? DEFAULT_MODEL }, 'agent').ready;
 }
 
-export async function resolveFunding(context: Context): Promise<{ funding: Funding | null; reason: string }> {
+interface Resolved { funding: Funding | null; reason: string; ownKeyMissing?: boolean }
+
+export async function resolveFunding(context: Context): Promise<Resolved> {
   const { env, access, repository, workspaceId, principal } = context;
   if (!aiReady(env)) return { funding: null, reason: 'Agents are not available on this Gitflare installation right now.' };
   const upstream = catalogOf(env, workspaceId);
@@ -85,7 +89,7 @@ export async function resolveFunding(context: Context): Promise<{ funding: Fundi
     const [models, credentials, remaining] = await Promise.all([upstream.getModelConnections(), upstream.getAiCredentials(), repo.communityPoolRemaining(principal.userId)]);
     const [model] = poolModelChoices(pool, models, credentials);
     if (model && (remaining ?? 0) > 0) return { funding: { source: 'pool', workspaceId, model, authority: await authorityFor(access, pool.authority, repository.id), remaining }, reason: 'Uses this project’s community AI pool.' };
-    poolReason = model ? 'You have used this project’s funded fix requests for today. ' : '';
+    poolReason = model ? 'You have used this project’s requests for today. ' : '';
   }
   if (principal.kind === 'community' && (await access.standing(principal.userId)).limited) return { funding: null, reason: `${poolReason}New accounts can request fixes only where the project funds a community AI pool.` };
   let personal: string;
@@ -93,13 +97,29 @@ export async function resolveFunding(context: Context): Promise<{ funding: Fundi
   const own = catalogOf(env, personal);
   const [models, stored, credentials] = await Promise.all([own.getModelConnections(), own.getDefaultModel(), own.getAiCredentials()]);
   const [model] = requesterModelChoices(models, stored, credentials);
-  if (!model) return { funding: null, reason: `${poolReason}Add an AI key to your personal workspace in Settings > AI models to request fixes.` };
+  if (!model) return { funding: null, reason: poolReason ? `${poolReason}Connect your own AI model to send more.` : 'This project doesn’t pay for requests. Connect your own AI model to send one.', ownKeyMissing: true };
   const standing = await repo.contributorStanding(principal.userId);
   return { funding: { source: 'requester', workspaceId: personal, model, authority: await authorityFor(access, standing?.vouchedBy, repository.id), remaining: null }, reason: `Uses your own AI key (${model.label}).` };
 }
 
-function quoteOf(funding: Funding | null, reason: string): FixQuote {
-  return { signedIn: true, available: !!funding, source: funding?.source ?? null, model: funding ? { id: funding.model.id, label: funding.model.label } : null, reason, waitsForMaintainer: !!funding && !funding.authority, remainingToday: funding?.remaining ?? null };
+function quoteOf({ funding, reason }: Resolved, setup: AiSetup | null): FixQuote {
+  return { signedIn: true, available: !!funding, source: funding?.source ?? null, model: funding ? { id: funding.model.id, label: funding.model.label } : null, reason, waitsForMaintainer: !!funding && !funding.authority, remainingToday: funding?.remaining ?? null, setup };
+}
+
+function unavailable(signedIn: boolean, reason: string): FixQuote {
+  return { signedIn, available: false, source: null, model: null, reason, waitsForMaintainer: false, remainingToday: null, setup: null };
+}
+
+async function setupFor(request: Request, context: Context, handle: string, name: string): Promise<AiSetup> {
+  const { env, access, principal } = context;
+  const origin = hostOrigins(env.SITE_ORIGIN, env.APP_ORIGIN)?.app ?? new URL(request.url).origin;
+  const handleRequired = !(await requesterPerson(access, principal.userId)).handle;
+  return { url: `${origin}${aiSetupPath(requestChangePath(handle, name), handleRequired)}`, handleRequired };
+}
+
+async function fixQuote(request: Request, context: Context, handle: string, name: string): Promise<FixQuote> {
+  const resolved = await resolveFunding(context);
+  return quoteOf(resolved, resolved.ownKeyMissing ? await setupFor(request, context, handle, name) : null);
 }
 
 function goalFor(issue: { number: number; title: string; body: string }): string {
@@ -203,9 +223,9 @@ export async function publicFixRequestsApi(request: Request, env: AppEnv, signed
     .slice(0, LIST_MAX).map(agentMissionEntry);
   let quote: FixQuote | null = null;
   if (url.searchParams.get('quote') === '1') {
-    if (principal.kind === 'public') quote = { signedIn: false, available: false, source: null, model: null, reason: 'Sign in to request a fix.', waitsForMaintainer: false, remainingToday: null };
-    else if (env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true') quote = { signedIn: true, available: false, source: null, model: null, reason: 'Requesting fixes is part of hosted Gitflare.', waitsForMaintainer: false, remainingToday: null };
-    else { const { funding, reason } = await resolveFunding(context); quote = quoteOf(funding, reason); }
+    if (principal.kind === 'public') quote = unavailable(false, 'Sign in to request a change.');
+    else if (env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true') quote = unavailable(true, 'Requesting changes is part of hosted Gitflare.');
+    else quote = await fixQuote(request, context, handle, name);
   }
   return Response.json({ missions, quote } satisfies FixRequests);
 }
