@@ -262,11 +262,13 @@ const application = {
       const site = sitePageHead(request, env);
       const target = serverRenderedTarget(request, env);
       const rendering = target ? serverPage(request, env, ctx, target, (internal, internalEnv) => api(internal, internalEnv, ctx)) : null;
-      const copy = rendering?.then(page => page?.status === 200 ? page : null) ?? null;
+      const copy = rendering?.page.then(page => page?.status === 200 ? page : null) ?? null;
       const head = request.method === 'GET' && socialPageTarget(path) ? socialMetaTags(request, env, copy) : searchRole(env, new URL(request.url).origin) === 'app' ? appHeadTags() : site.tags;
-      const [assets, page] = await Promise.all([env.ASSETS.fetch(request), rendering]);
-      if (page?.status === 308 && page.location) return new Response(null, { status: 308, headers: { Location: page.location, 'Cache-Control': 'no-store' } });
-      return withHostOrigins(await withPublicPreloads(request, env, assets), env, path, head, `${searchHeadTags(request, env)}${site.structured}${page?.status === 200 ? page.head : ''}`, page);
+      const [assets, known] = await Promise.all([env.ASSETS.fetch(request), rendering?.status ?? null]);
+      if (known?.status === 308 && known.location) return new Response(null, { status: 308, headers: { Location: known.location, 'Cache-Control': 'no-store' } });
+      const streaming = known?.status === 200 && !!rendering;
+      const page = streaming ? rendering.page : known && rendering ? await rendering.page : null;
+      return withHostOrigins(await withPublicPreloads(request, env, assets, streaming), env, path, head, `${searchHeadTags(request, env)}${site.structured}`, page);
     }
     let response: Response;
     try {

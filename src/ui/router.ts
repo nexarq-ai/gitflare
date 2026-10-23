@@ -1,6 +1,6 @@
 import { HANDLE_PATTERN, OPERATOR_HANDLES, PUBLIC_ISSUE_PATH, RESERVED_HANDLES, type PublicRepositoryView } from "../shared/handles";
+import { pageLocation, ROUTE_EVENT } from "./page-context";
 
-const ROUTE_EVENT = "gitflare:route";
 // Bearer tokens travel in the fragment so they never reach server logs or Referer headers
 const TOKEN_ROUTES: Record<string, (fragment: string) => string> = {
   invite: (fragment) => `invite?${fragment}`,
@@ -43,7 +43,8 @@ export function routeUrl(route: string): string {
 }
 
 export function currentRoute(): string {
-  return routeFromLocation(window.location.pathname, window.location.hash);
+  const { pathname, hash } = pageLocation();
+  return routeFromLocation(pathname, hash);
 }
 
 export function navigate(route: string, replace = false): void {

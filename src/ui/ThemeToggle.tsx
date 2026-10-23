@@ -79,7 +79,7 @@ export function ThemeToggle({ className = "", compact = true }: { className?: st
   const dark = theme === "dark";
   const label = `Switch to ${dark ? "light" : "dark"} theme`;
   return <button type="button" className={`theme-toggle ${compact ? "theme-toggle-compact" : ""} ${className}`} aria-label={label} title={label} aria-pressed={dark} onClick={() => setTheme(dark ? "light" : "dark")}>
-    {dark ? <SunIcon size={17} aria-hidden="true" /> : <MoonIcon size={17} aria-hidden="true" />}
+    <SunIcon className="theme-toggle-sun" size={17} aria-hidden="true" /><MoonIcon className="theme-toggle-moon" size={17} aria-hidden="true" />
     {!compact && <span>{dark ? "Light" : "Dark"} theme</span>}
   </button>;
 }
