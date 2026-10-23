@@ -25,8 +25,8 @@
     },
     {
       "path": ".oxlintrc.json",
-      "size": 607,
-      "sha256": "34fb88ddcf5ac38d1c3b82d77871f9409b3189d32afcd942f28b77238ad50999"
+      "size": 618,
+      "sha256": "3eee1c16b6c1fdef0935e28312332b2f0ca068899a9de69f1e8928570148852f"
     },
     {
       "path": "CONTRIBUTING.md",
@@ -110,13 +110,13 @@
     },
     {
       "path": "package-lock.json",
-      "size": 290225,
-      "sha256": "190a7a0a4db2c6049c0e9f67b9c6f41ec653a6e367458860db9dbda557b93e77"
+      "size": 353079,
+      "sha256": "11816e4bbf369e46e1dd97b8e9d9b9862e539a87d0d66e43fe7590bf51282045"
     },
     {
       "path": "package.json",
-      "size": 2432,
-      "sha256": "e1c4795fe377c6a8480a2e104b27f31c5da46efdd44a9190198b501c5aee1212"
+      "size": 2485,
+      "sha256": "b8846ff4e753c57983b667617c4e175311a83a4fbfc053a110ee111af4d646ec"
     },
     {
       "path": "public/boot-loader.css",
@@ -270,8 +270,8 @@
     },
     {
       "path": "src/shared/hosts.ts",
-      "size": 522,
-      "sha256": "8480d371652e3a0f49da92f9040b9d39a446bc646216d19f307f4f9c87279c73"
+      "size": 762,
+      "sha256": "e66ca9121df9f78f7bf48276cc949807ae1309b9ab911ee3e89914dbb854112b"
     },
     {
       "path": "src/shared/markdown-images.ts",
@@ -514,6 +514,11 @@
       "sha256": "20f51f9c695ec8e13fc7320045ea5235ecc43f8843ccb4e6e9b5994341fb199d"
     },
     {
+      "path": "src/ui/base.css",
+      "size": 1311,
+      "sha256": "c1f3a60e9648bcf6437c419565dce8c157c69b05cf120992e2c9979b8a8de1ee"
+    },
+    {
       "path": "src/ui/boot-handoff.ts",
       "size": 1715,
       "sha256": "aa1ef3aa050d665d9ec1c866f5c575279c3d09b0f05add282175957b0305f153"
@@ -715,8 +720,8 @@
     },
     {
       "path": "src/ui/Documentation.tsx",
-      "size": 20456,
-      "sha256": "b27f597638e87df3b12c36b5858302d92ecba13a7fc2d63a307b375a724fa7e0"
+      "size": 21029,
+      "sha256": "766bace1f5f9dfc24bb09cbbb482d1c315243f6a91df660118cf33f8895cbfaa"
     },
     {
       "path": "src/ui/DocumentationIllustration.tsx",
@@ -790,8 +795,8 @@
     },
     {
       "path": "src/ui/hosts.ts",
-      "size": 4144,
-      "sha256": "704c55b6a029da97abe4690272acd48b8f73ef3cdc159a61fa4f8bb264fc3d83"
+      "size": 4408,
+      "sha256": "70362a2d61dc20f8da3e81a626ef529c5dfaa0130baf371499b58465819a1de0"
     },
     {
       "path": "src/ui/inbox-count.ts",
@@ -1175,8 +1180,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 70692,
-      "sha256": "09572c0ada6fc9617cf337dbe1889a732a1aafeac9f3aa964be6f80c5447bd17"
+      "size": 69402,
+      "sha256": "1dfc105fad865c661b828bc681bc6aa98a67264f153be9ee99f58570bc965d6e"
     },
     {
       "path": "src/ui/SubscribeButton.tsx",
@@ -1604,6 +1609,11 @@
       "sha256": "9ffc200627224a3bab6cec3ac9d1073fce688b29e88bbd202e24c5a6e15748d4"
     },
     {
+      "path": "src/worker/hosted-site.ts",
+      "size": 150,
+      "sha256": "f8acabeb2b6f0201464f9f0e8c030986de673fcc7b8d39bb4eb8623f670f3c1a"
+    },
+    {
       "path": "src/worker/hosted-source.ts",
       "size": 141,
       "sha256": "839302cb38d957cc5420eac5eb983229ca061ce29ad5061121b5f8b2e463f93e"
@@ -1625,8 +1635,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 23755,
-      "sha256": "27abc62868525818434f8c4112ac25778c8ac497b3b7bb07fd15da9d5ce8b77d"
+      "size": 23895,
+      "sha256": "948bd1bcc23fb3d900538f57f1c3615fdbbda9d4214b2c41db8e89100703a9d2"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -2575,13 +2585,13 @@
     },
     {
       "path": "tsconfig.json",
-      "size": 495,
-      "sha256": "f48932199079678c61bd569d54d2b669888e471c68d18bf7ac5f69d4e4022dd2"
+      "size": 531,
+      "sha256": "ff36088c9ec3d347f9a81ec559994c03594f84f2c270e445179bb9fc8872ba41"
     },
     {
       "path": "vite.config.ts",
-      "size": 4670,
-      "sha256": "51a3307f3abc92ef7dce7d4f8c357eb2c735464b3bbb94426b3ffd1dedd6eca2"
+      "size": 5264,
+      "sha256": "33d5fd2ce5497ed579e38f79214288015d4482e31728d094b0ff0436126c156b"
     },
     {
       "path": "vitest.config.ts",

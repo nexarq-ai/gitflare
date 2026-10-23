@@ -9,3 +9,7 @@ export function hostOrigins(siteOrigin: string | undefined, appOrigin: string | 
   const site = origin(siteOrigin); const app = origin(appOrigin);
   return site && app && site !== app ? { site, app } : null;
 }
+
+export const PRERENDER_SITE_ORIGIN = 'https://site.prerender.gitflare.invalid';
+export const PRERENDER_APP_ORIGIN = 'https://app.prerender.gitflare.invalid';
+export const PRERENDER_APP_LINK = 'https://app-link.prerender.gitflare.invalid';

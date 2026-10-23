@@ -13,6 +13,7 @@ import { publicPageResponse, sitemapResponse, sitePageHead } from './public-page
 import { appHeadTags, robotsResponse, searchHeadTags, searchRole, withSearchIndexing } from './search-indexing';
 import { hostRedirect, withHostOrigins } from './host-split';
 import { withPublicPreloads } from './public-preload';
+import { hostedSitePage } from './hosted-site';
 import { legacySourceRedirect } from './hosted-source';
 import { requestSessionMeta } from './session-meta';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare } from './cloudflare';
@@ -243,6 +244,8 @@ const application = {
     const publicPage = publicPageResponse(request, env);
     if (publicPage && path === '/llms.txt' && request.method === 'GET' && publicPage.ok) return new Response(`${await publicPage.text()}${await publicRepositoryIndex(env, siteOrigin(env, new URL(request.url).origin), clientIp(request))}`, { headers: publicPage.headers });
     if (publicPage) return publicPage;
+    const sitePage = await hostedSitePage(request, env);
+    if (sitePage) return sitePage;
     if (path === '/llms.txt') return new Response('# Gitflare\n\n' + listPublicDocs().map(doc => `- [${doc.title}](${new URL(request.url).origin}/api/public/docs/${doc.id}.md): ${doc.description}`).join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     const feed = await feedResponse(request, env);
     if (feed) return feed;
