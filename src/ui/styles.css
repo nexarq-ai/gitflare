@@ -2823,12 +2823,6 @@
 .touched-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .touched-files code { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--gf-color-surface); color: var(--gf-color-text); }
 .touched-files code.shared { background: var(--gf-color-accent-bg); color: var(--gf-color-accent); }
-.race-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.race-card { border: 1px solid var(--gf-color-border); border-radius: 8px; padding: 14px; background: var(--gf-color-surface-raised); display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--gf-color-text-secondary); }
-.race-card.selected { border-color: var(--gf-color-accent); box-shadow: 0 0 0 1px var(--gf-color-accent); }
-.race-card h3 { margin: 0; font-size: 14px; color: var(--gf-color-text); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-.race-card p { margin: 0; }
-.race-card .race-stats { display: flex; gap: 12px; flex-wrap: wrap; }
 @media (max-width: 640px) { .mission-mode { grid-template-columns: 1fr; } }
 
 .route-loading { min-height: 100vh; background: var(--gf-color-surface-raised); }

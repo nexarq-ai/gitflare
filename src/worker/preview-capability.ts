@@ -1,6 +1,7 @@
 import { ApiError } from './domain';
 import type { PreviewCapability } from './coordinator';
 import type { AppEnv } from './env';
+import { PREVIEW_LIVE_STATUSES, previewCandidateSha } from './preview-subject';
 
 export const PREVIEW_CAPABILITY_MS = 900_000;
 export const PREVIEW_ISOLATION_HEADER = 'X-Gitflare-Preview-Isolation';
@@ -8,7 +9,6 @@ export const LEGACY_PREVIEW_STORE = 'catalog:owner';
 const SECRET = /^[a-f0-9]{64}$/;
 const WORKSPACE = /^[a-z0-9-]{1,64}$/;
 const HOST = /^(?=.{1,200}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
-const LIVE_STATUSES = ['needs_review', 'approved', 'integrating', 'integrated'];
 
 export interface PreviewToken { token: string; workspaceId: string | null }
 export interface PreviewTarget { origin: string; host: string; isolated: boolean }
@@ -76,7 +76,7 @@ export async function relayPreview(env: RelayEnv, request: Request, authorize: (
   if (!principal) return new Response('This preview requires renewal.', { status: 410 });
   try { await authorize({ ...capability, principal }); } catch { return new Response('Preview authority has been revoked.', { status: 410 }); }
   const mission = await env.GITFLARE_COORDINATOR.getByName(`repository:${capability.repositoryId}`).getMission(capability.missionId);
-  if (!mission || mission.epoch !== capability.epoch || mission.candidateSha !== capability.candidateSha || !LIVE_STATUSES.includes(mission.status)) return new Response('This candidate preview is no longer current.', { status: 410 });
+  if (!mission || mission.epoch !== capability.epoch || previewCandidateSha(mission, capability.runId) !== capability.candidateSha || !PREVIEW_LIVE_STATUSES.includes(mission.status)) return new Response('This candidate preview is no longer current.', { status: 410 });
   const isolation = capability.isolated ? 'origin' : 'sandbox';
   if (request.headers.get('X-Gitflare-Preview-Validate') === '1') return new Response(null, { status: 204, headers: { [PREVIEW_ISOLATION_HEADER]: isolation } });
   const headers = new Headers(request.headers);

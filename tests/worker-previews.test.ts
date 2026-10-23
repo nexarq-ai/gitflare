@@ -147,6 +147,11 @@ describe('Worker Previews configuration', () => {
     expect(validPreviewAlias('9starts-with-digit', 'w')).toBe(false);
     expect(validPreviewAlias('pr-x', 'w'.repeat(60))).toBe(false);
     expect(`${previewAlias('a'.repeat(36), 'w'.repeat(48))}-${'w'.repeat(48)}`.length).toBeLessThanOrEqual(63);
+    const first = previewAlias('3F2504E0-4F89-11D3-9A0C-0305E82C3301.a6ea3400-0000-4000-8000-000000000001', 'gitflare-previews');
+    const second = previewAlias('3F2504E0-4F89-11D3-9A0C-0305E82C3301.92b5a250-0000-4000-8000-000000000002', 'gitflare-previews');
+    expect([first, second]).toEqual(['pr-3f2504a6ea34', 'pr-3f250492b5a2']);
+    expect(new Set([alias, first, second]).size).toBe(3);
+    expect(validPreviewAlias(first, 'gitflare-previews')).toBe(true);
   });
 });
 
@@ -480,7 +485,7 @@ describe('Worker preview lifecycle', () => {
       coordinator.workerPreviewReady(mission.id, mission.epoch, candidateSha, again.claimId, { previewName: alias, previewUrl: 'https://x', deploymentUrl: null, notes: [] });
       expect(coordinator.claimPreview('preview-key-000003', mission.id, mission.epoch, candidateSha)).toMatchObject({ claimed: false, worker: { previewName: alias } });
       expect(coordinator.retireWorkerPreview(mission.id, 'some-other-claim')).toBeNull();
-      expect(await retireMissionPreview(env, repository.id, mission.id, 'legacy')).toBe('worker');
+      expect(await retireMissionPreview(env, repository.id, mission.id, 'legacy')).toEqual(['worker']);
       expect(created).toEqual([{ id: `preview-retire-${again.claimId}`, params: { kind: 'preview-retire', repositoryId: repository.id, missionId: mission.id, previewName: alias, workspaceId: 'legacy' } }]);
       expect(coordinator.previewStatus(mission.id).status).toBe('none');
       catalog.holdPreviewSlot(mission.id, Date.now() + WORKER_PREVIEW_TTL_MS);
