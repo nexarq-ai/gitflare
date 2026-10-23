@@ -12,7 +12,7 @@ export interface OutgoingProposal { missionId: string; upstreamWorkspaceId: stri
 export interface MissionSummaryCache { repositoryId: string; summaries: MissionSummary[]; cachedAt: string }
 export interface IntegrationClaim { claimId?: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimedAt?: number; phase?: 'preparing' | 'pushing'; landedSha?: string }
 export const INTEGRATION_PREPARATION_MS = 600_000;
-export interface PreviewCapability { workspaceId?: string; principal?: Principal; repositoryId: string; missionId: string; epoch: number; candidateSha: string; sandboxName: string; expiresAt: number; host?: string; isolated?: boolean }
+export interface PreviewCapability { workspaceId?: string; principal?: Principal; repositoryId: string; missionId: string; runId?: string; epoch: number; candidateSha: string; sandboxName: string; expiresAt: number; host?: string; isolated?: boolean }
 export type PreviewHost =
   | { kind: 'connection'; source: 'repository' | 'workspace'; accountId: string; workerName: string; access: 'link' | 'cloudflare-access' }
   | { kind: 'installation'; accountId: string; workerName: string; access: 'link' };

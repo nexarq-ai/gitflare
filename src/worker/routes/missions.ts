@@ -6,7 +6,9 @@ import { agentRunIds, ApiError, commitMessageInput, missionInput, publicError, r
 import { retryPlan } from '../check-settings';
 import { normalizeRetryOverrides } from '../agent-settings';
 import { executionReadiness } from '../execution';
-import { backgroundState, dispatchBackground, landingWorkflowId, previewWorkflowId, retireMissionPreview } from '../background-work';
+import { backgroundState, dispatchBackground, landingWorkflowId, previewWorkflowId, retireMissionPreview, retirePreviewKey } from '../background-work';
+import { eligibleRaceRuns, PREVIEW_LIVE_STATUSES, previewCandidateSha, previewKey, requireRaceCandidate } from '../preview-subject';
+import { WORKSPACE_PREVIEW_LIMIT } from '../capacity';
 import { backgroundPrincipal } from '../deployments';
 import { PREVIEW_STEP_MS } from '../budgets';
 import { integrationPendingMessage } from '../coordinator';
@@ -44,9 +46,26 @@ export async function missionReads(context: RouteContext, match: RegExpExecArray
   if (request.method === 'GET' && match?.[2] === 'preview') {
     const { repository, mission } = await findMission(env, match[1], principal.workspaceId);
     await access.authorize(principal, 'read', 'repository', repository.id, mission.id);
-    return Response.json(await records(env, repository.id).previewStatus(mission.id));
+    const runId = previewRunId(mission, context.url.searchParams.get('runId'));
+    return Response.json(await candidateStatus(records(env, repository.id), mission, runId, context.catalog));
   }
   return null;
+}
+
+function previewRunId(mission: Mission, value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const runId = requireString(value, 'Agent run', 100);
+  if (!mission.runs.some((run) => run.id === runId)) throw new ApiError(404, 'RUN_NOT_FOUND', 'This mission has no agent run with that ID.');
+  if (mission.mode !== 'race') throw new ApiError(409, 'NOT_A_RACE', 'Only a race mission has candidates to preview separately.');
+  return runId;
+}
+
+async function candidateStatus(coordinator: ReturnType<typeof records>, mission: Mission, runId?: string, catalog?: { previewSlotHolders(): Promise<string[]> | string[] }): Promise<Record<string, unknown>> {
+  const status = await coordinator.previewStatus(previewKey(mission.id, runId));
+  if (runId) return { ...status, runId };
+  if (mission.mode !== 'race') return { ...status };
+  const candidates = await Promise.all(eligibleRaceRuns(mission).map(async (run) => ({ runId: run.id, name: run.name, ...await coordinator.previewStatus(previewKey(mission.id, run.id)) })));
+  return { ...status, candidates, ...(catalog ? { slots: { limit: WORKSPACE_PREVIEW_LIMIT, missions: await catalog.previewSlotHolders() } } : {}) };
 }
 
 export async function missionWrites(context: RouteContext, match: RegExpExecArray | null, key: string, body: Record<string, unknown>): Promise<Response | null> {
@@ -164,45 +183,72 @@ export async function missionWrites(context: RouteContext, match: RegExpExecArra
       await coordinator.settleApprovalClears(mission.id, principal);
       return Response.json(selected);
     }
-    if (operation === 'preview-stop') {
+    const previewRun = operation === 'preview' || operation === 'preview-extend' || operation === 'preview-stop' ? previewRunId(mission, body.runId) : undefined;
+    const subject = previewKey(mission.id, previewRun);
+    if (operation === 'preview-stop' && body.allCandidates === true) {
+      if (previewRun) throw new ApiError(400, 'INVALID_INPUT', 'Pass either runId or allCandidates, not both.');
       const stopped = await retireMissionPreview(env, repository.id, mission.id, principal.workspaceId);
-      if (stopped === 'none') throw new ApiError(409, 'PREVIEW_NOT_RUNNING', 'This mission has no running preview to stop.');
+      if (stopped.every((kind) => kind === 'none')) throw new ApiError(409, 'PREVIEW_NOT_RUNNING', 'This mission has no running preview to stop.');
       await access.auditRepositoryChange(principal, 'mission.preview.stopped', mission.id);
-      return Response.json(await coordinator.previewStatus(mission.id));
+      return Response.json(await candidateStatus(coordinator, mission, undefined, catalog));
+    }
+    if (operation === 'preview-stop') {
+      const stopped = await retirePreviewKey(env, repository.id, subject, principal.workspaceId);
+      if (stopped === 'none') throw new ApiError(409, 'PREVIEW_NOT_RUNNING', previewRun ? 'This candidate has no running preview to stop.' : 'This mission has no running preview to stop.');
+      await access.auditRepositoryChange(principal, 'mission.preview.stopped', mission.id);
+      return Response.json(await candidateStatus(coordinator, mission, previewRun));
     }
     if (operation === 'preview-extend') {
-      const extension = await coordinator.extendPreview(mission.id);
+      const extension = await coordinator.extendPreview(subject);
       if (extension.sandboxName) await env.SANDBOX?.getByName(extension.sandboxName).expireAt(extension.expiresAt);
-      await catalog.holdPreviewSlot(mission.id, extension.expiresAt);
+      await catalog.holdPreviewSlot(subject, extension.expiresAt);
       await access.auditRepositoryChange(principal, 'mission.preview.extended', mission.id);
-      return Response.json(await coordinator.previewStatus(mission.id));
+      return Response.json(await candidateStatus(coordinator, mission, previewRun));
     }
-    if (operation === 'preview') {
+    const startPreview = async (previewRun: string | undefined, requestKey: string): Promise<{ status: number; body: Record<string, unknown> }> => {
       if (!env.PREVIEW_ORIGIN || !env.SANDBOX || !env.ARTIFACTS) throw new ApiError(503, 'PREVIEW_NOT_CONFIGURED', 'Configure the isolated preview service before creating a preview.');
       const target = previewTarget(env.PREVIEW_ORIGIN, url.origin);
-      if (!mission.candidateSha || !candidateVerified(mission.checks, mission.candidateSha)) throw new ApiError(409, 'CHECKS_REQUIRED', 'The current integration candidate must pass verification before preview.');
+      const slot = previewKey(mission.id, previewRun);
+      const runField = previewRun ? { runId: previewRun } : {};
+      const candidateSha = previewRun ? requireRaceCandidate(mission, previewRun).commitSha! : mission.candidateSha;
+      if (!candidateSha || (!previewRun && !candidateVerified(mission.checks, mission.candidateSha))) throw new ApiError(409, 'CHECKS_REQUIRED', 'The current integration candidate must pass verification before preview.');
       if (!env.MISSION_WORKFLOW) throw new ApiError(503, 'PREVIEW_NOT_CONFIGURED', 'Configure the Mission Workflow before creating a preview.');
-      const reserved = await catalog.reservePreviewSlot(mission.id, Date.now() + PREVIEW_STEP_MS);
+      const reserved = await catalog.reservePreviewSlot(slot, Date.now() + PREVIEW_STEP_MS);
       let claim: Awaited<ReturnType<typeof coordinator.claimPreview>>;
-      try { claim = await coordinator.claimPreview(key, mission.id, mission.epoch, mission.candidateSha); }
-      catch (error) { if (reserved) await catalog.releasePreviewSlot(mission.id); throw error; }
+      try { claim = await coordinator.claimPreview(requestKey, slot, mission.epoch, candidateSha); }
+      catch (error) { if (reserved) await catalog.releasePreviewSlot(slot); throw error; }
       if (claim.previous) await env.SANDBOX.getByName(claim.previous).destroy().catch(() => {});
-      if (claim.worker) return Response.json({ status: 'ready', kind: 'worker', candidateSha: mission.candidateSha, expiresAt: new Date(claim.expiresAt ?? Date.now()).toISOString(), previewUrl: claim.worker.previewUrl ?? claim.worker.deploymentUrl, deploymentUrl: claim.worker.deploymentUrl, previewName: claim.worker.previewName, notes: claim.worker.notes, ...(claim.worker.d1Databases?.length ? { d1Databases: claim.worker.d1Databases } : {}), ...(claim.worker.host ? { host: claim.worker.host } : {}), access: claim.worker.host?.access ?? 'link' });
+      if (claim.worker) return { status: 200, body: { status: 'ready', kind: 'worker', ...runField, candidateSha, expiresAt: new Date(claim.expiresAt ?? Date.now()).toISOString(), previewUrl: claim.worker.previewUrl ?? claim.worker.deploymentUrl, deploymentUrl: claim.worker.deploymentUrl, previewName: claim.worker.previewName, notes: claim.worker.notes, ...(claim.worker.d1Databases?.length ? { d1Databases: claim.worker.d1Databases } : {}), ...(claim.worker.host ? { host: claim.worker.host } : {}), access: claim.worker.host?.access ?? 'link' } };
       const sandboxName = claim.sandboxName;
       if (!sandboxName) {
-        if (claim.claimed && await dispatchBackground(env.MISSION_WORKFLOW, previewWorkflowId(claim.claimId), { kind: 'preview', repositoryId: repository.id, missionId: mission.id, epoch: mission.epoch, candidateSha: mission.candidateSha, claimId: claim.claimId, principal }) === 'missing') {
-          if (await coordinator.previewFailed(mission.id, claim.claimId)) await catalog.releasePreviewSlot(mission.id);
+        if (claim.claimed && await dispatchBackground(env.MISSION_WORKFLOW, previewWorkflowId(claim.claimId), { kind: 'preview', repositoryId: repository.id, missionId: mission.id, ...runField, epoch: mission.epoch, candidateSha, claimId: claim.claimId, principal }) === 'missing') {
+          if (await coordinator.previewFailed(slot, claim.claimId)) await catalog.releasePreviewSlot(slot);
           throw new ApiError(503, 'PREVIEW_NOT_STARTED', 'The preview could not be scheduled. Try again.');
         }
-        return Response.json(await coordinator.previewStatus(mission.id), { status: 202 });
+        return { status: 202, body: await candidateStatus(coordinator, mission, previewRun) };
       }
       const current = await coordinator.getMission(mission.id);
-      if (!current || current.epoch !== mission.epoch || current.candidateSha !== mission.candidateSha || !['needs_review', 'approved', 'integrating', 'integrated'].includes(current.status)) throw new ApiError(409, 'STALE_PREVIEW', 'The candidate changed while the preview was starting.');
+      if (!current || current.epoch !== mission.epoch || previewCandidateSha(current, previewRun) !== candidateSha || !PREVIEW_LIVE_STATUSES.includes(current.status)) throw new ApiError(409, 'STALE_PREVIEW', 'The candidate changed while the preview was starting.');
       const token = mintPreviewToken(principal.workspaceId);
       const expiresAt = Math.min(Date.now() + PREVIEW_CAPABILITY_MS, claim.expiresAt ?? Infinity);
       await access.check(principal, 'read', 'repository', repository.id, mission.id);
-      await env.GITFLARE_COORDINATOR.getByName(previewCapabilityStore(principal.workspaceId)).savePreviewCapability(await capabilityHash(token), { workspaceId: principal.workspaceId, principal, repositoryId: repository.id, missionId: mission.id, epoch: mission.epoch, candidateSha: mission.candidateSha, sandboxName, expiresAt, host: target.host, isolated: target.isolated });
-      return Response.json({ status: 'ready', kind: 'container', access: 'members', previewUrl: `${target.origin}/open/${token}`, candidateSha: mission.candidateSha, expiresAt: new Date(claim.expiresAt ?? expiresAt).toISOString(), linkExpiresAt: new Date(expiresAt).toISOString(), ...(claim.notes?.length ? { notes: claim.notes } : {}), ...(claim.setup ? { setup: claim.setup } : {}) });
+      await env.GITFLARE_COORDINATOR.getByName(previewCapabilityStore(principal.workspaceId)).savePreviewCapability(await capabilityHash(token), { workspaceId: principal.workspaceId, principal, repositoryId: repository.id, missionId: mission.id, ...runField, epoch: mission.epoch, candidateSha, sandboxName, expiresAt, host: target.host, isolated: target.isolated });
+      return { status: 200, body: { status: 'ready', kind: 'container', access: 'members', ...runField, previewUrl: `${target.origin}/open/${token}`, candidateSha, expiresAt: new Date(claim.expiresAt ?? expiresAt).toISOString(), linkExpiresAt: new Date(expiresAt).toISOString(), ...(claim.notes?.length ? { notes: claim.notes } : {}), ...(claim.setup ? { setup: claim.setup } : {}) } };
+    };
+    if (operation === 'preview' && body.allCandidates === true) {
+      if (previewRun) throw new ApiError(400, 'INVALID_INPUT', 'Pass either runId or allCandidates, not both.');
+      const runs = mission.mode === 'race' ? eligibleRaceRuns(mission) : [];
+      if (!runs.length) throw new ApiError(409, 'NO_CANDIDATES', 'Only a race mission with passing candidates can preview all candidates.');
+      const candidates: Record<string, unknown>[] = [];
+      for (const run of runs) {
+        try { candidates.push({ name: run.name, ...(await startPreview(run.id, `${key.slice(0, 120)}:${run.id}`)).body, runId: run.id }); }
+        catch (error) { const failure = publicError(error); candidates.push({ runId: run.id, name: run.name, status: 'failed', code: failure.code, error: failure.message }); }
+      }
+      return Response.json({ candidates }, { status: 202 });
+    }
+    if (operation === 'preview') {
+      const started = await startPreview(previewRun, key);
+      return Response.json(started.body, { status: started.status });
     }
     if (operation === 'revert') {
       await access.authorize(principal, 'contribute', 'repository', repository.id);

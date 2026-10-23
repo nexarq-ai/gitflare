@@ -65,10 +65,11 @@ describe('Worker project classification', () => {
 });
 
 describe('Worker build output', () => {
-  it('reads the resolved config past log noise and treats a config without main as not a Worker project', () => {
+  it('reads the resolved config past log noise and keeps an assets-only config without main', () => {
     const parsed = parseWorkerConfig(configOutput({ configPath: 'wrangler.jsonc', main: '/workspace/repo/src/index.ts', compatibilityDate: '2026-10-01', compatibilityFlags: ['nodejs_compat'], assets: false, migrations: [{ tag: 'v1', new_sqlite_classes: ['Room'] }], exports: {}, production: { vars: { A: '1' }, durableObjects: [{ name: 'ROOMS', class_name: 'Room' }], bindings: [{ name: 'KV', type: 'kv_namespace' }] }, previews: null }));
     expect(parsed).toMatchObject({ main: '/workspace/repo/src/index.ts', compatibilityDate: '2026-10-01', migrations: [{ tag: 'v1', new_sqlite_classes: ['Room'] }] });
-    expect(parseWorkerConfig(configOutput({ configPath: 'wrangler.jsonc', assets: true }))).toBeNull();
+    expect(parseWorkerConfig(configOutput({ configPath: 'wrangler.jsonc', compatibilityDate: '2026-10-01', assets: true, wrangler: 'gitflare', sources: { main: null, assets: { directory: 'dist', state: 'ok' } } }))).toMatchObject({ main: '', assets: true, wrangler: 'gitflare', sources: { main: null, assets: { directory: 'dist', state: 'ok' } } });
+    expect(parseWorkerConfig(configOutput({ configPath: 'wrangler.jsonc', compatibilityDate: '2026-10-01', sources: { main: { path: '../etc/passwd', found: true }, assets: null } })).sources).toEqual({ main: null, assets: null });
     expect(() => parseWorkerConfig(configOutput({ configPath: 'wrangler.jsonc', main: 'src/index.ts' }))).toThrow('compatibility_date');
     expect(() => parseWorkerConfig('no sentinel here')).toThrow('did not report');
   });
@@ -147,6 +148,11 @@ describe('Worker Previews configuration', () => {
     expect(validPreviewAlias('9starts-with-digit', 'w')).toBe(false);
     expect(validPreviewAlias('pr-x', 'w'.repeat(60))).toBe(false);
     expect(`${previewAlias('a'.repeat(36), 'w'.repeat(48))}-${'w'.repeat(48)}`.length).toBeLessThanOrEqual(63);
+    const first = previewAlias('3F2504E0-4F89-11D3-9A0C-0305E82C3301.a6ea3400-0000-4000-8000-000000000001', 'gitflare-previews');
+    const second = previewAlias('3F2504E0-4F89-11D3-9A0C-0305E82C3301.92b5a250-0000-4000-8000-000000000002', 'gitflare-previews');
+    expect([first, second]).toEqual(['pr-3f2504a6ea34', 'pr-3f250492b5a2']);
+    expect(new Set([alias, first, second]).size).toBe(3);
+    expect(validPreviewAlias(first, 'gitflare-previews')).toBe(true);
   });
 });
 
@@ -313,7 +319,7 @@ function viteAssetsSandbox(options: { buildExit?: number } = {}) {
     collect: vi.fn(async (script: string) => {
       recorded.push(script);
       if (script.includes('unstable_readConfig')) {
-        return script.endsWith(' redirect')
+        return script.includes(' redirect ')
           ? { exitCode: 0, stdout: configOutput({ configPath: 'dist/app/wrangler.json', userConfigPath: 'wrangler.jsonc', main: '/workspace/repo/dist/app/index.js', compatibilityDate: '2026-10-01', compatibilityFlags: [], assets: true, deploy: { assets: { directory: 'dist/client', binding: 'ASSETS', not_found_handling: 'single-page-application' } }, migrations: [], exports: {}, production: { vars: { GREETING: 'hi' }, durableObjects: [], bindings: [{ name: 'CACHE', type: 'kv_namespace' }] }, previews: null }), stderr: '' }
           : { exitCode: 0, stdout: configOutput({ configPath: 'wrangler.jsonc', main: '/workspace/repo/src/index.ts', compatibilityDate: '2026-10-01', compatibilityFlags: [], assets: false, migrations: [], exports: {}, production: { vars: {}, durableObjects: [], bindings: [] }, previews: null }), stderr: '' };
       }
@@ -400,7 +406,7 @@ describe('Worker previews with static assets', () => {
     expect(status).toMatchObject({ status: 'ready', kind: 'worker', worker: { notes: ['Binding CACHE (kv_namespace) is not available in hosted previews.'] } });
     expect(sandbox.runner.startPreview).not.toHaveBeenCalled();
     expect(sandbox.recorded.some((entry) => entry.includes('( npm run build )'))).toBe(true);
-    expect(sandbox.recorded.some((entry) => entry.includes('unstable_readConfig') && entry.endsWith(' redirect'))).toBe(true);
+    expect(sandbox.recorded.some((entry) => entry.includes('unstable_readConfig') && entry.includes(' redirect '))).toBe(true);
     expect(sandbox.recorded.some((entry) => entry.includes("--config 'dist/app/wrangler.json'"))).toBe(true);
     const base = `/client/v4/accounts/${accountId}`;
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
@@ -480,7 +486,7 @@ describe('Worker preview lifecycle', () => {
       coordinator.workerPreviewReady(mission.id, mission.epoch, candidateSha, again.claimId, { previewName: alias, previewUrl: 'https://x', deploymentUrl: null, notes: [] });
       expect(coordinator.claimPreview('preview-key-000003', mission.id, mission.epoch, candidateSha)).toMatchObject({ claimed: false, worker: { previewName: alias } });
       expect(coordinator.retireWorkerPreview(mission.id, 'some-other-claim')).toBeNull();
-      expect(await retireMissionPreview(env, repository.id, mission.id, 'legacy')).toBe('worker');
+      expect(await retireMissionPreview(env, repository.id, mission.id, 'legacy')).toEqual(['worker']);
       expect(created).toEqual([{ id: `preview-retire-${again.claimId}`, params: { kind: 'preview-retire', repositoryId: repository.id, missionId: mission.id, previewName: alias, workspaceId: 'legacy' } }]);
       expect(coordinator.previewStatus(mission.id).status).toBe('none');
       catalog.holdPreviewSlot(mission.id, Date.now() + WORKER_PREVIEW_TTL_MS);

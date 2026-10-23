@@ -3,6 +3,7 @@ import type { AppEnv } from './env';
 import type { SqlStore } from './store';
 import { capacityError, catalogName, liveSlots, MISSION_SLOT_GRACE_MS, slotKey, WORKSPACE_MISSION_LIMIT, WORKSPACE_PREVIEW_LIMIT, type CapacitySlot } from './capacity';
 import { missionStepTimeoutMs } from './budgets';
+import { previewSubject } from './preview-subject';
 import type { CoordinatorHost } from './coordinator-types';
 
 export class CapacityBook {
@@ -71,14 +72,19 @@ export class CapacityBook {
     if (slot && (slot.epoch === undefined || slot.epoch <= epoch)) this.store.delete(slotKey('mission', missionId));
   }
 
-  reservePreviewSlot(missionId: string, expiresAt: number): boolean {
+  reservePreviewSlot(key: string, expiresAt: number): boolean {
     return this.ctx.storage.transactionSync(() => {
       const slots = liveSlots(this.store, 'preview');
-      if (slots.some((slot) => slot.id === missionId)) return false;
-      if (slots.length >= WORKSPACE_PREVIEW_LIMIT) throw capacityError('preview', slots.map((slot) => slot.id));
-      this.store.put(slotKey('preview', missionId), { id: missionId, expiresAt } satisfies CapacitySlot);
+      if (slots.some((slot) => slot.id === key)) return false;
+      const holders = new Set(slots.map((slot) => previewSubject(slot.id).missionId));
+      if (!holders.has(previewSubject(key).missionId) && holders.size >= WORKSPACE_PREVIEW_LIMIT) throw capacityError('preview', [...holders]);
+      this.store.put(slotKey('preview', key), { id: key, expiresAt } satisfies CapacitySlot);
       return true;
     });
+  }
+
+  previewSlotHolders(): string[] {
+    return [...new Set(liveSlots(this.store, 'preview').map((slot) => previewSubject(slot.id).missionId))];
   }
 
   holdPreviewSlot(missionId: string, expiresAt: number): void {

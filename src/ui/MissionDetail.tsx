@@ -50,6 +50,7 @@ import { ContextFiles, MarkdownContent } from "./MissionDocuments";
 import { useMissionReplay } from "./DemoReplay";
 import { resumePreview, type PreviewProgress, type PreviewStatusLike } from "../shared/preview-progress";
 import { isPreviewSetupCode, type PreviewSetupCode } from "../shared/preview-setup";
+import RaceCompare from "./RaceCompare";
 import { PreviewFailedCard, PreviewReadyCard, PreviewStartingCard, type PreviewAccess, type PreviewHost, type PreviewState } from "./PreviewPanel";
 import CommitMessageField, { type CommitDraft } from "./CommitMessageField";
 import SubscribeButton from "./SubscribeButton";
@@ -963,55 +964,17 @@ export default function MissionDetail({
         </div>
       )}
       {isRace && raceCandidates.length > 0 && (
-        <section aria-label="Race candidates">
-          {mission.status === "needs_review" && !mission.selectedRunId && (
-            <div className="alert info">
-              <InfoIcon size={17} />
-              <div className="alert-text">
-                The race is finished. Compare the candidates and select one; only the selected revision can be approved and landed.
-              </div>
-            </div>
-          )}
-          <div className="race-grid">
-            {raceCandidates.map((candidate) => (
-              <article
-                className={`race-card${candidate.run.id === mission.selectedRunId ? " selected" : ""}`}
-                key={candidate.run.id}
-              >
-                <h3>
-                  {candidate.run.name}
-                  <Status status={candidate.check?.status ?? candidate.run.status} />
-                </h3>
-                <p>{candidate.run.assignment ?? candidate.run.role}</p>
-                <div className="race-stats">
-                  <span>
-                    <code>{candidate.run.commitSha?.slice(0, 12) ?? "No revision"}</code>
-                  </span>
-                  <span>{candidate.files} files</span>
-                  <span>
-                    +{candidate.additions} −{candidate.deletions}
-                  </span>
-                  {candidate.check?.durationMs !== undefined && (
-                    <span>tests {Math.round(candidate.check.durationMs / 100) / 10}s</span>
-                  )}
-                </div>
-                {candidate.run.summary && <p>{candidate.run.summary.slice(0, 280)}</p>}
-                {candidate.run.error && <p style={{ color: "#b55c45" }}>{candidate.run.error}</p>}
-                {candidate.eligible && mission.status === "needs_review" && (
-                  <Button
-                    variant={candidate.run.id === mission.selectedRunId ? "secondary" : "primary"}
-                    size="sm"
-                    loading={busy === "select"}
-                    disabled={!!busy || !permissions.includes("review") || candidate.run.id === mission.selectedRunId}
-                    onClick={() => void select(candidate.run.id)}
-                  >
-                    {candidate.run.id === mission.selectedRunId ? "Selected for review" : "Select this candidate"}
-                  </Button>
-                )}
-              </article>
-            ))}
-          </div>
-        </section>
+        <RaceCompare
+          missionId={mission.id}
+          mission={mission}
+          candidates={raceCandidates}
+          canSelect={permissions.includes("review")}
+          canStop={permissions.includes("contribute")}
+          busy={busy}
+          autoStart={!demo && !replay.active}
+          missionTitle={(missionId) => workspace.missions.find((entry) => entry.id === missionId)?.title}
+          onSelect={(runId) => void select(runId)}
+        />
       )}
       <dl className="mission-meta">
         <div><dt>Base</dt><dd>{mission.baseSha ? <code title={mission.baseSha}>{mission.baseSha.slice(0, 7)}</code> : "Set at start"}</dd></div>

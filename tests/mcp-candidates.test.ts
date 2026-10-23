@@ -58,4 +58,29 @@ describe('MCP wording and candidate evidence', () => {
     const merged = await client.callTool({ name: 'gitflare_inspect_mission', arguments: { mission_id: mission.id, view: 'changes' } });
     expect(merged.structuredContent).toMatchObject({ items: [{ path: 'src/index.ts', readFile: { ref: candidate, path: 'src/index.ts' } }] });
   });
+
+  it('previews one race candidate or all of them and reads each candidate’s status', async () => {
+    const seen: { method: string; path: string; body: unknown }[] = [];
+    const client = await connect(async (request) => {
+      const url = new URL(request.url);
+      seen.push({ method: request.method, path: `${url.pathname}${url.search}`, body: request.method === 'POST' ? await request.json() : undefined });
+      if (request.method === 'GET') return Response.json({ status: 'none', candidateSha: null, candidates: [{ runId: 'run-a', status: 'ready' }, { runId: 'run-b', status: 'starting' }], slots: { limit: 2, missions: ['mission-1'] } });
+      return Response.json({ status: 'starting', runId: 'run-a' }, { status: 202 });
+    });
+    await client.callTool({ name: 'gitflare_preview_mission', arguments: { mission_id: mission.id, run_id: 'run-a', idempotency_key: 'candidate-preview-0001' } });
+    await client.callTool({ name: 'gitflare_preview_mission', arguments: { mission_id: mission.id, all_candidates: true, idempotency_key: 'candidate-preview-0002' } });
+    await client.callTool({ name: 'gitflare_preview_mission', arguments: { mission_id: mission.id, action: 'stop', all_candidates: true, idempotency_key: 'candidate-preview-0003' } });
+    const refused = await client.callTool({ name: 'gitflare_preview_mission', arguments: { mission_id: mission.id, run_id: 'run-a', all_candidates: true, idempotency_key: 'candidate-preview-0004' } });
+    expect(refused.isError).toBe(true);
+    await client.callTool({ name: 'gitflare_preview_status', arguments: { mission_id: mission.id, run_id: 'run-b' } });
+    const listed = await client.callTool({ name: 'gitflare_preview_status', arguments: { mission_id: mission.id } });
+    expect(listed.structuredContent).toMatchObject({ candidates: [{ runId: 'run-a', status: 'ready' }, { runId: 'run-b', status: 'starting' }], slots: { limit: 2 } });
+    expect(seen).toEqual([
+      { method: 'POST', path: '/api/missions/mission-1/preview', body: { runId: 'run-a' } },
+      { method: 'POST', path: '/api/missions/mission-1/preview', body: { allCandidates: true } },
+      { method: 'POST', path: '/api/missions/mission-1/preview-stop', body: { allCandidates: true } },
+      { method: 'GET', path: '/api/missions/mission-1/preview?runId=run-b', body: undefined },
+      { method: 'GET', path: '/api/missions/mission-1/preview', body: undefined },
+    ]);
+  });
 });

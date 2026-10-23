@@ -8,7 +8,7 @@ import { ENVIRONMENT_NAME, orderedEnvironments, PRODUCTION, type DeployEnvironme
 import { detectPackageManager, LOCKFILES, runnerFor, type PackageManager } from './package-manager';
 import { workersSubdomain } from './preview-access';
 import { requiredDeployScopes, SCOPE_D1_WRITE, SCOPE_QUEUES_WRITE, SCOPE_R2_WRITE, subdomainValues } from './worker-provisioning';
-import { WORKER_CONFIG_FILES } from './worker-bundle';
+import { GITFLARE_WRANGLER_VERSION, WORKER_CONFIG_FILES } from './worker-bundle';
 
 export const SCAN_ENTRY_LIMIT = 20_000;
 const SCAN_BATCH = 16;
@@ -45,9 +45,13 @@ export interface DetectedTarget {
   workersDev: boolean;
   requiredScopes: string[];
   wranglerEnv?: typeof PRODUCTION;
+  wrangler?: 'repository' | 'gitflare';
+  assetsOnly?: boolean;
   exists?: boolean | null;
   urls?: string[];
 }
+export type DeployProblemCode = 'NO_WORKER_CONFIG' | 'WORKER_ENTRY_NOT_FOUND' | 'ASSETS_DIRECTORY_MISSING' | 'BUILD_SCRIPT_MISSING';
+export interface DeployProblem { code: DeployProblemCode; configPath: string; environment: DeployEnvironment; message: string; fix: string }
 export interface SetupWarning { id: string; kind: SetupWarningKind; environment: DeployEnvironment; configPath: string; message: string }
 export interface DetectedEnvironment { targets: DetectedTarget[]; warnings: SetupWarning[] }
 export interface DetectedConfig { path: string; workerName?: string; environments: DeployEnvironment[]; error?: string }
@@ -64,6 +68,7 @@ export interface DetectedSetup {
   configs: DetectedConfig[];
   environments: Partial<Record<DeployEnvironment, DetectedEnvironment>>;
   errors: string[];
+  problems: DeployProblem[];
   notes: string[];
   truncated: boolean;
   account?: AccountFacts | { connected: false; reason: string };
@@ -215,8 +220,8 @@ function manifest(content: string | null): Json | null {
   try { const parsed = JSON.parse(content) as unknown; return isRecord(parsed) ? parsed : null; } catch { return null; }
 }
 
-function dependsOnPlugin(pkg: Json | null): boolean {
-  return [pkg?.dependencies, pkg?.devDependencies].some((deps) => isRecord(deps) && VITE_PLUGIN in deps);
+function dependsOn(pkg: Json | null, name: string): boolean {
+  return [pkg?.dependencies, pkg?.devDependencies].some((deps) => isRecord(deps) && name in deps);
 }
 
 export function buildCommandFor(manager: PackageManager, directory: string, name: string | undefined): string {
@@ -275,6 +280,7 @@ interface ParsedConfig {
   packageDir: string | null;
   packageJson: Json | null;
   buildReasons: string[];
+  wrangler: 'repository' | 'gitflare';
 }
 
 export async function detectDeploySetup(scan: RepositoryScan, read: (path: string) => Promise<string | null>): Promise<DetectedSetup> {
@@ -286,6 +292,7 @@ export async function detectDeploySetup(scan: RepositoryScan, read: (path: strin
   const plan = detectPackageManager({ files: rootFiles, packageJson: rootPackage, lockHead: files.has('pnpm-lock.yaml') ? (await read('pnpm-lock.yaml'))?.slice(0, 200) : null });
   const packageManager = plan ? runnerFor(plan) : null;
   const errors: string[] = [];
+  const problems: DeployProblem[] = [];
   const notes: string[] = [];
   const configs: DetectedConfig[] = [];
   const parsed: ParsedConfig[] = [];
@@ -330,13 +337,12 @@ export async function detectDeploySetup(scan: RepositoryScan, read: (path: strin
     const packageJson = packageDir === null ? null : await readManifest(packageDir);
     const buildReasons: string[] = [];
     const viteConfig = VITE_CONFIGS.map((file) => join(directory, file)!).find((file) => files.has(file));
-    if ((viteConfig && (await read(viteConfig))?.includes(VITE_PLUGIN)) || dependsOnPlugin(packageJson)) buildReasons.push('uses the Cloudflare Vite plugin');
-    const main = text(top.main);
-    if (main) { const resolved = join(directory, main); if (!resolved || !files.has(resolved)) buildReasons.push(`main ${main} is not committed`); }
-    const assets = isRecord(top.assets) ? text(top.assets.directory) : undefined;
-    if (assets) { const resolved = join(directory, assets); if (!resolved || !directories.has(resolved)) buildReasons.push(`assets directory ${assets} is not committed`); }
+    if ((viteConfig && (await read(viteConfig))?.includes(VITE_PLUGIN)) || dependsOn(packageJson, VITE_PLUGIN)) buildReasons.push('uses the Cloudflare Vite plugin');
+    const rootManifest = packageDir ? await readManifest('') : packageJson;
+    const wrangler = dependsOn(packageJson, 'wrangler') || dependsOn(rootManifest, 'wrangler') ? 'repository' : 'gitflare';
+    if (wrangler === 'gitflare') notes.push(`${packageDir === null ? `No package.json was found for ${path}` : `${packageDir ? `${packageDir}/` : ''}package.json declares no wrangler dependency`}, so Gitflare builds ${path} with its own Wrangler ${GITFLARE_WRANGLER_VERSION}. Add wrangler to devDependencies to pin a version.`);
     configs.push({ path, workerName: name, environments: orderedEnvironments([PRODUCTION, ...Object.keys(environments)]) });
-    parsed.push({ path, directory, name, top, production, environments, packageDir, packageJson, buildReasons });
+    parsed.push({ path, directory, name, top, production, environments, packageDir, packageJson, buildReasons, wrangler });
   }
   if (!parsed.length && !errors.length) notes.push('No wrangler.jsonc, wrangler.json or wrangler.toml was found outside node_modules, test fixtures and .gitflare.');
 
@@ -346,24 +352,44 @@ export async function detectDeploySetup(scan: RepositoryScan, read: (path: strin
     const resolved = block ? environmentConfig(config.top, block, config.name, environment) : config.top;
     const effective = productionOnlyConfig(resolved, environment, declaresRoutes(block));
     const name = text(effective.name)!;
+    const scope = environment === PRODUCTION && !block ? '' : ` (env.${environment})`;
+    const problem = (code: DeployProblemCode, message: string, fix: string) => {
+      if (problems.some((item) => item.code === code && item.configPath === config.path && item.message === message)) return;
+      problems.push({ code, configPath: config.path, environment, message, fix });
+      errors.push(`${message} ${fix}`);
+    };
+    const buildReasons = [...config.buildReasons];
+    const main = text(effective.main);
+    const mainPath = main ? join(config.directory, main) : null;
+    const mainMissing = !!main && (!mainPath || !files.has(mainPath));
+    if (mainMissing) buildReasons.push(`main ${main} is not committed`);
+    const assets = isRecord(effective.assets) ? text(effective.assets.directory) : undefined;
+    const assetsPath = assets ? join(config.directory, assets) : null;
+    const assetsMissing = !!assets && (!assetsPath || !directories.has(assetsPath));
+    if (assetsMissing) buildReasons.push(`assets directory ${assets} is not committed`);
+    if (!main && !assets) problem('NO_WORKER_CONFIG', `${config.path}${scope} has neither main nor assets.directory, so there is no Worker to deploy.`, 'Set "main" to the Worker entry file, or "assets": { "directory": "./dist" } to deploy static files.');
     const scripts = isRecord(config.packageJson?.scripts) ? config.packageJson!.scripts as Json : {};
     let buildCommand: string | undefined;
-    if (config.buildReasons.length) {
+    if (buildReasons.length) {
       if (packageManager && config.packageDir !== null && typeof scripts.build === 'string' && scripts.build.trim()) buildCommand = buildCommandFor(packageManager, config.packageDir, text(config.packageJson?.name));
-      else errors.push(`${config.path} needs a build (${config.buildReasons.join('; ')}), but ${config.packageDir === null ? 'no package.json was found above it' : `${config.packageDir ? `${config.packageDir}/` : ''}package.json has no "build" script`}.`);
+      else if (mainMissing && config.buildReasons.length === 0) problem('WORKER_ENTRY_NOT_FOUND', `${config.path}${scope} main points to ${main} but that file doesn't exist at ${scan.commitSha.slice(0, 12)}, and there is no build script to create it.`, `Commit ${mainPath ?? main}, or point "main" at the real entry file.`);
+      else if (assetsMissing && config.buildReasons.length === 0) problem('ASSETS_DIRECTORY_MISSING', `${config.path}${scope} assets.directory ${assets} doesn't exist at ${scan.commitSha.slice(0, 12)}, and there is no build script to create it.`, `Add a "build" script to ${config.packageDir ? `${config.packageDir}/` : ''}package.json that writes ${assets}, or commit the files.`);
+      else problem('BUILD_SCRIPT_MISSING', `${config.path} needs a build (${buildReasons.join('; ')}), but ${config.packageDir === null ? 'no package.json was found above it' : `${config.packageDir ? `${config.packageDir}/` : ''}package.json has no "build" script`}.`, config.packageDir === null ? `Add a package.json with a "build" script next to ${config.path}.` : 'Add a "build" script to package.json.');
     }
     const routes = routeInfo(effective);
     const d1Migrations = hasMigrations(effective, config.directory, directories, files);
     const watchPaths = config.packageDir ? [...new Set([`${config.packageDir}/**`, ...(config.directory !== config.packageDir && config.directory ? [`${config.directory}/**`] : []), ...shared])] : [];
     return {
       workerName: name, configPath: config.path, packageDir: config.packageDir ?? config.directory,
-      ...(buildCommand ? { buildCommand } : {}), buildReasons: config.buildReasons,
+      ...(buildCommand ? { buildCommand } : {}), buildReasons,
       d1Migrations,
       watchPaths, dependsOn: dependencies(effective, name), resources: resources(effective),
       routes: routes.routes, customDomains: routes.customDomains,
       workersDev: workersDevEnabled(effective),
       requiredScopes: requiredDeployScopes(effective, { d1Migrations, uploadOnly: false }),
       ...(environment === PRODUCTION && block ? { wranglerEnv: PRODUCTION } : {}),
+      wrangler: config.wrangler,
+      assetsOnly: !main && !!assets,
     };
   };
 
@@ -410,7 +436,7 @@ export async function detectDeploySetup(scan: RepositoryScan, read: (path: strin
       seen.add(target.workerName);
     }
   }
-  return { commitSha: scan.commitSha, fingerprint: await setupFingerprint(fingerprintFiles), files: fingerprintFiles, packageManager, configs, environments: result, errors: [...new Set(errors)], notes, truncated: scan.truncated };
+  return { commitSha: scan.commitSha, fingerprint: await setupFingerprint(fingerprintFiles), files: fingerprintFiles, packageManager, configs, environments: result, errors: [...new Set(errors)], problems, notes, truncated: scan.truncated };
 }
 
 async function status(check: () => Promise<boolean>, absent: ResourceStatus = 'create'): Promise<ResourceStatus> {

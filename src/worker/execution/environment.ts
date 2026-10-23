@@ -9,6 +9,7 @@ export interface SandboxRunner {
   command(argv: string[], cwd?: string, timeoutMs?: number): Promise<CommandResult>;
   destroy(): Promise<void>;
   install?(plan: InstallPlan, mode?: InstallMode): Promise<CommandResult>;
+  installWrangler?(version: string): Promise<CommandResult>;
   check?(script: string, timeoutMs: number): Promise<CommandResult>;
   startPreview?(command?: string | string[], readinessMs?: number): Promise<number | void>;
   stopPreview?(): Promise<void>;

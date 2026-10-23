@@ -37,6 +37,7 @@ import type { NotificationEvent, NotificationPreferences, NotificationReason, No
 import { validGitSha } from './artifacts';
 import type { Receipt, ContributorStanding, OutgoingProposal, MissionSummaryCache, CoordinatorHost, StoredVisualImage } from './coordinator-types';
 import { PreviewBook } from './coordinator-previews';
+import { eligibleRaceRuns } from './preview-subject';
 import { DispatchBook } from './coordinator-dispatch';
 import { IntegrationBook } from './coordinator-integration';
 import { CapacityBook } from './coordinator-capacity';
@@ -88,11 +89,6 @@ function retryOverrideNote(runs: AgentRun[], overrides: Record<string, AgentRetr
 export function draftRuns(mission: Mission): Mission {
   if (mission.status !== 'draft' || !mission.runs.some((run) => run.status === 'queued')) return mission;
   return { ...mission, runs: mission.runs.map((run) => run.status === 'queued' ? { ...run, status: 'draft' } : run) };
-}
-
-function eligibleRaceRuns(mission: Mission): Mission['runs'] {
-  const checks = mission.raceChecks ?? mission.checks;
-  return mission.runs.filter((run) => run.status === 'completed' && !!run.commitSha && !!run.forkName && checks.some((check) => check.runId === run.id && check.status === 'passed' && check.candidateSha === run.commitSha));
 }
 
 export class GitflareCoordinator extends DurableObject<AppEnv> {
@@ -740,6 +736,8 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
 
   previewStatus(...args: Parameters<PreviewBook['previewStatus']>) { return this.previews().previewStatus(...args); }
 
+  candidatePreviewKeys(...args: Parameters<PreviewBook['candidatePreviewKeys']>) { return this.previews().candidatePreviewKeys(...args); }
+
   createRepository(key: string, repository: Repository): Repository {
     return this.mutate(key, JSON.stringify(['repository', repository.name, repository.description]), () => {
       const label = repositoryLabel(repository).toLowerCase();
@@ -1304,6 +1302,8 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   holdPreviewSlot(...args: Parameters<CapacityBook['holdPreviewSlot']>) { return this.capacity().holdPreviewSlot(...args); }
 
   releasePreviewSlot(...args: Parameters<CapacityBook['releasePreviewSlot']>) { return this.capacity().releasePreviewSlot(...args); }
+
+  previewSlotHolders() { return this.capacity().previewSlotHolders(); }
 
   deployState(): DeployState { return new DeploymentLedger(this.store).state(); }
 
