@@ -68,7 +68,7 @@ import { useInboxCounts } from "./inbox-count";
 import { badgeLabel } from "./inbox-data";
 import { accountSection } from "./account-data";
 import { eligibleApprovers, knownCheckNames } from "./approvals";
-import { anonymousSiteVisit, appOrigin, crossHostTarget, pageHostOrigins, siteHref, siteSignedInHint } from "./hosts";
+import { anonymousSiteVisit, appOrigin, crossHostTarget, pageHostOrigins, siteHref, useSiteSignedInHint } from "./hosts";
 import { publicRepositoryPath } from "../shared/handles";
 import { requestedPersonalWorkspace } from "../shared/ai-setup";
 import AccountMenu from "./AccountMenu";
@@ -209,6 +209,7 @@ function Workspace() {
   const [account, setAccount] = useState<AccessSnapshot | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const siteSignedIn = useSiteSignedInHint();
   const [authState, setAuthState] = useState<
     "checking" | "required" | "configuration" | "unavailable" | "authenticated"
   >("checking");
@@ -536,7 +537,7 @@ function Workspace() {
     setRefreshing(false);
   }
 
-  const publicAuthenticated = authState === "authenticated" || siteSignedInHint();
+  const publicAuthenticated = authState === "authenticated" || siteSignedIn;
   if (!isKnownAppRoute(route) && authState === "checking") return <WorkspaceLoader />;
   if (!isKnownAppRoute(route) && authState !== "authenticated") return <NotFoundScreen />;
   if (route === "repositories" && authState !== "authenticated") return <WorkspaceLoader />;

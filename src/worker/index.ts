@@ -9,7 +9,8 @@ import { documentationImage, documentationMarkdown } from './docs-markdown';
 import { handleOnboarding } from './onboarding';
 import { listPublicDocs, readPublicDoc, publicSourceResponse } from './distribution';
 import { oauthConsent, oauthProvider } from './oauth';
-import { publicPageResponse } from './public-pages';
+import { publicPageResponse, sitemapResponse, sitePageHead } from './public-pages';
+import { appHeadTags, robotsResponse, searchHeadTags, searchRole, withSearchIndexing } from './search-indexing';
 import { hostRedirect, withHostOrigins } from './host-split';
 import { withPublicPreloads } from './public-preload';
 import { legacySourceRedirect } from './hosted-source';
@@ -36,7 +37,7 @@ import { withStoreSecrets } from './store-secrets';
 import { DEMO_WRITE_LIMIT, demoGitRestriction, demoMode, demoRestrictionError, demoRouteRestriction } from './demo';
 import { demoDisabledApi, handleDemoRoute, runDemoReset } from './demo-runtime';
 import { assertCookieRequestOrigin, CLEAR_SESSION_COOKIE } from './session-policy';
-import { withSignedInHint } from './signed-in-hint';
+import { signedInStatusResponse, withSignedInHint } from './signed-in-hint';
 import { publicRepositoryApi, publicRepositoryIndex, siteOrigin } from './public-repositories';
 import { handlePublicGit, isPublicGitPath } from './public-git';
 import { publicDiscoveryApi } from './public-discovery';
@@ -235,6 +236,10 @@ const application = {
     }
     if (isPublicGitPath(path)) return gitResponse(() => handlePublicGit(request, env, gitDependencies(env)));
     if (path === '/oauth/authorize') return oauthConsent(request, env, authorize);
+    const robots = robotsResponse(request, env);
+    if (robots) return robots;
+    const sitemap = await sitemapResponse(request, env, ctx);
+    if (sitemap) return sitemap;
     const publicPage = publicPageResponse(request, env);
     if (publicPage && path === '/llms.txt' && request.method === 'GET' && publicPage.ok) return new Response(`${await publicPage.text()}${await publicRepositoryIndex(env, siteOrigin(env, new URL(request.url).origin), clientIp(request))}`, { headers: publicPage.headers });
     if (publicPage) return publicPage;
@@ -250,8 +255,9 @@ const application = {
     const entry = await entryRedirect(request, env, path);
     if (entry) return entry;
     if (!path.startsWith('/api/') && path !== '/mcp') {
-      const social = request.method === 'GET' && socialPageTarget(path) ? socialMetaTags(request, env) : '';
-      return withHostOrigins(await withPublicPreloads(request, env, await env.ASSETS.fetch(request)), env, path, social);
+      const site = sitePageHead(request, env);
+      const head = request.method === 'GET' && socialPageTarget(path) ? socialMetaTags(request, env) : searchRole(env, new URL(request.url).origin) === 'app' ? appHeadTags() : site.tags;
+      return withHostOrigins(await withPublicPreloads(request, env, await env.ASSETS.fetch(request)), env, path, head, `${searchHeadTags(request, env)}${site.structured}`);
     }
     let response: Response;
     try {
@@ -294,14 +300,17 @@ export default {
       const env = await withStoreSecrets(workerEnv);
       const legacySource = legacySourceRedirect(request, env);
       if (legacySource) return legacySource;
-      const hostMove = await hostRedirect(request, env, request => hasSession(request, env));
+      const signedIn = (request: Request) => hasSession(request, env);
+      const hostMove = await hostRedirect(request, env, signedIn);
       if (hostMove) return hostMove;
+      const signedInStatus = await signedInStatusResponse(request, env, signedIn);
+      if (signedInStatus) return signedInStatus;
       const path = new URL(request.url).pathname;
       if (env.OAUTH_KV && (path === '/mcp' || path.startsWith('/oauth/') || path.startsWith('/.well-known/'))) {
         if (path.startsWith('/oauth/') && request.method === 'POST') await security(env).rateLimit(`oauth:${clientIp(request)}`, OAUTH_POST_LIMIT.max, OAUTH_POST_LIMIT.windowMs);
-        return await oauthProvider(new URL(request.url).origin, application, authorize).fetch(request, env, ctx!);
+        return withSearchIndexing(request, await oauthProvider(new URL(request.url).origin, application, authorize).fetch(request, env, ctx!), env);
       }
-      return withSignedInHint(request, await application.fetch(request, env, ctx), env);
+      return withSearchIndexing(request, await withSignedInHint(request, await application.fetch(request, env, ctx), env, signedIn), env);
     } catch (error) { const failure = publicError(error); return Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status, headers: { 'Cache-Control': 'no-store' } }); }
   },
   async scheduled(controller: ScheduledController, workerEnv: AppEnv): Promise<void> {

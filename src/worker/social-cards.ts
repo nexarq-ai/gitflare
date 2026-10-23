@@ -1,5 +1,5 @@
 import type { MissionSummary, Release } from '../shared/types';
-import { HANDLE_PATTERN } from '../shared/handles';
+import { HANDLE_PATTERN, publicRepositoryPath } from '../shared/handles';
 import { repositoryLabel } from '../shared/repository-names';
 import { landedLine, socialCardSvg, SOCIAL_CARD_HEIGHT, SOCIAL_CARD_WIDTH, type SocialCard, type SocialRepositoryCard, type SocialTheme } from '../shared/social-card-svg';
 import { publicProfileLocation, publicRepositoryLocation, routeFromLocation } from '../ui/router';
@@ -131,6 +131,17 @@ function imageUrl(origin: string, preview: SocialPreview, hash: string): string 
   return `${origin}${preview.path}?v=${hash}`;
 }
 
+function sourceCodeData(preview: SocialPreview, origin: string): string {
+  if (preview.card.kind !== 'repository') return '';
+  const { card } = preview;
+  const page = `${origin}${publicRepositoryPath(card.handle, card.name)}`;
+  const data = {
+    '@context': 'https://schema.org', '@type': 'SoftwareSourceCode', name: `${card.handle}/${card.name}`, url: page, codeRepository: page,
+    ...(card.description ? { description: card.description } : {}), ...(card.language ? { programmingLanguage: card.language } : {}), ...(card.license ? { license: `https://spdx.org/licenses/${card.license}.html` } : {}),
+  };
+  return `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`;
+}
+
 export async function socialMetaTags(request: Request, env: AppEnv): Promise<string> {
   if (request.method !== 'GET' || !hosted(env)) return '';
   const url = new URL(request.url);
@@ -149,7 +160,7 @@ export async function socialMetaTags(request: Request, env: AppEnv): Promise<str
       ['property', 'og:image', image], ['property', 'og:image:width', String(SOCIAL_CARD_WIDTH)], ['property', 'og:image:height', String(SOCIAL_CARD_HEIGHT)], ['property', 'og:image:type', 'image/png'], ['property', 'og:image:alt', preview.title],
       ['name', 'twitter:card', 'summary_large_image'], ['name', 'twitter:title', title], ['name', 'twitter:description', preview.description], ['name', 'twitter:image', image], ['name', 'description', preview.description],
     ];
-    return `<title>${escapeAttribute(title)}</title>${tags.map(([attribute, key, value]) => `<meta ${attribute}="${key}" content="${escapeAttribute(value)}">`).join('')}`;
+    return `<title>${escapeAttribute(title)}</title>${tags.map(([attribute, key, value]) => `<meta ${attribute}="${key}" content="${escapeAttribute(value)}">`).join('')}${sourceCodeData(preview, origin)}`;
   } catch { return ''; }
 }
 
