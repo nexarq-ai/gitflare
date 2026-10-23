@@ -85,7 +85,7 @@ if (!customElements.get("gitflare-loading-signal")) customElements.define("gitfl
   try { theme = localStorage.getItem("gitflare-theme"); } catch {}
   document.documentElement.dataset.theme = location.pathname === "/" ? "dark" : theme === "light" || theme === "dark" ? theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   const template = document.getElementById("boot-loader");
-  if (template && document.body) {
+  if (template && document.body && !document.getElementById("gitflare-ssr")) {
     const overlay = document.createElement("div");
     overlay.id = "gitflare-boot";
     overlay.append(template.content.cloneNode(true));

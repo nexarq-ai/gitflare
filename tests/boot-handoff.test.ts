@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 let overlay: { dataset: Record<string, string>; remove: ReturnType<typeof vi.fn>; addEventListener: ReturnType<typeof vi.fn> } | null;
 let attributes: Set<string>;
+let rendered: { remove: ReturnType<typeof vi.fn> } | null;
 let reduced = false;
 
 beforeEach(() => {
@@ -9,9 +10,10 @@ beforeEach(() => {
   vi.useFakeTimers();
   attributes = new Set(['data-booting']);
   overlay = { dataset: {}, remove: vi.fn(() => { overlay = null; }), addEventListener: vi.fn() };
+  rendered = null;
   vi.stubGlobal('document', {
     documentElement: { removeAttribute: (name: string) => attributes.delete(name) },
-    getElementById: () => overlay,
+    getElementById: (id: string) => id === 'gitflare-boot' ? overlay : id === 'gitflare-ssr' ? rendered : null,
   });
   vi.stubGlobal('matchMedia', () => ({ matches: reduced }));
   vi.stubGlobal('requestAnimationFrame', (callback: () => void) => setTimeout(callback, 16) as unknown as number);
@@ -70,4 +72,18 @@ it('removes the loader without a fade when reduced motion is requested', async (
   await vi.advanceTimersByTimeAsync(40);
   expect(element.remove).toHaveBeenCalledOnce();
   expect(element.addEventListener).not.toHaveBeenCalled();
+});
+
+it('keeps server-rendered content until the route is ready, then removes it', async () => {
+  overlay = null;
+  const server = { remove: vi.fn(() => { rendered = null; }) };
+  rendered = server;
+  const handoff = await import('../src/ui/boot-handoff');
+  const release = handoff.holdBootLoader();
+  handoff.startBootHandoff();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(server.remove).not.toHaveBeenCalled();
+  release();
+  await vi.advanceTimersByTimeAsync(40);
+  expect(server.remove).toHaveBeenCalledOnce();
 });

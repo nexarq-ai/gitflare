@@ -104,6 +104,11 @@
       "sha256": "a254d641f976b6b77b71c1eac7e699b821feb86995eed45ecfdc7d137677c6e4"
     },
     {
+      "path": "migrations/public-index/0004_heads.sql",
+      "size": 125,
+      "sha256": "bf0f8b1f36102cbb8206137d6df96e121f0cfc1924010e99ab982aa555b0da27"
+    },
+    {
       "path": "NOTICE",
       "size": 240,
       "sha256": "04c9f24f38d52febd7ab2efcbc8e7af284d551784f1e610a78d07f7a99002296"
@@ -125,8 +130,8 @@
     },
     {
       "path": "public/boot-loader.js",
-      "size": 4978,
-      "sha256": "86bc6972b7438be1b117d0dc43f0fcde1e91c929ddf690a5b7768e7769ef81bd"
+      "size": 5022,
+      "sha256": "e8b54b89c79d217f2bcc5be43e1be35bf266a2272d709f01745f6a998ad31055"
     },
     {
       "path": "public/favicon.svg",
@@ -155,8 +160,8 @@
     },
     {
       "path": "README.md",
-      "size": 5102,
-      "sha256": "cdbdf39695dcbe3628a9d5655d894614c0cc37248e58a830aa873aed2f9278d7"
+      "size": 5473,
+      "sha256": "e7aa1dcb929dff7afafeb8eb0f6f7a3d862d9c742c8f29c3ac25f777c618e814"
     },
     {
       "path": "runner/Dockerfile",
@@ -275,8 +280,8 @@
     },
     {
       "path": "src/shared/markdown-images.ts",
-      "size": 1554,
-      "sha256": "dae377a24e8ec12643e1ef52d5896907febc7b0447827ebfd5cf04f88c5feeb7"
+      "size": 2359,
+      "sha256": "60c8d81d1ec6089fe889e8a86ba4803bb566c17f0a30e4aa7b9aca5d779536c5"
     },
     {
       "path": "src/shared/mcp-clients.ts",
@@ -520,8 +525,8 @@
     },
     {
       "path": "src/ui/boot-handoff.ts",
-      "size": 1715,
-      "sha256": "aa1ef3aa050d665d9ec1c866f5c575279c3d09b0f05add282175957b0305f153"
+      "size": 1822,
+      "sha256": "78aad87bc9bce3f6bdba968ba15bfd61b07359b93335df6af5d84d1e3ea717fd"
     },
     {
       "path": "src/ui/branches.css",
@@ -880,8 +885,8 @@
     },
     {
       "path": "src/ui/MarkdownImage.tsx",
-      "size": 2311,
-      "sha256": "8e3ce62ec1db0ff9d7b71e6962d96427708e2a58333b25e8e698a344aea0b1a1"
+      "size": 1563,
+      "sha256": "0885f0088dfb232b592d22e88845b737b8308d56a10b57d84b823f58b686fdb3"
     },
     {
       "path": "src/ui/McpConnections.tsx",
@@ -1600,8 +1605,8 @@
     },
     {
       "path": "src/worker/host-split.ts",
-      "size": 4471,
-      "sha256": "df1607d77032c3160fa773caebbe06eca824de72dbe859e2a7415534fbe80cde"
+      "size": 4923,
+      "sha256": "fe3ccbd98dee8ae2c77e5e56b7bc939b0ec219ee8c751a9bd206988954e8ed82"
     },
     {
       "path": "src/worker/hosted-onboarding.ts",
@@ -1635,8 +1640,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 23895,
-      "sha256": "948bd1bcc23fb3d900538f57f1c3615fdbbda9d4214b2c41db8e89100703a9d2"
+      "size": 24519,
+      "sha256": "c4e2d533485e880452a6269ed00e8606b9e669001da26e9a0fd46f7d687c5cba"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -1662,6 +1667,11 @@
       "path": "src/worker/log.ts",
       "size": 881,
       "sha256": "849f8935deec5c0825769971cf7a4f47882f8177a7e9f944dc616e1bacbed078"
+    },
+    {
+      "path": "src/worker/markdown-html.ts",
+      "size": 7223,
+      "sha256": "7ebb14231bcb024064d75230485e3c3bb6f119e78c75037d35734bf6c836c0f3"
     },
     {
       "path": "src/worker/mcp-results.ts",
@@ -1925,8 +1935,8 @@
     },
     {
       "path": "src/worker/public-index.ts",
-      "size": 28270,
-      "sha256": "1f69d17102011db35060b24fe46b6b996b14ee73de16482e60e117afda033d03"
+      "size": 30380,
+      "sha256": "0416f6c1ff541945418f859fd87a214c38fcd9f76c17affd96a3e0d70f9097cd"
     },
     {
       "path": "src/worker/public-issues.ts",
@@ -1947,6 +1957,11 @@
       "path": "src/worker/public-repositories.ts",
       "size": 22861,
       "sha256": "da666481ef5978bc163034ca0fc87d67dee45e08d550657cce386d66220d89aa"
+    },
+    {
+      "path": "src/worker/public-ssr.ts",
+      "size": 31614,
+      "sha256": "090467edd8fc6a343957c909a55bb89bd7fc6bba22658f49659c33363e445f77"
     },
     {
       "path": "src/worker/rate-limits.ts",
@@ -2090,8 +2105,8 @@
     },
     {
       "path": "src/worker/social-cards.ts",
-      "size": 15352,
-      "sha256": "90285170f7effca5b3c5836acaaf1582a661f1b6c3972dc415094d8e5404b475"
+      "size": 15618,
+      "sha256": "0e9d380c1b4130d1edc11e0b6b118a455dbd5ab3682df501e6ca6e758ef598af"
     },
     {
       "path": "src/worker/social-raster.ts",
@@ -2210,8 +2225,8 @@
     },
     {
       "path": "tests/boot-handoff.test.ts",
-      "size": 2794,
-      "sha256": "642adc655f19950e81240e73011ae8289f72adc33da5b7bf3a5a3f87a65eee45"
+      "size": 3473,
+      "sha256": "b9147f367f983b8854a629293b41635136ee40a3c62bc79bdb811d869339981e"
     },
     {
       "path": "tests/check-limits.test.ts",

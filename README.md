@@ -1,5 +1,9 @@
 # Gitflare (self-hosted)
 
+> **Home: [gitflare.io/gitflare/gitflare](https://gitflare.io/gitflare/gitflare)**. Source, issues, releases and revisions live on Gitflare; [github.com/nexarq-ai/gitflare](https://github.com/nexarq-ai/gitflare) is a read-only mirror.
+
+[![Gitflare home](https://img.shields.io/badge/home-gitflare.io%2Fgitflare%2Fgitflare-f6821f)](https://gitflare.io/gitflare/gitflare)
+
 **Git collaboration for people and AI agents, running entirely on your Cloudflare account.**
 
 This is the open-source, single-workspace edition of Gitflare. It gives every AI agent its own branch and sandbox, tests their changes together, and lands nothing until a person approves the exact commit.

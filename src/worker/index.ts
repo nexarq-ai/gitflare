@@ -14,6 +14,7 @@ import { appHeadTags, robotsResponse, searchHeadTags, searchRole, withSearchInde
 import { hostRedirect, withHostOrigins } from './host-split';
 import { withPublicPreloads } from './public-preload';
 import { hostedSitePage } from './hosted-site';
+import { serverPage, serverRenderedTarget } from './public-ssr';
 import { legacySourceRedirect } from './hosted-source';
 import { requestSessionMeta } from './session-meta';
 import { CLOUDFLARE_LINK_COOKIE, requestCookie, handleCloudflare } from './cloudflare';
@@ -259,8 +260,13 @@ const application = {
     if (entry) return entry;
     if (!path.startsWith('/api/') && path !== '/mcp') {
       const site = sitePageHead(request, env);
-      const head = request.method === 'GET' && socialPageTarget(path) ? socialMetaTags(request, env) : searchRole(env, new URL(request.url).origin) === 'app' ? appHeadTags() : site.tags;
-      return withHostOrigins(await withPublicPreloads(request, env, await env.ASSETS.fetch(request)), env, path, head, `${searchHeadTags(request, env)}${site.structured}`);
+      const target = serverRenderedTarget(request, env);
+      const rendering = target ? serverPage(request, env, ctx, target, (internal, internalEnv) => api(internal, internalEnv, ctx)) : null;
+      const copy = rendering?.then(page => page?.status === 200 ? page : null) ?? null;
+      const head = request.method === 'GET' && socialPageTarget(path) ? socialMetaTags(request, env, copy) : searchRole(env, new URL(request.url).origin) === 'app' ? appHeadTags() : site.tags;
+      const [assets, page] = await Promise.all([env.ASSETS.fetch(request), rendering]);
+      if (page?.status === 308 && page.location) return new Response(null, { status: 308, headers: { Location: page.location, 'Cache-Control': 'no-store' } });
+      return withHostOrigins(await withPublicPreloads(request, env, assets), env, path, head, `${searchHeadTags(request, env)}${site.structured}${page?.status === 200 ? page.head : ''}`, page);
     }
     let response: Response;
     try {

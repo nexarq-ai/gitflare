@@ -1,6 +1,7 @@
 import schema from '../../migrations/public-index/0001_init.sql?raw';
 import activitySchema from '../../migrations/public-index/0002_activity.sql?raw';
 import factsSchema from '../../migrations/public-index/0003_facts.sql?raw';
+import headsSchema from '../../migrations/public-index/0004_heads.sql?raw';
 import type { ActivityWeek, AgentReadiness, ExploreFilters, ExploreSort, Issue, MissionSummary, PublicActivity, PublicExplore, Release, PublicHandleKind, PublicPathMatch, PublicPerson, PublicRepositoryCard, PublicSearch, PublicSearchType } from '../shared/types';
 import { publicRepositoryPath } from '../shared/handles';
 import { repositoryLabel } from '../shared/repository-names';
@@ -16,6 +17,8 @@ export const PUBLIC_INDEX_PAGE = 20;
 export const PUBLIC_INDEX_CURSOR_MAX = 1000;
 export const PUBLIC_INDEX_CRON = '30 4 * * *';
 export const SITEMAP_REPOSITORY_LIMIT = 500;
+export const SITEMAP_FILE_PAGE = 5000;
+export const SITEMAP_FILE_PAGES = 4;
 const PATH_CHUNK = 1000;
 const LANGUAGE_LIMIT = 12;
 const FACET_LIMIT = 12;
@@ -51,7 +54,7 @@ export function publicIndex(env: IndexEnv): D1Database | null {
 
 export async function preparedIndex(db: D1Database): Promise<D1Database> {
   if (ready.has(db)) return db;
-  await db.batch(`${schema}${activitySchema}${factsSchema}`.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => db.prepare(statement)));
+  await db.batch(`${schema}${activitySchema}${factsSchema}${headsSchema}`.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => db.prepare(statement)));
   ready.add(db);
   return db;
 }
@@ -156,13 +159,38 @@ export async function explorePublic(env: IndexEnv, access: SecurityService, sort
   };
 }
 
-export async function sitemapRepositories(env: IndexEnv, access: SecurityService): Promise<{ handle: string; name: string; updatedAt: string }[]> {
+export interface SitemapRepository { repositoryId: string; handle: string; name: string; updatedAt: string; files: number }
+type SitemapRow = Pick<RepositoryRow, 'repository_id' | 'workspace_id' | 'handle' | 'name'> & { modified_at: string; files: number };
+const SITEMAP_COLUMNS = `r.repository_id, r.workspace_id, r.handle, r.name, MAX(r.updated_at, COALESCE(h.changed_at, r.updated_at)) AS modified_at, (SELECT COUNT(*) FROM paths p WHERE p.repository_id = r.repository_id) AS files FROM repositories r LEFT JOIN heads h ON h.repository_id = r.repository_id`;
+
+function sitemapRow(row: SitemapRow): SitemapRepository {
+  return { repositoryId: row.repository_id, handle: row.handle, name: row.name, updatedAt: row.modified_at, files: row.files };
+}
+
+export async function sitemapRepositories(env: IndexEnv, access: SecurityService): Promise<SitemapRepository[]> {
   const db = publicIndex(env);
   if (!db) return [];
   await preparedIndex(db);
-  const rows = await db.prepare(`SELECT repository_id, workspace_id, handle, name, updated_at FROM repositories ORDER BY updated_at DESC, repository_id LIMIT ${SITEMAP_REPOSITORY_LIMIT}`).all<Pick<RepositoryRow, 'repository_id' | 'workspace_id' | 'handle' | 'name' | 'updated_at'>>();
+  const rows = await db.prepare(`SELECT ${SITEMAP_COLUMNS} ORDER BY modified_at DESC, r.repository_id LIMIT ${SITEMAP_REPOSITORY_LIMIT}`).all<SitemapRow>();
   const { live } = await stillPublic(access, rows.results);
-  return rows.results.filter(row => live.has(row.repository_id)).map(row => ({ handle: row.handle, name: row.name, updatedAt: row.updated_at }));
+  return rows.results.filter(row => live.has(row.repository_id)).map(sitemapRow);
+}
+
+export async function sitemapRepository(env: IndexEnv, access: SecurityService, handle: string, name: string): Promise<SitemapRepository | null> {
+  const db = publicIndex(env);
+  if (!db) return null;
+  await preparedIndex(db);
+  const row = await db.prepare(`SELECT ${SITEMAP_COLUMNS} WHERE r.handle = ?1 AND r.name = ?2`).bind(handle, name).first<SitemapRow>();
+  if (!row || !(await stillPublic(access, [row])).live.has(row.repository_id)) return null;
+  return sitemapRow(row);
+}
+
+export async function sitemapFiles(env: IndexEnv, repositoryId: string, page: number): Promise<string[]> {
+  const db = publicIndex(env);
+  if (!db || page < 0 || page >= SITEMAP_FILE_PAGES) return [];
+  await preparedIndex(db);
+  const rows = await db.prepare('SELECT path FROM paths WHERE repository_id = ?1 ORDER BY path LIMIT ?2 OFFSET ?3').bind(repositoryId, SITEMAP_FILE_PAGE, page * SITEMAP_FILE_PAGE).all<{ path: string }>();
+  return rows.results.map(row => row.path);
 }
 
 export async function searchPublic(env: IndexEnv, access: SecurityService, query: string, type: PublicSearchType, cursor: number): Promise<IndexedPage<PublicSearch>> {
@@ -246,6 +274,7 @@ export async function removeIndexedRepositories(env: IndexEnv, repositoryIds: st
     db.prepare('DELETE FROM activity WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
     db.prepare('DELETE FROM readiness WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
     db.prepare('DELETE FROM facts WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
+    db.prepare('DELETE FROM heads WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
     db.prepare('DELETE FROM repositories WHERE repository_id IN (SELECT value FROM json_each(?1))').bind(ids),
   ]);
 }
@@ -282,12 +311,13 @@ export async function indexPublicRepository(env: AppEnv, repositoryId: string, a
   const writes: D1PreparedStatement[] = [];
   if (!head) {
     language = null; truncated = 0;
-    writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId), db.prepare('DELETE FROM readiness WHERE repository_id = ?1').bind(repositoryId));
+    writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId), db.prepare('DELETE FROM readiness WHERE repository_id = ?1').bind(repositoryId), db.prepare('DELETE FROM heads WHERE repository_id = ?1').bind(repositoryId));
   } else if (head.hash !== existing?.head_sha) {
     const scan = await scanRepository(source, head.hash, PUBLIC_INDEX_PATH_LIMIT);
     const paths = [...scan.files.keys()].sort().slice(0, PUBLIC_INDEX_PATH_LIMIT);
     language = dominantLanguage(paths); truncated = scan.truncated ? 1 : 0;
     writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId));
+    writes.push(db.prepare('INSERT INTO heads (repository_id, head_sha, changed_at) VALUES (?1, ?2, ?3) ON CONFLICT (repository_id) DO UPDATE SET head_sha = excluded.head_sha, changed_at = excluded.changed_at').bind(repositoryId, head.hash, new Date().toISOString()));
     for (let start = 0; start < paths.length; start += PATH_CHUNK) writes.push(db.prepare('INSERT OR IGNORE INTO paths (repository_id, path) SELECT ?1, value FROM json_each(?2)').bind(repositoryId, JSON.stringify(paths.slice(start, start + PATH_CHUNK))));
     const files = Object.fromEntries(await Promise.all(READINESS_FILES.map(async path => [path, scan.files.has(path) ? await source.readFile({ ref: head.hash, path }).then(blob => blob && blob.size <= READINESS_FILE_MAX ? blob.text() : null).catch(() => null) : null] as const)));
     const readiness = agentReadiness(paths, files);
