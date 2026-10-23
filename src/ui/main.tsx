@@ -7,7 +7,6 @@ import { currentRoute, followsSavedTheme, isPublicRoute } from "./router";
 import App from "./App";
 
 const route = currentRoute();
-const shell = Promise.resolve({ default: App });
 initializeTheme(isPublicRoute(route) && !followsSavedTheme(route));
 
 declare global {
@@ -16,10 +15,10 @@ declare global {
   }
 }
 
-void Promise.all([shell, window.gitflareFontsReady]).then(([{ default: Root }]) => {
+void Promise.resolve(window.gitflareFontsReady).then(() => {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <Root />
+      <App />
     </React.StrictMode>,
   );
 });

@@ -49,3 +49,33 @@ export function publicPageRequests(pathname: string, search: string): string[] {
   const profile = publicProfileLocation(route);
   return profile ? Object.values(publicProfileRequests(profile.handle)) : [];
 }
+
+export function issueListRequest(api: string, state: "open" | "closed" = "open", offset = 0, label = "", query = ""): string {
+  const params = new URLSearchParams({ state, offset: String(offset) });
+  if (label) params.set("label", label);
+  if (query) params.set("q", query);
+  return `${api}/issues?${params}`;
+}
+
+export function fixRequestsRequest(api: string, query: string): string {
+  return `${api}/fix-requests?${query}`;
+}
+
+function repositoryViewRequests(location: PublicRepositoryLocation, base: string): string[] {
+  const { view, path } = location;
+  if (view === "issues") {
+    const shared = [`${base}/issue-viewer`, `${base}/issue-labels`];
+    if (!path) return [...shared, issueListRequest(base)];
+    if (path === "new") return shared;
+    return [...shared, `${base}/issues/${path}`, fixRequestsRequest(base, `issue=${path}&quote=1`)];
+  }
+  if (view === "agents") return [fixRequestsRequest(base, "")];
+  if (view === "security") return path && path !== "new" ? [] : [`${base}/security`];
+  return [];
+}
+
+export function publicSeedRequests(pathname: string, search: string): string[] {
+  const repository = publicRepositoryLocation(routeFromLocation(pathname, ""));
+  const pages = publicPageRequests(pathname, search);
+  return repository ? [...pages, ...repositoryViewRequests(repository, pages[0]!)] : pages;
+}

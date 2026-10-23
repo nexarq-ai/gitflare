@@ -269,6 +269,7 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--gf-color-accen
 a { color: var(--gf-color-info); }
 .theme-toggle { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-width: 36px; height: 36px; padding: 0 12px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); background: var(--gf-color-surface-raised); color: var(--gf-color-text-secondary); font: 12px var(--gf-font-sans); flex-shrink: 0; }
 .theme-toggle-compact { width: 36px; padding: 0; }
+:root:not([data-gf-theme="dark"]) .theme-toggle-sun, :root[data-gf-theme="dark"] .theme-toggle-moon { display: none; }
 .theme-toggle:hover { background: var(--gf-color-surface-hover); color: var(--gf-color-text); border-color: var(--gf-color-border-strong); }
 .theme-toggle:active { background: var(--gf-color-accent-bg); color: var(--gf-color-accent); }
 .app-shell { background: var(--gf-color-bg); }

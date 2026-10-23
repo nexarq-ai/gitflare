@@ -8,6 +8,7 @@ import type { AdvisoryAffected, AdvisoryComment, AdvisoryCloseReason, AdvisorySe
 import { relativeTime } from "./components";
 import { ADVISORY_COMMENT_MAX, ADVISORY_LIST_MAX, CLOSE_REASON_LABELS, emptyAffected, SEVERITY_LABELS, STATE_LABELS } from "./advisory-data";
 import "./issues.css";
+import { formatDate } from "./page-context";
 import "./advisories.css";
 
 export function SeverityPill({ severity }: { severity: AdvisorySeverity | null }) {
@@ -29,7 +30,7 @@ export function AdvisoryMarkdown({ children }: { children: string }) {
 }
 
 export function AdvisoryTime({ value }: { value: string }) {
-  return <time dateTime={value} title={new Date(value).toLocaleString()}>{relativeTime(value)}</time>;
+  return <time dateTime={value} title={formatDate(value, { dateStyle: "medium", timeStyle: "short" })} suppressHydrationWarning>{relativeTime(value)}</time>;
 }
 
 export function personName(id: string | null, people: Record<string, IssuePerson>): string {

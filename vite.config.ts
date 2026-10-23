@@ -19,6 +19,7 @@ export function requireKumoStyles(): Plugin {
   return {
     name: 'gitflare:require-kumo-styles',
     apply: 'build',
+    applyToEnvironment: (environment) => environment.name === 'client',
     generateBundle(_options, bundle) {
       const styles = Object.values(bundle).flatMap((file) => file.type === 'asset' && file.fileName.endsWith('.css') ? [String(file.source)] : []);
       if (styles.length && !styles.some((css) => css.includes(KUMO_PRIMARY_BUTTON_SELECTOR))) this.error(`Built CSS lacks Kumo component styles (${KUMO_PRIMARY_BUTTON_SELECTOR}). Install dependencies in this tree so the Kumo @source in ${KUMO_SOURCES_FILE} resolves.`);

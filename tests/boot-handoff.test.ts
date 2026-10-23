@@ -74,16 +74,15 @@ it('removes the loader without a fade when reduced motion is requested', async (
   expect(element.addEventListener).not.toHaveBeenCalled();
 });
 
-it('keeps server-rendered content until the route is ready, then removes it', async () => {
+it('leaves server-rendered markup in place for hydration when the handoff finishes', async () => {
   overlay = null;
   const server = { remove: vi.fn(() => { rendered = null; }) };
   rendered = server;
   const handoff = await import('../src/ui/boot-handoff');
   const release = handoff.holdBootLoader();
   handoff.startBootHandoff();
-  await vi.advanceTimersByTimeAsync(500);
-  expect(server.remove).not.toHaveBeenCalled();
   release();
-  await vi.advanceTimersByTimeAsync(40);
-  expect(server.remove).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(handoff.MAX_BOOT_MS);
+  expect(server.remove).not.toHaveBeenCalled();
+  expect(attributes.has('data-booting')).toBe(false);
 });
