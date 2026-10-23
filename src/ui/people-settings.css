@@ -104,6 +104,7 @@
   .people-table th:nth-child(3), .people-table td:nth-child(3) { white-space: nowrap; }
   .audit-list li { flex-direction: column; gap: 4px; }
   .people-list li { flex-wrap: wrap; }
+  .people-list li > div { flex-basis: 180px; }
 }
 .panel-body > .people-muted + .general-row { margin-top: 12px; }
 .admin-facts { margin: 0; padding: 16px 18px; }

@@ -3,6 +3,7 @@ import InfoTip from "./InfoTip";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { request } from "./api";
+import { environmentLabel as deployEnvironmentLabel } from "./deploy-progress";
 import { ErrorNotice, relativeTime } from "./components";
 import { PageLoading } from "./WorkspaceLoader";
 import DemoFeaturePanel, { demoOf } from "./DemoFeaturePanel";
@@ -18,7 +19,7 @@ interface Snapshot extends DemoMarked { repositoryId: string; canManage: boolean
 interface Catalog { stores: { id: string; name: string }[]; storeId?: string; secrets?: { id: string; name: string; scopes: string[] }[] }
 type Mode = "link" | "create";
 
-const environmentLabel = (environment: string) => environment === "production" ? "Production" : environment === "staging" ? "Staging" : environment === PREVIEW_SECRET_ENVIRONMENT ? "Previews" : environment;
+const environmentLabel = (environment: string) => environment === PREVIEW_SECRET_ENVIRONMENT ? "Previews" : deployEnvironmentLabel(environment);
 const validationLabel: Record<SecretLinkView["validation"]["status"], string> = { valid: "Verified", not_found: "Missing in store", not_workers_scoped: "Not scoped to Workers", unchecked: "Not checked" };
 const parseList = (text: string) => text.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 

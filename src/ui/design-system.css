@@ -454,5 +454,37 @@ a:has(> .gf-brand-name), a:has(> .gf-brand-name):hover, a:has(> .gf-brand-name):
 .mission-meta dt { color: var(--gf-color-text-tertiary); font-weight: 500; }
 .mission-meta dd { margin: 0; color: var(--gf-color-text); font-weight: 500; }
 .mission-meta code { font-family: var(--gf-font-mono); font-size: 0.92em; color: var(--gf-color-text); background: none; padding: 0; }
-:where(button, a)[class*='bg-kumo-brand']:disabled, :where(button, a)[class*='bg-kumo-brand'][aria-disabled='true'] { background: transparent !important; color: var(--gf-color-text-tertiary) !important; border: 1px dashed var(--gf-color-border-strong) !important; box-shadow: none !important; opacity: 1 !important; cursor: not-allowed; }
+@layer utilities {
+  :is(button, a):is([class*='bg-kumo-brand'], [class*='bg-kumo-base'], [style*='--kumo-button-emphasis']):is(:disabled, [aria-disabled='true']) {
+    --kumo-button-emphasis-bg: var(--gf-color-surface-hover) !important;
+    --kumo-button-emphasis-gradient-start: var(--gf-color-surface-hover) !important;
+    --kumo-button-emphasis-gradient-end: var(--gf-color-surface-hover) !important;
+    --kumo-button-emphasis-ring: var(--gf-color-border-strong) !important;
+    background: var(--gf-color-surface-hover) !important;
+    color: var(--gf-color-text-disabled) !important;
+    border: 0 !important;
+    box-shadow: inset 0 0 0 1px var(--gf-color-border) !important;
+    opacity: 1 !important;
+    cursor: not-allowed;
+  }
+  .page-content :is(button, a)[data-kumo-component='Button'][class*='h-9'] { font-size: var(--gf-text-sm); padding-inline: 14px; }
+}
+.gf-field { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 520px; min-width: 0; font-size: 13px; color: var(--gf-color-text-secondary); }
+.gf-field-label { display: inline-flex; align-items: center; min-height: 22px; font-weight: 500; color: var(--gf-color-text); }
+.gf-field-label .info-tip { margin-left: 2px; }
+.gf-field-optional { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--gf-color-text-tertiary); }
+.gf-field :is(input:not([type='checkbox']):not([type='radio']), select, textarea) { width: 100%; min-height: 36px; padding: 7px 12px; border: 1px solid var(--gf-color-border-strong); border-radius: 10px; background-color: var(--gf-color-surface-raised); color: var(--gf-color-text); font-size: 13px; }
+.gf-field textarea { resize: vertical; font: 12px/1.6 var(--gf-font-mono); }
+.gf-field :is(input, textarea)::placeholder { color: var(--gf-color-text-tertiary); }
+.gf-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gf-color-text); }
+.gf-form-stack { display: grid; gap: 16px; }
+.gf-form-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--gf-color-border); }
+.gf-form-hint { flex-basis: 100%; margin: 0; font-size: 12px; text-align: right; color: var(--gf-color-text-tertiary); }
+.gf-status-pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border: 1px solid var(--gf-color-border); border-radius: var(--gf-radius-pill); background: var(--gf-color-surface); color: var(--gf-color-text-secondary); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.gf-status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.gf-status-pill[data-tone='success'] { color: var(--gf-color-success); background: var(--gf-color-success-bg); border-color: color-mix(in srgb, var(--gf-color-success) 22%, transparent); }
+.gf-status-pill[data-tone='warning'] { color: var(--gf-color-warning); background: var(--gf-color-warning-bg); border-color: color-mix(in srgb, var(--gf-color-warning) 24%, transparent); }
+.gf-status-pill[data-tone='danger'] { color: var(--gf-color-danger); background: var(--gf-color-danger-bg); border-color: color-mix(in srgb, var(--gf-color-danger) 24%, transparent); }
+.gf-status-pill[data-tone='accent'] { color: var(--gf-color-accent); background: var(--gf-color-accent-bg); border-color: color-mix(in srgb, var(--gf-color-accent) 23%, transparent); }
+.gf-id-chip { display: inline-block; max-width: 100%; padding: 1px 7px; border-radius: 6px; background: var(--gf-color-surface); color: var(--gf-color-text-tertiary); font: 11px/1.6 var(--gf-font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .heading-actions :where(button, a):not([class*="bg-kumo-brand"]):not(:disabled), .proposal-review-actions :where(button, a):not([class*="bg-kumo-brand"]):not(:disabled) { border: 1px solid var(--gf-color-border-strong); color: var(--gf-color-text); }

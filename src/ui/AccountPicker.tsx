@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import type { CloudflareFeature } from "../shared/cloudflare-permissions";
 import { request } from "./api";
+import { environmentLabel as label } from "./deploy-progress";
 import InfoTip from "./InfoTip";
 import { effectiveAccount, type AccountsOverview } from "./cloudflare-accounts-data";
 import "./cloudflare-connection.css";
 import "./people-settings.css";
 
 type FeatureState = { feature: CloudflareFeature; granted: boolean };
-const label = (environment: string) => environment === "production" ? "Production" : environment === "staging" ? "Staging" : environment;
 
 export default function DeployAccounts({ repositoryId, environments, canManage, feature = "deploy" }: { repositoryId: string; environments: string[]; canManage: boolean; feature?: CloudflareFeature }) {
   const [overview, setOverview] = useState<AccountsOverview | null>(null);
