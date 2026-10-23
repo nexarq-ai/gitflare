@@ -1,6 +1,7 @@
 import { hostOrigins } from './hosts';
 
 export const SIGNED_IN_HINT_COOKIE = 'gf_signed_in';
+export const SIGNED_IN_STATUS_PATH = '/api/session/signed-in';
 
 const SHARED_HOST_SUFFIXES = ['workers.dev', 'pages.dev', 'github.io', 'vercel.app', 'netlify.app', 'herokuapp.com', 'co.uk', 'org.uk', 'com.au', 'co.in', 'co.jp'];
 

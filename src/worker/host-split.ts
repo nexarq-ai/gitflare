@@ -41,14 +41,20 @@ export async function hostRedirect(request: Request, env: AppEnv, signedIn: (req
   return isKnownAppRoute(route) && !isSiteRoute(route) ? redirect(toApp, 302) : null;
 }
 
-export async function withHostOrigins(response: Response, env: AppEnv, pathname = '', head: string | Promise<string> = ''): Promise<Response> {
+export function withConnectSource(policy: string, origin: string): string {
+  return policy.replace(/connect-src ([^;]*)/, (directive, sources: string) => sources.split(/\s+/).includes(origin) ? directive : `connect-src ${sources} ${origin}`);
+}
+
+export async function withHostOrigins(response: Response, env: AppEnv, pathname = '', head: string | Promise<string> = '', searchTags = ''): Promise<Response> {
   const origins = envHostOrigins(env);
-  if (!origins || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
+  if ((!origins && !searchTags) || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
   const html = await response.text();
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
   headers.delete('ETag');
-  const meta = `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}">${pathname && followsSavedTheme(routeFromLocation(pathname, '')) ? '<meta name="gitflare-theme" content="system">' : ''}`;
+  const policy = headers.get('Content-Security-Policy');
+  if (origins && policy) headers.set('Content-Security-Policy', withConnectSource(policy, origins.app));
+  const meta = `${searchTags}${origins ? `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}">${pathname && followsSavedTheme(routeFromLocation(pathname, '')) ? '<meta name="gitflare-theme" content="system">' : ''}` : ''}`;
   const init = { status: response.status, statusText: response.statusText, headers };
   const streamed = typeof head === 'string' ? null : streamSocialMeta(html, meta, head);
   if (streamed) return new Response(streamed, init);

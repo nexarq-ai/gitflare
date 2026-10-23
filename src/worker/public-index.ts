@@ -14,6 +14,7 @@ export const PUBLIC_INDEX_PATH_LIMIT = 20_000;
 export const PUBLIC_INDEX_PAGE = 20;
 export const PUBLIC_INDEX_CURSOR_MAX = 1000;
 export const PUBLIC_INDEX_CRON = '30 4 * * *';
+export const SITEMAP_REPOSITORY_LIMIT = 500;
 const PATH_CHUNK = 1000;
 const LANGUAGE_LIMIT = 12;
 const RECONCILE_CONCURRENCY = 4;
@@ -113,6 +114,15 @@ export async function explorePublic(env: IndexEnv, access: SecurityService, sort
     value: { sort, language, items: items.map(card), languages: languages.results.map(row => row.language), nextCursor: nextCursor(cursor, rows.results), indexed: true },
     repositoryIds: items.map(row => row.repository_id), stale,
   };
+}
+
+export async function sitemapRepositories(env: IndexEnv, access: SecurityService): Promise<{ handle: string; name: string; updatedAt: string }[]> {
+  const db = publicIndex(env);
+  if (!db) return [];
+  await preparedIndex(db);
+  const rows = await db.prepare(`SELECT repository_id, workspace_id, handle, name, updated_at FROM repositories ORDER BY updated_at DESC, repository_id LIMIT ${SITEMAP_REPOSITORY_LIMIT}`).all<Pick<RepositoryRow, 'repository_id' | 'workspace_id' | 'handle' | 'name' | 'updated_at'>>();
+  const { live } = await stillPublic(access, rows.results);
+  return rows.results.filter(row => live.has(row.repository_id)).map(row => ({ handle: row.handle, name: row.name, updatedAt: row.updated_at }));
 }
 
 export async function searchPublic(env: IndexEnv, access: SecurityService, query: string, type: PublicSearchType, cursor: number): Promise<IndexedPage<PublicSearch>> {

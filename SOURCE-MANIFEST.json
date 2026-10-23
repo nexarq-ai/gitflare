@@ -320,8 +320,8 @@
     },
     {
       "path": "src/shared/signed-in-hint.ts",
-      "size": 1608,
-      "sha256": "050ddbf6016f81126ed30519e6e2aa6151c69e87b4061f57db8e3b8c7b7737f4"
+      "size": 1671,
+      "sha256": "be533b9c27a6a0a3c15a6b8a0192873cac3c23956e7acf61703857ffd9846bcf"
     },
     {
       "path": "src/shared/social-card-svg.ts",
@@ -420,8 +420,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87533,
-      "sha256": "dd56b631a9af28deb29072be2086c8a43ef37d5335ce09fdafd80eafc9db798a"
+      "size": 87576,
+      "sha256": "0317f3faaddf72023783ad32dabe0c9fd038e5006824c3ea4c786f2c9e99e541"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -780,8 +780,8 @@
     },
     {
       "path": "src/ui/hosts.ts",
-      "size": 2034,
-      "sha256": "df8aad2d15934055d1791823fdfc56b6c6e3091480cf80ba8938be98c11e9a3c"
+      "size": 4104,
+      "sha256": "cf53e462f6fa5d1cb6c1d1ff60f6c6ee5ff57c5348ffed14d5fa0abc5ea01d3b"
     },
     {
       "path": "src/ui/inbox-count.ts",
@@ -1585,8 +1585,8 @@
     },
     {
       "path": "src/worker/host-split.ts",
-      "size": 3629,
-      "sha256": "7ee8c2903cec12fccae5314db65d2dc9c4a70c0d39ddd8e5e0f3a9f21cf89d67"
+      "size": 4105,
+      "sha256": "014014b105cc0aa40ece75fcac5e3218e41271e56ec07aff46970fc18151ac5d"
     },
     {
       "path": "src/worker/hosted-onboarding.ts",
@@ -1615,8 +1615,8 @@
     },
     {
       "path": "src/worker/index.ts",
-      "size": 22976,
-      "sha256": "8aeed858b3e243d0b0e43fe6922a06806b8816c6f25f5eeefbde082c3184e151"
+      "size": 23755,
+      "sha256": "27abc62868525818434f8c4112ac25778c8ac497b3b7bb07fd15da9d5ce8b77d"
     },
     {
       "path": "src/worker/installation-admin.ts",
@@ -1905,8 +1905,8 @@
     },
     {
       "path": "src/worker/public-index.ts",
-      "size": 24039,
-      "sha256": "c28d41de96603118a79981e72446836264fd03d27ead85627ce2e03e047e768c"
+      "size": 24806,
+      "sha256": "18f57123a63eeb6e70ca981be2837070029b343e96042e0491eaf6ac44543a7f"
     },
     {
       "path": "src/worker/public-issues.ts",
@@ -1915,8 +1915,8 @@
     },
     {
       "path": "src/worker/public-pages.ts",
-      "size": 463,
-      "sha256": "9542311a7342c995f8e3d4818cd314fe2d37d15052ec94b25798edefd94bd042"
+      "size": 410,
+      "sha256": "f9148880f8c9b69fdef6cbc0eeb13c4148efd6aec025b34cf3894f8546f1c4d4"
     },
     {
       "path": "src/worker/public-preload.ts",
@@ -2024,6 +2024,11 @@
       "sha256": "f9006ecd7e2e050080aa93d99bbfc235a473108cfd486019d62c48103403180d"
     },
     {
+      "path": "src/worker/search-indexing.ts",
+      "size": 3007,
+      "sha256": "b7ce8466a40a2cacb2d3a876361c5b8c38ebdb36bdc15fb7a8136a2ad892a125"
+    },
+    {
       "path": "src/worker/secrets-scopes.ts",
       "size": 354,
       "sha256": "fded7c871c8b15b55044242834421c300bb810a28e9b85cde4a65321cf7976cb"
@@ -2055,8 +2060,8 @@
     },
     {
       "path": "src/worker/signed-in-hint.ts",
-      "size": 2205,
-      "sha256": "210d9281308f4c85e9a1602a28d8f741185b46efdc059ff18d126b9f69c29c46"
+      "size": 4542,
+      "sha256": "d0efb59f45f35b51f68a12213082818541df1c16ddbb080b3d6a9b44c54edb20"
     },
     {
       "path": "src/worker/skill-edit.ts",
@@ -2065,8 +2070,8 @@
     },
     {
       "path": "src/worker/social-cards.ts",
-      "size": 14575,
-      "sha256": "6d4916c67f0b2231a538f4119d234c07687c25add988101ededa0f449bffc0ba"
+      "size": 15352,
+      "sha256": "90285170f7effca5b3c5836acaaf1582a661f1b6c3972dc415094d8e5404b475"
     },
     {
       "path": "src/worker/social-raster.ts",
