@@ -170,5 +170,5 @@ export default function CloudflareAccounts({ canManage, repositories, workspaceN
 }
 
 function AccountId({ id, name, onCopied }: { id: string; name: string; onCopied: () => void }) {
-  return <small className="cf-account-id"><code>{id}</code><button type="button" className="cf-copy" aria-label={`Copy the account ID of ${name}`} onClick={() => void navigator.clipboard.writeText(id).then(onCopied).catch(() => {})}><CopyIcon size={12} /></button></small>;
+  return <small className="cf-account-id"><code title={id}>{id}</code><button type="button" className="cf-copy" aria-label={`Copy the account ID of ${name}`} onClick={() => void navigator.clipboard.writeText(id).then(onCopied).catch(() => {})}><CopyIcon size={12} /></button></small>;
 }

@@ -31,7 +31,7 @@
 .community-ai-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; padding: 16px; }
 .community-ai-models { display: flex; flex-wrap: wrap; gap: 8px 16px; grid-column: 1 / -1; }
 .community-ai-models label, .community-ai-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gf-color-text); }
-.community-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; justify-content: flex-end; }
+.community-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; justify-content: flex-end; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--gf-color-border); }
 .community-ai-switches { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
 .triage-suggestion { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px dashed var(--gf-color-border); border-radius: 8px; font-size: 13px; }
 .triage-suggestion ul { margin: 0; padding-left: 18px; }

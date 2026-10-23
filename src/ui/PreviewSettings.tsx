@@ -101,7 +101,7 @@ export default function PreviewSettings({ repositoryId, canManage = false, onNot
             </select>
           </div>
           <div className="form-field">
-            <span className="field-label"><label htmlFor="preview-target">Preview Worker <span className="proposal-optional">(optional)</span></label><InfoTip label="Preview Worker">For repositories with several Workers. Empty uses the deploy target for the root Wrangler config, or its name.</InfoTip></span>
+            <span className="field-label"><label htmlFor="preview-target">Preview Worker</label><InfoTip label="Preview Worker">For repositories with several Workers. Empty uses the deploy target for the root Wrangler config, or its name.</InfoTip><span className="gf-field-optional">Optional</span></span>
             <Input id="preview-target" maxLength={63} value={targetWorker} placeholder={target?.workerName ?? "my-worker"} onChange={(event) => setTargetWorker(event.target.value.toLowerCase())} />
           </div>
         </fieldset>
@@ -110,7 +110,7 @@ export default function PreviewSettings({ repositoryId, canManage = false, onNot
           <label className="check-settings-toggle"><input type="radio" name="preview-access" checked={access === "cloudflare-access"} disabled={!accessAvailable && access !== "cloudflare-access"} onChange={() => setAccess("cloudflare-access")} />{accessAvailable ? "Cloudflare Access" : "Cloudflare Access — not available for workers.dev URLs"}<InfoTip label="Cloudflare Access">{accessAvailable ? PREVIEW_ACCESS_TIP : snapshot.access.cloudflareAccess.reason}</InfoTip></label>
           {access === "cloudflare-access" && (
             <div className="form-field">
-              <span className="field-label"><label htmlFor="preview-domains">Allowed email domains <span className="proposal-optional">(optional)</span></label><InfoTip label="Allowed email domains">One per line, for example example.com. Empty allows every workspace member who can read this repository.</InfoTip></span>
+              <span className="field-label"><label htmlFor="preview-domains">Allowed email domains</label><InfoTip label="Allowed email domains">One per line, for example example.com. Empty allows every workspace member who can read this repository.</InfoTip><span className="gf-field-optional">Optional</span></span>
               <textarea id="preview-domains" rows={2} value={domains} placeholder="example.com" onChange={(event) => setDomains(event.target.value)} />
             </div>
           )}

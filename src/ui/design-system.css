@@ -469,6 +469,15 @@ a:has(> .gf-brand-name), a:has(> .gf-brand-name):hover, a:has(> .gf-brand-name):
   }
   .page-content :is(button, a)[data-kumo-component='Button'][class*='h-9'] { font-size: var(--gf-text-sm); padding-inline: 14px; }
 }
+.panel-header > h2 + .info-tip { margin-left: -10px; margin-right: auto; }
+.settings-content .page-heading h1 { font-size: 24px; letter-spacing: -.03em; }
+.settings-content .page-heading p { margin-top: 4px; font-size: 13px; line-height: 1.6; }
+.settings-content .form-field label, .settings-content .form-field .field-label { font-size: 13px; font-weight: 500; color: var(--gf-color-text); }
+.settings-content .form-field small { font-size: 12px; color: var(--gf-color-text-tertiary); }
+.settings-content .form-field :is(input:not([type='checkbox']):not([type='radio']):not([class*='bg-kumo']), select:not([class*='bg-kumo']), textarea:not([class*='bg-kumo'])) { border: 1px solid var(--gf-color-border-strong); border-radius: 10px; background-color: var(--gf-color-surface-raised); color: var(--gf-color-text); font-size: 13px; }
+.settings-content .form-field :is(input:not([type='checkbox']):not([type='radio']):not([class*='bg-kumo']), select:not([class*='bg-kumo'])) { min-height: 36px; }
+.settings-content .form-field textarea:not([class*='bg-kumo']) { min-height: 88px; padding: 8px 12px; }
+.settings-content .form-field input:not([type='checkbox']):not([type='radio']):not([class*='bg-kumo']) { padding: 7px 12px; }
 .gf-field { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 520px; min-width: 0; font-size: 13px; color: var(--gf-color-text-secondary); }
 .gf-field-label { display: inline-flex; align-items: center; min-height: 22px; font-weight: 500; color: var(--gf-color-text); }
 .gf-field-label .info-tip { margin-left: 2px; }
@@ -487,4 +496,4 @@ a:has(> .gf-brand-name), a:has(> .gf-brand-name):hover, a:has(> .gf-brand-name):
 .gf-status-pill[data-tone='danger'] { color: var(--gf-color-danger); background: var(--gf-color-danger-bg); border-color: color-mix(in srgb, var(--gf-color-danger) 24%, transparent); }
 .gf-status-pill[data-tone='accent'] { color: var(--gf-color-accent); background: var(--gf-color-accent-bg); border-color: color-mix(in srgb, var(--gf-color-accent) 23%, transparent); }
 .gf-id-chip { display: inline-block; max-width: 100%; padding: 1px 7px; border-radius: 6px; background: var(--gf-color-surface); color: var(--gf-color-text-tertiary); font: 11px/1.6 var(--gf-font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
-.heading-actions :where(button, a):not([class*="bg-kumo-brand"]):not(:disabled), .proposal-review-actions :where(button, a):not([class*="bg-kumo-brand"]):not(:disabled) { border: 1px solid var(--gf-color-border-strong); color: var(--gf-color-text); }
+.heading-actions :where(button, a):not([class*="bg-kumo-brand"]):not([style*="--kumo-button-emphasis"]):not(:disabled), .proposal-review-actions :where(button, a):not([class*="bg-kumo-brand"]):not([style*="--kumo-button-emphasis"]):not(:disabled) { border: 1px solid var(--gf-color-border-strong); color: var(--gf-color-text); }

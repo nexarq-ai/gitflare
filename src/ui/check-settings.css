@@ -1,8 +1,8 @@
 .check-settings { margin-top: 16px; }
-.check-settings-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; border: 0; padding: 0; margin: 0 0 14px; min-width: 0; }
+.check-settings-fields { display: grid; grid-template-columns: minmax(0, 520px); gap: 16px; border: 0; padding: 0; margin: 0 0 14px; min-width: 0; }
 .check-settings-fields .form-field input, .check-settings-fields .form-field select { width: 100%; }
 .check-settings-fields small { display: block; margin-top: 4px; font-size: 12px; color: var(--gf-color-text-secondary); }
-.check-settings .branch-rule-actions { display: flex; justify-content: flex-end; }
+.check-settings .branch-rule-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--gf-color-border); }
 .check-timeout { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--gf-color-border); border-radius: 6px; background: var(--gf-color-surface); font-size: 13px; }
 .check-timeout p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; }
 .check-timeout p span { color: var(--gf-color-text-secondary); }

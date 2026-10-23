@@ -9,7 +9,6 @@
 .profile-settings-link-row > small { grid-column: 1 / -1; }
 .profile-settings-error { color: var(--gf-color-danger); font-size: 12px; }
 .profile-settings-add { justify-self: start; }
-.profile-settings-actions { display: flex; align-items: center; gap: 12px; }
 .profile-settings-saved { display: inline-flex; align-items: center; gap: 6px; color: var(--gf-color-success); font-size: 13px; }
 .profile-settings-view { display: inline-flex; align-items: center; gap: 4px; color: var(--gf-color-accent); font-size: 13px; }
 .profile-settings-view:hover { text-decoration: underline; text-underline-offset: 3px; }

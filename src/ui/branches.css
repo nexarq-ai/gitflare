@@ -1,4 +1,4 @@
-.branch-actions { display: flex; justify-content: flex-end; }
+.branch-actions > * { margin-left: auto; }
 .branch-created { margin-top: 16px; }
 .branch-created .panel-body > p { margin: 0 0 10px; font-size: 13px; color: var(--gf-color-text-secondary); }
 .branch-created .text-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 12px; font-size: 13px; }
