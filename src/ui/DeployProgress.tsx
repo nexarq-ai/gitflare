@@ -10,7 +10,7 @@ const ACTIVE_POLL_MS = 5000;
 const IDLE_REFRESH_MS = 30000;
 const PHASE_LABELS = { active: "Deploying", succeeded: "Live", failed: "Failed" } as const;
 
-function useNow(enabled: boolean) {
+export function useNow(enabled: boolean) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!enabled) return;
@@ -107,7 +107,9 @@ export default function DeployStatusPill({ repositoryId, location, href, onOpen 
     const unsubscribe = subscribeDeployments(schedule);
     const visible = () => { if (!document.hidden && !timer) void tick(); };
     document.addEventListener("visibilitychange", visible);
-    return () => { disposed = true; window.clearTimeout(timer); unsubscribe(); document.removeEventListener("visibilitychange", visible); };
+    window.addEventListener("focus", visible);
+    window.addEventListener("pageshow", visible);
+    return () => { disposed = true; window.clearTimeout(timer); unsubscribe(); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", visible); window.removeEventListener("pageshow", visible); };
   }, [repositoryId, location]);
 
   const item = items.find((entry) => entry.phase === "active") ?? items[0];
