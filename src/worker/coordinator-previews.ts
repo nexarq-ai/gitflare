@@ -3,6 +3,7 @@ import { ApiError, assertReplayFingerprint } from './domain';
 import { PREVIEW_FAILURE_MAX, type PreviewStep } from '../shared/preview-progress';
 import type { PreviewSetupCode } from '../shared/preview-setup';
 import type { SqlStore } from './store';
+import { candidateKeyPrefix, PREVIEW_LIVE_STATUSES, previewCandidateSha, previewSubject } from './preview-subject';
 import type { Principal } from './security';
 import { type Receipt, type PreviewCapability, type WorkerPreviewInfo, type PreviewLifetime, type PreviewState, type WorkerPreviewRecord, type PreviewExtension, type StoppedPreview, PREVIEW_LEASE_MS, PREVIEW_READY_MS, WORKER_PREVIEW_TTL_MS, type PreviewFailureRecord, type PreviewEndReason, type LastPreview, type PreviewStatus, PREVIEW_STARTING_MESSAGE, type CoordinatorHost } from './coordinator-types';
 
@@ -25,6 +26,12 @@ export class PreviewBook {
 
   private requiredMission(id: string): Mission { return this.host.requiredMission(id); }
   private ensureDispatchAlarm(when: number): Promise<void> { return this.host.ensureDispatchAlarm(when); }
+
+  private target(id: string): { epoch: number; candidateSha: string | null; live: boolean } {
+    const { missionId, runId } = previewSubject(id);
+    const mission = this.requiredMission(missionId);
+    return { epoch: mission.epoch, candidateSha: previewCandidateSha(mission, runId), live: PREVIEW_LIVE_STATUSES.includes(mission.status) };
+  }
 
   async savePreviewCapability(hash: string, capability: PreviewCapability): Promise<void> {
     this.store.put(`preview:${hash}`, capability);
@@ -50,8 +57,8 @@ export class PreviewBook {
 
   claimPreview(key: string, id: string, epoch: number, candidateSha: string): { sandboxName?: string; worker?: WorkerPreviewInfo; notes?: string[]; setup?: PreviewSetupCode; claimId: string; claimed: boolean; expiresAt?: number; previous?: string } {
     return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
-      if (mission.epoch !== epoch || mission.candidateSha !== candidateSha || !['needs_review', 'approved', 'integrating', 'integrated'].includes(mission.status)) throw new ApiError(409, 'STALE_PREVIEW', 'Only the current verified candidate can be previewed.');
+      const target = this.target(id);
+      if (target.epoch !== epoch || target.candidateSha !== candidateSha || !target.live) throw new ApiError(409, 'STALE_PREVIEW', 'Only the current verified candidate can be previewed.');
       const fingerprint = JSON.stringify(['preview', id, epoch, candidateSha]);
       const receipt = this.store.get<Receipt<boolean>>(`request:${key}`);
       if (receipt) assertReplayFingerprint(receipt.fingerprint, fingerprint);
@@ -70,9 +77,9 @@ export class PreviewBook {
   }
 
   private previewClaim(id: string, epoch: number, candidateSha: string, claimId: string): PreviewState {
-    const mission = this.requiredMission(id);
+    const target = this.target(id);
     const state = this.store.get<PreviewState>(`preview-state:${id}`);
-    if (mission.epoch !== epoch || mission.candidateSha !== candidateSha || !['needs_review', 'approved', 'integrating', 'integrated'].includes(mission.status) || !state || state.claimId !== claimId || state.epoch !== epoch || state.candidateSha !== candidateSha || state.expiresAt <= Date.now()) throw new ApiError(409, 'STALE_PREVIEW', 'This preview attempt is no longer current.');
+    if (target.epoch !== epoch || target.candidateSha !== candidateSha || !target.live || !state || state.claimId !== claimId || state.epoch !== epoch || state.candidateSha !== candidateSha || state.expiresAt <= Date.now()) throw new ApiError(409, 'STALE_PREVIEW', 'This preview attempt is no longer current.');
     return state;
   }
 
@@ -115,9 +122,9 @@ export class PreviewBook {
 
   extendPreview(id: string): PreviewExtension {
     return this.ctx.storage.transactionSync(() => {
-      const mission = this.requiredMission(id);
+      const target = this.target(id);
       const state = this.store.get<PreviewState>(`preview-state:${id}`);
-      if (!state || state.phase !== 'ready' || state.expiresAt <= Date.now() || state.epoch !== mission.epoch || state.candidateSha !== mission.candidateSha) throw new ApiError(409, 'PREVIEW_NOT_READY', 'Only a ready preview of the current candidate can be extended.');
+      if (!state || state.phase !== 'ready' || state.expiresAt <= Date.now() || state.epoch !== target.epoch || state.candidateSha !== target.candidateSha) throw new ApiError(409, 'PREVIEW_NOT_READY', 'Only a ready preview of the current candidate can be extended.');
       if (state.extended) throw new ApiError(409, 'PREVIEW_ALREADY_EXTENDED', 'This preview was already extended once. Prepare a new preview when it expires.');
       const expiresAt = state.expiresAt + (state.extendMs ?? PREVIEW_READY_MS);
       this.store.put(`preview-state:${id}`, { ...state, expiresAt, extended: true } satisfies PreviewState);
@@ -185,7 +192,7 @@ export class PreviewBook {
   }
 
   previewStatus(id: string): PreviewStatus {
-    const mission = this.requiredMission(id);
+    const mission = this.target(id);
     const current = (entry?: { epoch: number; candidateSha: string }) => !!entry && entry.epoch === mission.epoch && entry.candidateSha === mission.candidateSha;
     const state = this.store.get<PreviewState>(`preview-state:${id}`);
     if (current(state) && state!.expiresAt > Date.now()) {
@@ -204,5 +211,14 @@ export class PreviewBook {
     const failure = this.store.get<PreviewFailureRecord>(`preview-failure:${id}`);
     if (current(failure)) return { status: 'failed', candidateSha: mission.candidateSha, error: failure!.message, ...(failure!.setup ? { setup: failure!.setup } : {}), ...history };
     return { status: 'none', candidateSha: mission.candidateSha, ...history };
+  }
+
+  candidatePreviewKeys(missionId: string): string[] {
+    const keys = new Set<string>();
+    for (const prefix of ['preview-state:', 'worker-preview:']) {
+      const scope = `${prefix}${candidateKeyPrefix(missionId)}`;
+      for (const [key] of this.store.entries(scope)) keys.add(key.slice(prefix.length));
+    }
+    return [...keys];
   }
 }

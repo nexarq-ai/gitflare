@@ -30,9 +30,10 @@ import { triggerMirrorSync } from './github-mirror-runtime';
 import { refreshPublicRepository } from './public-discovery';
 import { previewSecretBindings } from './repository-secrets';
 import { logFailure } from './log';
+import { candidateView, previewCandidateSha, previewKey } from './preview-subject';
 
 export interface LandingParams { kind: 'land'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; baseSha: string; claimId: string; principal: Principal }
-export interface PreviewParams { kind: 'preview'; repositoryId: string; missionId: string; epoch: number; candidateSha: string; claimId: string; principal: Principal }
+export interface PreviewParams { kind: 'preview'; repositoryId: string; missionId: string; runId?: string; epoch: number; candidateSha: string; claimId: string; principal: Principal }
 export interface PreviewRetireParams { kind: 'preview-retire'; repositoryId: string; missionId: string; previewName: string; workspaceId: string; d1DatabaseIds?: string[]; host?: PreviewHost; principal?: Principal }
 export interface StepConfig { retries?: { limit: number; delay: string | number; backoff?: 'constant' | 'linear' | 'exponential' }; timeout?: string | number }
 export interface StepRunner { do<T>(name: string, config: StepConfig, callback: () => Promise<T>): Promise<T>; sleep?(name: string, duration: number): Promise<void> }
@@ -141,7 +142,12 @@ export async function landCandidate(env: AppEnv, params: LandingParams, step: St
   });
 }
 
-export async function retireMissionPreview(env: AppEnv, repositoryId: string, missionId: string, workspaceId: string): Promise<StoppedPreview['kind']> {
+export async function retireMissionPreview(env: AppEnv, repositoryId: string, missionId: string, workspaceId: string): Promise<StoppedPreview['kind'][]> {
+  const candidates = await env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`).candidatePreviewKeys(missionId);
+  return Promise.all([missionId, ...candidates].map((key) => retirePreviewKey(env, repositoryId, key, workspaceId)));
+}
+
+export async function retirePreviewKey(env: AppEnv, repositoryId: string, missionId: string, workspaceId: string): Promise<StoppedPreview['kind']> {
   const stopped = await env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`).stopPreview(missionId);
   const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(workspaceId));
   if (stopped.kind === 'container') {
@@ -339,7 +345,8 @@ async function candidateTarget(env: AppEnv, forkName: string | undefined, sha: s
 }
 
 export async function preparePreview(env: AppEnv, params: PreviewParams, step: StepRunner): Promise<void> {
-  const { repositoryId, missionId, epoch, candidateSha, claimId, principal } = params;
+  const { repositoryId, epoch, candidateSha, claimId, principal } = params;
+  const key = previewKey(params.missionId, params.runId);
   const coordinator = env.GITFLARE_COORDINATOR.getByName(`repository:${repositoryId}`);
   const catalog = env.GITFLARE_COORDINATOR.getByName(catalogName(principal.workspaceId));
   const access = securityClient(env);
@@ -348,14 +355,15 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
     let setup: PreviewSetupCode | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const renew = async () => {
-      try { await coordinator.renewPreview(missionId, epoch, candidateSha, claimId); }
-      catch (error) { logFailure('preview_heartbeat_failed', error, { repositoryId, missionId, epoch, claimId }, 'warn'); }
+      try { await coordinator.renewPreview(key, epoch, candidateSha, claimId); }
+      catch (error) { logFailure('preview_heartbeat_failed', error, { repositoryId, missionId: key, epoch, claimId }, 'warn'); }
       if (!finished) timer = setTimeout(renew, PREVIEW_HEARTBEAT_MS);
     };
     timer = setTimeout(renew, PREVIEW_HEARTBEAT_MS);
     try {
-      const [mission, repository] = await Promise.all([coordinator.getMission(missionId), coordinator.getRepository(repositoryId)]);
-      if (!mission || !repository || mission.epoch !== epoch || mission.candidateSha !== candidateSha) throw new PreviewFailure('The candidate changed before its preview started.');
+      const [stored, repository] = await Promise.all([coordinator.getMission(params.missionId), coordinator.getRepository(repositoryId)]);
+      if (!stored || !repository || stored.epoch !== epoch || previewCandidateSha(stored, params.runId) !== candidateSha) throw new PreviewFailure('The candidate changed before its preview started.');
+      const mission = candidateView(stored, params.runId);
       if (!env.SANDBOX) { setup = 'PREVIEW_NOT_CONFIGURED'; throw new PreviewFailure('The preview runner is unavailable.'); }
       const settings = await coordinator.getPreviewSettings();
       const untrusted = isUntrustedMission(mission);
@@ -372,12 +380,12 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       });
       const previews = plan.config;
       const host = plan.host;
-      const alias = previews ? previewAlias(missionId, previews.workerName) : '';
+      const alias = previews ? previewAlias(key, previews.workerName) : '';
       const previewCall = previews ? previewsCall(previews) : null;
       const prepared = await prepareCandidatePreview(env, {
         repository, mission, previewAttemptId: claimId, workerPreviews: !!previews || !!installationProblem, ...(plan.containerReason ? { workerPreviewsUnavailable: plan.containerReason } : {}), ...(plan.configPath ? { configPath: plan.configPath } : {}),
-        assertAuthority: () => access.check(principal, 'read', 'repository', repositoryId, missionId),
-        onStep: (step) => coordinator.previewStep(missionId, epoch, candidateSha, claimId, step),
+        assertAuthority: () => access.check(principal, 'read', 'repository', repositoryId, params.missionId),
+        onStep: (step) => coordinator.previewStep(key, epoch, candidateSha, claimId, step),
         publishWorker: async (built) => {
           if (!previews || !previewCall || !host) { setup = installationProblem ? 'PREVIEWS_INSTALLATION_UNAVAILABLE' : plan.setup ?? 'PREVIEWS_NOT_CONNECTED'; throw new PreviewFailure(installationProblem ?? 'Worker previews are not configured for this installation.'); }
           if (host.access === 'cloudflare-access') await ensurePreviewAccess(previewCall, previews.accountId, previews.workerName, await previewAccessIncludes(env, principal, repositoryId, settings));
@@ -401,20 +409,20 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
       if (prepared.kind === 'worker') {
         const result = prepared.published;
         if (!result || !host) throw new PreviewFailure('The Worker preview was not published.');
-        const expiresAt = await coordinator.workerPreviewReady(missionId, epoch, candidateSha, claimId, { previewName: alias, previewUrl: result.previewUrl, deploymentUrl: result.deploymentUrl, notes: [...plan.notes, ...result.notes].slice(0, 50), host, ...(result.baseBindings ? { baseBindings: result.baseBindings.slice(0, 50) } : {}), ...(result.d1Databases?.length ? { d1Databases: result.d1Databases } : {}) }, lifetime, durablePrincipal(principal));
-        await catalog.holdPreviewSlot(missionId, expiresAt);
+        const expiresAt = await coordinator.workerPreviewReady(key, epoch, candidateSha, claimId, { previewName: alias, previewUrl: result.previewUrl, deploymentUrl: result.deploymentUrl, notes: [...plan.notes, ...result.notes].slice(0, 50), host, ...(result.baseBindings ? { baseBindings: result.baseBindings.slice(0, 50) } : {}), ...(result.d1Databases?.length ? { d1Databases: result.d1Databases } : {}) }, lifetime, durablePrincipal(principal));
+        await catalog.holdPreviewSlot(key, expiresAt);
         return { worker: true, expiresAt, lifetimeMs };
       }
       const fallback = !previews && !installationProblem && plan.setup && usedContainerFallback(prepared.notes) ? plan.setup : undefined;
-      const expiresAt = await coordinator.previewReady(missionId, epoch, candidateSha, claimId, prepared.sandboxName, lifetime, prepared.notes, fallback);
+      const expiresAt = await coordinator.previewReady(key, epoch, candidateSha, claimId, prepared.sandboxName, lifetime, prepared.notes, fallback);
       await env.SANDBOX.getByName(prepared.sandboxName).expireAt(expiresAt);
-      await catalog.holdPreviewSlot(missionId, expiresAt);
+      await catalog.holdPreviewSlot(key, expiresAt);
     } catch (error) {
       const message = error instanceof PreviewFailure || error instanceof WorkerPreviewError || error instanceof WorkerBuildFailure ? error.message : error instanceof ApiError ? `The preview could not be started. ${error.detail}` : 'The preview could not be started.';
       const code = setup ?? (error instanceof ApiError && isPreviewSetupCode(error.code) ? error.code : undefined);
-      const released = await coordinator.previewFailed(missionId, claimId, message, code).catch(failure => { logFailure('preview_failure_record_failed', failure, { repositoryId, missionId, claimId }); return false; });
-      await env.SANDBOX?.getByName(`preview-${missionId}-${claimId}`).destroy().catch(failure => logFailure('preview_sandbox_destroy_failed', failure, { repositoryId, missionId, claimId }, 'warn'));
-      if (released) await catalog.releasePreviewSlot(missionId).catch(failure => logFailure('preview_slot_release_failed', failure, { workspaceId: principal.workspaceId, missionId }));
+      const released = await coordinator.previewFailed(key, claimId, message, code).catch(failure => { logFailure('preview_failure_record_failed', failure, { repositoryId, missionId: key, claimId }); return false; });
+      await env.SANDBOX?.getByName(`preview-${key}-${claimId}`).destroy().catch(failure => logFailure('preview_sandbox_destroy_failed', failure, { repositoryId, missionId: key, claimId }, 'warn'));
+      if (released) await catalog.releasePreviewSlot(key).catch(failure => logFailure('preview_slot_release_failed', failure, { workspaceId: principal.workspaceId, missionId: key }));
     } finally {
       finished = true;
       clearTimeout(timer);
@@ -424,10 +432,10 @@ export async function preparePreview(env: AppEnv, params: PreviewParams, step: S
   if (!prepared.worker || !step.sleep) return;
   await step.sleep('hold worker preview until expiry', prepared.lifetimeMs ?? 0);
   const extendedUntil = await step.do('read worker preview expiry', { retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' }, timeout: '1 minute' }, async () => {
-    const record = await coordinator.workerPreview(missionId);
+    const record = await coordinator.workerPreview(key);
     return record?.claimId === claimId ? record.expiresAt : 0;
   });
   if (extendedUntil > (prepared.expiresAt ?? 0)) await step.sleep('hold extended worker preview until expiry', extendedUntil - (prepared.expiresAt ?? 0));
-  const expired = await step.do('retire expired worker preview', { retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' }, timeout: '1 minute' }, async () => coordinator.retireWorkerPreview(missionId, claimId));
-  if (expired) await retirePreview(env, retireParams(repositoryId, missionId, principal.workspaceId, expired), step);
+  const expired = await step.do('retire expired worker preview', { retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' }, timeout: '1 minute' }, async () => coordinator.retireWorkerPreview(key, claimId));
+  if (expired) await retirePreview(env, retireParams(repositoryId, key, principal.workspaceId, expired), step);
 }

@@ -1,0 +1,41 @@
+.race-compare { margin-bottom: 16px; }
+.race-compare-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.race-compare-head h2 { margin: 0 0 4px; font-size: 15px; color: var(--gf-color-text); }
+.race-compare-head p { margin: 0; font-size: 13px; color: var(--gf-color-text-secondary); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.race-compare-path { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--gf-color-text-secondary); }
+.race-compare-path input { width: 160px; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--gf-color-border); border-radius: 6px; background: var(--gf-color-surface); color: var(--gf-color-text); font: 12px var(--gf-font-mono, ui-monospace, monospace); }
+.race-compare-path input:focus-visible { outline: 2px solid var(--gf-color-focus, var(--gf-color-accent)); outline-offset: 1px; }
+.race-compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.race-compare-card { min-width: 0; border: 1px solid var(--gf-color-border); border-radius: 8px; padding: 14px; background: var(--gf-color-surface-raised); display: flex; flex-direction: column; gap: 10px; font-size: 12px; color: var(--gf-color-text-secondary); }
+.race-compare-card.chosen { border-color: var(--gf-color-accent); box-shadow: 0 0 0 1px var(--gf-color-accent); }
+.race-compare-card h3 { margin: 0; font-size: 14px; color: var(--gf-color-text); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.race-compare-name { min-width: 0; overflow-wrap: anywhere; }
+.race-compare-chosen { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--gf-color-accent); white-space: nowrap; }
+.race-compare-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 12px; margin: 0; }
+.race-compare-facts div { min-width: 0; }
+.race-compare-facts dt { font-size: 11px; color: var(--gf-color-text-tertiary); }
+.race-compare-facts dd { margin: 0; color: var(--gf-color-text); overflow-wrap: anywhere; }
+.race-compare-add { color: var(--gf-color-success); }
+.race-compare-del { color: var(--gf-color-danger); }
+.race-compare-summary { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+details.race-compare-summary summary { cursor: pointer; }
+details.race-compare-summary p { margin: 8px 0 0; white-space: pre-line; }
+.race-compare-error { margin: 0; color: var(--gf-color-danger); overflow-wrap: anywhere; }
+.race-compare-preview { display: flex; flex-direction: column; gap: 8px; border: 1px dashed var(--gf-color-border); border-radius: 6px; padding: 10px; background: var(--gf-color-surface); }
+.race-compare-preview.ready { border-style: solid; }
+.race-compare-preview.starting { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.race-compare-preview.empty { align-items: flex-start; }
+.race-compare-frame { width: 100%; aspect-ratio: 16 / 10; border: 1px solid var(--gf-color-border); border-radius: 4px; background: var(--gf-color-surface-sunken, var(--gf-color-surface)); }
+.race-compare-note { margin: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.race-compare-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.race-compare-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.race-compare-slots { margin-bottom: 12px; }
+.race-compare-slots .race-compare-actions { margin-top: 8px; }
+.race-compare-preview-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.race-compare-host { min-width: 0; overflow-wrap: anywhere; font: 12px var(--gf-font-mono, ui-monospace, monospace); color: var(--gf-color-accent); }
+.race-compare-left { white-space: nowrap; color: var(--gf-color-text-tertiary); }
+@media (max-width: 480px) {
+  .race-compare-tools, .race-compare-path { width: 100%; }
+  .race-compare-path input { flex: 1; width: auto; }
+  .race-compare-frame { aspect-ratio: 3 / 4; }
+}

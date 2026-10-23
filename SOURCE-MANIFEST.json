@@ -915,8 +915,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 74079,
-      "sha256": "bffadd6c7a0afaec90aaf154f58e563122b349c90c0225a7e53511f4a4e303cc"
+      "size": 72172,
+      "sha256": "7b7013974ecd0b20603a953e2e59f897125ad84c9566a43d6da9dbace9a5fc38"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -1094,6 +1094,16 @@
       "sha256": "994c5e13d1f00bca45d3aabb521462431ff06f377e63b21596ffd5efcc6cd30c"
     },
     {
+      "path": "src/ui/race-compare.css",
+      "size": 4119,
+      "sha256": "8c2b47b6dcae0394685c7146183799aa86b60ce8fd98b55b469e340e2a2dd9a1"
+    },
+    {
+      "path": "src/ui/RaceCompare.tsx",
+      "size": 19998,
+      "sha256": "7e4597ee3465db64944ae1b8828661a903fc5fa9579e4b78af227d6eb4774447"
+    },
+    {
       "path": "src/ui/reauth.ts",
       "size": 533,
       "sha256": "a4a4631d596141e009377debab5e90ca5faec0ac43a0dd08ced2ad98aec7cd80"
@@ -1205,8 +1215,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 63985,
-      "sha256": "fe26cf5ca870b3d4f12b09afd1cb2b834349f68e4add26bbaaf1b26379d9ec78"
+      "size": 63262,
+      "sha256": "adb723b58f1002878812ffcbb33aecf5896cd305d20ac21b0aa9c6c85fb64798"
     },
     {
       "path": "src/ui/SubscribeButton.tsx",
@@ -1305,8 +1315,8 @@
     },
     {
       "path": "src/worker/background-work.ts",
-      "size": 33223,
-      "sha256": "433545b0eb48c2f2581d281595b05393bae8da4f323ebfdfa98fcce7b81f93a0"
+      "size": 33800,
+      "sha256": "4c1cbc143db9a67c31c9c705a8be23c8ad6e4e3d769385f119099043e28e68b4"
     },
     {
       "path": "src/worker/branch-protection.ts",
@@ -1325,8 +1335,8 @@
     },
     {
       "path": "src/worker/capacity.ts",
-      "size": 1711,
-      "sha256": "4590bee25cf200bd87277f56325dbd206e7ad257c82704be11702a2524648784"
+      "size": 1775,
+      "sha256": "5f675ed42f110df2db2c617ddf9d24f9dfef44c1ebc781ba0407ff809b70b818"
     },
     {
       "path": "src/worker/check-evidence.ts",
@@ -1375,8 +1385,8 @@
     },
     {
       "path": "src/worker/coordinator-capacity.ts",
-      "size": 4855,
-      "sha256": "b8195695c131d42732ca0efef1daa81e167c162389c3715847fb1e768fa98a5e"
+      "size": 5149,
+      "sha256": "c051381347051575f41bd4d3f4862951f437002a2e3f435e17f32295f8fa119c"
     },
     {
       "path": "src/worker/coordinator-dispatch.ts",
@@ -1390,18 +1400,18 @@
     },
     {
       "path": "src/worker/coordinator-previews.ts",
-      "size": 14147,
-      "sha256": "82b3c9d23fae918872e8df2ddfaf63a328cafd79b1966daf746e6eeb394afb79"
+      "size": 14766,
+      "sha256": "426c1125f9086163125120f43b449ed574aec112fffa769443b9724f0388e5eb"
     },
     {
       "path": "src/worker/coordinator-types.ts",
-      "size": 6000,
-      "sha256": "ae1d5993ea66d723c9b5c94749b1e475de4ed589ab179ece1b97f99e94e1931a"
+      "size": 6016,
+      "sha256": "592f0e7957d66a2f1585bd53284a4999fd7b7be22c953675da514ca85c57aaf8"
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 98169,
-      "sha256": "6679ea2e314ff116ac4a93333a0cbcaae56f29304d7a716eb6c413abff3606af"
+      "size": 98092,
+      "sha256": "9299cb34e4ebe5caf142616f40921b0e1850fdd4399ea17d06ef7955b24e7d46"
     },
     {
       "path": "src/worker/d1-migrations.ts",
@@ -1775,8 +1785,8 @@
     },
     {
       "path": "src/worker/mcp-tools/missions.ts",
-      "size": 22789,
-      "sha256": "43e33063145cd39f87cd56063c30be5472fc5c3afafe6a201e0a504eaf4c96f3"
+      "size": 23626,
+      "sha256": "96285d235b14749261513e08c82aedca39836f3769580f0de3ac7e08339db31e"
     },
     {
       "path": "src/worker/mcp-tools/moderation.ts",
@@ -1895,8 +1905,8 @@
     },
     {
       "path": "src/worker/preview-capability.ts",
-      "size": 5996,
-      "sha256": "288259d0e8e44d13b4e7ce897ebad8dec2bfb488fc39b91fa807e1a806958190"
+      "size": 6029,
+      "sha256": "9992eb50187d7fc7fe6fe409f134e4502662d3f7c9c57841ac895755f092fb9f"
     },
     {
       "path": "src/worker/preview-d1.ts",
@@ -1922,6 +1932,11 @@
       "path": "src/worker/preview-settings.ts",
       "size": 6353,
       "sha256": "7d1f94e18da4aaffdc9dcbec5bd11d604de710df8d0e8906d0879fd6d633a2f6"
+    },
+    {
+      "path": "src/worker/preview-subject.ts",
+      "size": 2165,
+      "sha256": "9d36b49c9fdd28df3bec7e893fc4530c60b6b7cdaadcd37ed5e798149c64ab87"
     },
     {
       "path": "src/worker/proposal-notifications.ts",
@@ -2055,8 +2070,8 @@
     },
     {
       "path": "src/worker/routes/missions.ts",
-      "size": 28303,
-      "sha256": "12423f15920c376e39cbdaba8705e6a981eaefa66b8771a7508e55749bc5fa82"
+      "size": 32102,
+      "sha256": "8e5485c0ee19e0d580981a8f9d38c8f67a2b3b5d9a589218fe3d91378caa932b"
     },
     {
       "path": "src/worker/routes/releases.ts",
@@ -2180,8 +2195,8 @@
     },
     {
       "path": "src/worker/worker-previews.ts",
-      "size": 13261,
-      "sha256": "43c3fc4af87221e1149cf2b8473312b6ae058228f95dcf38c57251a9ac5b6f46"
+      "size": 13569,
+      "sha256": "916e0514699800f8bca0372dcfca196daf38a460413c16397a4f72ccde024c3c"
     },
     {
       "path": "src/worker/worker-provisioning.ts",
@@ -2405,8 +2420,8 @@
     },
     {
       "path": "tests/mcp-candidates.test.ts",
-      "size": 4946,
-      "sha256": "e44f5d3cfebb8ee1bf20abc3c6ebc9c6a22ee7b461097e7a1719b53b8a53ae77"
+      "size": 7372,
+      "sha256": "28c5ee932fdfbe2980b72a5785720c01c0b5357b01a9e041c55623f2166d4347"
     },
     {
       "path": "tests/mcp.test.ts",
@@ -2534,6 +2549,11 @@
       "sha256": "04e1ef1ee7ce56c683effe461a0a01b46d4d094930465603eed5895fd54dc03e"
     },
     {
+      "path": "tests/race-compare.test.ts",
+      "size": 9944,
+      "sha256": "f9423e2d8a446bbd5e3fa5ad1d2bc0236477ac54a30f817b5077ebe3561c32d7"
+    },
+    {
       "path": "tests/release-assets-ui.test.ts",
       "size": 4238,
       "sha256": "771a322ac83c781bf8825b6b92ff38baf5117e11b86b4e34ffe3caaca9f5ff8b"
@@ -2605,8 +2625,8 @@
     },
     {
       "path": "tests/worker-previews.test.ts",
-      "size": 39551,
-      "sha256": "4ed4f5854221ea83d26551e90f80559a61893b8b061d28d845a5e832f1aa734b"
+      "size": 40022,
+      "sha256": "f8b2f9a11d3e3c9620b7e21a0cac535d1f323bec94ff52b50bd073a29e7acee6"
     },
     {
       "path": "tests/worker-provisioning.test.ts",

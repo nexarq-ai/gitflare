@@ -1,4 +1,5 @@
 import { ApiError } from './domain';
+import { previewSubject } from './preview-subject';
 import { hostedPreviewBindings, previewExports, previewMigrations, type PreviewBaseBindings, type PreviewBinding, type PreviewD1Database, type WorkerBundle } from './worker-bundle';
 
 // Worker Previews REST endpoints are not in the public API reference yet; paths and payloads mirror Wrangler 4.149 (deploy-helpers/src/preview/api.ts)
@@ -31,11 +32,16 @@ export function workerPreviewsConfig(env: WorkerPreviewsEnv): WorkerPreviewsConf
 }
 
 // Preview hostnames are `<alias>-<worker>`; the combined DNS label is limited to 63 characters
-export function previewAlias(missionId: string, workerName: string): string {
-  const compact = missionId.toLowerCase().replace(/[^a-z0-9]/g, '');
+export function previewAlias(key: string, workerName: string): string {
+  const { missionId, runId } = previewSubject(key);
+  const compact = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const mission = compact(missionId);
   const room = 63 - workerName.length - 1 - 'pr-'.length;
-  if (room < 4 || !compact) throw new ApiError(503, 'PREVIEWS_MISCONFIGURED', 'PREVIEWS_WORKER_NAME is too long to form preview hostnames.');
-  return `pr-${compact.slice(0, Math.min(12, room))}`;
+  if (room < 4 || !mission) throw new ApiError(503, 'PREVIEWS_MISCONFIGURED', 'PREVIEWS_WORKER_NAME is too long to form preview hostnames.');
+  const length = Math.min(12, room);
+  if (!runId) return `pr-${mission.slice(0, length)}`;
+  const half = Math.ceil(length / 2);
+  return `pr-${mission.slice(0, half)}${compact(runId).slice(0, length - half)}`;
 }
 
 export function validPreviewAlias(alias: string, workerName: string): boolean {
