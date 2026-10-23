@@ -9,6 +9,7 @@ export const APP_TITLE = 'Gitflare app';
 export const APP_DESCRIPTION = 'Sign in to your Gitflare workspace.';
 const CRAWLABLE = 'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /mcp\nDisallow: /oauth/\n';
 const UNCRAWLABLE = 'User-agent: *\nDisallow: /\n';
+const NOINDEX_CRAWLABLE = 'User-agent: *\nAllow: /\n';
 const APP_ENTRY_PATHS = new Set(['/', '/signin', '/signup']);
 
 const escape = (value: string) => value.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
@@ -21,7 +22,10 @@ export function searchRole(env: SearchEnv, origin: string): SearchRole {
 }
 
 export function robotsTxt(env: SearchEnv, origin: string): string {
-  if (searchRole(env, origin) !== 'site') return UNCRAWLABLE;
+  const role = searchRole(env, origin);
+  // Crawlers must fetch app pages to see their noindex; a Disallow would keep already-indexed URLs listed
+  if (role === 'app') return NOINDEX_CRAWLABLE;
+  if (role !== 'site') return UNCRAWLABLE;
   return env.EDITION === 'self-hosted' ? CRAWLABLE : `${CRAWLABLE}Sitemap: ${origin}/sitemap.xml\n`;
 }
 

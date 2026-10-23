@@ -2025,8 +2025,8 @@
     },
     {
       "path": "src/worker/search-indexing.ts",
-      "size": 3007,
-      "sha256": "b7ce8466a40a2cacb2d3a876361c5b8c38ebdb36bdc15fb7a8136a2ad892a125"
+      "size": 3238,
+      "sha256": "b4711d59e4c5b6aabe0a47c1462e0290186f18927ea065ec0d43153c85642c3e"
     },
     {
       "path": "src/worker/secrets-scopes.ts",
