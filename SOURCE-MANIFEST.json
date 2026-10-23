@@ -360,8 +360,8 @@
     },
     {
       "path": "src/ui/AccountPicker.tsx",
-      "size": 7567,
-      "sha256": "c7b74ca785fcda533407bf15081a8e806ff7f1e16027fb020fdbddd65010e5d5"
+      "size": 7492,
+      "sha256": "5a472e578f0f9de9bef5928ed887103f1cac8bad51ec872e7d080ebe465570ed"
     },
     {
       "path": "src/ui/AccountSettings.tsx",
@@ -555,8 +555,8 @@
     },
     {
       "path": "src/ui/cloudflare-connection.css",
-      "size": 21290,
-      "sha256": "6f946c7c2d46380e4fe398e818e80b31b4eaf9d55dbcc81d66325dc6dc5586e8"
+      "size": 23354,
+      "sha256": "2a0ec2995d8778319af0fdd0c2e7f5e70492ac9c967c79125bacef62bda6b36f"
     },
     {
       "path": "src/ui/cloudflare-deploy-button.css",
@@ -665,13 +665,13 @@
     },
     {
       "path": "src/ui/deploy-progress.ts",
-      "size": 5908,
-      "sha256": "4c0d048ecd442f626b5c837b3dc2cc54703a60a05f047d403a605f727ddd294b"
+      "size": 5941,
+      "sha256": "b1e7075d91d549801a5323c15e7c7074aebaa31d7c0aa78eb43854e8afaeeb2e"
     },
     {
       "path": "src/ui/Deployments.tsx",
-      "size": 39449,
-      "sha256": "39c5e97fed81cd67b721d7777a2c65bb53435ace852d35ecd451d12977b8bd22"
+      "size": 44340,
+      "sha256": "3f243df70215c0d37aa6374f7f4e03ec2c1ab23bd5e50fccf52bde0789a62544"
     },
     {
       "path": "src/ui/DeployProgress.tsx",
@@ -680,8 +680,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 53915,
-      "sha256": "26817208737c701777e43c068ae9eef11d86aeaf48609afa2ef2177a7f74a68c"
+      "size": 57309,
+      "sha256": "1697bc8a469a064c351b595c0952a2d786d94cd54d001f1ff5930e432cf8e3e9"
     },
     {
       "path": "src/ui/diff-highlight.ts",
@@ -820,8 +820,8 @@
     },
     {
       "path": "src/ui/InfoTip.tsx",
-      "size": 3272,
-      "sha256": "79de5257f9c47fba22a8c376c2afde4eb17784c0cde1a3e5136bdc522c91af13"
+      "size": 3609,
+      "sha256": "91f2ae059712898f1681d0836dcbf47ccd8d5c7f895782f70239ef9d969c3fc9"
     },
     {
       "path": "src/ui/InstallationAdmin.tsx",
@@ -960,8 +960,8 @@
     },
     {
       "path": "src/ui/people-settings.css",
-      "size": 10290,
-      "sha256": "8915d50a0c16ec797137853290ae01676465290dc0621d80333e472466d4a0a1"
+      "size": 10337,
+      "sha256": "8e68bbb56b9b88c76a7acff34fd9adf5d22dd832c1fe6da863472f76979e5d3c"
     },
     {
       "path": "src/ui/PeopleSettings.tsx",
@@ -1155,8 +1155,8 @@
     },
     {
       "path": "src/ui/SecretSettings.tsx",
-      "size": 20273,
-      "sha256": "61977dacd26f358cef3cafd850dea6f9d2b1e99bf94aae1c4b3f6f861d668ba6"
+      "size": 20291,
+      "sha256": "b6f10193f8b83c1ca2c450e907ebfff0d84c8b0e08ce9639a6546bbe52de1f90"
     },
     {
       "path": "src/ui/SelfHostedHome.tsx",

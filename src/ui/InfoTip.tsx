@@ -57,3 +57,7 @@ export default function InfoTip({ label, children }: { label: string; children: 
     {open && createPortal(<span ref={bubble} role="tooltip" id={id} className="info-tip-bubble" style={style}>{children}</span>, document.body)}
   </span>;
 }
+
+export function FieldLabel({ children, tip, tipLabel, optional }: { children: string; tip?: ReactNode; tipLabel?: string; optional?: boolean }) {
+  return <span className="gf-field-label">{children}{tip && <InfoTip label={tipLabel ?? children}>{tip}</InfoTip>}{optional && <span className="gf-field-optional">Optional</span>}</span>;
+}

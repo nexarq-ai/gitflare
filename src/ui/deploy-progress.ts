@@ -16,7 +16,7 @@ export interface DeploymentSummary {
 
 export const ACTIVE_STATUSES: DeployStatus[] = ["queued", "building", "deploying", "rolling_out"];
 export const isActive = (deployment: Pick<DeploymentSummary, "status">) => ACTIVE_STATUSES.includes(deployment.status);
-export const environmentLabel = (environment: string) => environment === "production" ? "Production" : environment === "staging" ? "Staging" : environment;
+export const environmentLabel = (environment: string) => { const words = environment.replace(/[-_]+/g, " ").trim(); return words ? words[0].toUpperCase() + words.slice(1) : environment; };
 export const shortSha = (sha: string | null | undefined) => sha ? sha.slice(0, 7) : "";
 
 const DEPLOY_STAGES = ["Queued", "Build", "Deploy", "Rollout", "Live"];
