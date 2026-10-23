@@ -23,6 +23,7 @@ export function missionSummary(mission: Mission) {
     mode: mission.mode ?? 'combine', selectedRunId: mission.selectedRunId, issueNumber: mission.issueNumber,
     raceCandidates: mission.mode === 'race' ? mission.runs.filter((run) => run.commitSha).map((run) => ({ runId: run.id, name: run.name, commitSha: run.commitSha, check: (mission.raceChecks ?? mission.checks).find((check) => check.runId === run.id)?.status ?? 'pending', changedFiles: run.changedFiles })) : undefined,
     createdAt: mission.createdAt, updatedAt: mission.updatedAt, error: mission.error,
+    failedAgents: mission.runs.filter((run) => run.status === 'failed').map((run) => ({ runId: run.id, name: run.name, reason: run.error ?? 'No reason was recorded' })),
     acceptanceCriteria: mission.acceptanceCriteria ?? [], prompt: excerpt(mission.prompt, 0, 1600),
     runs: mission.runs.map((run) => ({ id: run.id, name: run.name, role: run.role, status: run.status, reusedFromEpoch: run.reusedFromEpoch, skipReason: run.skipReason, commitSha: run.commitSha, forkName: run.forkName, startedAt: run.startedAt, completedAt: run.completedAt, task: excerpt(run.task, 0, 800), summary: excerpt(run.summary ?? '', 0, 1000), note: run.note, touchedFiles: run.touchedFiles ?? run.changedFiles, error: run.error, model: run.model, limits: run.limits, editScope: run.editScope, autoRetried: run.autoRetried })),
     checkCount: mission.checks.length, changeCount: mission.changes.length, eventCount: mission.events.length,

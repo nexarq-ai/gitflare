@@ -31,6 +31,7 @@ import { request, RequestError } from "./api";
 import { EmptyState, ErrorNotice, relativeTime, Status } from "./components";
 import AgentAssignment from "./AgentAssignment";
 import AgentRetry, { AgentLimitsDetails } from "./AgentRetry";
+import FailedAgentsBanner, { failedAgents } from "./FailedAgentsBanner";
 import { retryAgentBody } from "./agent-limits";
 import AttemptHistory from "./AttemptHistory";
 import { CheckEscalationNote, CheckTimeoutPanel } from "./CheckSettings";
@@ -882,7 +883,17 @@ export default function MissionDetail({
       {previewFailure && !previewStarting && <PreviewFailedCard message={previewFailure} setup={previewSetup} viewer={previewViewer} canRetry={canPreview && !replay.active} busy={busy} onRetry={() => void preparePreview()} />}
       {error && <ErrorNotice message={error} />}
       {loadError && <ErrorNotice message={loadError} />}
-      {mission.error && mission.error !== error && (
+      <FailedAgentsBanner
+        mission={mission}
+        canExecute={permissions.includes("execute")}
+        canRetry={canRetryAgents && !replay.active}
+        canDrop={canRetryAgents && !replay.active && verifiedRuns.length > 0}
+        busy={busy}
+        models={retryModels}
+        onRetry={(runId, override) => void act("retry-agents", undefined, { runId, override })}
+        onDrop={() => void act("drop-failed-agents")}
+      />
+      {mission.error && mission.error !== error && !failedAgents(mission).length && (
         <ErrorNotice message={mission.error} />
       )}
       {unresolvedRequests.length > 0 && (

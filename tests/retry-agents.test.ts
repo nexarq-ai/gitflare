@@ -268,6 +268,33 @@ describe('retrying never discards earlier work', () => {
   });
 });
 
+describe('a coordinator that changed nothing', () => {
+  it('lets the combined candidate reach review', async () => {
+    const { coordinator: store, repository } = workspace();
+    const created = store.createMission('create-coordinated', { repositoryId: repository.id, title: 'Visible player', prompt: 'Make the player visible.', tasks: [
+      { name: 'Visibility', role: 'Implementation', task: 'Make the player sprite visible.' },
+      { name: 'Coordinator', role: 'Integration', task: 'Integrate the parts.', coordinator: true },
+    ] });
+    const started = await store.startMission('start-coordinated', created.id);
+    const [part, lead] = started.runs;
+    const combined = '4'.repeat(40);
+    const recorded = store.recordExecution(created.id, started.epoch, {
+      runs: [
+        { ...part!, status: 'completed', commitSha: habitsSha, forkName: 'fork-part', changedFiles: ['src/player.ts'] },
+        { ...lead!, status: 'completed', summary: 'Coordinator verified the combined work; no changes needed. Tests pass.' },
+      ],
+      checks: [
+        { id: 'part', name: 'Visibility: repository tests', runId: part!.id, status: 'passed', candidateSha: habitsSha, output: 'ok' },
+        { id: 'integration', name: 'Combined candidate tests', status: 'passed', candidateSha: combined, output: 'ok' },
+      ],
+      changes: [{ path: 'src/player.ts', patch: '+x', additions: 1, deletions: 0, runIds: [part!.id] }],
+      candidateSha: combined,
+    }, true);
+    expect(recorded.status).toBe('needs_review');
+    expect(recorded.error).toBeUndefined();
+  });
+});
+
 describe('mission candidate prefixes', () => {
   it('finds candidate commits by a prefix of at least 7 characters', async () => {
     const { coordinator, created } = workspace();
