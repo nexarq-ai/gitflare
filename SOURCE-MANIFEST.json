@@ -720,8 +720,8 @@
     },
     {
       "path": "src/ui/documentation.css",
-      "size": 28559,
-      "sha256": "2408046b3d99ba50403ee5cf24578f15e2ff92302f230f02fdf7468b6929ed44"
+      "size": 33976,
+      "sha256": "41e8777a133247e0dabe06640c287ab93a4b79370d60ba2bbace6391341a93f9"
     },
     {
       "path": "src/ui/Documentation.tsx",
@@ -1185,8 +1185,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 69402,
-      "sha256": "1dfc105fad865c661b828bc681bc6aa98a67264f153be9ee99f58570bc965d6e"
+      "size": 63985,
+      "sha256": "fe26cf5ca870b3d4f12b09afd1cb2b834349f68e4add26bbaaf1b26379d9ec78"
     },
     {
       "path": "src/ui/SubscribeButton.tsx",
@@ -2605,8 +2605,8 @@
     },
     {
       "path": "vite.config.ts",
-      "size": 5264,
-      "sha256": "33d5fd2ce5497ed579e38f79214288015d4482e31728d094b0ff0436126c156b"
+      "size": 5628,
+      "sha256": "8a5c9eed66727bb37b5f3cc461c814ed717e118a756c21589c35cdc996f0b46b"
     },
     {
       "path": "vitest.config.ts",
