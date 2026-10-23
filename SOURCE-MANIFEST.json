@@ -2459,11 +2459,6 @@
       "sha256": "2edacf026833a6b5d281af789c7035d372c589f8ebca38b2e8b1afc7538d651a"
     },
     {
-      "path": "tests/public-discovery-ui.test.ts",
-      "size": 7251,
-      "sha256": "4c1684e6e5a3121d2a1cd2cf6ae120f1cfe6b30041787c9099a8affec4f1e765"
-    },
-    {
       "path": "tests/public-issues-ui.test.ts",
       "size": 1647,
       "sha256": "dd513c9cf2e32fb5bfe00ecafb74bc56ca1d939605356672d3095cabe6d503dd"
