@@ -77,7 +77,7 @@ function live(urls: string[], order = 0): DeploymentRecord {
 
 function detected(): DetectedSetup {
   const target = (workerName: string, routes: string[], customDomains: string[]) => ({ workerName, configPath: 'wrangler.jsonc', packageDir: '', buildReasons: [], d1Migrations: false, watchPaths: [], dependsOn: [], resources: [], routes, customDomains, workersDev: true, requiredScopes: [] });
-  return { commitSha: 'c'.repeat(40), fingerprint: 'f', files: {}, packageManager: null, configs: [], errors: [], notes: [], truncated: false, environments: { staging: { warnings: [], targets: [target('shop-staging', ['api.staging.example.com/*'], ['staging.example.com']), target('unrelated', ['other.example.com/*'], [])] } } };
+  return { commitSha: 'c'.repeat(40), fingerprint: 'f', files: {}, packageManager: null, configs: [], errors: [], problems: [], notes: [], truncated: false, environments: { staging: { warnings: [], targets: [target('shop-staging', ['api.staging.example.com/*'], ['staging.example.com']), target('unrelated', ['other.example.com/*'], [])] } } };
 }
 
 function fixture(options: { scopes?: string[]; env?: { CLOUDFLARE_ACCESS_SCOPES?: string }; connectionAccount?: string; seed?: Stored[]; urls?: string[]; subdomain?: boolean; detect?: boolean } = {}) {

@@ -43,6 +43,7 @@ export interface DeployTargetRun extends DeployTarget {
   notes?: string[];
   errorCode?: string;
   error?: string;
+  errorFix?: string;
 }
 export interface DeployEnvironmentSettings {
   enabled: boolean;
@@ -87,6 +88,7 @@ export interface DeploymentRecord {
   updatedAt: string;
   errorCode?: string;
   error?: string;
+  errorFix?: string;
 }
 export interface DeployState { settings: DeploySettings | null; deployments: DeploymentRecord[] }
 export interface DeployParams { kind: 'deploy'; repositoryId: string; deploymentId: string; principal: Principal }
@@ -320,6 +322,7 @@ export interface BuiltTarget {
   bundle: WorkerBundle;
   migrations: D1MigrationSet[];
   uploadAssets?(call: CloudflareCall, accountId: string, workerName: string): Promise<{ jwt: string; config: Record<string, unknown>; uploaded: number; total: number }>;
+  notes?: string[];
 }
 export interface DeployCoordinator {
   getRepository(repositoryId: string): Promise<Repository | undefined>;
@@ -363,9 +366,9 @@ export interface DeployStepRunner {
 
 const defaultPlatform: DeployPlatform = { ensureResources, applyTriggers, currentMigrationTag, applyD1Migrations, liveUrls };
 
-function failure(error: unknown): { errorCode: string; error: string } {
+function failure(error: unknown): { errorCode: string; error: string; errorFix?: string } {
   if (error instanceof ApiError) return { errorCode: error.code, error: error.detail };
-  if (error instanceof WorkerBuildFailure) return { errorCode: error.code, error: error.message };
+  if (error instanceof WorkerBuildFailure) return { errorCode: error.code, error: error.message, ...(error.fix ? { errorFix: error.fix.slice(0, 300) } : {}) };
   if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' && error instanceof Error) return { errorCode: error.code, error: error.message.slice(0, 700) };
   return { errorCode: 'DEPLOYMENT_FAILED', error: error instanceof Error ? error.message.slice(0, 700) : 'The deployment failed.' };
 }
@@ -483,7 +486,7 @@ export async function runDeployment(params: DeployParams, step: DeployStepRunner
         const annotations = { 'workers/commit_sha': commitSha, 'workers/message': `Gitflare ${record.trigger} ${commitSha.slice(0, 12)}`.slice(0, 100), 'workers/tag': commitSha.slice(0, 12) };
         const links = (await dependencies.secretLinks?.(record) ?? []).filter((link) => link.environment === record.environment);
         return await dependencies.build(repository, record, target, index, () => dependencies.authorize(principal, target.workerName), async (built): Promise<UploadOutcome> => {
-          const notes: string[] = [];
+          const notes: string[] = [...(built.notes ?? [])];
           const secretEntries = secretBindingEntries(links, record.environment, target.workerName);
           const bound = links.filter((link) => secretEntries.some((entry) => entry.binding === link.binding));
           if (bound.length) {
@@ -495,7 +498,7 @@ export async function runDeployment(params: DeployParams, step: DeployStepRunner
             const assets = built.uploadAssets ? await built.uploadAssets(requireCall(deployer), deployer.accountId, target.workerName) : undefined;
             const secretMetadata = secretMetadataBindings(secretEntries);
             const version = await deployer.uploadVersion(built.bundle, annotations, assets || secretMetadata.length ? inheritedMetadata(built.bundle, annotations, assets ? { jwt: assets.jwt, config: assets.config } : undefined, secretMetadata) : undefined);
-            await patchTarget(index, ['building'], { status: uploadOnly ? 'uploaded' : 'deploying', versionId: version.id, ...(assets ? { assets: { uploaded: assets.uploaded, total: assets.total } } : {}) }, { status: 'deploying' });
+            await patchTarget(index, ['building'], { status: uploadOnly ? 'uploaded' : 'deploying', versionId: version.id, ...(assets ? { assets: { uploaded: assets.uploaded, total: assets.total } } : {}), ...(notes.length ? { notes: notes.slice(0, 40).map((note) => note.slice(0, 300)) } : {}) }, { status: 'deploying' });
             return { kind: 'uploaded', versionId: version.id, deployed: false };
           }
           const resolved = built.bundle.config.deploy ?? {};
@@ -665,7 +668,7 @@ export interface DeployApiContext {
 
 export interface EnvironmentStatus {
   current: { deploymentId: string; commitSha: string | null; trigger: DeploymentTrigger; status: DeploymentStatus; updatedAt: string; workers: { workerName: string; versionId: string; percentage: number; urls: string[] }[] } | null;
-  lastChange: { deploymentId: string; commitSha: string | null; trigger: DeploymentTrigger; status: DeploymentStatus; updatedAt: string; error?: string } | null;
+  lastChange: { deploymentId: string; commitSha: string | null; trigger: DeploymentTrigger; status: DeploymentStatus; updatedAt: string; error?: string; errorCode?: string; errorFix?: string } | null;
   pending: string | null;
   running: boolean;
   promotable?: { deploymentId: string; commitSha: string } | null;
@@ -685,7 +688,7 @@ export function environmentStatus(deployments: DeploymentRecord[], environment: 
   const promotable = environment !== PRODUCTION ? own.find(isPromotable) : undefined;
   return {
     current: current ? { deploymentId: current.id, commitSha: current.commitSha, trigger: current.trigger, status: current.status, updatedAt: current.updatedAt, workers } : null,
-    lastChange: latest ? { deploymentId: latest.id, commitSha: latest.commitSha, trigger: latest.trigger, status: latest.status, updatedAt: latest.updatedAt, ...(latest.error ? { error: latest.error } : {}) } : null,
+    lastChange: latest ? { deploymentId: latest.id, commitSha: latest.commitSha, trigger: latest.trigger, status: latest.status, updatedAt: latest.updatedAt, ...(latest.error ? { error: latest.error } : {}), ...(latest.errorCode ? { errorCode: latest.errorCode } : {}), ...(latest.errorFix ? { errorFix: latest.errorFix } : {}) } : null,
     pending: own.find((item) => item.status === 'awaiting_confirmation')?.id ?? null,
     running: own.some((item) => ACTIVE.includes(item.status)),
     ...(environment !== PRODUCTION ? { promotable: promotable ? { deploymentId: promotable.id, commitSha: promotable.commitSha! } : null } : {}),

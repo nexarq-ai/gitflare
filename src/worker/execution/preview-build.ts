@@ -3,7 +3,7 @@ import { validGitSha } from '../artifacts';
 import { classifyPreview, LEGACY_PREVIEW, previewPlan, workerPreviewBuildCommand } from '../preview-plan';
 import { containerFallbackNote } from '../preview-host';
 import { PREVIEW_FAILURE_MAX, type PreviewStep } from '../../shared/preview-progress';
-import { buildWorkerBundle, DEPLOY_BUILD_TIMEOUT_MS, deployBuildScript, readWorkerConfig, WorkerBuildFailure, workerConfigPath, type BundleSandbox, type ResolvedWorkerConfig, type WorkerBundle } from '../worker-bundle';
+import { assertWorkerSources, buildWorkerBundle, DEPLOY_BUILD_TIMEOUT_MS, deployBuildScript, ensureWrangler, readWorkerConfig, WorkerBuildFailure, workerConfigPath, wranglerNote, type BundleSandbox, type ResolvedWorkerConfig, type WorkerBundle } from '../worker-bundle';
 import { collectAndUploadAssets, type AssetsOptions } from '../worker-assets';
 import { migrationDatabases, readMigrationFiles, type D1MigrationSet } from '../d1-migrations';
 import { previewD1Migrations } from '../preview-d1';
@@ -70,6 +70,8 @@ export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, 
           await installDependencies(sandbox, plan, assertAuthority, async () => true);
         }
         installed = true;
+        await assertAuthority();
+        await ensureWrangler(sandbox, configPath);
         let config = await readWorkerConfig(sandbox, configPath);
         const assetsDirectory = config?.deploy?.assets && typeof config.deploy.assets === 'object' ? (config.deploy.assets as Record<string, unknown>).directory : undefined;
         const buildCommand = workerPreviewBuildCommand(files, packageJson, typeof assetsDirectory === 'string' ? assetsDirectory : null, plan);
@@ -82,6 +84,7 @@ export async function prepareCandidatePreview<T = undefined>(env: ExecutionEnv, 
           config = await readWorkerConfig(sandbox, configPath, true);
         }
         if (config && classifyPreview(files, config, { workerPreviews, configuredCommand: policy?.previewCommand }) === 'worker') {
+          assertWorkerSources(config, { commitSha: mission.candidateSha, built: !!buildCommand });
           const assets = workerAssetsOptions(config);
           await assertAuthority();
           const d1 = previewD1Migrations(config);
@@ -147,6 +150,8 @@ export async function buildLandedWorker<T = BuiltTarget>(env: ExecutionEnv, { re
     if (!files.includes(configPath)) throw new WorkerBuildFailure('WORKER_CONFIG_REQUIRED', `The landed commit has no ${configPath}.`);
     const { plan } = await workingTreeInstall(sandbox, files);
     if (plan) await installDependencies(sandbox, plan, assertAuthority, async () => true);
+    await assertAuthority();
+    await ensureWrangler(sandbox, configPath);
     if (target?.buildCommand) {
       if (!sandbox.check) throw new WorkerBuildFailure('WORKER_BUILD_UNAVAILABLE', 'The runner cannot run build commands.');
       await assertAuthority();
@@ -154,11 +159,13 @@ export async function buildLandedWorker<T = BuiltTarget>(env: ExecutionEnv, { re
       if (built.exitCode !== 0) throw new WorkerBuildFailure('DEPLOY_BUILD_FAILED', `${target.buildCommand} failed (exit ${built.exitCode}${built.timedOut ? ', timed out' : ''}). ${(built.stderr || built.stdout).replace(/\s+/g, ' ').trim().slice(-500)}`);
     }
     const config = await readWorkerConfig(sandbox, configPath, !!target, target ? environment : undefined);
-    if (!config) throw new WorkerBuildFailure('WORKER_MAIN_REQUIRED', 'The Wrangler configuration has no main entry, or wrangler is not a dependency of the repository.');
+    if (!config) throw new WorkerBuildFailure('WRANGLER_UNAVAILABLE', `Wrangler could not read ${configPath}: the repository does not depend on wrangler and Gitflare’s Wrangler is not installed.`, 'Add wrangler to devDependencies in package.json.');
+    assertWorkerSources(config, { commitSha, built: !!target?.buildCommand });
     await assertAuthority();
     const bundle = await buildWorkerBundle(sandbox, config);
     const migrations = target?.d1Migrations ? await readMigrationFiles(sandbox, migrationDatabases(config.deploy?.d1_databases)) : [];
-    return await publish({ bundle, migrations, ...uploadsAssets(sandbox, workerAssetsOptions(config)) });
+    const note = wranglerNote(config);
+    return await publish({ bundle, migrations, ...uploadsAssets(sandbox, workerAssetsOptions(config)), ...(note ? { notes: [note] } : {}) });
   } finally {
     try { await sandbox.destroy(); }
     catch { console.error('runner.deploy.cleanup.failed', repository.id); }

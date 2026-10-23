@@ -5,6 +5,10 @@ export const WORKER_BUNDLE_MAX_FILES = 200;
 export const WORKER_BUILD_TIMEOUT_MS = 240_000;
 export const WORKER_CONFIG_FILES = ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml'] as const;
 const OUTPUT_DIR = '/tmp/gitflare-worker-bundle';
+export const GITFLARE_WRANGLER_VERSION = '4.149.0';
+export const GITFLARE_WRANGLER_DIR = '/workspace/gitflare-wrangler';
+export const ASSETS_ONLY_MODULE = 'no-op-worker.js';
+const TOOLCHAIN = `"\${GITFLARE_WRANGLER_DIR:-${GITFLARE_WRANGLER_DIR}}"`;
 const SENTINEL = 'GITFLARE_WORKER_BUNDLE ';
 
 export interface WorkerModule { name: string; contentType: string; content: Uint8Array<ArrayBuffer> }
@@ -19,6 +23,8 @@ export interface WorkerBindingSource {
   d1Databases?: D1DatabaseSource[];
   sendEmail?: SendEmailSource[];
 }
+export type WranglerSource = 'repository' | 'gitflare';
+export interface WorkerSources { main: { path: string; found: boolean } | null; assets: { directory: string; state: 'ok' | 'missing' | 'empty' } | null }
 export interface MigrationStep { tag: string; new_classes?: string[]; new_sqlite_classes?: string[]; renamed_classes?: { from: string; to: string }[]; deleted_classes?: string[] }
 export interface ResolvedWorkerConfig {
   configPath: string;
@@ -35,11 +41,13 @@ export interface ResolvedWorkerConfig {
   exports: Record<string, { type?: string }>;
   production: WorkerBindingSource;
   previews: WorkerBindingSource | null;
+  sources?: WorkerSources;
+  wrangler?: WranglerSource;
 }
 export interface WorkerBundle { config: ResolvedWorkerConfig; mainModule: string; modules: WorkerModule[]; totalBytes: number }
 
 export class WorkerBuildFailure extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(readonly code: string, message: string, readonly fix?: string) {
     super(message.slice(0, 700));
     this.name = 'WorkerBuildFailure';
   }
@@ -48,6 +56,7 @@ export class WorkerBuildFailure extends Error {
 export interface BundleSandbox {
   check?(script: string, timeoutMs: number): Promise<CommandResult>;
   collect?(script: string, timeoutMs: number, capBytes: number): Promise<CommandResult>;
+  installWrangler?(version: string): Promise<CommandResult>;
 }
 
 export function workerConfigPath(files: string[]): string | null {
@@ -66,7 +75,8 @@ export function workerBuildScript(configPath: string, environment?: string): str
     CREDENTIAL_GUARD,
     'export WRANGLER_SEND_METRICS=false WRANGLER_LOG=error NO_COLOR=1',
     WRANGLER_LOOKUP,
-    `WRANGLER=$(wrangler_bin ${quote(configPath)}) || { echo 'Wrangler is not a dependency of this repository. Add wrangler 4.135 or later to devDependencies.' >&2; exit 64; }`,
+    `WRANGLER=$(wrangler_bin ${quote(configPath)}) || WRANGLER=${TOOLCHAIN}/node_modules/.bin/wrangler`,
+    `[ -x "$WRANGLER" ] || { echo 'Wrangler is not available: the repository does not depend on it and Gitflare’s Wrangler is not installed.' >&2; exit 64; }`,
     `rm -rf ${OUTPUT_DIR}`,
     `"$WRANGLER" deploy --dry-run --config ${quote(configPath)}${environment ? ` --env ${quote(environment)}` : ''} --outdir ${OUTPUT_DIR} > /tmp/gitflare-worker-build.log 2>&1 || { tail -c 3000 /tmp/gitflare-worker-build.log >&2; exit 65; }`,
   ].join('\n');
@@ -94,8 +104,23 @@ export function deployBuildScript(command: string, environment?: string): string
 
 export function workerConfigScript(configPath: string, redirect = false, environment?: string): string {
   if (environment !== undefined && !environmentName.test(environment)) throw new WorkerBuildFailure('DEPLOY_ENVIRONMENT_INVALID', 'Invalid deploy environment.');
-  return `env -u CLOUDFLARE_ENV node --input-type=module -e ${quote(CONFIG_PROGRAM)} ${quote(configPath)} ${redirect ? 'redirect' : 'direct'}${environment ? ` ${quote(environment)}` : ''}`;
+  return `env -u CLOUDFLARE_ENV node --input-type=module -e ${quote(CONFIG_PROGRAM)} ${quote(configPath)} ${redirect ? 'redirect' : 'direct'} ${TOOLCHAIN}${environment ? ` ${quote(environment)}` : ''}`;
 }
+
+export function wranglerProbeScript(configPath: string): string {
+  return `node --input-type=module -e ${quote(PROBE_PROGRAM)} ${quote(configPath)}`;
+}
+
+export function wranglerInstallCommand(version: string): string[] {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid Wrangler version');
+  return ['npm', 'install', '--prefix', GITFLARE_WRANGLER_DIR, '--ignore-scripts', '--no-audit', '--no-fund', '--no-save', '--no-package-lock', `wrangler@${version}`];
+}
+
+const PROBE_PROGRAM = `
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+try { createRequire(join(process.cwd(), dirname(process.argv[1])) + '/').resolve('wrangler'); } catch { process.exit(64); }
+`;
 
 export function workerBundleScript(configPath: string): string {
   return `node --input-type=module -e ${quote(BUNDLE_PROGRAM)} ${quote(configPath)} ${OUTPUT_DIR}`;
@@ -103,7 +128,7 @@ export function workerBundleScript(configPath: string): string {
 
 const CONFIG_PROGRAM = `
 import { createRequire } from 'node:module';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 const write = (...args) => process.stderr.write(args.map(String).join(' ') + '\\n');
@@ -111,7 +136,8 @@ console.log = console.info = console.warn = console.debug = write;
 const root = process.cwd();
 const inside = (path) => { const rel = relative(root, path); return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel)); };
 const userConfigPath = process.argv[1];
-const environment = process.argv[3];
+const toolchain = process.argv[3];
+const environment = process.argv[4];
 let configPath = userConfigPath;
 if (process.argv[2] === 'redirect') {
   const redirectFile = join(root, dirname(userConfigPath), '.wrangler', 'deploy', 'config.json');
@@ -125,7 +151,10 @@ if (process.argv[2] === 'redirect') {
 }
 const require = createRequire(join(root, dirname(configPath)) + '/');
 let entry;
-try { entry = require.resolve('wrangler'); } catch { process.exit(64); }
+let wranglerSource = 'repository';
+try { entry = require.resolve('wrangler'); } catch {
+  try { entry = createRequire(join(toolchain, 'package.json')).resolve('wrangler'); wranglerSource = 'gitflare'; } catch { process.exit(64); }
+}
 const wrangler = await import(pathToFileURL(entry).href);
 const redirected = configPath !== userConfigPath;
 const missingEnvironment = (detail) => { process.stderr.write(detail); process.exit(68); };
@@ -197,7 +226,19 @@ const source = (block) => {
   }));
   return { vars: block.vars ?? {}, durableObjects, bindings, d1Databases, sendEmail };
 };
+const mainPath = typeof config.main === 'string' && config.main ? resolve(configDir, config.main) : null;
+const assetsPath = typeof config.assets?.directory === 'string' ? resolve(configDir, config.assets.directory) : null;
+const assetsState = (path) => {
+  try { if (!statSync(path).isDirectory()) return 'missing'; } catch { return 'missing'; }
+  return readdirSync(path).some((name) => name !== '.assetsignore') ? 'ok' : 'empty';
+};
+const sources = {
+  main: mainPath ? { path: relative(root, mainPath), found: inside(mainPath) && existsSync(mainPath) } : null,
+  assets: assetsPath ? { directory: relative(root, assetsPath) || '.', state: inside(assetsPath) ? assetsState(assetsPath) : 'missing' } : null,
+};
 const output = {
+  wrangler: wranglerSource,
+  sources,
   configPath,
   userConfigPath,
   ...(environment ? { environment } : {}),
@@ -271,10 +312,19 @@ function bindingSource(value: unknown): WorkerBindingSource | null {
   return { vars: Object.fromEntries(Object.entries(vars).filter(([name]) => bindingName.test(name))), durableObjects, bindings, ...(d1Databases.length ? { d1Databases } : {}), ...(sendEmail.length ? { sendEmail } : {}) };
 }
 
-export function parseWorkerConfig(stdout: string): ResolvedWorkerConfig | null {
+const repoPath = (value: unknown): value is string => typeof value === 'string' && value.length <= 300 && !value.startsWith('/') && !value.split('/').includes('..');
+
+function workerSources(value: unknown): WorkerSources | undefined {
+  if (!record(value)) return undefined;
+  const main = record(value.main) && repoPath(value.main.path) ? { path: value.main.path, found: value.main.found === true } : null;
+  const assets = record(value.assets) && repoPath(value.assets.directory) && ['ok', 'missing', 'empty'].includes(String(value.assets.state)) ? { directory: value.assets.directory, state: value.assets.state as 'ok' | 'missing' | 'empty' } : null;
+  return { main, assets };
+}
+
+export function parseWorkerConfig(stdout: string): ResolvedWorkerConfig {
   const value = sentinelPayload(stdout);
   if (!record(value)) throw new WorkerBuildFailure('WORKER_BUILD_OUTPUT_INVALID', 'The Worker configuration could not be read.');
-  if (typeof value.main !== 'string' || !value.main) return null;
+  const sources = workerSources(value.sources);
   if (typeof value.compatibilityDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.compatibilityDate)) throw new WorkerBuildFailure('WORKER_COMPATIBILITY_DATE_REQUIRED', 'Set compatibility_date in the Wrangler configuration.');
   const migrations = Array.isArray(value.migrations) ? value.migrations.filter((step): step is MigrationStep => record(step) && typeof step.tag === 'string') : [];
   return {
@@ -283,7 +333,7 @@ export function parseWorkerConfig(stdout: string): ResolvedWorkerConfig | null {
     ...(typeof value.environment === 'string' && environmentName.test(value.environment) ? { environment: value.environment } : {}),
     ...(record(value.deploy) ? { deploy: value.deploy } : {}),
     ...(typeof value.name === 'string' ? { name: value.name } : {}),
-    main: value.main,
+    main: typeof value.main === 'string' ? value.main : '',
     compatibilityDate: value.compatibilityDate,
     compatibilityFlags: strings(value.compatibilityFlags).slice(0, 50),
     assets: value.assets === true,
@@ -292,7 +342,28 @@ export function parseWorkerConfig(stdout: string): ResolvedWorkerConfig | null {
     exports: record(value.exports) ? Object.fromEntries(Object.entries(value.exports).filter(([name, entry]) => bindingName.test(name) && record(entry)).map(([name, entry]) => [name, { type: typeof (entry as Record<string, unknown>).type === 'string' ? String((entry as Record<string, unknown>).type) : undefined }])) : {},
     production: bindingSource(value.production) ?? { vars: {}, durableObjects: [], bindings: [] },
     previews: bindingSource(value.previews),
+    ...(sources ? { sources } : {}),
+    ...(value.wrangler === 'repository' || value.wrangler === 'gitflare' ? { wrangler: value.wrangler } : {}),
   };
+}
+
+export function hasWorkerEntry(config: Pick<ResolvedWorkerConfig, 'main' | 'assets'>): boolean {
+  return !!config.main || config.assets;
+}
+
+export function assertWorkerSources(config: ResolvedWorkerConfig, context: { commitSha?: string; built?: boolean } = {}): void {
+  const path = config.userConfigPath ?? config.configPath;
+  const scope = config.environment ? ` (env.${config.environment})` : '';
+  const at = context.commitSha ? ` at ${context.commitSha.slice(0, 12)}` : '';
+  if (!hasWorkerEntry(config)) throw new WorkerBuildFailure('NO_WORKER_CONFIG', `${path}${scope} has neither main nor assets.directory, so there is no Worker to deploy.`, `Set "main" to the Worker entry file, or "assets": { "directory": "./dist" } to deploy static files.`);
+  const { main, assets } = config.sources ?? { main: null, assets: null };
+  if (config.main && main && !main.found) {
+    throw new WorkerBuildFailure('WORKER_ENTRY_NOT_FOUND', `${path}${scope} main points to ${main.path} but that file doesn't exist${at}${context.built ? ' after the build' : ''}.`, context.built ? `Commit ${main.path} or make the build script write it, or point "main" at the real entry file.` : `Commit ${main.path}, or point "main" at the real entry file.`);
+  }
+  if (config.assets && assets && assets.state !== 'ok') {
+    const state = assets.state === 'empty' ? 'is empty' : "doesn't exist";
+    throw new WorkerBuildFailure('ASSETS_DIRECTORY_MISSING', `${path}${scope} assets.directory ${assets.directory} ${state}${at}${context.built ? ' after the build — check your build script' : ''}.`, context.built ? `Make the build script write the static files to ${assets.directory}.` : `Add a "build" script to package.json that writes ${assets.directory}, or commit the files.`);
+  }
 }
 
 export function moduleContentType(name: string): string | null {
@@ -329,7 +400,7 @@ export function parseWorkerBundle(stdout: string, config: ResolvedWorkerConfig):
     if (totalBytes > WORKER_BUNDLE_MAX_BYTES) throw new WorkerBuildFailure('WORKER_BUNDLE_TOO_LARGE', `The Worker bundle exceeds ${WORKER_BUNDLE_MAX_BYTES / 1024 / 1024} MiB.`);
     modules.push({ name: file.name, contentType, content });
   }
-  const mainModule = mainModuleName(config.main);
+  const mainModule = config.main ? mainModuleName(config.main) : ASSETS_ONLY_MODULE;
   const main = modules.find((module) => module.name === mainModule);
   if (!main) throw new WorkerBuildFailure('WORKER_BUILD_OUTPUT_INVALID', `The Worker build did not produce ${mainModule}.`);
   return { config, mainModule, modules: [main, ...modules.filter((module) => module !== main)], totalBytes };
@@ -355,11 +426,26 @@ export async function readWorkerConfig(sandbox: BundleSandbox, configPath: strin
   return parseWorkerConfig(result.stdout);
 }
 
+export async function ensureWrangler(sandbox: BundleSandbox, configPath: string): Promise<WranglerSource> {
+  if (!sandbox.collect) throw new WorkerBuildFailure('WORKER_BUILD_UNAVAILABLE', 'The runner cannot build Worker bundles.');
+  const probe = await sandbox.collect(wranglerProbeScript(configPath), 30_000, 16_384);
+  if (probe.exitCode === 0) return 'repository';
+  if (probe.exitCode !== 64) throw new WorkerBuildFailure('WORKER_BUILD_FAILED', `Wrangler could not be located. ${failureDetail(probe)}`);
+  if (!sandbox.installWrangler) throw new WorkerBuildFailure('WRANGLER_UNAVAILABLE', `The repository does not depend on wrangler and this runner cannot install Gitflare’s Wrangler ${GITFLARE_WRANGLER_VERSION}.`, 'Add wrangler to devDependencies in package.json.');
+  const installed = await sandbox.installWrangler(GITFLARE_WRANGLER_VERSION);
+  if (installed.exitCode !== 0) throw new WorkerBuildFailure('WRANGLER_INSTALL_FAILED', `Gitflare’s Wrangler ${GITFLARE_WRANGLER_VERSION} could not be installed (exit ${installed.exitCode}). ${failureDetail(installed)}`, 'Retry the deploy, or add wrangler to devDependencies in package.json.');
+  return 'gitflare';
+}
+
+export function wranglerNote(config: Pick<ResolvedWorkerConfig, 'wrangler' | 'configPath'>): string | null {
+  return config.wrangler === 'gitflare' ? `Built with Gitflare’s Wrangler ${GITFLARE_WRANGLER_VERSION} because the repository does not depend on wrangler. Add wrangler to devDependencies to pin your own.` : null;
+}
+
 export async function buildWorkerBundle(sandbox: BundleSandbox, config: ResolvedWorkerConfig): Promise<WorkerBundle> {
   if (!sandbox.check || !sandbox.collect) throw new WorkerBuildFailure('WORKER_BUILD_UNAVAILABLE', 'The runner cannot build Worker bundles.');
   const redirected = !!config.userConfigPath && config.userConfigPath !== config.configPath;
   const build = await sandbox.check(workerBuildScript(config.configPath, redirected ? undefined : config.environment), WORKER_BUILD_TIMEOUT_MS);
-  if (build.exitCode === 64) throw new WorkerBuildFailure('WRANGLER_DEPENDENCY_REQUIRED', 'Wrangler is not a dependency of this repository. Add wrangler 4.135 or later to devDependencies.');
+  if (build.exitCode === 64) throw new WorkerBuildFailure('WRANGLER_UNAVAILABLE', 'Wrangler is not available: the repository does not depend on it and Gitflare’s Wrangler is not installed.', 'Add wrangler to devDependencies in package.json.');
   if (build.exitCode !== 0) throw new WorkerBuildFailure('WORKER_BUILD_FAILED', `wrangler deploy --dry-run failed (exit ${build.exitCode}). ${failureDetail(build)}`);
   const output = await sandbox.collect(workerBundleScript(config.configPath), 60_000, Math.ceil(WORKER_BUNDLE_MAX_BYTES * 1.4) + 65_536);
   if (output.exitCode === 66) throw new WorkerBuildFailure('WORKER_BUNDLE_TOO_LARGE', `The Worker bundle exceeds ${WORKER_BUNDLE_MAX_BYTES / 1024 / 1024} MiB or ${WORKER_BUNDLE_MAX_FILES} files.`);
