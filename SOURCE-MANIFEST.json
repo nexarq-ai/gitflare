@@ -165,8 +165,8 @@
     },
     {
       "path": "runner/Dockerfile",
-      "size": 312,
-      "sha256": "b4e258daa8ca2383fc66523f0151e448be3c61c5f24d24a1d09cc422a3c96da3"
+      "size": 428,
+      "sha256": "43cff4113b4fe56d049fe9283fc900550186c9043934204403d49726bcb0fd9a"
     },
     {
       "path": "runner/fixture/README.md",
@@ -195,8 +195,18 @@
     },
     {
       "path": "runner/sandbox.ts",
-      "size": 25296,
-      "sha256": "f35230acef951b0a9b72820ac29b4448ae8d2a49676607ccdd3baec84be60af2"
+      "size": 26048,
+      "sha256": "3a10e314336327aa068f9214c997017991cdf384b64d50acd84055e0f23f65ba"
+    },
+    {
+      "path": "runner/visual/visual-capture.d.mts",
+      "size": 2465,
+      "sha256": "c81a5a79b9b5c2cec3d73b6bc6907e5aa625675e829d383fc2338ba573aee5d9"
+    },
+    {
+      "path": "runner/visual/visual-capture.mjs",
+      "size": 30496,
+      "sha256": "f120201cde2c199c454444033b0b8f6a30f9c01d3300915545d5b3ac6b898c4b"
     },
     {
       "path": "scripts/deploy-self-hosted.mjs",
@@ -345,8 +355,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 32276,
-      "sha256": "cf5e38d8ba59e6b827324cabdc10e9860ba137cb29b55061eefe6b9fd5be2bb5"
+      "size": 34738,
+      "sha256": "ed4f3d2d76fd5c3d7708b1e2ab7c354f8bc62d1337aa98d5ed0ec05ac0bea8d1"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -535,8 +545,8 @@
     },
     {
       "path": "src/ui/BranchProtection.tsx",
-      "size": 20198,
-      "sha256": "cd56b9a7dc3deb7900719e14712eae4ecd15f3960e2375199d51b942b2a9323b"
+      "size": 20339,
+      "sha256": "6a58c2c8aa2348119a51fd91fa9bb6093a488470c0478d19c2847bbeb601b0be"
     },
     {
       "path": "src/ui/BrandMark.tsx",
@@ -545,8 +555,8 @@
     },
     {
       "path": "src/ui/check-settings.css",
-      "size": 1498,
-      "sha256": "f518023132573359424a0a2f9b423db930de1267c8c2640b0d540589e98b995b"
+      "size": 1981,
+      "sha256": "3750f417150b9c797bf657bab757f8d212204a2f6d324567ce18f3340b11826f"
     },
     {
       "path": "src/ui/CheckChips.tsx",
@@ -1244,6 +1254,11 @@
       "sha256": "1c6f00461c0ef9a7c2b6085aecf10388a66511ad87e18b3751b4feb7000d814e"
     },
     {
+      "path": "src/ui/VisualSettings.tsx",
+      "size": 15538,
+      "sha256": "d92bbfdac390e720adcbcde071476558ff4ebcfbc7fd590e035964e49c5c87b5"
+    },
+    {
       "path": "src/ui/workspace-chord.ts",
       "size": 1302,
       "sha256": "0da8c1b477e5f6d9417deda2ca6765a57758d13ce08b123860778781a9004ae9"
@@ -1280,8 +1295,8 @@
     },
     {
       "path": "src/worker/agent-rules.ts",
-      "size": 14780,
-      "sha256": "aadf283a000e61b17857fd504faf17e991c7734d5c8ef4b66b80f8aeb8d90b3c"
+      "size": 14788,
+      "sha256": "2cf151b503dd1aba4da0ab1472b2f5bdcc3a578e917a9f2d9951b8acdf1582ec"
     },
     {
       "path": "src/worker/agent-settings.ts",
@@ -1400,8 +1415,8 @@
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 98169,
-      "sha256": "6679ea2e314ff116ac4a93333a0cbcaae56f29304d7a716eb6c413abff3606af"
+      "size": 98793,
+      "sha256": "7c4058b4618735f6ae4c0780a9c9bcc3cfff235a85776f49ccdc87a3b1be0026"
     },
     {
       "path": "src/worker/d1-migrations.ts",
@@ -1540,8 +1555,8 @@
     },
     {
       "path": "src/worker/execution/environment.ts",
-      "size": 1474,
-      "sha256": "44c3dbf8101341d325993621b46c90edf3a9759ecc4d06084e6e965a688d8c79"
+      "size": 1516,
+      "sha256": "c6deb0256230de1aa67373af2485d981815296931a2ac89f72d7b919512d33cc"
     },
     {
       "path": "src/worker/execution/integration.ts",
@@ -1805,8 +1820,8 @@
     },
     {
       "path": "src/worker/mcp-tools/repository-settings.ts",
-      "size": 9765,
-      "sha256": "8f65705738d9dff8c47b6d0523e6a65700bc3465414f48005e6c2e5f692fcad6"
+      "size": 13890,
+      "sha256": "fe2da6ad6c6278065a881dedcbd76f2c55e1dc1c98d32d8d4b3dc79068eb1026"
     },
     {
       "path": "src/worker/mcp-tools/secrets.ts",
@@ -1815,8 +1830,8 @@
     },
     {
       "path": "src/worker/mcp.ts",
-      "size": 13040,
-      "sha256": "f5683a8e3e33d2e234ec3331206d24a563805ceb05b8830a37b6e414b3420685"
+      "size": 13072,
+      "sha256": "e4fc093eec130e4259423730ccc51b0e9686b2f068444d886f9c32dc50f5a72b"
     },
     {
       "path": "src/worker/mfa.ts",
@@ -2020,8 +2035,8 @@
     },
     {
       "path": "src/worker/repository-policy.ts",
-      "size": 20849,
-      "sha256": "e868e6f1f4c5c8e01d7fcefdbf2ba464799af0d3c11392ae48b973662fe14c8e"
+      "size": 21190,
+      "sha256": "7b6d431f8746586e34a6257d3c5196c68dfd49477bcfa7cf429fb09d5d3d8783"
     },
     {
       "path": "src/worker/repository-secrets.ts",
@@ -2075,8 +2090,8 @@
     },
     {
       "path": "src/worker/routes/repository-settings.ts",
-      "size": 10897,
-      "sha256": "19a99bbaa413efc7381949e572457b7b585d9ad9a3749490da9fae378a158823"
+      "size": 12312,
+      "sha256": "58522ff36180be59381eea10c28d74aafa8a5f28c034cab13b49c4ff365e80bd"
     },
     {
       "path": "src/worker/routes/workspace.ts",
@@ -2167,6 +2182,21 @@
       "path": "src/worker/url-import.ts",
       "size": 31821,
       "sha256": "d05ee48552cc233cd62c30442395d8162e2de2c35f60055d365b1295c2390955"
+    },
+    {
+      "path": "src/worker/visual/capture.ts",
+      "size": 7504,
+      "sha256": "c0c7f60f784306afd3728a3caf5a9656d271cd1ded17c38006f21972ea11b3f1"
+    },
+    {
+      "path": "src/worker/visual/config.ts",
+      "size": 13760,
+      "sha256": "be4ce9c7bb10da5bc894eca65d24a61f85dd97f8945106ee17f9ca828e49423e"
+    },
+    {
+      "path": "src/worker/visual/settings.ts",
+      "size": 2559,
+      "sha256": "8bc8d6255c96dd13256a5916bdf5f7f36dad163ab5b8336f39f9466c40e5b904"
     },
     {
       "path": "src/worker/worker-assets.ts",
@@ -2330,8 +2360,8 @@
     },
     {
       "path": "tests/execution.test.ts",
-      "size": 93353,
-      "sha256": "2ad03feb226cdfbb3334e857b87b7c50023bf09a7aa4b4d022ebbe4210410aa7"
+      "size": 93397,
+      "sha256": "62cd34752a69a0fffd1c911a38539e4bcc515d1b491b2cd267ce38a3b399ac8d"
     },
     {
       "path": "tests/failed-agents-banner.test.ts",
@@ -2411,7 +2441,7 @@
     {
       "path": "tests/mcp.test.ts",
       "size": 86093,
-      "sha256": "e2ebc29511f11f43bf4c89cf5b68b5222dd01278dfcae7cf0cddf73ce155928a"
+      "sha256": "1b5136c337d38b262b2313ea4760a2db4cf922a18cbf2767797412d7c0b49988"
     },
     {
       "path": "tests/mission-agent-retry-ui.test.ts",
@@ -2597,6 +2627,16 @@
       "path": "tests/ui-api.test.ts",
       "size": 1953,
       "sha256": "11fff8116bb8ff9d3537a1461e9c10150094ad42d93356b18c8a27b63482e97a"
+    },
+    {
+      "path": "tests/visual-capture.test.ts",
+      "size": 10402,
+      "sha256": "5704a9341c1ca3cea366da32e4eb939fb59969a09ce1c3ab74cc6d50093ab64b"
+    },
+    {
+      "path": "tests/visual-config.test.ts",
+      "size": 7039,
+      "sha256": "ca6aa98e2d685b6417f094bc32e9fa10b86a52057063f944fbb510d96f3907e3"
     },
     {
       "path": "tests/worker-assets.test.ts",

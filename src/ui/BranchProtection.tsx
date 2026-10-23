@@ -6,6 +6,7 @@ import { CopyIcon, GitBranchIcon, GitPullRequestIcon, LockSimpleIcon, PlusIcon, 
 import type { AccessSnapshot, BranchChangeResult, BranchInfo, BranchList, BranchProtection as Protection, BranchRuleInput, LanderRole, Repository } from "../shared/types";
 import { request } from "./api";
 import CheckSettings from "./CheckSettings";
+import VisualSettings from "./VisualSettings";
 import { ErrorNotice, relativeTime } from "./components";
 import { navigate } from "./router";
 import { PageLoading } from "./WorkspaceLoader";
@@ -197,6 +198,7 @@ export default function BranchProtection({ repository, canManage: mayManage, dem
         </div>
       </section>
       <CheckSettings repositoryId={repository.id} canChange={canLand} isOwner={isOwner} onNotify={onNotify} />
+      <VisualSettings repositoryId={repository.id} canChange={canLand} onNotify={onNotify} />
     </div>
   );
 }

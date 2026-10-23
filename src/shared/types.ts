@@ -242,6 +242,61 @@ export interface Check {
   durationMs?: number;
   timeout?: CheckTimeout;
   escalatedFrom?: CheckTimeout;
+  advisory?: boolean;
+  captureIds?: string[];
+}
+
+export type VisualViewport = 'desktop' | 'mobile';
+export type VisualTheme = 'light' | 'dark';
+export interface VisualStep { click?: string; press?: string; hold?: number; type?: string; wait?: number; scroll?: number; capture?: string }
+export interface VisualRoute { path: string; label?: string; steps?: VisualStep[] }
+export interface VisualLighthouseThresholds { performance?: number; accessibility?: number; bestPractices?: number; seo?: number }
+export interface VisualChecks { consoleErrors: boolean; overflow: boolean; regression: number | false; axe: boolean | 'serious'; lighthouse: VisualLighthouseThresholds | false }
+export interface VisualQuality { rounds: number; passScore: number }
+export interface VisualSettings {
+  routes?: VisualRoute[];
+  viewports?: VisualViewport[];
+  themes?: VisualTheme[];
+  checks?: Partial<VisualChecks>;
+  quality?: Partial<VisualQuality>;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+export type VisualSource = 'gitflare.json' | 'settings' | 'default';
+export interface VisualConfig { routes: VisualRoute[]; viewports: VisualViewport[]; themes: VisualTheme[]; checks: VisualChecks; quality: VisualQuality; source: VisualSource }
+export interface RepositoryVisualSettings extends VisualSettings { repositoryId: string; effective: VisualConfig; limits: { maxRoutes: number; maxSteps: number; maxRounds: number } }
+export interface VisualRegion { x: number; y: number; width: number; height: number }
+export interface VisualCapture {
+  id: string;
+  side: 'base' | 'candidate';
+  route: string;
+  label: string;
+  frame?: string;
+  viewport: VisualViewport;
+  theme: VisualTheme;
+  width: number;
+  height: number;
+  format: 'png' | 'jpeg';
+  bytes: number;
+  outline: string;
+  consoleErrors: string[];
+  overflow: number;
+  diff?: { against: string; changedRatio: number; regions: VisualRegion[]; imageId?: string };
+}
+export interface VisualScore { fidelity: number; motion: number; polish: number; ux: number; overall: number }
+export interface VisualRound { round: number; score: VisualScore; critique: string; fixes: string[]; captureIds: string[]; model: string; at: string }
+export interface VisualEvidence {
+  id: string;
+  runId?: string;
+  candidateSha: string;
+  baseSha: string;
+  epoch: number;
+  mode: 'browser' | 'outline';
+  browser: string | null;
+  captures: VisualCapture[];
+  warnings: string[];
+  capturedAt: string;
+  rounds?: VisualRound[];
 }
 
 export interface MissionEvent {

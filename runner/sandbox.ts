@@ -18,6 +18,8 @@ const ca = '/etc/cloudflare/certs/cloudflare-containers-ca.crt';
 const previewHost = (port: number) => `http://localhost:${port}`;
 const LOCAL_PREVIEW_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(\/.*)?$/i;
 const PREVIEW_LOG = '/tmp/gitflare-preview.log';
+const PREVIEW_PID = '/tmp/gitflare-preview.pid';
+export const STOP_PREVIEW_SCRIPT = `pid=$(cat ${PREVIEW_PID} 2>/dev/null) || exit 0; rm -f ${PREVIEW_PID}; kill -TERM -- -"$pid" 2>/dev/null || exit 0; for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 -- -"$pid" 2>/dev/null || exit 0; sleep 0.5; done; kill -KILL -- -"$pid" 2>/dev/null; exit 0`;
 const PREVIEW_LOG_LINES = 40;
 const LOG_POLL_MS = 2_000;
 const LOG_READ_MS = 5_000;
@@ -334,7 +336,7 @@ export class AgentSandbox extends DurableObject<RunnerEnv> {
 
   #previewPort: number | undefined;
 
-  async startPreview(command: string | string[] = 'node src/preview.mjs', readinessMs = 15_000): Promise<void> {
+  async startPreview(command: string | string[] = 'node src/preview.mjs', readinessMs = 15_000): Promise<number> {
     const container = this.ctx.container;
     if (!container?.running) throw new Error('Preview container is not running');
     const controller = new AbortController();
@@ -356,7 +358,7 @@ export class AgentSandbox extends DurableObject<RunnerEnv> {
     const seconds = Math.round(readinessMs / 1000);
     try {
       const process = await Promise.race([
-        container.exec(['/bin/bash', '-c', `exec "$@" > ${PREVIEW_LOG} 2>&1`, 'preview', ...argv], { cwd: '/workspace/repo', env: { ...COREPACK_ENV, COREPACK_ENABLE_NETWORK: '0', PORT: String(PREVIEW_PORT), HOST: '0.0.0.0', BROWSER: 'none', WRANGLER_SEND_METRICS: 'false' }, stdout: 'ignore', stderr: 'ignore' }),
+        container.exec(['setsid', '/bin/bash', '-c', `echo $$ > ${PREVIEW_PID}; exec "$@" > ${PREVIEW_LOG} 2>&1`, 'preview', ...argv], { cwd: '/workspace/repo', env: { ...COREPACK_ENV, COREPACK_ENABLE_NETWORK: '0', PORT: String(PREVIEW_PORT), HOST: '0.0.0.0', BROWSER: 'none', WRANGLER_SEND_METRICS: 'false' }, stdout: 'ignore', stderr: 'ignore' }),
         timeout,
       ]);
       if (process === 'timeout') throw await fail(`Preview process did not start within ${seconds} seconds`);
@@ -382,7 +384,7 @@ export class AgentSandbox extends DurableObject<RunnerEnv> {
             if (response.status < 500) {
               this.#previewPort = port;
               await this.ctx.storage.put('preview-port', port);
-              return;
+              return port;
             }
           }
         }
@@ -395,6 +397,15 @@ export class AgentSandbox extends DurableObject<RunnerEnv> {
       clearTimeout(retryTimer);
       controller.abort();
     }
+  }
+
+  async stopPreview(): Promise<void> {
+    const container = this.ctx.container;
+    if (!container?.running) return;
+    const process = await container.exec(['/bin/bash', '-c', STOP_PREVIEW_SCRIPT], { cwd: '/', stdout: 'ignore', stderr: 'ignore' });
+    await process.exitCode;
+    this.#previewPort = undefined;
+    await this.ctx.storage.delete('preview-port');
   }
 
   async fetch(request: Request): Promise<Response> {

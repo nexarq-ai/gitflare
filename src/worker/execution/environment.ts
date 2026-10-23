@@ -10,7 +10,8 @@ export interface SandboxRunner {
   destroy(): Promise<void>;
   install?(plan: InstallPlan, mode?: InstallMode): Promise<CommandResult>;
   check?(script: string, timeoutMs: number): Promise<CommandResult>;
-  startPreview?(command?: string | string[], readinessMs?: number): Promise<void>;
+  startPreview?(command?: string | string[], readinessMs?: number): Promise<number | void>;
+  stopPreview?(): Promise<void>;
   preview?(request: Request): Promise<Response>;
   collect?(script: string, timeoutMs: number, capBytes: number): Promise<CommandResult>;
 }

@@ -507,8 +507,8 @@ describe('preview HTTP readiness', () => {
     try {
       const { runner, container } = await previewRunner(vi.fn().mockResolvedValue(new Response('ready')));
       await runner.startPreview(['/bin/bash', '-lc', 'exec npm run dev']);
-      const [argv, options] = container.exec.mock.calls.find(([argv]) => argv[0] === '/bin/bash')! as unknown as [string[], { env: Record<string, string> }];
-      expect(argv).toEqual(['/bin/bash', '-c', 'exec "$@" > /tmp/gitflare-preview.log 2>&1', 'preview', '/bin/bash', '-lc', 'exec npm run dev']);
+      const [argv, options] = container.exec.mock.calls.find(([argv]) => argv[0] === 'setsid')! as unknown as [string[], { env: Record<string, string> }];
+      expect(argv).toEqual(['setsid', '/bin/bash', '-c', 'echo $$ > /tmp/gitflare-preview.pid; exec "$@" > /tmp/gitflare-preview.log 2>&1', 'preview', '/bin/bash', '-lc', 'exec npm run dev']);
       expect(options.env).toMatchObject({ PORT: '8080', HOST: '0.0.0.0' });
     } finally { vi.useRealTimers(); }
   });

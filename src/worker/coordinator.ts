@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChange, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput } from '../shared/types';
+import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChange, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput, type VisualSettings } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependencyApprover } from './dependency-changes';
 import { activeLandingMessage } from '../shared/commit-message';
@@ -40,6 +40,7 @@ import { PreviewBook } from './coordinator-previews';
 import { DispatchBook } from './coordinator-dispatch';
 import { IntegrationBook } from './coordinator-integration';
 import { CapacityBook } from './coordinator-capacity';
+import { parseVisualSettings } from './visual/config';
 
 export { PREVIEW_LEASE_MS, PREVIEW_HEARTBEAT_MS, PREVIEW_READY_MS, WORKER_PREVIEW_TTL_MS, DISPATCH_FAST_ATTEMPTS, MISSION_WATCHDOG_MS, WATCHDOG_MISSING_LIMIT, INTEGRATION_UNCONFIRMED_MESSAGE, PREVIEW_STARTING_MESSAGE } from './coordinator-types';
 export type { ContributorStanding, OutgoingProposal, MissionSummaryCache, IntegrationClaim, PreviewCapability, PreviewHost, WorkerPreviewInfo, PreviewLifetime, WorkerPreviewRecord, PreviewExtension, StoppedPreview, PreviewEndReason, LastPreview, PreviewStatus } from './coordinator-types';
@@ -278,6 +279,17 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   getCheckSettings(): CheckSettings | undefined { return this.store.get<CheckSettings>('check-settings'); }
 
   getAgentSettings(): AgentSettings | undefined { return this.store.get<AgentSettings>('agent-settings'); }
+
+  getVisualSettings(): VisualSettings | undefined { return this.store.get<VisualSettings>('visual-settings'); }
+
+  setVisualSettings(key: string, input: VisualSettings, actorId: string): VisualSettings {
+    const normalized = parseVisualSettings(input, 'settings');
+    return this.mutate(key, JSON.stringify(['visual-settings', normalized]), () => {
+      const stored: VisualSettings = { ...normalized, updatedAt: new Date().toISOString(), updatedBy: actorId };
+      this.store.put('visual-settings', stored);
+      return stored;
+    });
+  }
 
   setAgentSettings(key: string, input: AgentSettings, actorId: string): AgentSettings {
     const normalized = normalizeAgentSettings({ ...input });
