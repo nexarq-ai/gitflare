@@ -15,6 +15,8 @@ import { DocumentationIllustration, DocumentationSystemDiagram } from "./Documen
 import { navigate as goTo } from "./router";
 import { appOrigin } from "./hosts";
 import { PageLoading } from "./WorkspaceLoader";
+import { DeployBadgeLink, isDeployBadgeLink } from "./MarkdownImage";
+import { isDeployBadgeSource } from "../shared/markdown-images";
 
 type DocumentItem = {
   id: string;
@@ -205,13 +207,14 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
               h2: ({ children }) => <h2 id={headingId(plainText(children))} tabIndex={-1}>{children}</h2>,
               h3: ({ children }) => <h3 id={headingId(plainText(children))} tabIndex={-1}>{children}</h3>,
               img: ({ src, alt }) => {
-                if (src === "https://deploy.workers.cloudflare.com/button") return <img src={src} width={200} height={32} alt={alt || "Deploy to Cloudflare"} loading="lazy" />;
+                if (isDeployBadgeSource(src)) return <span className="documentation-image-label">{alt || "Deploy to Cloudflare"}</span>;
                 const diagramId = documentationDiagramId(src);
                 const diagram = diagramId ? diagrams[diagramId] : undefined;
                 return diagramId && diagram ? <div className="documentation-diagram"><DocumentationFigure id={diagramId} /><div className="documentation-diagram-tools"><button type="button" data-diagram-key={`${id}:${diagramId}`} onClick={() => { diagramTrigger.current = `${id}:${diagramId}`; setExpandedDiagram({ ...diagram, key: diagramId, alt: alt || diagram.caption }); }} aria-label={`Expand diagram: ${diagram.title}`}><ArrowsOutIcon size={15} />Expand diagram</button></div></div> : <span className="documentation-image-label">{alt ? `Image: ${alt}` : "Image reference"}</span>;
               },
-              a: ({ href, children }) => {
+              a: ({ node, href, children }) => {
                 if (isGitflareDeployUrl(href)) return <CloudflareDeployButton />;
+                if (href && /^https:\/\//i.test(href) && isDeployBadgeLink(node)) return <DeployBadgeLink href={href} />;
                 if (href?.startsWith("#")) return <button className="documentation-inline-link" onClick={() => scrollToHeading(href.slice(1))}>{children}</button>;
                 if (href && /^https?:\/\//i.test(href)) return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
                 const [path, anchor] = (href ?? "").split("#");

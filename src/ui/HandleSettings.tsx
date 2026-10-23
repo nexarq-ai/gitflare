@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@cloudflare/kumo/components/button";
 import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { returnPathFrom } from "../shared/ai-setup";
 import type { HandleAvailability, HandleStatus } from "../shared/types";
 import { HANDLE_MAX, HANDLE_REDIRECT_DAYS, handleProblem, normalizeHandle } from "../shared/handles";
 import { request } from "./api";
@@ -92,12 +93,14 @@ function HandlePanel({ tip, children }: { tip: ReactNode; children: ReactNode })
 
 export function UserHandleCard({ onChanged }: { onChanged: () => Promise<void> }) {
   const { status, setStatus, error } = useHandleStatus();
+  const [back] = useState(() => returnPathFrom(window.location.search));
   return <HandlePanel tip={`Your public address. Setting it creates your personal workspace. After a rename the old address redirects for ${HANDLE_REDIRECT_DAYS} days.`}>
     {error ? <div className="form-error" role="alert">{error}</div>
       : !status ? <PageLoading label="Loading handle" />
       : <>
-        {!status.user.handle && <p className="people-muted handle-lead">Choose your public address.</p>}
-        <HandleEditor key={status.user.handle ?? ""} scope="user" current={status.user.handle} suggested={status.user.suggested} host={originHost(status.origin)} onSaved={async next => { setStatus(next); await onChanged(); }} />
+        {!status.user.handle && <p className="people-muted handle-lead">{back ? "Choose your public address. It creates the personal workspace that holds your AI model." : "Choose your public address."}</p>}
+        {back && status.user.handle && <p className="people-muted handle-lead"><a href={back}>Continue to AI models</a></p>}
+        <HandleEditor key={status.user.handle ?? ""} scope="user" current={status.user.handle} suggested={status.user.suggested} host={originHost(status.origin)} onSaved={async next => { setStatus(next); await onChanged(); if (back && next.user.handle) window.location.assign(back); }} />
       </>}
   </HandlePanel>;
 }

@@ -1,0 +1,2 @@
+img.markdown-image { display: inline-block; max-width: 100%; height: auto; margin: 0; border: 0; vertical-align: middle; background: transparent; }
+a:has(> img.markdown-image) { text-decoration: none; }
