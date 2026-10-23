@@ -3,6 +3,7 @@ import { securityClient, type GitflareSecurity } from './security';
 import type { AgentRun, CheckPlan, CheckSettings, CommunityPool, Mission, ModelConnection, Repository, VisualSettings } from '../shared/types';
 import { fixModelAccess } from './community-pool';
 import { autoAgentReview } from './agent-assist';
+import { autoDesignReview } from './visual/design-review';
 import { isUntrustedMission } from '../shared/pull-requests';
 import type { LearnedLimits } from './check-settings';
 import { assertPinnedModel } from './model-config';
@@ -102,6 +103,7 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
         }
       });
       if (planned && isUntrustedMission(planned)) await step.do('agent review of the checked candidate', { retries: { limit: 0, delay: '1 second' }, timeout: '3 minutes' }, async () => { await autoAgentReview(this.env as unknown as AppEnv, repositoryId, missionId); }).catch(() => {});
+      await step.do('design review of the checked candidate', { retries: { limit: 0, delay: '1 second' }, timeout: '5 minutes' }, async () => { await autoDesignReview(this.env as unknown as AppEnv, repositoryId, missionId); }).catch(() => {});
     } catch (error) {
       const mission = await coordinator.getMission(missionId);
       const platform = platformInterruption(error);

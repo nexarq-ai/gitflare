@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChange, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput, type VisualSettings } from '../shared/types';
+import { AGENT_REVIEWER_ID, DESIGN_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChange, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput, type VisualSettings } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependencyApprover } from './dependency-changes';
 import { activeLandingMessage } from '../shared/commit-message';
@@ -540,16 +540,16 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  addAgentReview(id: string, epoch: number, candidateSha: string, baseSha: string, body: string): Mission {
+  addAgentReview(id: string, epoch: number, candidateSha: string, baseSha: string, body: string, authorId: string = AGENT_REVIEWER_ID): Mission {
     return this.ctx.storage.transactionSync(() => {
       const mission = this.requiredMission(id);
       if (mission.epoch !== epoch || mission.candidateSha !== candidateSha || mission.baseSha !== baseSha) throw new ApiError(409, 'STALE_REVIEW', 'The candidate changed while the agent reviewed it.');
       if (mission.status !== 'needs_review') throw new ApiError(409, 'REVIEW_LOCKED', 'Only a candidate awaiting review can receive an agent review.');
       mission.reviews ??= [];
-      if (mission.reviews.some(review => review.authorId === AGENT_REVIEWER_ID && review.candidateSha === candidateSha && review.epoch === epoch)) throw new ApiError(409, 'AGENT_REVIEW_EXISTS', 'The agent already reviewed this candidate.');
+      if (mission.reviews.some(review => review.authorId === authorId && review.candidateSha === candidateSha && review.epoch === epoch)) throw new ApiError(409, 'AGENT_REVIEW_EXISTS', 'The agent already reviewed this candidate.');
       if (mission.reviews.length >= 500) throw new ApiError(409, 'REVIEW_LIMIT', 'This proposal has reached its discussion limit.');
-      mission.reviews.push({ id: crypto.randomUUID(), kind: 'comment', body, authorId: AGENT_REVIEWER_ID, createdAt: new Date().toISOString(), epoch, candidateSha, baseSha });
-      return this.saveMission(mission, 'The review agent added a comment. Agent reviews never approve.');
+      mission.reviews.push({ id: crypto.randomUUID(), kind: 'comment', body, authorId, createdAt: new Date().toISOString(), epoch, candidateSha, baseSha });
+      return this.saveMission(mission, authorId === DESIGN_REVIEWER_ID ? 'The design reviewer added a comment. Design reviews never approve.' : 'The review agent added a comment. Agent reviews never approve.');
     });
   }
 
@@ -862,7 +862,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       ]);
       const mission: Mission = {
         id, repositoryId: repository.id, title: input.title, prompt: input.prompt,
-        acceptanceCriteria: criteria, authorization, ...(input.attachments?.length ? { attachments: input.attachments.map(({ name, content }) => ({ name, content })) } : {}), ...(skillChange ? { skillChange } : {}), ...(revertChange ? { revertChange: { ...revertChange } } : {}), ...(branchChange ? { branchChange } : {}), ...(input.fixRequest ? { fixRequest: { ...input.fixRequest } } : {}), ...(input.issueNumber !== undefined ? { issueNumber: input.issueNumber } : {}), ...(race ? { mode: 'race' as const } : {}),
+        acceptanceCriteria: criteria, authorization, ...(input.attachments?.length ? { attachments: input.attachments.map(({ name, content }) => ({ name, content })) } : {}), ...(input.qualityBar ? { qualityBar: { target: input.qualityBar.target, references: input.qualityBar.references.map((reference) => ({ ...reference })) } } : {}), ...(skillChange ? { skillChange } : {}), ...(revertChange ? { revertChange: { ...revertChange } } : {}), ...(branchChange ? { branchChange } : {}), ...(input.fixRequest ? { fixRequest: { ...input.fixRequest } } : {}), ...(input.issueNumber !== undefined ? { issueNumber: input.issueNumber } : {}), ...(race ? { mode: 'race' as const } : {}),
         status: 'draft', baseSha: repository.headSha, candidateSha: null, epoch: 0,
         runs: tasks.map((task) => ({ ...(skillChange || branchChange || revertChange ? {} : agentDefaults(input.agentOverrides)), ...task, assignment: task.task, id: crypto.randomUUID(), task: `${input.prompt}\nYou are ${task.name} (${task.role}). ${race ? 'Complete the whole mission on your own; other agents are attempting it independently and a reviewer will choose one result. Your approach' : 'Your assigned task'}: ${task.task}\nPreserve existing tests and run them.${criteria.length ? `\nAcceptance criteria:\n${criteria.map((criterion) => `- ${criterion}`).join('\n')}` : ''}`, status: 'draft', changedFiles: [] })),
         checks: [], changes: [], events: [], createdAt: now, updatedAt: now,

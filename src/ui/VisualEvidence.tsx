@@ -79,6 +79,14 @@ export default function VisualEvidencePanel({ missionId, evidence, runs, checks,
               <h3>{run ? run.name : "Combined candidate"} <code>{item.candidateSha.slice(0, 7)}</code> <span>vs base <code>{item.baseSha.slice(0, 7)}</code></span></h3>
               {related.length > 0 && <ul className="visual-checks">{related.map((check) => <li key={check.id} className={check.status}>{check.name}: {check.status}</li>)}</ul>}
             </header>
+            {item.rounds?.length ? <ol className="visual-rounds">{item.rounds.map((round) => (
+              <li key={round.round}>
+                <h4>Round {round.round} <strong>{round.score.overall}/10</strong> <small>fidelity {round.score.fidelity} · motion {round.score.motion} · polish {round.score.polish} · UX {round.score.ux} · {round.model}</small></h4>
+                <p>{round.critique}</p>
+                {round.fixes.length > 0 && <ul>{round.fixes.map((fix, index) => <li key={index}>{fix}</li>)}</ul>}
+                {round.captureIds.length > 0 && <div className="visual-round-frames">{round.captureIds.slice(0, 8).map((captureId) => <img key={captureId} src={captureUrl(missionId, captureId)} alt={`Round ${round.round} frame ${captureId}`} loading="lazy" decoding="async" />)}</div>}
+              </li>
+            ))}</ol> : null}
             {item.mode === "outline" && <p className="visual-note"><WarningCircleIcon size={15} />No browser ran in this runner, so only page outlines were recorded. {item.warnings[0]}</p>}
             {item.mode === "browser" && item.warnings.length > 0 && <p className="visual-note"><WarningCircleIcon size={15} />{item.warnings.slice(0, 3).join(" · ")}</p>}
             <div className={`visual-grid${compact ? " compact" : ""}`}>

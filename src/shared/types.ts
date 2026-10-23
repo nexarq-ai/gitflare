@@ -384,6 +384,7 @@ export interface Mission {
   landingMessage?: LandingMessage;
   landedSha?: string;
   visual?: VisualEvidence[];
+  qualityBar?: MissionQualityBar;
   error?: string;
 }
 
@@ -565,7 +566,7 @@ export interface BranchChangeResult { name: string; headSha: string; created?: t
 export interface BranchList { repositoryId: string; defaultBranch: string; gitUrl: string; branches: BranchInfo[] }
 export interface CreatePullRequestInput { title: string; description?: string; branch: string; target?: 'self' | 'upstream' }
 export interface RepositorySkillChange { action: 'create' | 'update'; path: string; content: string; baseSha: string }
-export interface CreateMissionInput { attachments?: MissionAttachment[]; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; fixRequest?: FixRequest; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
+export interface CreateMissionInput { attachments?: MissionAttachment[]; qualityBar?: MissionQualityBar; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; fixRequest?: FixRequest; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
 export interface ApiError { error: { code: string; message: string } }
 
 export interface CandidateSource { missionId?: string; source?: 'mission-candidate' }
@@ -633,6 +634,9 @@ export interface IssueTemplates { directory: string | null; commitSha: string | 
 export interface IssueViewer { signedIn: boolean; userId: string | null; member: boolean; repositoryId: string | null; canParticipate: boolean; canTriage: boolean; limited: boolean; turnstileSiteKey: string | null }
 export interface RepositoryBlock { userId: string; person: IssuePerson | null; blockedBy: string; blockedAt: string; reason: string }
 export const AGENT_REVIEWER_ID = 'gitflare-agent';
+export const DESIGN_REVIEWER_ID = 'gitflare-design-reviewer';
+export interface QualityReference { kind: 'url' | 'text'; value: string; note?: string }
+export interface MissionQualityBar { target: string; references: QualityReference[] }
 export type FixFundingSource = 'pool' | 'requester';
 export interface FixRequest { requesterId: string; requester: IssuePerson; source: FixFundingSource; fundingWorkspaceId: string; model: string; issueNumber?: number; requestedAt: string; waiting?: boolean }
 export interface CommunityPool { models: string[]; missionsPerDay: number; draftsPerDay: number; perUserPerDay: number; grantedAt: string; grantedBy: string }

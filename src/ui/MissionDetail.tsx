@@ -23,7 +23,7 @@ import {
   WarningCircleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import { AGENT_REVIEWER_ID, type AgentRetryOverride, type Mission, type ModelConnection, type ModelConnectionsSnapshot, type Workspace } from "../shared/types";
+import { AGENT_REVIEWER_ID, DESIGN_REVIEWER_ID, type AgentRetryOverride, type Mission, type ModelConnection, type ModelConnectionsSnapshot, type Workspace } from "../shared/types";
 import { isUntrustedMission } from "../shared/pull-requests";
 import InfoTip from "./InfoTip";
 import { FixRequestNote } from "./FixRequests";
@@ -1059,6 +1059,13 @@ export default function MissionDetail({
                 </div>
                 <div className="panel-body">
                   <MarkdownContent content={mission.prompt} />
+                  {mission.qualityBar && (
+                    <div className="quality-bar" style={{ marginTop: 19 }}>
+                      <h3 style={{ fontSize: 13 }}>Quality bar<InfoTip label="quality bar">The standard the result is judged against. Agents get it in their brief; with quality rounds on, a critic scores screenshots against it before review.</InfoTip></h3>
+                      <p>{mission.qualityBar.target}</p>
+                      {mission.qualityBar.references.length > 0 && <ul className="acceptance-list">{mission.qualityBar.references.map((reference, index) => <li key={index}>{reference.kind === "url" ? <a className="text-link" href={reference.value} target="_blank" rel="noreferrer noopener">{reference.value}</a> : reference.value}{reference.note ? ` · ${reference.note}` : ""}</li>)}</ul>}
+                    </div>
+                  )}
                   {!!mission.acceptanceCriteria?.length && (
                     <div style={{ marginTop: 19 }}>
                       <h3 style={{ fontSize: 13 }}>Acceptance criteria</h3>
@@ -1464,14 +1471,14 @@ export default function MissionDetail({
                   <div className="repository-work-title">
                     <strong>
                       {item.kind === "approve" && <ShieldCheckIcon size={14} weight="fill" aria-hidden="true" />}
-                      {item.authorId === AGENT_REVIEWER_ID ? "Agent review" : reviewKindLabel(item.kind)}
+                      {item.authorId === AGENT_REVIEWER_ID ? "Agent review" : item.authorId === DESIGN_REVIEWER_ID ? "Design review" : reviewKindLabel(item.kind)}
                       {item.summary && <span className="proposal-review-tag">Review</span>}
                       {item.resolvedAt ? " · Resolved" : ""}
                     </strong>
                     <small>{new Date(item.createdAt).toLocaleString()}</small>
                   </div>
                   <p className="proposal-review-revision">
-                    {item.authorId === AGENT_REVIEWER_ID ? "Review agent, not an approval" : `Reviewer ${item.authorId}`} · Attempt {item.epoch} · Candidate{" "}
+                    {item.authorId === AGENT_REVIEWER_ID ? "Review agent, not an approval" : item.authorId === DESIGN_REVIEWER_ID ? "Design reviewer, not an approval" : `Reviewer ${item.authorId}`} · Attempt {item.epoch} · Candidate{" "}
                     {item.candidateSha.slice(0, 12)} · Base{" "}
                     {item.baseSha.slice(0, 12)}
                     {!current && !item.path ? " · Previous revision" : ""}

@@ -2,13 +2,27 @@ import type { AgentRun, Check, CheckPlan, FileChange, ManifestDependencyChanges,
 import { AgentViewer } from './visual/agent-view';
 import { effectiveVisualConfig } from './visual/config';
 import { captureCandidateEvidence } from './visual/evidence';
+import { critique, roundInstruction, strongestModel } from './visual/critic';
+import { designBrief, loadDesignContext, qualityBarBrief } from './visual/design-context';
+import { toEvidence } from './visual/capture';
+import { viewOutput } from './visual/agent-view';
+import { modelStrength } from '../shared/mission-draft';
+import { MAX_VISUAL_ROUNDS } from './visual/config';
+import type { MissionQualityBar, VisualCapture, VisualConfig, VisualRound } from '../shared/types';
+
+export const DEFAULT_QUALITY_ROUNDS = 2;
+const MIN_QUALITY_ROUND_MS = 90_000;
+
+export function qualityRoundCount(config: Pick<VisualConfig, 'quality'>, qualityBar: MissionQualityBar | undefined): number {
+  return Math.min(MAX_VISUAL_ROUNDS, config.quality.rounds > 0 ? config.quality.rounds : qualityBar ? DEFAULT_QUALITY_ROUNDS : 0);
+}
 import { forkRepository, validGitSha, type ArtifactInfo, type ArtifactsBinding } from './artifacts';
 import { failureLine } from './domain';
 import { loadRepositorySkillContext } from './repository-skills';
 import { validateRepositorySkillChange } from './skill-edit';
 import { assertPinnedModel, defaultModelConnections, resolveModelConnection, DEFAULT_MODEL } from './model-config';
 import { ModelLocationError } from './model-adapter';
-import { AGENT_CONCURRENCY } from './budgets';
+import { AGENT_BUDGET_MS, AGENT_CONCURRENCY } from './budgets';
 import { MAX_MISSION_AGENTS } from '../shared/mission-draft';
 import { describeInstall, runnerFor } from './package-manager';
 import type { LearnedLimits } from './check-settings';
@@ -196,6 +210,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
   using skillSource = await ARTIFACTS.get(repository.name);
   if (skillChange && (await skillSource.log({ ref: repository.defaultBranch, limit: 1 }))[0]?.hash !== baseSha) throw new Error('Repository changed after the skill proposal was created');
   const repositorySkills = await loadRepositorySkillContext(skillSource, baseSha);
+  const design = trusted ? null : await loadDesignContext(skillSource, baseSha);
   const canonical = branchChange?.source ? await outsideSource(ARTIFACTS, branchChange.source.repositoryName) : branchChange ? await skillSource.info() : undefined;
   const race = mission.mode === 'race';
   const reusing = (run: AgentRun) => !trusted && run.status === 'completed' && run.reusedFromEpoch !== undefined && !!run.commitSha && !!run.forkName;
@@ -216,6 +231,12 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     return reports;
   };
   const models = input.modelConnections ?? defaultModelConnections();
+  const criticModelFor = async (run: AgentRun): Promise<ModelConnection> => {
+    const strongest = strongestModel(models.filter((model) => model.verification?.status === 'verified' || model.id === run.modelConfig?.id), modelStrength) ?? run.modelConfig!;
+    if (strongest.id === run.modelConfig?.id) return run.modelConfig;
+    try { await env.assertModelAllowed?.(strongest); return strongest; }
+    catch { return run.modelConfig!; }
+  };
   const pin = (run: AgentRun) => {
     const model = run.modelConfig ?? resolveModelConnection(models, run.model ?? selectedModel(env, models));
     assertPinnedModel(models, model);
@@ -317,8 +338,11 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
           ? { baseSha, repositoryHasNoTests: `The base commit has no tests, so you must add at least one automated test for your change or the check fails. Prefer dependency-free node:test files named *.test.mjs${policy.starter ? '. This repository also has no package.json: you may create one with a working "test" script' : `, or tests run by the existing ${runnerFor(policy.install)} test script`}. The runner installs dependencies with ${runnerFor(policy.install)} before checking, but you have no network access while editing, so you cannot run code that needs packages that are not installed.`, editablePaths: policy.editable }
           : { baseSha, testCommand: policy.testCommand, editablePaths: policy.editable, testHarness: 'Pinned to the base commit; do not modify it' },
         repositorySkills,
+        ...(designBrief(design) ? { designGuide: designBrief(design) } : {}),
+        ...(qualityBarBrief(mission.qualityBar) ? { qualityBar: qualityBarBrief(mission.qualityBar) } : {}),
       };
       const agentContext = JSON.stringify(agentBrief, null, 2);
+      let qualityEvidence: VisualEvidence | null = null;
       let agentSummary: string;
       let revertPaths: string[] = [];
       if (!await active()) throw new Error('Mission cancelled');
@@ -342,7 +366,9 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
           await publish();
         };
         const limits = run.limits;
-        const viewer = new AgentViewer(sandbox, policy, effectiveVisualConfig(policy.visual, input.visualSettings));
+        const visualConfig = effectiveVisualConfig(policy.visual, input.visualSettings);
+        const viewer = new AgentViewer(sandbox, policy, visualConfig);
+        const loopStarted = Date.now();
         const loopOptions: AgentLoopOptions = {
         policy,
         workspace: {
@@ -385,6 +411,43 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
           run.summary = 'Model did not answer in time. Retrying the agent once automatically';
           await publish();
           agentSummary = await runAgentLoop(env, sandbox, JSON.stringify({ ...agentBrief, resume: RESUME_NOTE }, null, 2), active, onTool, run.modelConfig, loopOptions);
+        }
+        try {
+          const rounds = qualityRoundCount(visualConfig, mission.qualityBar);
+          if (rounds > 0 && env.evidence && !run.coordinator) {
+            const deadline = loopStarted + (loopOptions.budgetMs ?? AGENT_BUDGET_MS);
+            const passScore = visualConfig.quality.passScore;
+            const recorded: VisualRound[] = [];
+            const captures: VisualCapture[] = [];
+            const criticModel = await criticModelFor(run);
+            let mode: VisualEvidence['mode'] = 'browser';
+            for (let round = 1; round <= rounds; round++) {
+              if (!await active()) throw new Error('Mission cancelled');
+              if (deadline - Date.now() < MIN_QUALITY_ROUND_MS) { result.events = [...(result.events ?? []), { id: `${key}-quality-${round}-skipped`, timestamp: new Date().toISOString(), runId: run.id, type: 'warning', message: `${run.name}: quality round ${round} skipped, not enough agent time left` }]; break; }
+              run.summary = `Quality round ${round} of ${rounds}: capturing the current result`;
+              await publish();
+              const { output } = await viewer.capture(visualConfig, deadline - Date.now(), { restart: true });
+              mode = output.mode;
+              const shown = viewOutput(output, null);
+              const context = { id: `q${mission.epoch}-${run.id}-r${round}`, side: 'candidate' as const, candidateSha: '', baseSha, epoch: mission.epoch, runId: run.id };
+              const { evidence, images } = toEvidence(output, context);
+              for (const image of images) await env.evidence.putImage(mission.id, image);
+              captures.push(...evidence.captures);
+              run.summary = `Quality round ${round} of ${rounds}: the critic is scoring ${shown.images.length} screenshot${shown.images.length === 1 ? '' : 's'}`;
+              await publish();
+              const verdict = await critique(env, criticModel, { title: mission.title, prompt: mission.prompt, qualityBar: mission.qualityBar, design, round, rounds, passScore }, shown.text, shown.images, loopOptions.onModelCall);
+              recorded.push({ round, score: verdict.score, critique: verdict.critique, fixes: verdict.fixes, captureIds: evidence.captures.filter((capture) => capture.bytes).map((capture) => capture.id), model: criticModel.id, at: new Date().toISOString() });
+              result.events = [...(result.events ?? []), { id: `${key}-quality-${round}`, timestamp: new Date().toISOString(), runId: run.id, type: verdict.score.overall >= passScore ? 'success' : 'info', message: `${run.name}: quality round ${round} scored ${verdict.score.overall}/10 (bar ${passScore})${verdict.fixes.length ? `; ${verdict.fixes.length} fix${verdict.fixes.length === 1 ? '' : 'es'} requested` : ''}` }];
+              if (verdict.score.overall >= passScore || round === rounds || deadline - Date.now() < MIN_QUALITY_ROUND_MS) break;
+              run.summary = `Quality round ${round} of ${rounds}: scored ${verdict.score.overall}/10, below the bar of ${passScore}; revising`;
+              await publish();
+              agentSummary = await runAgentLoop(env, sandbox, JSON.stringify({ ...agentBrief, qualityRound: { instruction: roundInstruction(recorded.at(-1)!, passScore, rounds), score: verdict.score, critique: verdict.critique, fixes: verdict.fixes } }, null, 2), active, onTool, run.modelConfig, { ...loopOptions, budgetMs: deadline - Date.now() });
+            }
+            if (recorded.length) qualityEvidence = { id: `q${mission.epoch}-${run.id}`, runId: run.id, candidateSha: '', baseSha, epoch: mission.epoch, mode, browser: null, captures, warnings: [], capturedAt: new Date().toISOString(), rounds: recorded };
+          }
+        } catch (error) {
+          if (!await active()) throw error;
+          result.events = [...(result.events ?? []), { id: `${key}-quality-failed`, timestamp: new Date().toISOString(), runId: run.id, type: 'warning', message: `${run.name}: quality rounds stopped: ${failureLine(error instanceof Error ? error.message : String(error))}`.slice(0, 1200) }];
         } finally { await viewer.close(); }
       }
       run.summary = 'Agent finished editing. Recording its Git candidate';
@@ -419,6 +482,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
       let sha = await checked(sandbox, ['git', 'rev-parse', 'HEAD']);
       if (!validGitSha(sha)) throw new Error('Runner returned an invalid commit');
       await checked(sandbox, ['git', 'merge-base', '--is-ancestor', baseSha, sha]);
+      if (qualityEvidence) result.visual = [...(result.visual ?? []).filter((item) => item.id !== qualityEvidence!.id), { ...qualityEvidence, candidateSha: sha }];
       if (revertChange && (await checked(sandbox, ['git', 'diff', '--no-renames', '--name-only', baseSha, sha])).split('\n').some((path) => path && !revertPaths.includes(path))) throw new Error('Revert changed files outside the landed change');
       if (!revertChange && !branchChange) {
         const statuses = await changesWithStatus(sandbox, [baseSha, sha]);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@cloudflare/kumo/components/button';
 import { Input } from '@cloudflare/kumo/components/input';
 import { ArrowClockwiseIcon, ArrowLeftIcon, CaretDownIcon, CaretRightIcon, CheckIcon, CircleIcon, CopyIcon, InfoIcon, GitBranchIcon, GitMergeIcon, PaperclipIcon, PencilSimpleIcon, PlayIcon, PlusIcon, RobotIcon, ShieldCheckIcon, SparkleIcon, TrashIcon } from '@phosphor-icons/react';
-import type { AgentTask, IssueDetail, Mission, Repository, ModelConnectionsSnapshot, AiKeysSnapshot, ModelConnection } from '../shared/types';
+import type { AgentTask, IssueDetail, Mission, MissionQualityBar, Repository, ModelConnectionsSnapshot, AiKeysSnapshot, ModelConnection } from '../shared/types';
 import { request, RequestError } from './api';
 import { DEFAULT_MAX_AGENTS, DRAFT_GOAL_MAX, MAX_MISSION_AGENTS, MISSION_PROMPT_MAX, byStrength, defaultAllowedModels, draftGoalProblem, draftIsStale, fillBlank, firstLine, mergeDraftAgents, modelOptionLabel, modelVerificationNote, planToManual, strategyLabel, verifiedModels, type MissionDraftResult, type MissionPlanResult } from '../shared/mission-draft';
 import RepositoryImport from './RepositoryImport';
@@ -55,6 +55,16 @@ export function BaseSha({ sha }: { sha: string }) {
 }
 function modelLabel(models: ModelConnection[] | undefined, id: string): string { return models?.find(model => model.id === id)?.label ?? id; }
 
+export function qualityBarFrom(target: string, references: string): MissionQualityBar | null {
+  if (!target.trim()) return null;
+  return { target: target.trim().slice(0, 1000), references: references.split('\n').map(line => line.trim()).filter(Boolean).slice(0, 8).map(line => /^https?:\/\/\S+$/i.test(line) ? { kind: 'url' as const, value: line } : { kind: 'text' as const, value: line.slice(0, 2000) }) };
+}
+
+export function qualityCostNote(bar: MissionQualityBar, agents: number): string {
+  const rounds = 2;
+  return `Each of the ${agents} agent${agents === 1 ? '' : 's'} gets up to ${rounds} quality rounds: one screenshot capture and one critic call per round on the strongest allowed model, plus the agent's own extra turns. About ${agents * rounds * 2} extra model calls at most, inside each agent's time budget.`;
+}
+
 export default function ProposalCreate({ repositories, repositoryId, canContribute, canManage = false, onBack, onCreateRepository, onCreated }: { repositories: Repository[]; repositoryId?: string; canContribute: boolean; canManage?: boolean; onBack: () => void; onCreateRepository: () => void; onCreated: (proposal: Mission) => Promise<void> }) {
   const [entry, setEntry] = useState<'auto' | 'manual'>('auto');
   const [repoId, setRepoId] = useState(repositoryId ?? repositories[0]?.id ?? '');
@@ -72,6 +82,9 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
   const [baseStale, setBaseStale] = useState(false);
   const [emptyRepository, setEmptyRepository] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [qualityTarget, setQualityTarget] = useState('');
+  const [qualityReferences, setQualityReferences] = useState('');
+  const qualityBar = qualityBarFrom(qualityTarget, qualityReferences);
   const [attachError, setAttachError] = useState('');
   const [importing, setImporting] = useState(false);
   const [reading, setReading] = useState(0);
@@ -187,7 +200,7 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
     const requested = { repositoryId: repoId, goal: prompt };
     const requestedIds = agents.map(agent => agent.id);
     try {
-      const draft = await request<MissionDraftResult>('/api/missions/draft', { repositoryId: repoId, goal: prompt.trim(), mode, agents: agents.length, title: title.trim() || undefined, model: agents[0]?.model }, crypto.randomUUID());
+      const draft = await request<MissionDraftResult>('/api/missions/draft', { repositoryId: repoId, goal: prompt.trim(), mode, agents: agents.length, title: title.trim() || undefined, model: agents[0]?.model, ...(qualityBar ? { qualityBar } : {}) }, crypto.randomUUID());
       if (draftIsStale(requested, latestDraftInput.current)) { setDraftNote('The repository or goal changed while drafting, so that draft was discarded. Draft again to use the current goal.'); return; }
       setTitle(current => fillBlank(current, draft.title));
       setCriteria(current => fillBlank(current, draft.acceptanceCriteria.join('\n')));
@@ -201,7 +214,7 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
     setDrafting(true); setError(''); setPlan(null);
     const requested = { repositoryId: repoId, goal: prompt };
     try {
-      const result = await request<MissionPlanResult>('/api/missions/draft', { repositoryId: repoId, goal: prompt.trim(), mode: 'auto', maxAgents, allowedModels }, crypto.randomUUID());
+      const result = await request<MissionPlanResult>('/api/missions/draft', { repositoryId: repoId, goal: prompt.trim(), mode: 'auto', maxAgents, allowedModels, ...(qualityBar ? { qualityBar } : {}) }, crypto.randomUUID());
       if (draftIsStale(requested, latestDraftInput.current)) { setError('The repository or goal changed while planning, so that plan was discarded. Plan again.'); return; }
       setPlan({ ...result, ...requested });
       requestAnimationFrame(() => { planRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); planRef.current?.focus({ preventScroll: true }); });
@@ -249,7 +262,7 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
     const limitProblem = limitFieldsProblem(autoLimits);
     if (limitProblem) { setError(limitProblem.message); return; }
     const agentOverrides = limitOverrides(autoLimits);
-    await save({ mode: currentPlan.mode, repositoryId: repoId, expectedBaseSha: loadedBase!.commitSha, title: currentPlan.title.slice(0, 120), prompt: prompt.trim(), acceptanceCriteria: currentPlan.acceptanceCriteria.length ? currentPlan.acceptanceCriteria : undefined, attachments: attachments.length ? attachments : undefined, tasks, ...(agentOverrides ? { agentOverrides } : {}), ...(linkedIssue ? { issueNumber: linkedIssue.number } : {}) }, true);
+    await save({ mode: currentPlan.mode, repositoryId: repoId, expectedBaseSha: loadedBase!.commitSha, title: currentPlan.title.slice(0, 120), prompt: prompt.trim(), acceptanceCriteria: currentPlan.acceptanceCriteria.length ? currentPlan.acceptanceCriteria : undefined, attachments: attachments.length ? attachments : undefined, ...(qualityBar ? { qualityBar } : {}), tasks, ...(agentOverrides ? { agentOverrides } : {}), ...(linkedIssue ? { issueNumber: linkedIssue.number } : {}) }, true);
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -266,11 +279,12 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
     const unassigned = agents.filter(agent => (agents.length > 1 || agent.task.trim()) && agent.task.trim().length < 10);
     if (unassigned.length) setAgents(current => current.map(agent => unassigned.some(item => item.id === agent.id) ? { ...agent, open: true } : agent));
     if (prompt.trim().length < 10 || unassigned.length) { setError("Describe what should change. With several agents, give each one an assignment. Outcomes and assignments need at least 10 characters."); return; }
-    await save({ mode, repositoryId: repoId, expectedBaseSha: loadedBase!.commitSha, title: title.trim() || prompt.trim().split('\n')[0].slice(0, 80), prompt: prompt.trim(), acceptanceCriteria: acceptanceCriteria.length ? acceptanceCriteria : undefined, attachments: attachments.length ? attachments : undefined, tasks: agents.map(({ name, role, task, model, coordinator, limits }, index) => ({ name: name.trim() || defaultAgentName(index), role: role.trim() || defaultAgentRole(), task: task.trim() || WHOLE_MISSION, model: model ?? defaultModel, ...(coordinator && canCoordinate ? { coordinator: true } : {}), ...taskLimits(limits) })), ...(linkedIssue ? { issueNumber: linkedIssue.number } : {}) }, false);
+    await save({ mode, repositoryId: repoId, expectedBaseSha: loadedBase!.commitSha, title: title.trim() || prompt.trim().split('\n')[0].slice(0, 80), prompt: prompt.trim(), acceptanceCriteria: acceptanceCriteria.length ? acceptanceCriteria : undefined, attachments: attachments.length ? attachments : undefined, ...(qualityBar ? { qualityBar } : {}), tasks: agents.map(({ name, role, task, model, coordinator, limits }, index) => ({ name: name.trim() || defaultAgentName(index), role: role.trim() || defaultAgentRole(), task: task.trim() || WHOLE_MISSION, model: model ?? defaultModel, ...(coordinator && canCoordinate ? { coordinator: true } : {}), ...taskLimits(limits) })), ...(linkedIssue ? { issueNumber: linkedIssue.number } : {}) }, false);
   }
 
   const repositoryField = <div className="form-field"><label htmlFor="proposal-repository">Repository</label><select id="proposal-repository" required disabled={busy} value={repoId} onChange={event => { setRepoId(event.target.value); setBaseStale(false); }}><option value="" disabled>Choose a repository</option>{repositories.map(repo => <option key={repo.id} value={repo.id}>{repositoryLabel(repo)}{repo.provider === 'local' ? ' (local)' : ''}</option>)}</select></div>;
   const issueLink = <>{linkedIssue && <p className="proposal-issue-link"><CircleIcon size={14} weight="bold" aria-hidden="true" /><span>Fixes <a href={`/repository/${linkedIssue.repositoryId}/issues/${linkedIssue.number}`}>#{linkedIssue.number}</a> {linkedIssue.title}</span><small>The issue closes as completed when this mission lands.</small><Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setIssue(null)}>Unlink</Button></p>}{issueError && <p className="proposal-name-error" role="alert">{issueError}</p>}</>;
+  const qualitySection = <section className="panel proposal-section proposal-quality"><div className="panel-header"><h2>Quality bar <span className="proposal-optional">(optional)</span></h2></div><div className="panel-body"><p>What standard should the result reach?<Hint id="proposal-quality-hint" label="Quality bar" text="Agents get it in their brief and the planner picks the strongest models for it. With quality rounds on in Settings → Streams → Visual (or when a bar is set, two rounds), a critic scores screenshots of each agent's work against it and the agent iterates before review." /></p><div className="form-field"><label htmlFor="proposal-quality-target">Target</label><textarea id="proposal-quality-target" maxLength={1000} disabled={busy || drafting} rows={2} value={qualityTarget} placeholder="AAA fighting game: Tekken-like lighting, fluid 60 fps animation, polished HUD" onChange={event => setQualityTarget(event.target.value)} /></div><div className="form-field"><label htmlFor="proposal-quality-references">References <span className="proposal-optional">(one per line: a URL or a description)</span></label><textarea id="proposal-quality-references" maxLength={8 * 2001} disabled={busy || drafting} rows={3} value={qualityReferences} placeholder={"https://example.com/reference-frame.png\nCharacter select screen like Street Fighter 6, dark background, bold type"} onChange={event => setQualityReferences(event.target.value)} /></div>{qualityBar && <p className="proposal-muted">{qualityCostNote(qualityBar, entry === 'auto' ? maxAgents : agents.length)}</p>}</div></section>;
   const contextFiles = <section className="panel proposal-section proposal-attachments"><div className="panel-header"><h2>Context files <span className="proposal-optional">(optional)</span></h2></div><div className="panel-body"><p>Up to 5 text or code files (16 KiB each, 48 KiB total). Agents read them; they are not added to the repository.</p><input ref={fileInput} className="proposal-file-input" type="file" multiple disabled={busy} aria-label="Attach context files" tabIndex={-1} onChange={event => { void addFiles(event.target.files); event.target.value = ''; }} /><div className="proposal-file-picker"><Button type="button" variant="secondary" size="base" icon={PaperclipIcon} disabled={busy || attachments.length >= 5} onClick={() => fileInput.current?.click()}>Choose files</Button><span>{attachments.length ? `${attachments.length} of 5 attached` : 'No files attached'}</span></div>{reading > 0 && <p role="status">Reading files…</p>}{attachError && <p className="proposal-name-error" role="alert">{attachError}</p>}{attachments.length > 0 && <ul className="proposal-attachment-list">{attachments.map(item => <li key={item.name}><code>{item.name}</code><small>{bytes(item.content)} bytes</small><Button type="button" variant="ghost" size="base" disabled={busy} aria-label={`Remove ${item.name}`} onClick={() => { attachRef.current = attachRef.current.filter(entry => entry.name !== item.name); setAttachments(attachRef.current); }}>Remove</Button></li>)}</ul>}</div></section>;
 
   const autoForm = <>
@@ -290,11 +304,13 @@ export default function ProposalCreate({ repositories, repositoryId, canContribu
       {currentPlan.followUp && <p className="proposal-draft-note"><strong>Next mission:</strong> {currentPlan.followUp}</p>}
       {currentPlan.warnings?.length ? <ul className="proposal-plan-warnings" role="status">{currentPlan.warnings.map(item => <li key={item}>{item}</li>)}</ul> : null}
     </div></section>}
+    {qualitySection}
     {contextFiles}
   </>;
 
   const manualForm = <>
     <section className="panel proposal-section"><div className="panel-header"><h2>Mission details</h2></div><div className="panel-body">{issueLink}{repositoryField}<div className="form-field"><label htmlFor="proposal-title">Mission title <span className="proposal-optional">(optional)</span></label><Input id="proposal-title" maxLength={120} disabled={busy} value={title} placeholder="Make checkout resilient to retries" onChange={event => setTitle(event.target.value)} /></div><div className="form-field"><label htmlFor="proposal-outcome">What should change?</label><textarea id="proposal-outcome" required minLength={10} maxLength={MISSION_PROMPT_MAX} disabled={busy} rows={5} value={prompt} placeholder="Describe the outcome, relevant context, and constraints…" onChange={event => setPrompt(event.target.value)} /><div className="proposal-draft"><Button type="button" variant="secondary" size="base" icon={SparkleIcon} loading={drafting} disabled={busy || drafting || !repoId || !!draftGoalProblem(prompt)} aria-describedby={draftProblem ? 'proposal-draft-limit' : undefined} onClick={() => void draftWithAi()}>Fill blanks with AI</Button><small>Fills only empty fields from your goal and this repository. Nothing is saved until you create the mission.</small></div>{draftProblem && prompt.trim().length > DRAFT_GOAL_MAX && <p id="proposal-draft-limit" className="proposal-name-error" role="status">{draftProblem}</p>}{draftNote && <p className="proposal-draft-note" role="status">{draftNote}</p>}</div><div className="form-field"><label htmlFor="proposal-criteria">Acceptance criteria <span className="proposal-optional">(optional)</span></label><textarea id="proposal-criteria" rows={3} maxLength={6011} disabled={busy} value={criteria} placeholder="One criterion per line…" aria-describedby="proposal-criteria-hint" onChange={event => setCriteria(event.target.value)} /><small id="proposal-criteria-hint">Up to 12 criteria, 500 characters each.</small></div></div></section>
+    {qualitySection}
     {contextFiles}
     <section className="panel proposal-section"><div className="panel-header"><h2 id="proposal-mode-title">How agents work</h2></div><div className="panel-body"><div className="mission-mode" role="radiogroup" aria-labelledby="proposal-mode-title"><label className={mode === "combine" ? "selected" : ""}><input type="radio" name="mission-mode" checked={mode === "combine"} disabled={busy} onChange={() => setMode("combine")} /><span><strong>Combine</strong>Each agent builds a part. Gitflare combines and tests them.</span></label><label className={mode === "race" ? "selected" : ""}><input type="radio" name="mission-mode" checked={mode === "race"} disabled={busy} onChange={() => setMode("race")} /><span><strong>Race</strong>Each agent attempts the whole mission. You keep the best passing one.</span></label></div></div></section>
     <section className="proposal-agents" aria-labelledby="proposal-agents-title"><div className="proposal-agents-heading"><div><h2 id="proposal-agents-title">Agents <span>{agents.length} / {MAX_MISSION_AGENTS}</span></h2><p>{mode === "race" ? "Give each agent a different approach to the whole outcome." : "Give each agent a separate part. One can be the coordinator."}</p></div><Button type="button" variant="secondary" size="base" icon={PlusIcon} disabled={busy || agents.length >= MAX_MISSION_AGENTS} onClick={addAgent}>Add agent</Button></div>{duplicateNames.length > 0 && <p className="proposal-name-error" role="alert">Agent names must be unique.</p>}<div className="proposal-agent-list">{agents.map((agent, index) => {
