@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
-import { ROUTE_MODULES_MARKER, ROUTE_MODULE_SOURCES, type RouteModuleName, type RouteModules } from './src/shared/route-modules';
+import { ROUTE_MODULES_MARKER, ROUTE_MODULE_SOURCES, type RouteModuleName, type RouteModules } from './src/shared/route-modules.ts';
 
 // demo.gitflare.io must run the published open-source code, never the hosted tree
 if (process.env.CLOUDFLARE_ENV === 'demo' && existsSync('src/worker/hosted-signin.ts')) throw new Error('The demo builds from the self-hosted export. Run npm run build:demo.');
@@ -85,7 +86,20 @@ export function routeModules(): Plugin {
   };
 }
 
+export function staticSite(): Plugin {
+  return {
+    name: 'gitflare:static-site',
+    apply: 'build',
+    applyToEnvironment: (environment) => environment.name === 'client',
+    async closeBundle() {
+      if (!existsSync('site/astro.config.ts')) return;
+      const { buildSite } = await import(/* @vite-ignore */ pathToFileURL(resolve('scripts/build-site.mjs')).href) as { buildSite(options: { client: string }): Promise<string[]> };
+      await buildSite({ client: resolve(this.environment.config.build.outDir) });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [kumoSources(), react(), tailwindcss(), cloudflare(), requireKumoStyles(), routeModules()],
+  plugins: [kumoSources(), react(), tailwindcss(), cloudflare(), requireKumoStyles(), routeModules(), staticSite()],
   server: { host: '127.0.0.1', port: 5188, strictPort: true },
 });

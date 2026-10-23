@@ -1,0 +1,84 @@
+:root {
+  font-family: var(--gf-font-sans);
+  color: var(--gf-color-text);
+  background: var(--gf-color-surface);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  font-size: 16px;
+  color-scheme: light;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-size: 14px;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+a {
+  color: var(--gf-color-info);
+  text-decoration: none;
+}
+:where(p, td, dd, blockquote, article li, .policy-article li, .documentation-content li) a:not([class]):hover {
+  text-decoration: underline;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--gf-color-border);
+  outline-offset: 3px;
+}
+#root {
+  isolation: isolate;
+  min-height: 100vh;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.35px;
+}
+h2 {
+  font-size: 16px;
+  font-weight: 630;
+  letter-spacing: -0.25px;
+}
+h3 {
+  font-size: 14px;
+  font-weight: 620;
+}
+code,
+pre {
+  font-family: var(--gf-font-mono);
+}
+button svg,
+a svg {
+  flex-shrink: 0;
+}

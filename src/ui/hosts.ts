@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { hostOrigins, type HostOrigins } from "../shared/hosts";
+import { hostOrigins, PRERENDER_APP_LINK, PRERENDER_APP_ORIGIN, type HostOrigins } from "../shared/hosts";
 import { hasSignedInHint, SIGNED_IN_STATUS_PATH } from "../shared/signed-in-hint";
 import { isPublicProductRoute, isSiteRoute, SIGNED_IN_PRODUCT_ROUTES } from "./router";
 
@@ -15,16 +15,18 @@ function onOrigin(origin: string | undefined, path: string): string {
   return origin && origin !== window.location.origin ? `${origin}${path}` : path;
 }
 
+const prerendering = () => typeof window === "undefined" && import.meta.env.GITFLARE_PRERENDER === "true";
+
 export function appHref(path: string): string {
-  return onOrigin(pageHostOrigins()?.app, path);
+  return prerendering() ? `${PRERENDER_APP_LINK}${path}` : onOrigin(pageHostOrigins()?.app, path);
 }
 
 export function siteHref(path: string): string {
-  return onOrigin(pageHostOrigins()?.site, path);
+  return prerendering() ? path : onOrigin(pageHostOrigins()?.site, path);
 }
 
 export function appOrigin(): string {
-  return pageHostOrigins()?.app ?? window.location.origin;
+  return prerendering() ? PRERENDER_APP_ORIGIN : pageHostOrigins()?.app ?? window.location.origin;
 }
 
 export function crossHostTarget(origins: HostOrigins | null, current: string, route: string, location: string, signedIn: boolean | null): string | null {

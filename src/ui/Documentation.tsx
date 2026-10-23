@@ -18,14 +18,14 @@ import { PageLoading } from "./WorkspaceLoader";
 import { DeployBadgeLink, isDeployBadgeLink } from "./MarkdownImage";
 import { isDeployBadgeSource } from "../shared/markdown-images";
 
-type DocumentItem = {
+export type DocumentItem = {
   id: string;
   title: string;
   description: string;
   audience: string;
   filename: string;
 };
-type DocumentContent = DocumentItem & { content: string };
+export type DocumentContent = DocumentItem & { content: string };
 
 function headingId(text: string) {
   return text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s+/g, "-");
@@ -61,19 +61,22 @@ function DocumentationFigure({ id, expanded = false }: { id: string; expanded?: 
   return <DocumentationSystemDiagram id={id} expanded={expanded} />;
 }
 
-export default function Documentation({ id, publicMode = false }: { id: string; publicMode?: boolean }) {
-  const isIndex = /^\/docs\/?$/.test(window.location.pathname);
-  const [items, setItems] = useState<DocumentItem[]>([]);
-  const [document, setDocument] = useState<DocumentContent | null>(null);
+export default function Documentation({ id, publicMode = false, index, initialItems, initialDocument, staticSite = false }: { id: string; publicMode?: boolean; index?: boolean; initialItems?: DocumentItem[]; initialDocument?: DocumentContent; staticSite?: boolean }) {
+  const isIndex = index ?? /^\/docs\/?$/.test(window.location.pathname);
+  const prerendered = (retry: number) => retry === 0 && !!initialItems && (isIndex || initialDocument?.id === id);
+  const [items, setItems] = useState<DocumentItem[]>(initialItems ?? []);
+  const [document, setDocument] = useState<DocumentContent | null>(initialDocument ?? null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !prerendered(0));
   const [retry, setRetry] = useState(0);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const copyGeneration = useRef(0);
   const [expandedDiagram, setExpandedDiagram] = useState<(DocumentationDiagram & { alt: string; key: string }) | null>(null);
   const [activeHeading, setActiveHeading] = useState("");
-  const [guideQuery, setGuideQuery] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
-  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  const [guideQuery, setGuideQuery] = useState("");
+  const [compact, setCompact] = useState(true);
+
+  useEffect(() => { setGuideQuery(new URLSearchParams(window.location.search).get("q") ?? ""); }, []);
 
   useEffect(() => {
     const previous = window.document.title;
@@ -84,6 +87,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 760px)");
     const update = () => setCompact(query.matches);
+    update();
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
@@ -92,6 +96,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
   const pendingAnchor = useRef("");
 
   useEffect(() => {
+    if (initialItems && retry === 0) return;
     let active = true;
     setItems([]);
     setError("");
@@ -104,6 +109,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
   }, [retry, publicMode]);
 
   useEffect(() => {
+    if (prerendered(retry)) return;
     let active = true;
     setDocument(null);
     setCopyState("idle");
@@ -183,7 +189,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
     <div className={`documentation-page wiki-page ${isIndex ? "documentation-index" : ""}`}>
       {error && <ErrorNotice message={error} onRetry={() => setRetry((value) => value + 1)} />}
       <div className="documentation-layout">
-        <div className="documentation-mobile-selector"><label htmlFor="documentation-guide">Guide</label><select id="documentation-guide" value={isIndex ? "" : id} disabled={!items.length} onChange={(event) => { goTo(`docs/${event.target.value}`); }}>{isIndex && <option value="">Browse all guides</option>}{!items.length && <option value={id}>Loading library…</option>}{items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></div>
+        <div className="documentation-mobile-selector"><label htmlFor="documentation-guide">Guide</label><select id="documentation-guide" value={isIndex ? "" : id} disabled={!items.length} onChange={(event) => { if (staticSite) window.location.assign(`/docs/${event.target.value}`); else goTo(`docs/${event.target.value}`); }}>{isIndex && <option value="">Browse all guides</option>}{!items.length && <option value={id}>Loading library…</option>}{items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></div>
         <aside className="documentation-navigation" aria-label="Documentation library"><a className="documentation-nav-title" href="/docs"><BookOpenIcon size={18} />Documentation</a><label className="documentation-guide-search"><span>Find a guide</span><input type="search" value={guideQuery} onChange={(event) => setGuideQuery(event.target.value)} placeholder="Search guides…" /></label>
           {[{ label: "For people", audience: "human" }, { label: "For AI clients", audience: "agent" }, { label: "Reference", audience: "reference" }].map((group) => {
             const documents = items.filter((item) => (item.audience === group.audience || (group.audience === "reference" && !["human", "agent"].includes(item.audience))) && `${item.title} ${item.description}`.toLowerCase().includes(guideQuery.toLowerCase()));
@@ -222,7 +228,7 @@ export default function Documentation({ id, publicMode = false }: { id: string; 
                 try { decodedPath = decodeURIComponent(path); } catch { decodedPath = ""; }
                 const filename = decodedPath.replace(/^\.\//, "").split("/").pop();
                 const linked = items.find((item) => item.filename === decodedPath || item.filename.split("/").pop() === filename);
-                if (linked) return <a href={`/docs/${linked.id}`} onClick={(event) => { if (linked.id === id && anchor) { event.preventDefault(); scrollToHeading(anchor); } else { pendingAnchor.current = anchor ?? ""; } }}>{children}</a>;
+                if (linked) return <a href={staticSite && anchor ? `/docs/${linked.id}#${anchor}` : `/docs/${linked.id}`} onClick={(event) => { if (linked.id === id && anchor) { event.preventDefault(); scrollToHeading(anchor); } else { pendingAnchor.current = anchor ?? ""; } }}>{children}</a>;
                 return <span title="This reference is not available in the documentation library">{children}<span className="documentation-unavailable"> (reference unavailable)</span></span>;
               },
               table: ({ children }) => <div className="documentation-table"><table>{children}</table></div>,

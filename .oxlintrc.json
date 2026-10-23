@@ -10,5 +10,5 @@
     "unicorn/no-useless-spread": "off",
     "unicorn/prefer-string-starts-ends-with": "off"
   },
-  "ignorePatterns": ["dist/", "node_modules/", ".wrangler/", "worker-configuration.d.ts", "public/", "docs/", "distribution/"]
+  "ignorePatterns": ["dist/", ".astro/", "node_modules/", ".wrangler/", "worker-configuration.d.ts", "public/", "docs/", "distribution/"]
 }
