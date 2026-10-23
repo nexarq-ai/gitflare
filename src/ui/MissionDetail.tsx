@@ -53,6 +53,9 @@ import SubscribeButton from "./SubscribeButton";
 import { currentReviewRequests, ownerGroupStatus, reviewKindLabel, submitReviewBody, VERDICT_LABELS, VERDICTS, verdictAvailable, type ApprovalProgress, type OwnerGroupStatus, type ReviewVerdict } from "./review-summary";
 import "./inbox.css";
 import { commitMessageProblem, normalizeCommitMessage, suggestedCommitMessage } from "../shared/commit-message";
+import { createMissionPoller, elapsedLabel, landingOutcome, missionPollDelay, supersedes, type MissionPoller } from "./mission-refresh";
+import { useNow } from "./DeployProgress";
+import { publishDeployments, type DeploymentSummary } from "./deploy-progress";
 
 type PreviewResult = { status?: "starting" | "ready"; message?: string; kind?: "worker" | "container"; previewUrl?: string; deploymentUrl?: string | null; notes?: string[]; candidateSha: string; expiresAt?: string; linkExpiresAt?: string; host?: PreviewHost; access?: PreviewAccess; extended?: boolean; setup?: string };
 
@@ -66,6 +69,7 @@ type Props = {
   workspace: Workspace;
   onBack: () => void;
   onUpdate: () => void;
+  onNotify?: (message: string) => void;
   demo?: boolean;
   installationAdmin?: boolean;
 };
@@ -80,6 +84,7 @@ export default function MissionDetail({
   workspace,
   onBack,
   onUpdate,
+  onNotify,
   demo = false,
   installationAdmin = false,
 }: Props) {
@@ -88,9 +93,8 @@ export default function MissionDetail({
   const replay = useMissionReplay(id, demo);
   const mission = replay.mission ?? loadedMission;
   const permissions = replay.active ? [] : grantedPermissions;
-  const missionActive = useRef(false);
-  missionActive.current = isActive;
-  const reschedule = useRef(() => {});
+  const pollerRef = useRef<MissionPoller | null>(null);
+  const observedMission = useRef<Mission | undefined>(undefined);
   const tab = [
     "overview",
     "changes",
@@ -117,12 +121,18 @@ export default function MissionDetail({
   const previewRef = useRef<PreviewState | null>(null);
   previewRef.current = preview;
   const mutation = useRef<{ signature: string; key: string } | null>(null);
-  const revision = useRef(0);
+  const applyMission = (next: Mission) => setMission((current) => supersedes(next, current) ? next : current);
   const [confirming, setConfirming] = useState<"approve" | "integrate" | null>(null);
   const [commitDraft, setCommitDraft] = useState<CommitDraft>({ subject: "", body: "" });
   const [suggestedMessage, setSuggestedMessage] = useState("");
   const [dependencyAck, setDependencyAck] = useState({ candidateSha: "", checked: false });
-  const pollSequence = useRef(0);
+  const landingNow = loadedMission?.status === "integrating" && !loadedMission.error;
+  const phase = busy || (landingNow ? "integrate" : "");
+  const [phaseStart, setPhaseStart] = useState({ phase: "", at: 0 });
+  const phaseSince = phaseStart.phase === phase ? phaseStart.at : 0;
+  const now = useNow(!!phase);
+  const pollState = useRef({ status: undefined as Mission["status"] | undefined, pending: false, since: 0 });
+  pollState.current = { status: loadedMission?.status, pending: !!phase, since: phaseSince || Date.now() };
   const [retryModels, setRetryModels] = useState<ModelConnection[] | null>(null);
   const needsRetryModels = !!mission && permissions.includes("execute") && mission.runs.some((run) => run.status === "failed");
   const repository = workspace.repositories.find(
@@ -130,45 +140,49 @@ export default function MissionDetail({
   );
 
   useEffect(() => {
-    let active = true;
-    const load = async () => {
-      const startedAt = revision.current;
-      const sequence = ++pollSequence.current;
-      try {
-        const result = await request<Mission>(
-          `/api/missions/${encodeURIComponent(id)}`,
-        );
-        if (active && startedAt === revision.current && sequence === pollSequence.current) {
-          revision.current++;
-      setMission(result);
-          setLoadError("");
-        }
-      } catch (failure) {
-        if (active)
-          setLoadError(
-            failure instanceof Error
-              ? failure.message
-              : "Could not load this mission.",
-          );
-      }
-    };
-    let timer = 0;
-    const schedule = () => {
-      window.clearTimeout(timer);
-      if (active && document.visibilityState === "visible") timer = window.setTimeout(() => void load().finally(schedule), missionActive.current ? 5000 : 30000);
-    };
-    const resume = () => { if (document.visibilityState === "visible") void load().finally(schedule); else window.clearTimeout(timer); };
-    reschedule.current = schedule;
-    void load().finally(schedule);
-    document.addEventListener("visibilitychange", resume);
+    const poller = createMissionPoller({
+      fetch: () => request<Mission>(`/api/missions/${encodeURIComponent(id)}`),
+      accept: (result) => {
+        applyMission(result);
+        setLoadError("");
+      },
+      fail: (failure) => setLoadError(failure instanceof Error ? failure.message : "Could not load this mission."),
+      delay: () => missionPollDelay({ ...pollState.current, now: Date.now() }),
+      visible: () => document.visibilityState === "visible",
+    });
+    pollerRef.current = poller;
+    poller.start();
+    const wake = () => poller.wake();
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("pageshow", wake);
     return () => {
-      active = false;
-      window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", resume);
+      poller.stop();
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("pageshow", wake);
     };
   }, [id]);
 
-  useEffect(() => { if (isActive) reschedule.current(); }, [isActive]);
+  useEffect(() => { pollerRef.current?.reschedule(); }, [isActive, phase]);
+
+  useEffect(() => {
+    setPhaseStart((current) => current.phase === phase ? current : { phase, at: phase ? Date.now() : 0 });
+  }, [phase]);
+
+  useEffect(() => {
+    if (!loadedMission) return;
+    const outcome = landingOutcome(observedMission.current, loadedMission);
+    observedMission.current = loadedMission;
+    if (outcome?.kind === "failed") onNotify?.("Landing did not finish. The reason is shown on the mission.");
+    if (outcome?.kind !== "landed") return;
+    onNotify?.(`Landed ${outcome.sha.slice(0, 12)}.`);
+    void request<{ deployments?: DeploymentSummary[] }>(`/api/repositories/${encodeURIComponent(loadedMission.repositoryId)}/deployments`)
+      .then((value) => { if (Array.isArray(value.deployments)) publishDeployments(loadedMission.repositoryId, value.deployments); })
+      .catch(() => undefined);
+  }, [loadedMission]);
 
   useEffect(() => {
     if (!needsRetryModels || retryModels) return;
@@ -204,8 +218,7 @@ export default function MissionDetail({
         body,
         mutation.current.key,
       );
-      revision.current++;
-      setMission(result);
+      applyMission(result);
       if (action === "approve") recordApproval(result);
       mutation.current = null;
       onUpdate();
@@ -241,8 +254,7 @@ export default function MissionDetail({
         body,
         mutation.current.key,
       );
-      revision.current++;
-      setMission(result);
+      applyMission(result);
       if (chosen === "approve") recordApproval(result);
       setReviewBody("");
       setVerdict("comment");
@@ -277,8 +289,7 @@ export default function MissionDetail({
         { adjustment },
         mutation.current.key,
       );
-      revision.current++;
-      setMission(result);
+      applyMission(result);
       mutation.current = null;
       onUpdate();
     } catch (failure) {
@@ -329,8 +340,7 @@ export default function MissionDetail({
         body,
         mutation.current.key,
       );
-      revision.current++;
-      setMission(result);
+      applyMission(result);
       mutation.current = null;
       onUpdate();
     } catch (failure) {
@@ -368,8 +378,7 @@ export default function MissionDetail({
         body,
         mutation.current.key,
       );
-      revision.current++;
-      setMission(result);
+      applyMission(result);
       setReviewBody("");
       mutation.current = null;
       onUpdate();
@@ -404,8 +413,7 @@ export default function MissionDetail({
       body,
       mutation.current.key,
     );
-    revision.current++;
-    setMission(result);
+    applyMission(result);
     mutation.current = null;
     onUpdate();
   }
@@ -600,7 +608,8 @@ export default function MissionDetail({
   const verifiedRuns = mission.runs.filter((run) => run.status === "completed" && !!run.commitSha && !!run.forkName && verifiedChecks.some((check) => check.runId === run.id && check.status === "passed" && check.candidateSha === run.commitSha) && !run.collision);
   const unfinishedRuns = mission.runs.filter((run) => !verifiedRuns.includes(run));
   const canRetryAgents = mission.epoch > 0 && ["failed", "cancelled"].includes(mission.status) && !mission.skillChange && !mission.revertChange && !mission.branchChange && (unfinishedRuns.length > 0 || mission.mode !== "race");
-  const landing = mission.status === "integrating" && !mission.error;
+  const landing = busy === "integrate" || (mission.status === "integrating" && !mission.error);
+  const landedSha = mission.landedSha ?? mission.candidateSha;
   const overlap = mission.changes.filter((change) => change.runIds.length > 1);
   const unresolvedRequests = (mission.reviews ?? []).filter(
     (review) =>
@@ -773,7 +782,7 @@ export default function MissionDetail({
               disabled={!!busy || !permissions.includes("execute")}
               onClick={() => void act("retry-agents")}
             >
-              {unfinishedRuns.length ? `Retry failed agents (${unfinishedRuns.length})` : "Combine again"}
+              {busy === "retry-agents" ? elapsedLabel("Retrying…", phaseSince, now) : unfinishedRuns.length ? `Retry failed agents (${unfinishedRuns.length})` : "Combine again"}
             </Button>
           )}
           {canRetryAgents && verifiedRuns.length > 0 && unfinishedRuns.length > 0 && (
@@ -839,7 +848,7 @@ export default function MissionDetail({
               variant="primary"
               size="base"
               icon={GitMergeIcon}
-              loading={busy === "integrate" || landing}
+              loading={landing}
               disabled={
                 !!busy ||
                 landing ||
@@ -849,10 +858,12 @@ export default function MissionDetail({
               onClick={() => mission.status === "integrating" ? void act("integrate") : openConfirm("integrate")}
             >
               {landing
-                ? "Landing…"
+                ? elapsedLabel("Landing…", phaseSince, now)
                 : mission.status === "integrating"
                   ? "Recheck landing"
-                  : "Land approved changes"}
+                  : mission.error
+                    ? "Retry landing"
+                    : "Land approved changes"}
             </Button>
           )}
           {readyForReview && dependencyGate && (
@@ -868,14 +879,14 @@ export default function MissionDetail({
               title={!permissions.includes("review") ? "You need the Reviewer role or higher to approve." : dependencyGate && !dependenciesAcknowledged ? "Allow the new packages first." : undefined}
               onClick={() => openConfirm("approve")}
             >
-              Approve candidate
+              {busy === "approve" ? elapsedLabel("Approving…", phaseSince, now) : "Approve candidate"}
             </Button>
           )}
         </div>
       </div>
       {replay.bar}
       {mission.fixRequest && <FixRequestNote fix={mission.fixRequest} status={mission.status} />}
-      {mission.branchChange && <PullRequestPanel mission={mission} permissions={permissions} onChange={(result) => { revision.current++; setMission(result); onUpdate(); }} />}
+      {mission.branchChange && <PullRequestPanel mission={mission} permissions={permissions} onChange={(result) => { applyMission(result); onUpdate(); }} />}
       {["needs_review", "approved"].includes(mission.status) && (ownerGroups.length > 0 || (currentApproval && !currentApproval.ready)) && <ReviewRequestsStrip groups={ownerGroups} source={reviewRequests?.source ?? null} approval={currentApproval} />}
       {currentPreview && <PreviewReadyCard preview={currentPreview} viewer={previewViewer} busy={busy} canExtend={permissions.includes("land")} canStop={permissions.includes("contribute")} onExtend={() => void extendPreview()} onStop={() => void stopPreview()} />}
       {previewProgress && <PreviewStartingCard progress={previewProgress} />}
@@ -912,7 +923,7 @@ export default function MissionDetail({
         <div className="alert info">
           <GitMergeIcon size={17} />
           <div className="alert-text">
-            The approved candidate has landed in the repository{mission.landedSha && mission.landedSha !== mission.candidateSha ? <> as <code>{mission.landedSha.slice(0, 12)}</code> with the same files</> : null}. Restore creates a
+            {landedSha ? <>Landed <a className="text-link" href={`/repository/${encodeURIComponent(mission.repositoryId)}/code`} title={landedSha}><code>{landedSha.slice(0, 12)}</code></a>{mission.landedSha && mission.landedSha !== mission.candidateSha ? " with the approved files" : null}.</> : "The approved candidate has landed in the repository."} Restore creates a
             new revision that undoes it, checked and approved like any change.
           </div>
         </div>

@@ -435,8 +435,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87834,
-      "sha256": "09cddb46890c40e0cec142ad27f89f84bbe37b98d9d18145bcbf57e6723b2428"
+      "size": 87868,
+      "sha256": "645b9bfab615c6bc3a7d19fbffecc93cded37435a593faae08c879e11ce4867c"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -685,8 +685,8 @@
     },
     {
       "path": "src/ui/DeployProgress.tsx",
-      "size": 7998,
-      "sha256": "390e6e4092af30cadc2c1caa02f5a3aae8fd75b4edd422db38861589f7c4f5d4"
+      "size": 8197,
+      "sha256": "b0c05a48e8f1cc960cfbf018080a45d14093f18228ffa7cfe9130ff83d081d96"
     },
     {
       "path": "src/ui/design-system.css",
@@ -899,9 +899,14 @@
       "sha256": "bbc05b14d2670034e4f7ed93c76a96e8f23ca621bc09ad5d880c521071c6ac20"
     },
     {
+      "path": "src/ui/mission-refresh.ts",
+      "size": 3663,
+      "sha256": "1955a04e39e4d291bf1bd00dc014f22958c625ecb70d8dcd9d6661cec60df9d0"
+    },
+    {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 71791,
-      "sha256": "3180861f28e38f222d0bb81dcc2818b6313dd98b49b3d3bb09aea142654b9637"
+      "size": 73530,
+      "sha256": "f9a076379e0a72237f7a912bedbc28f15519c9599f29d21adf1ddaa332021ae8"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -2422,6 +2427,11 @@
       "path": "tests/mission-draft.test.ts",
       "size": 9466,
       "sha256": "e1427eb29dc9e61c3170d50957979c187a79f69052c4c91d67b9cdfe26c39c2f"
+    },
+    {
+      "path": "tests/mission-refresh.test.ts",
+      "size": 6610,
+      "sha256": "7978d09536806d917aa697b06cda8a391e7f265a8eef630f4d2f92c4357f7bdb"
     },
     {
       "path": "tests/mission-run-status.test.ts",
