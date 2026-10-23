@@ -198,8 +198,8 @@ label.cf-warning { display: flex; align-items: flex-start; gap: 8px; margin-top:
 .cf-permission-docs { margin-top: 16px; font-size: 13px; }
 @media (max-width: 520px) { .cf-permission-groups li { grid-template-columns: 1fr; } }
 .cf-accounts-page { display: flex; flex-direction: column; gap: 20px; }
-.cf-account-id { display: inline-flex; align-items: center; gap: 4px; color: var(--gf-color-text-tertiary); }
-.cf-account-id code { font-size: 11px; overflow-wrap: anywhere; }
+.cf-account-id { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; color: var(--gf-color-text-tertiary); }
+.cf-account-id code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .cf-copy { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--gf-color-text-tertiary); cursor: pointer; }
 .cf-copy:hover { background: var(--gf-color-surface-hover); color: var(--gf-color-text); }
 .cf-single-account { display: flex; flex-direction: column; gap: 4px; }

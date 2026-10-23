@@ -97,7 +97,7 @@ export default function GitHubMirror({ repositoryId, onNotify }: { repositoryId:
             <Input id="mirror-name" maxLength={100} value={name} placeholder="my-repository" onChange={(event) => setName(event.target.value)} />
           </div>
           <div className="form-field github-mirror-wide">
-            <span className="field-label"><label htmlFor="mirror-patterns">Mirrored refs <span className="proposal-optional">(one per line, * matches anything)</span></label><InfoTip label="Mirrored refs">Which streams and tags are copied, one per line. main copies only main; * copies everything.</InfoTip></span>
+            <span className="field-label"><label htmlFor="mirror-patterns">Mirrored refs</label><InfoTip label="Mirrored refs">Which streams and tags are copied, one per line. main copies only main; * copies everything.</InfoTip></span>
             <textarea id="mirror-patterns" rows={2} value={patterns} onChange={(event) => setPatterns(event.target.value)} />
           </div>
         </fieldset>

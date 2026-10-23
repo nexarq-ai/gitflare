@@ -182,9 +182,9 @@ export default function ProfileSettingsCard({ scope }: { scope: "user" | "worksp
               </div>}
           </fieldset>
           {error && <div className="form-error" role="alert">{error}</div>}
-          <div className="profile-settings-actions">
-            <Button type="submit" variant="primary" size="base" loading={busy} disabled={busy || unchanged || invalid}>Save</Button>
+          <div className="gf-form-footer">
             {saved && <span className="profile-settings-saved" role="status"><CheckIcon size={14} weight="bold" aria-hidden="true" />Saved</span>}
+            <Button type="submit" variant="primary" size="base" loading={busy} disabled={busy || unchanged || invalid}>Save</Button>
           </div>
         </div>
         <aside className="profile-settings-side">

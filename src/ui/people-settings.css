@@ -21,7 +21,7 @@
 .people-avatar { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--gf-color-accent-bg); color: var(--gf-color-accent); font-size: 12px; font-weight: 600; }
 .people-grants { font-style: italic; }
 .people-email { font-weight: 500; overflow-wrap: anywhere; }
-.people-role, .people-field select, .people-field input, .general-inline-form input, .invite-scope select, .invite-dialog textarea, .invite-dialog select, .repository-give select { min-height: 36px; padding: 6px 10px; border: 1px solid var(--gf-color-border-strong); border-radius: 6px; background: var(--gf-color-surface-sunken); color: var(--gf-color-text); font: inherit; font-size: 13px; }
+.people-role, .people-field select, .people-field input, .general-inline-form input, .invite-scope select, .invite-dialog textarea, .invite-dialog select, .repository-give select { min-height: 36px; padding: 6px 10px; border: 1px solid var(--gf-color-border-strong); border-radius: 10px; background-color: var(--gf-color-surface-raised); color: var(--gf-color-text); font: inherit; font-size: 13px; font-weight: 400; }
 .people-actions { text-align: right; white-space: nowrap; }
 .people-actions > * { display: inline-flex; vertical-align: middle; }
 .people-actions > * + * { margin-left: 6px; }
@@ -51,8 +51,8 @@
 .people-credential-form { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
 .people-credential-form h3 { font-size: 14px; }
 .people-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
-.people-field { display: flex; flex-direction: column; gap: 6px; color: var(--gf-color-text-secondary); font-size: 12px; }
-.people-field small { color: var(--gf-color-text-tertiary); }
+.people-field { display: flex; flex-direction: column; gap: 6px; color: var(--gf-color-text); font-size: 13px; font-weight: 500; }
+.people-field small { color: var(--gf-color-text-tertiary); font-size: 12px; font-weight: 400; }
 .people-checks { display: flex; flex-wrap: wrap; gap: 16px; margin: 0; padding: 0; border: 0; }
 .people-checks legend { margin-bottom: 8px; color: var(--gf-color-text-secondary); font-size: 12px; }
 .people-checks label, .people-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
@@ -67,9 +67,11 @@
 .general-name { font-size: 16px; font-weight: 550; margin-right: auto; }
 .general-inline-form { display: flex; flex-wrap: wrap; gap: 8px; }
 .general-inline-form input { flex: 1; min-width: 200px; }
-.general-protection { display: flex; flex-direction: column; gap: 14px; max-width: 520px; margin-top: 14px; }
+.general-protection { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.general-protection > .people-field { max-width: 520px; }
 .general-facts { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 10px; margin-top: 14px; font-size: 13px; }
 .general-facts dt { color: var(--gf-color-text-secondary); }
+.panel > .general-facts { margin: 0; padding: 16px 20px 4px; }
 
 .audit-list { margin: 0; padding: 0; list-style: none; }
 .audit-list li { display: flex; align-items: baseline; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--gf-color-border); font-size: 13px; }

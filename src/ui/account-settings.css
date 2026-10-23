@@ -27,7 +27,7 @@
 .account-details dt { color: var(--gf-color-text-secondary); }
 .account-details dd { margin: 0; overflow-wrap: anywhere; }
 .account-card .account-hint { margin-bottom: 0; font-size: 12px; }
-.account-inline-link { display: inline-block; color: var(--gf-color-accent); font-size: 13px; text-underline-offset: 3px; }
+.account-inline-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; color: var(--gf-color-accent); font-size: 13px; text-underline-offset: 3px; }
 .account-card-divider { border-top: 1px solid var(--gf-color-border); margin: 24px 0; }
 .account-notice { border: 1px solid var(--gf-color-border); border-radius: 8px; padding: 14px 18px; font-size: 13px; background: var(--gf-color-surface); }
 .account-session-list { list-style: none; padding: 0; margin: 0 0 20px; }

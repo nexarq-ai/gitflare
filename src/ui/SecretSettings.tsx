@@ -135,7 +135,7 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
     <section className="panel check-settings secret-settings" aria-label="Secrets">
       <div className="panel-header"><h2>Secrets</h2></div>
       <div className="panel-body">
-        <p className="branch-rule-note">Link Cloudflare Secrets Store secrets to this repository per environment. Deploys bind them as <code>secrets_store_secrets</code>; read them in the Worker with <code>await env.BINDING.get()</code>. {snapshot.valuePolicy}</p>
+        <p className="branch-rule-note">Link Cloudflare Secrets Store secrets per environment.<InfoTip label="secrets">Deploys bind them as secrets_store_secrets; read them in the Worker with await env.BINDING.get(). {snapshot.valuePolicy}</InfoTip></p>
         {!connection.connected ? <p className="cf-muted" role="status">{connection.reason} Connect Cloudflare in the repository’s Cloudflare tab first.</p>
           : connection.missingScopes.length > 0 && <div className="secret-connect" role="status">
             <p>The {connection.source} Cloudflare connection on <code>{connection.accountId}</code> was not granted {connection.missingScopes.join(", ")}. {canManage ? "Reconnect with Secrets Store access to link, create and rotate secrets." : "An Owner must reconnect with Secrets Store access."}</p>
@@ -163,7 +163,7 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
         )}
         {links.length ? (
           <table className="cf-deployments secret-links">
-            <thead><tr><th>Binding</th><th>Secret</th><th>Workers</th><th>Status</th><th>Rotated</th>{canManage && <th><span className="visually-hidden">Actions</span></th>}</tr></thead>
+            <thead><tr><th>Binding</th><th>Secret</th><th>Workers</th><th>Status</th><th>Rotated</th>{canManage && <th><span className="secret-sr">Actions</span></th>}</tr></thead>
             <tbody>
               {links.map((link) => (
                 <tr key={link.id}>
@@ -229,18 +229,16 @@ export default function SecretSettings({ repositoryId, onNotify }: { repositoryI
                   <div className="form-field">
                     <span className="field-label"><label htmlFor="secret-value">Value</label><InfoTip label="Value">Sent once to Cloudflare and never stored or shown by Gitflare.</InfoTip></span>
                     <Input id="secret-value" type="password" autoComplete="off" spellCheck={false} value={value} onChange={(event) => setValue(event.target.value)} />
-                    <small>Sent once to Cloudflare Secrets Store. Gitflare never stores or shows it again.</small>
                   </div>
                   <div className="form-field">
-                    <span className="field-label"><label htmlFor="secret-comment">Comment <span className="proposal-optional">(optional)</span></label><InfoTip label="Comment">A note shown in Cloudflare next to the secret, for example who owns it.</InfoTip></span>
+                    <span className="field-label"><label htmlFor="secret-comment">Comment</label><InfoTip label="Comment">A note shown in Cloudflare next to the secret, for example who owns it.</InfoTip><span className="gf-field-optional">Optional</span></span>
                     <Input id="secret-comment" maxLength={300} value={comment} onChange={(event) => setComment(event.target.value)} />
                   </div>
                 </>
               )}
               <div className="form-field">
-                <span className="field-label"><label htmlFor="secret-consumers">Workers <span className="proposal-optional">(optional)</span></label><InfoTip label="Workers">Only these Workers get the binding. Leave empty to bind it to every Worker this repository deploys.</InfoTip></span>
+                <span className="field-label"><label htmlFor="secret-consumers">Workers</label><InfoTip label="Workers">Comma-separated Worker names that get the binding. Leave empty to bind it to every Worker this environment deploys.</InfoTip><span className="gf-field-optional">Optional</span></span>
                 <Input id="secret-consumers" value={consumers} placeholder="All Workers in this environment" onChange={(event) => setConsumers(event.target.value)} />
-                <small>Comma-separated Worker names that receive the binding. Empty binds every Worker this environment deploys.</small>
               </div>
               {preview && <label className="check-settings-toggle"><input type="checkbox" checked={previewAllowed} onChange={(event) => setPreviewAllowed(event.target.checked)} />Allow Worker Previews to bind this secret<InfoTip label="Previews and secrets">Previews of proposals can read this secret. Leave it off for production-only values such as live payment keys.</InfoTip></label>}
             </fieldset>

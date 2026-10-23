@@ -73,7 +73,7 @@ export default function CommunityAiSettings({ repositoryId, onNotify }: { reposi
         {number("draftsPerDay", "Agent answers a day", 0, 1000)}
         {number("perUserPerDay", "Requests per person a day", 1, 20)}
         <div className="community-ai-actions">
-          {pool && <Button variant="secondary" size="base" loading={busy === "disable"} disabled={!!busy} onClick={() => void stop()}>Stop pool</Button>}
+          {pool && <Button variant="secondary-destructive" size="base" loading={busy === "disable"} disabled={!!busy} onClick={() => void stop()}>Stop pool</Button>}
           <Button variant="primary" size="base" loading={busy === "pool"} disabled={!!busy || !draft.models.length} onClick={() => void fund()}>{pool ? "Save pool" : "Fund pool"}</Button>
         </div>
       </div> : <div className="panel-body"><p className="issue-muted">Add an AI key or Gateway and verify a model in Settings &gt; AI models to fund a pool.</p></div>)}

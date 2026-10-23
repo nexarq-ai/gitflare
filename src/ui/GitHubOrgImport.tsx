@@ -94,7 +94,7 @@ export default function GitHubOrgImport({ canManage, onOpen, onImported }: { can
                   <Input id="org-owner" aria-label="GitHub organization or user" maxLength={39} value={owner} placeholder="acme" onChange={event => setOwner(event.target.value)} />
                 </div>
                 <div className="form-field">
-                  <span className="field-label"><label htmlFor="org-token">Token <span className="proposal-optional">(optional)</span></label><InfoTip label="Token">Needed for private repositories and large organizations. Use a read-only fine-grained token for Contents, Issues, Pull requests and Metadata. It is stored encrypted per repository and deleted after each import.</InfoTip></span>
+                  <span className="field-label"><label htmlFor="org-token">Token</label><InfoTip label="Token">Needed for private repositories and large organizations. Use a read-only fine-grained token for Contents, Issues, Pull requests and Metadata. It is stored encrypted per repository and deleted after each import.</InfoTip><span className="gf-field-optional">Optional</span></span>
                   <Input id="org-token" aria-label="GitHub token" type="password" autoComplete="off" spellCheck={false} maxLength={300} value={token} placeholder="github_pat_…" onChange={event => setToken(event.target.value)} />
                 </div>
               </fieldset>
