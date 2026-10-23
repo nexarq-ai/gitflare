@@ -4,6 +4,8 @@ import { CLOUDFLARE_CALLBACK_PATH, CLOUDFLARE_CONNECT_STATE_COOKIE, CLOUDFLARE_S
 import type { AppEnv } from './env';
 import { streamSocialMeta, withSocialMeta } from './social-cards';
 import type { ServerPage } from './public-ssr';
+import { PAGE_DATA_ID } from '../ui/page-context';
+import { ROOT_PLACEHOLDER } from './public-preload';
 
 const CALLBACK_PATHS = new Set([CLOUDFLARE_CALLBACK_PATH, '/api/auth/cloudflare/callback']);
 
@@ -53,21 +55,50 @@ export function withConnectSource(policy: string, origin: string): string {
   return policy.replace(/connect-src ([^;]*)/, (directive, sources: string) => sources.split(/\s+/).includes(origin) ? directive : `connect-src ${sources} ${origin}`);
 }
 
-export function withServerPage(html: string, page: ServerPage | null): string {
-  return page?.status === 200 && page.body ? html.replace('<div id="root">', () => `${page.body}<div id="root">`) : html;
+const SERVER_RENDERED_ATTRIBUTE = 'data-ssr';
+
+function originMeta(origins: HostOrigins | null, pathname: string): string {
+  return origins ? `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}">${pathname && followsSavedTheme(routeFromLocation(pathname, '')) ? '<meta name="gitflare-theme" content="system">' : ''}` : '';
 }
 
-export async function withHostOrigins(response: Response, env: AppEnv, pathname = '', head: string | Promise<string> = '', searchTags = '', page: ServerPage | null = null): Promise<Response> {
-  const origins = envHostOrigins(env);
-  if ((!origins && !searchTags) || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
-  const html = withServerPage(await response.text(), page);
+function documentHeaders(response: Response, origins: HostOrigins | null): Headers {
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
   headers.delete('ETag');
   const policy = headers.get('Content-Security-Policy');
   if (origins && policy) headers.set('Content-Security-Policy', withConnectSource(policy, origins.app));
-  const meta = `${searchTags}${origins ? `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}">${pathname && followsSavedTheme(routeFromLocation(pathname, '')) ? '<meta name="gitflare-theme" content="system">' : ''}` : ''}`;
+  return headers;
+}
+
+async function streamServerPage(response: Response, origins: HostOrigins | null, pathname: string, head: string | Promise<string>, searchTags: string, rendered: Promise<ServerPage | null>): Promise<Response> {
+  const html = await response.text();
+  const headers = documentHeaders(response, origins);
+  headers.set('Cache-Control', 'private, no-cache');
+  headers.append('Vary', 'Cookie');
+  const page = rendered.catch(() => null);
+  const appended = page.then(value => `${searchTags}${value?.status === 200 ? value.head : ''}${originMeta(origins, pathname)}`);
+  const stream = streamSocialMeta(html, appended, Promise.resolve(head), rest => page.then(value => withServerPage(rest, value)));
+  if (stream) return new Response(stream, { status: 200, headers });
+  const value = await page;
+  return new Response(withServerPage(withSocialMeta(html, await Promise.resolve(head).catch(() => '')), value).replace('</head>', `${await appended}</head>`), { status: 200, headers });
+}
+
+export function withServerPage(html: string, page: ServerPage | null): string {
+  if (page?.status !== 200 || !page.body) return html;
+  const data = page.seed ? `<script type="application/json" id="${PAGE_DATA_ID}">${page.seed}</script>` : '';
+  return html.replace(ROOT_PLACEHOLDER, () => `<div id="root" ${SERVER_RENDERED_ATTRIBUTE}>${page.body}</div>${data}`);
+}
+
+export async function withHostOrigins(response: Response, env: AppEnv, pathname = '', head: string | Promise<string> = '', searchTags = '', rendered: ServerPage | Promise<ServerPage | null> | null = null): Promise<Response> {
+  const origins = envHostOrigins(env);
+  if ((!origins && !searchTags && !rendered) || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
+  if (rendered instanceof Promise) return streamServerPage(response, origins, pathname, head, searchTags, rendered);
+  const page = rendered;
+  const html = withServerPage(await response.text(), page);
+  const headers = documentHeaders(response, origins);
+  const meta = `${searchTags}${page?.status === 200 ? page.head : ''}${originMeta(origins, pathname)}`;
   if (page?.status === 404) headers.set('Cache-Control', 'no-store');
+  if (page?.status === 200 && page.body) { headers.set('Cache-Control', 'private, no-cache'); headers.append('Vary', 'Cookie'); }
   const init = page?.status === 404 ? { status: 404, statusText: 'Not Found', headers } : { status: response.status, statusText: response.statusText, headers };
   const streamed = typeof head === 'string' ? null : streamSocialMeta(html, meta, head);
   if (streamed) return new Response(streamed, init);

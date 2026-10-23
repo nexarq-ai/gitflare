@@ -8,6 +8,9 @@ import { request } from "./api";
 import { relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
 import { appHref } from "./hosts";
+import { pageLocation } from "./page-context";
+import { fixRequestsRequest } from "./public-requests";
+import { useSeed } from "./use-seed";
 import type { ConfirmFact } from "./deploy-progress";
 import InfoTip from "./InfoTip";
 import "./fix-requests.css";
@@ -38,11 +41,14 @@ function quoteFacts(quote: FixQuote): ConfirmFact[] {
 }
 
 function useQuote(api: string, query: string, reload: number) {
-  const [data, setData] = useState<FixRequests | null>(null);
-  const [error, setError] = useState("");
+  const url = fixRequestsRequest(api, query);
+  const [seed, fromSeed] = useSeed<FixRequests>(url);
+  const [data, setData] = useState<FixRequests | null>(seed?.data ?? null);
+  const [error, setError] = useState(seed?.error?.message ?? "");
   useEffect(() => {
+    if (fromSeed()) return;
     let active = true;
-    request<FixRequests>(`${api}/fix-requests?${query}`).then(value => { if (active) { setData(value); setError(""); } }, (cause: unknown) => { if (active) setError(failure(cause, "Fix requests could not be loaded.")); });
+    request<FixRequests>(url).then(value => { if (active) { setData(value); setError(""); } }, (cause: unknown) => { if (active) setError(failure(cause, "Fix requests could not be loaded.")); });
     return () => { active = false; };
   }, [api, query, reload]);
   return { data, error };
@@ -74,7 +80,7 @@ export function RequestFix({ api, issueNumber, open, signIn }: { api: string; is
   const action = !quote ? null
     : !quote.signedIn ? signIn
     : !quote.available ? quote.setup
-      ? <span className="fix-action"><LinkButton variant="secondary" size="sm" icon={SparkleIcon} href={appHref(aiSetupPath(`${window.location.pathname}${window.location.search}`, quote.setup.handleRequired))}>Connect AI model</LinkButton><InfoTip label="requesting fixes">{quote.reason}</InfoTip></span>
+      ? <span className="fix-action"><LinkButton variant="secondary" size="sm" icon={SparkleIcon} href={appHref(aiSetupPath(`${pageLocation().pathname}${pageLocation().search}`, quote.setup.handleRequired))}>Connect AI model</LinkButton><InfoTip label="requesting fixes">{quote.reason}</InfoTip></span>
       : <span className="fix-action"><span className="fix-requests-note">Fix requests aren't available</span><InfoTip label="requesting fixes">{quote.reason}</InfoTip></span>
     : open ? <span className="fix-action"><Button variant="secondary" size="sm" icon={SparkleIcon} loading={busy} onClick={() => void start()}>Request fix</Button><InfoTip label="requesting fixes">{ABOUT} {quote.reason}</InfoTip></span>
     : null;
@@ -84,7 +90,7 @@ export function RequestFix({ api, issueNumber, open, signIn }: { api: string; is
     <div className="fix-requests-head"><RobotIcon size={16} aria-hidden="true" /><strong>Agent fixes</strong>{action}</div>
     {error && <p className="fix-requests-note" role="alert">{error}</p>}
     {message && <p className="fix-requests-note" role="status">{message}</p>}
-    {data && data.missions.length > 0 && <ul className="fix-list">{data.missions.map(entry => <li key={entry.id}><span className="fix-title">{entry.title}</span><span className="fix-meta">{requester(entry)} · {relativeTime(entry.createdAt)}</span><AgentState state={entry.state} /></li>)}</ul>}
+    {data && data.missions.length > 0 && <ul className="fix-list">{data.missions.map(entry => <li key={entry.id}><span className="fix-title">{entry.title}</span><span className="fix-meta" suppressHydrationWarning>{requester(entry)} · {relativeTime(entry.createdAt)}</span><AgentState state={entry.state} /></li>)}</ul>}
     {dialog}
   </section>;
 }
@@ -97,7 +103,7 @@ export function AgentMissions({ api, issueLink }: { api: string; issueLink: (num
     <div className="repo-panel-heading"><h2><RobotIcon size={16} aria-hidden="true" />Agent work</h2><InfoTip label="agent work">Changes people asked agents to make. Each one is a proposal that a maintainer reviews before it lands.</InfoTip></div>
     {data.missions.length ? <ul className="fix-list fix-list-page">{data.missions.map(entry => <li key={entry.id}>
       <span className="fix-title">{entry.title}</span>
-      <span className="fix-meta">{entry.issueNumber ? <>{issueLink(entry.issueNumber)} · </> : null}requested by {requester(entry)} · {relativeTime(entry.createdAt)} · {entry.source === "pool" ? "community pool" : "requester's key"}</span>
+      <span className="fix-meta" suppressHydrationWarning>{entry.issueNumber ? <>{issueLink(entry.issueNumber)} · </> : null}requested by {requester(entry)} · {relativeTime(entry.createdAt)} · {entry.source === "pool" ? "community pool" : "requester's key"}</span>
       <AgentState state={entry.state} />
     </li>)}</ul> : <p className="repo-panel-padding fix-requests-note">No agent work requested yet.</p>}
   </section>;
@@ -171,7 +177,7 @@ export function RequestChangeBody({ api, quote, error, done, goal, busy, first, 
 }
 
 export function RequestChange({ api, authenticated, signIn }: { api: string; authenticated: boolean; signIn: ReactNode }) {
-  const [open, setOpen] = useState(() => authenticated && openedFromReturn());
+  const [open, setOpen] = useState(false);
   const [goal, setGoal] = useState("");
   const [quote, setQuote] = useState<FixQuote | null>(null);
   const [busy, setBusy] = useState(false);
@@ -179,6 +185,8 @@ export function RequestChange({ api, authenticated, signIn }: { api: string; aut
   const [done, setDone] = useState("");
   const key = useRef(crypto.randomUUID());
   const first = useRef<HTMLElement>(null);
+
+  useEffect(() => { if (authenticated && openedFromReturn()) setOpen(true); }, [authenticated]);
 
   useEffect(() => {
     if (!open) return;

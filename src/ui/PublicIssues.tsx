@@ -4,12 +4,15 @@ import remarkGfm from "remark-gfm";
 import { Button, LinkButton } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
-import { ArrowLeftIcon, ChatCircleIcon, CheckCircleIcon, CircleDashedIcon, CircleIcon, EyeSlashIcon, FileTextIcon, FlagIcon, LockSimpleIcon, MagnifyingGlassIcon, PencilSimpleIcon, PlusIcon, ProhibitIcon, RssSimpleIcon } from "@phosphor-icons/react";
+import { type Icon, ArrowLeftIcon, ChatCircleIcon, CheckCircleIcon, CircleDashedIcon, CircleIcon, EyeSlashIcon, FileTextIcon, FlagIcon, LockSimpleIcon, MagnifyingGlassIcon, PencilSimpleIcon, PlusIcon, ProhibitIcon, RssSimpleIcon } from "@phosphor-icons/react";
 import { CONTENT_REPORT_REASONS, type ContentReportReason, type IssueCloseReason, type IssueComment, type IssueDetail, type IssueLabelDefinition, type IssueList, type IssuePerson, type IssueTemplate, type IssueTemplates, type IssueViewer } from "../shared/types";
 import { request, RequestError } from "./api";
 import { relativeTime } from "./components";
 import { useConfirm } from "./ConfirmDialog";
-import { appHref, siteSignedInHint } from "./hosts";
+import { appHref, useSiteSignedInHint } from "./hosts";
+import { formatDate, formatNumber, pageLocation } from "./page-context";
+import { issueListRequest } from "./public-requests";
+import { useSeed } from "./use-seed";
 import InfoTip from "./InfoTip";
 import SubscribeButton, { publicThreadTarget } from "./SubscribeButton";
 import { ImportedFrom } from "./IssueLabels";
@@ -82,12 +85,15 @@ export interface PublicIssuesProps {
 }
 
 export default function PublicIssues({ api, path, href, link, go, onNotFound, feed }: PublicIssuesProps) {
-  const [viewer, setViewer] = useState<IssueViewer | null>(null);
-  const [labels, setLabels] = useState<IssueLabelDefinition[]>([]);
+  const [viewerSeed, fromSeed] = useSeed<IssueViewer>(`${api}/issue-viewer`);
+  const [labelSeed] = useSeed<{ labels: IssueLabelDefinition[] }>(`${api}/issue-labels`);
+  const [viewer, setViewer] = useState<IssueViewer | null>(viewerSeed?.data ?? null);
+  const [labels, setLabels] = useState<IssueLabelDefinition[]>(labelSeed?.data?.labels ?? []);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    if (fromSeed() && viewerSeed?.data) return;
     let active = true;
     setError("");
     Promise.all([
@@ -138,19 +144,25 @@ function StateBadge({ state, reason }: { state: string; reason?: IssueCloseReaso
   return <span className={`pub-issue-badge ${tone}`}><Icon size={14} weight="bold" aria-hidden="true" />{state === "open" ? "Open" : reason === "not_planned" ? "Not planned" : "Closed"}</span>;
 }
 
-function Time({ value }: { value: string }) {
-  return <time dateTime={value} title={new Date(value).toLocaleString()}>{relativeTime(value).replace(/^Just now$/, "just now")}</time>;
+function exactTime(value: string): string {
+  return formatDate(value, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function SignIn({ children, primary = false }: { children: ReactNode; primary?: boolean }) {
-  const target = signInHref(siteSignedInHint(), window.location.pathname);
+function Time({ value }: { value: string }) {
+  return <time dateTime={value} title={exactTime(value)} suppressHydrationWarning>{relativeTime(value).replace(/^Just now$/, "just now")}</time>;
+}
+
+export function SignIn({ children, primary = false, action, to, icon }: { children: ReactNode; primary?: boolean; action?: ReactNode; to?: string; icon?: Icon }) {
+  const signedIn = useSiteSignedInHint();
+  const target = signedIn ? appHref(to ?? pageLocation().pathname) : signInHref(false, pageLocation().pathname);
+  const label = signedIn && action ? action : children;
   const remember = () => {
     if (!target.startsWith("/")) return;
     try { sessionStorage.setItem(RETURN_ROUTE_KEY, currentRoute()); } catch {}
   };
   return primary
-    ? <LinkButton variant="primary" size="base" href={target} onClick={remember}>{children}</LinkButton>
-    : <a className="pub-issue-signin" href={target} onClick={remember}>{children}</a>;
+    ? <LinkButton variant="primary" size="base" icon={signedIn ? icon : undefined} href={target} onClick={remember}>{label}</LinkButton>
+    : <a className="pub-issue-signin" href={target} onClick={remember}>{label}</a>;
 }
 
 function TriageLink({ viewer, number }: { viewer: IssueViewer; number?: number }) {
@@ -160,7 +172,7 @@ function TriageLink({ viewer, number }: { viewer: IssueViewer; number?: number }
 
 function NewIssueAction({ context }: { context: Context }) {
   const { viewer } = context;
-  if (!viewer.signedIn) return <SignIn primary>Sign in to open an issue</SignIn>;
+  if (!viewer.signedIn) return <SignIn primary action="New issue" icon={PlusIcon} to={pageLocation().pathname.replace(/\/issues(?:\/.*)?$/, "/issues/new")}>Sign in to open an issue</SignIn>;
   if (!viewer.canParticipate) return <span className="pub-issue-blocked"><Button variant="primary" size="base" icon={PlusIcon} disabled>New issue</Button><InfoTip label="opening issues">Your account can't open issues in this repository.</InfoTip></span>;
   return <Button variant="primary" size="base" icon={PlusIcon} onClick={() => context.go(context.href("new"))}>New issue</Button>;
 }
@@ -171,7 +183,8 @@ function IssueIndex({ context }: { context: Context }) {
   const [label, setLabel] = useState("");
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
-  const [data, setData] = useState<IssueList | null>(null);
+  const [seed, fromSeed] = useSeed<IssueList>(issueListRequest(api));
+  const [data, setData] = useState<IssueList | null>(seed?.data ?? null);
   const [error, setError] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const generation = useRef(0);
@@ -180,12 +193,9 @@ function IssueIndex({ context }: { context: Context }) {
 
   const load = useCallback(async (offset = 0) => {
     const current = offset ? generation.current : ++generation.current;
-    const params = new URLSearchParams({ state, offset: String(offset) });
-    if (label) params.set("label", label);
-    if (query) params.set("q", query);
     if (offset) setLoadingMore(true);
     try {
-      const page = await request<IssueList>(`${api}/issues?${params}`);
+      const page = await request<IssueList>(issueListRequest(api, state, offset, label, query));
       if (current !== generation.current) return;
       setData(previous => offset && previous ? { ...page, items: [...previous.items, ...page.items], people: { ...previous.people, ...page.people } } : page);
       setError("");
@@ -196,7 +206,7 @@ function IssueIndex({ context }: { context: Context }) {
     } finally { if (offset) setLoadingMore(false); }
   }, [api, state, label, query]);
 
-  useEffect(() => { setData(null); void load(); }, [load]);
+  useEffect(() => { if (fromSeed() && seed?.data) return; setData(null); void load(); }, [load]);
 
   const definitions = data?.labelDefinitions ?? [];
   const palette = new Map([...colors, ...definitions.flatMap(item => labelColor(item.color) ? [[item.name, item.color] as [string, string]] : [])]);
@@ -206,8 +216,8 @@ function IssueIndex({ context }: { context: Context }) {
   return <div className="pub-issues">
     <div className="pub-issues-bar">
       <div className="pub-issue-states" role="group" aria-label="Issue state">
-        <button type="button" aria-pressed={state === "open"} onClick={() => setState("open")}><CircleDashedIcon size={15} aria-hidden="true" /><span>{data ? data.openCount.toLocaleString() : "–"}</span> Open</button>
-        <button type="button" aria-pressed={state === "closed"} onClick={() => setState("closed")}><CheckCircleIcon size={15} aria-hidden="true" /><span>{data ? data.closedCount.toLocaleString() : "–"}</span> Closed</button>
+        <button type="button" aria-pressed={state === "open"} onClick={() => setState("open")}><CircleDashedIcon size={15} aria-hidden="true" /><span>{data ? formatNumber(data.openCount) : "–"}</span> Open</button>
+        <button type="button" aria-pressed={state === "closed"} onClick={() => setState("closed")}><CheckCircleIcon size={15} aria-hidden="true" /><span>{data ? formatNumber(data.closedCount) : "–"}</span> Closed</button>
       </div>
       <div className="pub-issues-filters">
         <label className="pub-issues-search"><MagnifyingGlassIcon size={14} aria-hidden="true" /><Input aria-label="Search issues" placeholder="Search issues" value={search} maxLength={200} onChange={event => setSearch(event.target.value)} /></label>
@@ -271,7 +281,7 @@ export function human(turnstile: Turnstile): Record<string, string> {
 
 function NewIssue({ context }: { context: Context }) {
   const { api, viewer } = context;
-  const [prefill] = useState(() => { const params = new URLSearchParams(window.location.search); return { title: (params.get("title") ?? "").slice(0, 200), body: (params.get("body") ?? "").slice(0, 8000) }; });
+  const [prefill] = useState(() => { const params = new URLSearchParams(pageLocation().search); return { title: (params.get("title") ?? "").slice(0, 200), body: (params.get("body") ?? "").slice(0, 8000) }; });
   const prefilled = !!(prefill.title || prefill.body);
   const [templates, setTemplates] = useState<IssueTemplate[] | null>(null);
   const [template, setTemplate] = useState<IssueTemplate | null | undefined>(prefilled ? null : undefined);
@@ -318,7 +328,7 @@ function NewIssue({ context }: { context: Context }) {
   }
 
   const back = context.link(context.href(), <><ArrowLeftIcon size={13} aria-hidden="true" />Issues</>, "pub-issue-back");
-  if (!viewer.signedIn) return <div className="pub-issues">{back}<section className="repo-panel pub-issue-gate"><CircleDashedIcon size={22} aria-hidden="true" /><strong>Sign in to open an issue</strong><SignIn primary>Sign in</SignIn></section></div>;
+  if (!viewer.signedIn) return <div className="pub-issues">{back}<section className="repo-panel pub-issue-gate"><CircleDashedIcon size={22} aria-hidden="true" /><strong>Sign in to open an issue</strong><SignIn primary action="Open the issue form" icon={PlusIcon}>Sign in</SignIn></section></div>;
   if (!viewer.canParticipate) return <div className="pub-issues">{back}<section className="repo-panel pub-issue-gate"><ProhibitIcon size={22} aria-hidden="true" /><strong>Your account can't open issues in this repository.</strong></section></div>;
   if (!templates) return <div className="pub-issues">{back}<section className="repo-panel" aria-busy="true"><PageLoading /></section></div>;
 
@@ -490,10 +500,12 @@ function ReportDialog({ api, number, target, onClose, onSent }: { api: string; n
 
 function IssueThread({ context, number }: { context: Context; number: string }) {
   const { api, viewer, userId, colors } = context;
-  const [issue, setIssue] = useState<IssueDetail | null>(null);
-  const [people, setPeople] = useState<People>({});
+  const [seed, fromSeed] = useSeed<IssueDetail>(`${api}/issues/${number}`);
+  const remote = useSiteSignedInHint() && !viewer.signedIn;
+  const [issue, setIssue] = useState<IssueDetail | null>(seed?.data ?? null);
+  const [people, setPeople] = useState<People>(seed?.data?.people ?? {});
   const [error, setError] = useState("");
-  const [missing, setMissing] = useState(false);
+  const [missing, setMissing] = useState(seed?.error?.status === 404 && seed.error.code !== "NOT_FOUND");
   const [retry, setRetry] = useState(0);
   const [editing, setEditing] = useState(false);
   const [editingComment, setEditingComment] = useState<string | null>(null);
@@ -501,6 +513,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
+    if (fromSeed() && (seed?.data || missing)) return;
     let active = true;
     setError("");
     request<IssueDetail>(`${api}/issues/${number}`).then(value => {
@@ -541,8 +554,10 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
   function actions(authorId: string, onEdit: () => void, commentId?: string) {
     const edit = canWrite && own(authorId);
     const report = viewer.signedIn && !own(authorId) && authorId !== SYSTEM_AUTHOR;
-    if (!edit && !report) return null;
+    const reportRemote = remote && authorId !== SYSTEM_AUTHOR;
+    if (!edit && !report && !reportRemote) return null;
     return <span className="pub-issue-card-actions">
+      {reportRemote && <a className="pub-issue-icon-button" href={appHref(pageLocation().pathname)} aria-label={commentId ? "Report comment" : "Report issue"} title="Report"><FlagIcon size={15} /></a>}
       {edit && <button type="button" className="pub-issue-icon-button" aria-label={commentId ? "Edit comment" : "Edit issue"} title="Edit" onClick={onEdit}><PencilSimpleIcon size={15} /></button>}
       {report && <button type="button" className="pub-issue-icon-button" aria-label={commentId ? "Report comment" : "Report issue"} title="Report" onClick={() => { setNotice(""); setReporting(commentId ? { commentId } : {}); }}><FlagIcon size={15} /></button>}
     </span>;
@@ -551,7 +566,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
   function commentCard(comment: IssueComment) {
     if (comment.hidden) return <div key={comment.id} className="pub-issue-hidden" id={`comment-${comment.id}`}><EyeSlashIcon size={15} aria-hidden="true" /><span>Hidden · {reasonLabel(comment.hidden.reason)}</span></div>;
     return <article key={comment.id} className="pub-issue-card" id={`comment-${comment.id}`}>
-      <header><strong>{name(comment.authorId)}</strong>{comment.authorId === issue!.authorId && <span className="repo-pill">Author</span>}<span className="pub-issue-card-time"><Time value={comment.createdAt} />{comment.editedAt && <span title={new Date(comment.editedAt).toLocaleString()}> · edited</span>}</span>{actions(comment.authorId, () => setEditingComment(comment.id), comment.id)}</header>
+      <header><strong>{name(comment.authorId)}</strong>{comment.authorId === issue!.authorId && <span className="repo-pill">Author</span>}<span className="pub-issue-card-time"><Time value={comment.createdAt} />{comment.editedAt && <span title={exactTime(comment.editedAt)}> · edited</span>}</span>{actions(comment.authorId, () => setEditingComment(comment.id), comment.id)}</header>
       <div className="pub-issue-card-body">
         {editingComment === comment.id
           ? <CommentForm context={context} initial={comment.body} label="Edit comment" submitLabel="Save" autoFocus onCancel={() => setEditingComment(null)} onSubmit={async (body, extra, key) => { apply(await request<IssueDetail>(commentPath, { body, commentId: comment.id, ...extra }, key)); setEditingComment(null); }} />
@@ -561,7 +576,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
   }
 
   function replyArea() {
-    if (!viewer.signedIn) return <div className="pub-issue-gate-line"><SignIn>Sign in to comment</SignIn></div>;
+    if (!viewer.signedIn) return <div className="pub-issue-gate-line"><SignIn action="Comment">Sign in to comment</SignIn></div>;
     if (issue!.locked) return <div className="pub-issue-gate-line"><LockSimpleIcon size={15} aria-hidden="true" /><span>Locked · {reasonLabel(issue!.locked.reason)}</span><InfoTip label="locked issues">Only people who triage this repository can comment.</InfoTip></div>;
     if (!viewer.canParticipate) return <div className="pub-issue-gate-line"><ProhibitIcon size={15} aria-hidden="true" /><span>Your account can't comment in this repository.</span></div>;
     return <section className="pub-issue-card pub-issue-composer" aria-label="Add a comment">
@@ -590,7 +605,7 @@ function IssueThread({ context, number }: { context: Context; number: string }) 
       </article>}
       {issue.comments.map(commentCard)}
       {issue.state === "closed" && issue.closedAt && <p className="pub-issue-event"><StateIcon state="closed" reason={issue.closedReason} size={15} />{issue.closedReason === "not_planned" ? "Closed as not planned" : "Closed"} <Time value={issue.closedAt} /></p>}
-      <RequestFix api={api} issueNumber={issue.number} open={issue.state === "open"} signIn={<SignIn>Sign in to request a fix</SignIn>} />
+      <RequestFix api={api} issueNumber={issue.number} open={issue.state === "open"} signIn={<SignIn action="Request fix">Sign in to request a fix</SignIn>} />
       {replyArea()}
     </div>
     <div className="pub-issue-foot"><TriageLink viewer={viewer} number={issue.number} /></div>

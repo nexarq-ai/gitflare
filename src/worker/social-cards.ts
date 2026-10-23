@@ -173,17 +173,18 @@ export function withSocialMeta(html: string, tags: string): string {
   return html.replace(SHARE_TAGS, '').replace('</head>', `${tags}</head>`);
 }
 
-export function streamSocialMeta(html: string, appended: string, tags: Promise<string>): ReadableStream<Uint8Array> | null {
+export function streamSocialMeta(html: string, appended: string | Promise<string>, tags: Promise<string>, finish: (rest: string) => string | Promise<string> = rest => rest): ReadableStream<Uint8Array> | null {
   const end = html.indexOf('</head>');
   if (end < 0) return null;
   const head = html.slice(0, end);
+  const rest = html.slice(end);
   const fallback = head.match(SHARE_TAGS)?.join('') ?? '';
   const encoder = new TextEncoder();
   return new ReadableStream({
     async start(controller) {
       controller.enqueue(encoder.encode(head.replace(SHARE_TAGS, '')));
-      const social = await tags.catch(() => '');
-      controller.enqueue(encoder.encode(`${social || fallback}${appended}${html.slice(end)}`));
+      const [social, extra, tail] = await Promise.all([tags.catch(() => ''), Promise.resolve(appended).catch(() => ''), Promise.resolve().then(() => finish(rest)).catch(() => rest)]);
+      controller.enqueue(encoder.encode(`${social || fallback}${extra}${tail}`));
       controller.close();
     },
   });
