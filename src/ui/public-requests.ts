@@ -1,4 +1,4 @@
-import type { ExploreSort } from "../shared/types";
+import { exploreParams, exploreStateFrom, type ExploreState } from "../shared/explore";
 import { publicProfileLocation, publicRepositoryLocation, routeFromLocation, type PublicRepositoryLocation } from "./router";
 
 export interface PublicRepositoryRequests {
@@ -37,21 +37,13 @@ export function publicProfileRequests(handle: string): { profile: string; activi
   return { profile, activity: `${profile}/activity` };
 }
 
-const EXPLORE_SORTS: ExploreSort[] = ["stars", "new", "updated"];
-
-export function exploreFilters(search: string): { sort: ExploreSort; language: string } {
-  const params = new URLSearchParams(search);
-  const sort = EXPLORE_SORTS.find(value => value === params.get("sort")) ?? "stars";
-  return { sort, language: params.get("language") ?? "" };
-}
-
-export function exploreRequest(sort: ExploreSort, language: string, cursor: number | null = null): string {
-  return `/api/public/explore?${new URLSearchParams({ sort, ...(language ? { language } : {}), ...(cursor !== null ? { cursor: String(cursor) } : {}) })}`;
+export function exploreRequest(state: ExploreState, cursor: number | null = null): string {
+  return `/api/public/explore?${exploreParams(state, { cursor: cursor ?? undefined })}`;
 }
 
 export function publicPageRequests(pathname: string, search: string): string[] {
   const route = routeFromLocation(pathname, "");
-  if (route === "explore") { const { sort, language } = exploreFilters(search); return [exploreRequest(sort, language)]; }
+  if (route === "explore") return [exploreRequest(exploreStateFrom(new URLSearchParams(search)))];
   const repository = publicRepositoryLocation(route);
   if (repository) return Object.values(publicRepositoryRequests(repository, new URLSearchParams(search).get("ref") ?? "")).filter((url): url is string => !!url);
   const profile = publicProfileLocation(route);

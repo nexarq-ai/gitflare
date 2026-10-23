@@ -439,9 +439,10 @@ export interface FeedLinks { atom: string; rss: string }
 export interface RepositoryFeeds { releases: FeedLinks; commits: FeedLinks; issues: FeedLinks }
 export interface PublicCommit { sha: string; message: string }
 export type PublicHandleKind = 'user' | 'workspace';
-export interface PublicRepositoryCard { handle: string; name: string; description: string; language: string | null; topics: string[]; license: string | null; stars: number; updatedAt: string; publishedAt: string; url: string; agentReady?: Pick<AgentReadiness, 'score' | 'level'> | null }
-export type ExploreSort = 'stars' | 'new' | 'updated';
-export interface PublicExplore { sort: ExploreSort; language: string | null; items: PublicRepositoryCard[]; languages: string[]; nextCursor: number | null; indexed: boolean }
+export interface PublicRepositoryCard { handle: string; name: string; description: string; language: string | null; topics: string[]; license: string | null; stars: number; updatedAt: string; publishedAt: string; url: string; agentReady?: Pick<AgentReadiness, 'score' | 'level'> | null; releases?: number; landedAt?: string | null }
+export type ExploreSort = 'stars' | 'trending' | 'landed' | 'updated' | 'new' | 'name';
+export interface ExploreFilters { language: string | null; license: string | null; topic: string | null; releases: boolean; agentReady: boolean; query: string | null }
+export interface PublicExplore extends ExploreFilters { sort: ExploreSort; items: PublicRepositoryCard[]; languages: string[]; licenses: string[]; topics: string[]; total: number; nextCursor: number | null; indexed: boolean }
 export type PublicSearchType = 'repositories' | 'paths' | 'people';
 export interface PublicPathMatch { handle: string; repository: string; path: string; url: string }
 export interface PublicPerson { handle: string; kind: PublicHandleKind; displayName: string; url: string }

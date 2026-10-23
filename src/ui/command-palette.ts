@@ -72,10 +72,10 @@ export function staticEntries(context: PaletteContext): PaletteEntry[] {
   const pages: (PaletteEntry | false)[] = [
     page("overview", "Overview", "home", ["home", "dashboard", "start"]),
     context.personalAccount && page("inbox", "Inbox", "inbox", ["notifications", "unread", "todo", "work queue", "mentions"]),
-    page("repositories", "Repositories", "repository", ["repos", "projects", "code"]),
+    page("repositories", "Repositories", "repository", ["repos", "projects", "code", "workspace"], "Your workspace"),
     page("missions", "Proposals", "proposal", ["missions", "pull requests", "prs", "changes", "merge requests"]),
     page("activity", "Activity", "activity", ["history", "events", "timeline", "log"]),
-    hosted && page("explore", "Explore", "explore", ["public", "discover", "open source", "browse", "stars"]),
+    hosted && page("explore", "Explore", "explore", ["public", "discover", "open source", "browse", "stars", "repositories"], "Public repositories"),
     page("docs", "Documentation", "docs", ["help", "guides", "manual"]),
     page("account/profile", "Profile", "account", ["name", "avatar", "handle", "email", "username"], "Account"),
     page("account/security", "Security", "security", ["password", "mfa", "2fa", "two factor", "passkey", "authenticator"], "Account"),

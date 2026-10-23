@@ -10,6 +10,11 @@ export function envHostOrigins(env: Pick<AppEnv, 'SITE_ORIGIN' | 'APP_ORIGIN'>):
   return hostOrigins(env.SITE_ORIGIN, env.APP_ORIGIN);
 }
 
+export function exploreLocation(search: string): string {
+  const query = new URLSearchParams(search).get('q')?.trim();
+  return query ? `/explore?${new URLSearchParams({ q: query.slice(0, 100) })}` : '/explore';
+}
+
 function redirect(location: string, status: number): Response {
   return new Response(null, { status, headers: { Location: location, 'Cache-Control': status === 301 ? 'public, max-age=3600' : 'no-store' } });
 }
@@ -26,7 +31,8 @@ export async function hostRedirect(request: Request, env: AppEnv, signedIn: (req
     const route = routeFromLocation(path, '');
     if (!isAppPath(path) || !isPublicProductRoute(route)) return null;
     if (!SIGNED_IN_PRODUCT_ROUTES.includes(route)) return redirect(`${origins.site}${path}${search}`, 301);
-    return await signedIn(request) ? null : redirect(`${origins.site}${path}${search}`, 302);
+    if (await signedIn(request)) return null;
+    return redirect(`${origins.site}${route === 'repositories' ? exploreLocation(search) : `${path}${search}`}`, 302);
   }
   if (url.origin !== origins.site) return null;
   const toApp = `${origins.app}${path}${search}`;
@@ -38,6 +44,7 @@ export async function hostRedirect(request: Request, env: AppEnv, signedIn: (req
   if (path.startsWith('/api/auth/')) return path === '/api/auth/config' ? null : redirect(toApp, read ? 302 : 308);
   if (!read || !isAppPath(path)) return null;
   const route = routeFromLocation(path, '');
+  if (route === 'repositories') return redirect(exploreLocation(search), 301);
   return isKnownAppRoute(route) && !isSiteRoute(route) ? redirect(toApp, 302) : null;
 }
 

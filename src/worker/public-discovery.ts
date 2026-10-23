@@ -1,4 +1,5 @@
-import type { ExploreSort, MissionSummary, ProfileFields, ProfileReadme, ProfileSettings, ProfileShowcase, PublicProfile, PublicRepositoryCard, PublicSearchType, PublicShowcase, Repository, ShowcaseMission, ShowcaseOptions, StarList, StarState, SubscriptionEntry, SubscriptionStatus, SubscriptionTargetKind } from '../shared/types';
+import type { ExploreFilters, ExploreSort, MissionSummary, ProfileFields, ProfileReadme, ProfileSettings, ProfileShowcase, PublicProfile, PublicRepositoryCard, PublicSearchType, PublicShowcase, Repository, ShowcaseMission, ShowcaseOptions, StarList, StarState, SubscriptionEntry, SubscriptionStatus, SubscriptionTargetKind } from '../shared/types';
+import { EXPLORE_SORTS } from '../shared/explore';
 import { HANDLE_PATTERN, PROFILE_FILES, PROFILE_LIMITS, publicRepositoryPath } from '../shared/handles';
 import { proposalAuthor } from '../shared/pull-requests';
 import { repositoryLabel } from '../shared/repository-names';
@@ -16,7 +17,8 @@ import { markdownImages } from './image-proxy';
 type Waiter = { waitUntil(promise: Promise<unknown>): void } | undefined;
 const REPOSITORY_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const LANGUAGE = /^[A-Za-z0-9#+ .-]{1,40}$/;
-const SORTS: ExploreSort[] = ['stars', 'new', 'updated'];
+const LICENSE = /^[A-Za-z0-9.+-]{1,64}$/;
+const TOPIC = /^[a-z0-9][a-z0-9-]{0,49}$/;
 const SEARCH_TYPES: PublicSearchType[] = ['repositories', 'paths', 'people'];
 const STARRED_ON_PROFILE = 12;
 const STAR_LIST_LIMIT = 50;
@@ -125,6 +127,30 @@ async function publicProfile(env: AppEnv, access: SecurityService, value: string
   return withDependencies(body, [...owned.ids, ...starred.ids, ...(readme.repositoryId ? [readme.repositoryId] : [])]);
 }
 
+function exploreFilters(params: URLSearchParams): ExploreFilters {
+  const value = (name: string, pattern: RegExp, code: string, message: string) => {
+    const raw = params.get(name);
+    if (raw === null || raw === '') return null;
+    if (!pattern.test(raw)) throw new ApiError(400, code, message);
+    return raw;
+  };
+  const flag = (name: string, on: string) => {
+    const raw = params.get(name);
+    if (raw === null || raw === '') return false;
+    if (raw !== on) throw new ApiError(400, 'INVALID_FILTER', `Use ${name}=${on} or leave it out.`);
+    return true;
+  };
+  const query = params.get('q')?.trim();
+  return {
+    language: value('language', LANGUAGE, 'INVALID_LANGUAGE', 'This language filter is not valid.'),
+    license: value('license', LICENSE, 'INVALID_LICENSE', 'This license filter is not valid.'),
+    topic: value('topic', TOPIC, 'INVALID_TOPIC', 'This topic filter is not valid.'),
+    releases: flag('releases', '1'),
+    agentReady: flag('agent', 'ready'),
+    query: query ? searchQuery(query) : null,
+  };
+}
+
 export async function publicDiscoveryApi(request: Request, env: AppEnv, ctx?: Waiter): Promise<Response | null> {
   const url = new URL(request.url);
   const profile = /^\/api\/public\/profiles\/([^/]+)(?:\/(activity))?$/.exec(url.pathname);
@@ -142,10 +168,8 @@ export async function publicDiscoveryApi(request: Request, env: AppEnv, ctx?: Wa
   const cursor = pageCursor(url.searchParams.get('cursor'));
   if (url.pathname === '/api/public/explore') {
     const sort = (url.searchParams.get('sort') ?? 'stars') as ExploreSort;
-    if (!SORTS.includes(sort)) throw new ApiError(400, 'INVALID_SORT', 'Sort by stars, new or updated.');
-    const language = url.searchParams.get('language');
-    if (language !== null && !LANGUAGE.test(language)) throw new ApiError(400, 'INVALID_LANGUAGE', 'This language filter is not valid.');
-    const page = await explorePublic(env, access, sort, language, cursor);
+    if (!EXPLORE_SORTS.includes(sort)) throw new ApiError(400, 'INVALID_SORT', 'Sort by stars, trending, landed, updated, new or name.');
+    const page = await explorePublic(env, access, sort, exploreFilters(url.searchParams), cursor);
     if (page.stale.length) await background(ctx, removeIndexedRepositories(env, page.stale));
     if (page.value.indexed && !page.value.items.length && !cursor) await background(ctx, backfillEmptyIndex(env, access));
     return withDependencies(page.value, page.repositoryIds);

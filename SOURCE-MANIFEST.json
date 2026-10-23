@@ -99,6 +99,11 @@
       "sha256": "eda41028c2cf370fffd0d549c6d0e0c08c660a193d3d6ba819957df3c0f1be86"
     },
     {
+      "path": "migrations/public-index/0003_facts.sql",
+      "size": 128,
+      "sha256": "a254d641f976b6b77b71c1eac7e699b821feb86995eed45ecfdc7d137677c6e4"
+    },
+    {
       "path": "NOTICE",
       "size": 240,
       "sha256": "04c9f24f38d52febd7ab2efcbc8e7af284d551784f1e610a78d07f7a99002296"
@@ -239,6 +244,11 @@
       "sha256": "1b875dc6d42046e4fc1d3ddd38a75e53325858e523a858b66f5ccc7628d07eb0"
     },
     {
+      "path": "src/shared/explore.ts",
+      "size": 1632,
+      "sha256": "f8c894264d229703d2e6516d3685d807efe3dd63c9adc666485aba747e214db6"
+    },
+    {
       "path": "src/shared/gitflare-infrastructure.ts",
       "size": 2304,
       "sha256": "ccfd7ac5af5ccc97fc37a24bbe43aba1efac60c8243b4a8351ffdebb2de309b7"
@@ -330,8 +340,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 31979,
-      "sha256": "c6ebd62b298b2348c511e39dbb0c4b7607ea6605380fb721d44e2ce3b8a9bfde"
+      "size": 32276,
+      "sha256": "cf5e38d8ba59e6b827324cabdc10e9860ba137cb29b55061eefe6b9fd5be2bb5"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -420,8 +430,8 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87533,
-      "sha256": "dd56b631a9af28deb29072be2086c8a43ef37d5335ce09fdafd80eafc9db798a"
+      "size": 87791,
+      "sha256": "635cbb86140ec450af98f5cff6fbe5585b08428f36bc288b1c562d8f8f9c8676"
     },
     {
       "path": "src/ui/approvals.ts",
@@ -575,8 +585,8 @@
     },
     {
       "path": "src/ui/command-palette.ts",
-      "size": 14212,
-      "sha256": "e58629961a92692ae69ac487b54c14bbfbc0eb644abfb9528c00cd764e93aa10"
+      "size": 14282,
+      "sha256": "67146e9b92717441858fc9c81aaa784225890562e77273f4b8e4752b06c3afc7"
     },
     {
       "path": "src/ui/CommitMessageField.tsx",
@@ -780,8 +790,8 @@
     },
     {
       "path": "src/ui/hosts.ts",
-      "size": 2034,
-      "sha256": "df8aad2d15934055d1791823fdfc56b6c6e3091480cf80ba8938be98c11e9a3c"
+      "size": 2074,
+      "sha256": "cb303a4ddfbb46cf1332bcd667816a646967052027257a76409f33809c928b1a"
     },
     {
       "path": "src/ui/inbox-count.ts",
@@ -1020,8 +1030,8 @@
     },
     {
       "path": "src/ui/public-requests.ts",
-      "size": 2923,
-      "sha256": "864b49eb24137059604ef31fa9e8c806a26982fed9cb4b38456c931e6a1a0880"
+      "size": 2502,
+      "sha256": "b1ec558ecbcfcfbb3adbd4753d02f51f7fd35e636ac7e9d79d995b62f2fc7741"
     },
     {
       "path": "src/ui/public-settings.css",
@@ -1585,8 +1595,8 @@
     },
     {
       "path": "src/worker/host-split.ts",
-      "size": 3629,
-      "sha256": "7ee8c2903cec12fccae5314db65d2dc9c4a70c0d39ddd8e5e0f3a9f21cf89d67"
+      "size": 3995,
+      "sha256": "1e58cb879fcb53795c823f57518c5b407086f891868c462dbf73d2909c72bb4e"
     },
     {
       "path": "src/worker/hosted-onboarding.ts",
@@ -1695,8 +1705,8 @@
     },
     {
       "path": "src/worker/mcp-tools/discovery.ts",
-      "size": 6855,
-      "sha256": "9ad140bce6a1e06fc529c7094e98a3843fcfc6b8ba46968e29fd07adcefa081b"
+      "size": 7815,
+      "sha256": "f78c768f1f1ff61dd5f709b6edfb5bee93c74c96a2353d2a7e45a1c284b1bf98"
     },
     {
       "path": "src/worker/mcp-tools/docs.ts",
@@ -1890,8 +1900,8 @@
     },
     {
       "path": "src/worker/public-discovery.ts",
-      "size": 28497,
-      "sha256": "21bb752ce06edff4e2cbe55c64d7a73697e54ef9244814021d4ab83372b52355"
+      "size": 29497,
+      "sha256": "3d7a09294c22ea628d29e6fb1922787fb07c509fec67450b854c1fb3e182b668"
     },
     {
       "path": "src/worker/public-downloads.ts",
@@ -1905,8 +1915,8 @@
     },
     {
       "path": "src/worker/public-index.ts",
-      "size": 24039,
-      "sha256": "c28d41de96603118a79981e72446836264fd03d27ead85627ce2e03e047e768c"
+      "size": 27503,
+      "sha256": "5f49e1b6acbc0dc65df995d6f3d39ad10e5f59085255c59046e15821d4fd840c"
     },
     {
       "path": "src/worker/public-issues.ts",
@@ -2447,11 +2457,6 @@
       "path": "tests/product-name.test.ts",
       "size": 1353,
       "sha256": "2edacf026833a6b5d281af789c7035d372c589f8ebca38b2e8b1afc7538d651a"
-    },
-    {
-      "path": "tests/public-discovery-ui.test.ts",
-      "size": 5977,
-      "sha256": "bbca181e13ccecfef94ca61226dde1d6ca24edf3dd65385d7362401bd13aa11c"
     },
     {
       "path": "tests/public-issues-ui.test.ts",
