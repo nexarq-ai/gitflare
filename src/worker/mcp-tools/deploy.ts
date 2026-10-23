@@ -18,7 +18,7 @@ export function register(server: McpServer, { call }: McpToolContext): void {
     return { deployment };
   }));
   server.registerTool('gitflare_detect_deploy_setup', {
-    title: 'Detect the deploy setup', description: 'Read the deploy setup Gitflare finds in a repository’s Wrangler configs: environments, Workers, build commands, D1 migrations and warnings, with a fingerprint to pass to gitflare_deploy apply_detected. Saves nothing. Read-only.',
+    title: 'Detect the deploy setup', description: 'Read the deploy setup Gitflare finds in a repository’s Wrangler configs: environments, Workers (assets-only, Wrangler source), build commands, D1 migrations, warnings and problems that would fail a deploy (code, config path, one-line fix), with a fingerprint to pass to gitflare_deploy apply_detected. Saves nothing. Read-only.',
     inputSchema: z.object({ repository_id: repositoryId }).strict(), annotations: readOnly,
   }, (input) => guarded(async () => call<Record<string, unknown>>(`/api/repositories/${input.repository_id}/deployments/detect`)));
   server.registerTool('gitflare_deploy_access', {

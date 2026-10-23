@@ -1,8 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { buildWorkerBundle, deployBuildScript, readWorkerConfig, validBuildCommand, workerBuildScript } from '../src/worker/worker-bundle';
+import type { Repository } from '../src/shared/types';
+import { buildLandedWorker } from '../src/worker/execution/preview-build';
+import type { ExecutionEnv } from '../src/worker/execution/environment';
+import { ASSETS_ONLY_MODULE, assertWorkerSources, buildWorkerBundle, deployBuildScript, ensureWrangler, GITFLARE_WRANGLER_DIR, GITFLARE_WRANGLER_VERSION, readWorkerConfig, validBuildCommand, workerBuildScript, WorkerBuildFailure, wranglerInstallCommand, wranglerNote } from '../src/worker/worker-bundle';
 import { cloudflareDeployClient, workerDeployer } from '../src/worker/cloudflare-deploy';
 
 const worktree = join(__dirname, '..');
@@ -193,4 +197,122 @@ describe('Cloudflare deploy client', () => {
     expect(new URL(requests.at(-1)!.url).search).toBe('?bindings_inherit=strict');
     expect(JSON.parse(String((await requests.at(-1)!.formData()).get('metadata')))).toEqual({ main_module: 'index.js', bindings: [] });
   });
+});
+
+const freshDesign = {
+  'package.json': JSON.stringify({ name: 'nexarq-fresh-design', private: true, type: 'module', scripts: { build: 'tsc --noEmit && vite build' }, devDependencies: { vite: '7.0.0' } }),
+  'wrangler.jsonc': `{
+  // assets-only SPA
+  "name": "nexarq-fresh-design",
+  "compatibility_date": "2026-07-01",
+  "assets": { "directory": "./dist", "not_found_handling": "single-page-application" },
+  "env": { "preview": { "name": "nexarq-fresh-design-preview", "vars": { "STAGE": "preview" } } }
+}`,
+};
+const withMain = (config: string) => config.replace('"compatibility_date"', '"main": "worker.js",\n  "compatibility_date"').replace('"directory": "./dist"', '"directory": "./dist", "binding": "ASSETS"');
+const spaWorker = 'export default { fetch(request, env) { return env.ASSETS.fetch(request); } };\n';
+
+function standalone(files: Record<string, string>): string {
+  const root = mkdtempSync(join(tmpdir(), 'gitflare-deploy-'));
+  roots.push(root);
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), content);
+  }
+  return root;
+}
+function gitflareWrangler(): string {
+  const toolchain = mkdtempSync(join(tmpdir(), 'gitflare-wrangler-'));
+  roots.push(toolchain);
+  symlinkSync(join(worktree, 'node_modules'), join(toolchain, 'node_modules'));
+  return toolchain;
+}
+const toolchainSandbox = (root: string, toolchain: string) => {
+  const run = async (script: string) => { const result = spawnSync('bash', ['-c', script], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GITFLARE_WRANGLER_DIR: toolchain } }); return { exitCode: result.status ?? 1, stdout: result.stdout, stderr: result.stderr }; };
+  return { check: run, collect: run, installWrangler: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })) };
+};
+
+describe('deploys without a wrangler dependency', () => {
+  it('pins Gitflare’s Wrangler to the version Gitflare itself builds with', () => {
+    const manifest = JSON.parse(readFileSync(join(worktree, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> };
+    expect(manifest.devDependencies.wrangler).toBe(GITFLARE_WRANGLER_VERSION);
+    expect(wranglerInstallCommand(GITFLARE_WRANGLER_VERSION)).toEqual(['npm', 'install', '--prefix', GITFLARE_WRANGLER_DIR, '--ignore-scripts', '--no-audit', '--no-fund', '--no-save', '--no-package-lock', `wrangler@${GITFLARE_WRANGLER_VERSION}`]);
+    expect(() => wranglerInstallCommand('latest; rm -rf /')).toThrow('Invalid Wrangler version');
+  });
+
+  it('installs Gitflare’s Wrangler only when the repository does not resolve its own', async () => {
+    const bare = toolchainSandbox(standalone(freshDesign), gitflareWrangler());
+    expect(await ensureWrangler(bare, 'wrangler.jsonc')).toBe('gitflare');
+    expect(bare.installWrangler).toHaveBeenCalledWith(GITFLARE_WRANGLER_VERSION);
+    const own = { ...sandboxFor(monorepo(freshDesign)), installWrangler: vi.fn() };
+    expect(await ensureWrangler(own, 'wrangler.jsonc')).toBe('repository');
+    expect(own.installWrangler).not.toHaveBeenCalled();
+    const failing = { ...toolchainSandbox(standalone(freshDesign), gitflareWrangler()), installWrangler: vi.fn(async () => ({ exitCode: 1, stdout: '', stderr: 'npm error network' })) };
+    await expect(ensureWrangler(failing, 'wrangler.jsonc')).rejects.toMatchObject({ code: 'WRANGLER_INSTALL_FAILED' });
+  }, 60_000);
+
+  it('builds an assets-only SPA for env.preview with Gitflare’s Wrangler and its no-op Worker', async () => {
+    const root = standalone({ ...freshDesign, 'dist/index.html': '<!doctype html><div id="root"></div>' });
+    const sandbox = toolchainSandbox(root, gitflareWrangler());
+    const config = await readWorkerConfig(sandbox, 'wrangler.jsonc', true, 'preview');
+    expect(config).toMatchObject({ environment: 'preview', name: 'nexarq-fresh-design-preview', main: '', assets: true, wrangler: 'gitflare', sources: { main: null, assets: { directory: 'dist', state: 'ok' } }, deploy: { vars: { STAGE: 'preview' }, assets: { directory: 'dist', not_found_handling: 'single-page-application' } } });
+    expect(() => assertWorkerSources(config!, { commitSha: 'a'.repeat(40), built: true })).not.toThrow();
+    expect(wranglerNote(config!)).toContain(`Gitflare’s Wrangler ${GITFLARE_WRANGLER_VERSION}`);
+    const bundle = await buildWorkerBundle(sandbox, config!);
+    expect(bundle.mainModule).toBe(ASSETS_ONLY_MODULE);
+    expect(new TextDecoder().decode(bundle.modules[0].content)).toContain('fetch()');
+  }, 120_000);
+
+  it('builds main plus assets with env.preview, keeping the SPA asset handling', async () => {
+    const root = standalone({ ...freshDesign, 'wrangler.jsonc': withMain(freshDesign['wrangler.jsonc']), 'worker.js': spaWorker, 'dist/index.html': '<!doctype html>' });
+    const sandbox = toolchainSandbox(root, gitflareWrangler());
+    const config = await readWorkerConfig(sandbox, 'wrangler.jsonc', true, 'preview');
+    expect(config).toMatchObject({ name: 'nexarq-fresh-design-preview', wrangler: 'gitflare', sources: { main: { path: 'worker.js', found: true } }, deploy: { assets: { binding: 'ASSETS', not_found_handling: 'single-page-application' } } });
+    assertWorkerSources(config!);
+    const bundle = await buildWorkerBundle(sandbox, config!);
+    expect(bundle.mainModule).toBe('worker.js');
+    expect(new TextDecoder().decode(bundle.modules[0].content)).toContain('env.ASSETS.fetch(request)');
+  }, 120_000);
+
+  it('names the missing entry, the empty assets directory or the missing Worker config precisely', async () => {
+    const sha = 'b'.repeat(40);
+    const noEntry = toolchainSandbox(standalone({ ...freshDesign, 'wrangler.jsonc': withMain(freshDesign['wrangler.jsonc']), 'dist/index.html': '<!doctype html>' }), gitflareWrangler());
+    const missing = await readWorkerConfig(noEntry, 'wrangler.jsonc', true, 'preview');
+    const entryError = (() => { try { assertWorkerSources(missing!, { commitSha: sha }); } catch (error) { return error as WorkerBuildFailure; } })();
+    expect(entryError).toMatchObject({ code: 'WORKER_ENTRY_NOT_FOUND', message: `wrangler.jsonc (env.preview) main points to worker.js but that file doesn't exist at ${sha.slice(0, 12)}.`, fix: 'Commit worker.js, or point "main" at the real entry file.' });
+    const emptyRoot = standalone(freshDesign);
+    mkdirSync(join(emptyRoot, 'dist'));
+    const empty = await readWorkerConfig(toolchainSandbox(emptyRoot, gitflareWrangler()), 'wrangler.jsonc', true);
+    expect(() => assertWorkerSources(empty!, { commitSha: sha, built: true })).toThrow(expect.objectContaining({ code: 'ASSETS_DIRECTORY_MISSING', message: `wrangler.jsonc assets.directory dist is empty at ${sha.slice(0, 12)} after the build — check your build script.`, fix: 'Make the build script write the static files to dist.' }));
+    const absent = await readWorkerConfig(toolchainSandbox(standalone(freshDesign), gitflareWrangler()), 'wrangler.jsonc', true);
+    expect(() => assertWorkerSources(absent!, { built: true })).toThrow(expect.objectContaining({ code: 'ASSETS_DIRECTORY_MISSING', message: expect.stringContaining("assets.directory dist doesn't exist after the build") }));
+    const bare = await readWorkerConfig(toolchainSandbox(standalone({ ...freshDesign, 'wrangler.jsonc': JSON.stringify({ name: 'nexarq-fresh-design', compatibility_date: '2026-07-01' }) }), gitflareWrangler()), 'wrangler.jsonc', true);
+    expect(() => assertWorkerSources(bare!)).toThrow(expect.objectContaining({ code: 'NO_WORKER_CONFIG', message: 'wrangler.jsonc has neither main nor assets.directory, so there is no Worker to deploy.' }));
+  }, 120_000);
+
+  it('deploys the landed assets-only commit end to end: install, Gitflare’s Wrangler, build, bundle and assets', async () => {
+    const root = standalone(freshDesign);
+    const toolchain = gitflareWrangler();
+    const runner = {
+      ...toolchainSandbox(root, toolchain),
+      prepare: vi.fn(async () => {}),
+      destroy: vi.fn(async () => {}),
+      install: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+      command: vi.fn(async (argv: string[]) => {
+        if (argv[0] === 'git' && argv[1] === 'ls-files') return { exitCode: 0, stdout: Object.keys(freshDesign).join('\n'), stderr: '' };
+        if (argv[0] === 'cat') return { exitCode: 0, stdout: readFileSync(join(root, argv[1]), 'utf8'), stderr: '' };
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }),
+    };
+    const env = { ARTIFACTS: { get: async (name: string) => ({ [Symbol.dispose]() {}, info: async () => ({ name, remote: `https://git.example/${name}.git`, defaultBranch: 'main' }) }) }, SANDBOX: { getByName: () => runner } } as unknown as ExecutionEnv;
+    const target = { configPath: 'wrangler.jsonc', buildCommand: "mkdir -p dist && printf '<!doctype html>' > dist/index.html", d1Migrations: false };
+    const repository = { id: 'repo', name: 'nexarq-fresh-design' } as Repository;
+    const built = await buildLandedWorker(env, { repository, commitSha: 'c'.repeat(40), attemptId: '00000000-0000-4000-8000-000000000000', assertAuthority: async () => {}, target, environment: 'preview' });
+    expect(runner.installWrangler).toHaveBeenCalledWith(GITFLARE_WRANGLER_VERSION);
+    expect(built.bundle).toMatchObject({ mainModule: ASSETS_ONLY_MODULE, config: { name: 'nexarq-fresh-design-preview', environment: 'preview' } });
+    expect(built.uploadAssets).toBeTypeOf('function');
+    expect(built.notes).toEqual([expect.stringContaining('does not depend on wrangler')]);
+    const unbuilt = buildLandedWorker(env, { repository, commitSha: 'c'.repeat(40), attemptId: '00000000-0000-4000-8000-000000000001', assertAuthority: async () => {}, target: { ...target, buildCommand: 'mkdir -p dist && rm -f dist/*' }, environment: 'preview' });
+    await expect(unbuilt).rejects.toMatchObject({ code: 'ASSETS_DIRECTORY_MISSING', fix: 'Make the build script write the static files to dist.' });
+  }, 180_000);
 });

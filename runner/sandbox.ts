@@ -1,5 +1,6 @@
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import type { ArtifactsBinding } from '../src/worker/artifacts';
+import { wranglerInstallCommand } from '../src/worker/worker-bundle';
 import { COREPACK_ENV, INSTALL_EXCLUDES, INSTALL_TIMEOUT_MS, installCommand, NPM_REGISTRY, registryHosts, YARN_REGISTRY, type InstallMode, type InstallPlan } from '../src/worker/package-manager';
 import { MAX_TEST_TIMEOUT_MS } from '../src/worker/budgets';
 import { DEFAULT_RUNNER, isRunnerSize, type RunnerSize } from '../src/worker/repository-policy';
@@ -267,6 +268,18 @@ export class AgentSandbox extends DurableObject<RunnerEnv> {
       // --ignore-scripts / --mode=skip-build / --mode=update-lockfile: package lifecycle scripts must not run while the registry is reachable
       return await this.#executeCommand(argv, '/workspace/repo', INSTALL_TIMEOUT_MS, INSTALL_TIMEOUT_MS, COMMAND_OUTPUT_CAP, false, { COREPACK_ENABLE_NETWORK: '1' });
     } finally { await this.#restrictToGit(repositories); }
+  }
+
+  async installWrangler(version: string): Promise<CommandResult> {
+    const container = this.ctx.container;
+    const repositories = this.#repositories;
+    if (!container?.running || !repositories) throw new Error('Sandbox is not prepared');
+    const argv = wranglerInstallCommand(version);
+    const registry = this.ctx.exports.RegistryOutbound({ props: { hosts: [NPM_REGISTRY] } });
+    await container.interceptAllOutboundHttp(registry);
+    await container.interceptOutboundHttps('*', registry);
+    try { return await this.#executeCommand(argv, '/workspace', INSTALL_TIMEOUT_MS, INSTALL_TIMEOUT_MS); }
+    finally { await this.#restrictToGit(repositories); }
   }
 
   async transfer(argv: string[], timeoutMs: number, source?: ImportSourceProps): Promise<CommandResult> {

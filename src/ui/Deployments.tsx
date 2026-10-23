@@ -21,13 +21,13 @@ type Confirm = (prompt: ConfirmPrompt) => Promise<boolean>;
 type TargetStatus = "pending" | "building" | "uploaded" | "deploying" | "rolling_out" | "succeeded" | "failed" | "skipped";
 type Trigger = "land" | "manual" | "rollback" | "promote";
 interface Target { workerName: string; configPath: string; buildCommand?: string; d1Migrations: boolean; watchPaths?: string[] }
-interface TargetRun extends Target { status: TargetStatus; percentage: number; versionId?: string; urls?: string[]; migrations?: { databaseName: string; applied: string[]; pending: string[]; failed?: { name: string; error: string } }[]; durableObjectMigration?: { old_tag?: string; new_tag: string }; assets?: { uploaded: number; total: number }; notes?: string[]; error?: string }
-interface Deployment { id: string; workerName: string; environment: Environment; mode?: "deploy" | "upload-only"; commitSha: string | null; trigger: Trigger; status: Status; percentage: number; versionId?: string; targets?: TargetRun[]; skippedTargets?: { workerName: string; reason: string }[]; promotedFrom?: string; targetsSource?: string; actorId: string; createdAt: string; error?: string; errorCode?: string }
+interface TargetRun extends Target { status: TargetStatus; percentage: number; versionId?: string; urls?: string[]; migrations?: { databaseName: string; applied: string[]; pending: string[]; failed?: { name: string; error: string } }[]; durableObjectMigration?: { old_tag?: string; new_tag: string }; assets?: { uploaded: number; total: number }; notes?: string[]; error?: string; errorCode?: string; errorFix?: string }
+interface Deployment { id: string; workerName: string; environment: Environment; mode?: "deploy" | "upload-only"; commitSha: string | null; trigger: Trigger; status: Status; percentage: number; versionId?: string; targets?: TargetRun[]; skippedTargets?: { workerName: string; reason: string }[]; promotedFrom?: string; targetsSource?: string; actorId: string; createdAt: string; error?: string; errorCode?: string; errorFix?: string }
 interface Settings { enabled: boolean; workerName: string; rollout: "immediate" | "gradual"; trigger: "manual" | "auto"; mode: "deploy" | "upload-only"; targets: Target[] }
 interface EnvironmentState {
   settings: Settings | null;
   current: { deploymentId: string; commitSha: string | null; trigger: Trigger; status: Status; updatedAt: string; workers: { workerName: string; versionId: string; percentage: number; urls?: string[] }[] } | null;
-  lastChange: { deploymentId: string; commitSha: string | null; trigger: Trigger; status: Status; updatedAt: string; error?: string } | null;
+  lastChange: { deploymentId: string; commitSha: string | null; trigger: Trigger; status: Status; updatedAt: string; error?: string; errorFix?: string } | null;
   pending: string | null;
   running: boolean;
   promotable?: { deploymentId: string; commitSha: string } | null;
@@ -40,9 +40,10 @@ interface EnvironmentState {
 interface AccessView { status: "protected" | "unprotected" | "error"; reason?: string; appId?: string; hostnames: string[]; includes: { emails: string[]; domains: string[]; groupId?: string } | null; created: boolean; canChange: boolean; updatedAt?: string }
 interface State extends DemoMarked { environmentOrder?: Environment[]; environments: Record<Environment, EnvironmentState>; deployments: Deployment[]; workers: { id: string; name: string; environment: string }[] }
 interface DetectedResource { type: "d1" | "r2" | "queue"; name: string; status?: "exists" | "create" | "missing" | "unknown"; needsScope?: string }
-interface DetectedTarget { workerName: string; configPath: string; buildCommand?: string; buildReasons: string[]; d1Migrations: boolean; watchPaths: string[]; dependsOn: string[]; resources: DetectedResource[]; customDomains: string[]; routes: string[]; workersDev: boolean; exists?: boolean | null; urls?: string[] }
+interface DetectedTarget { workerName: string; configPath: string; buildCommand?: string; buildReasons: string[]; wrangler?: "repository" | "gitflare"; assetsOnly?: boolean; d1Migrations: boolean; watchPaths: string[]; dependsOn: string[]; resources: DetectedResource[]; customDomains: string[]; routes: string[]; workersDev: boolean; exists?: boolean | null; urls?: string[] }
+interface DeployProblem { code: string; configPath: string; environment: Environment; message: string; fix: string }
 interface SetupWarning { id: string; environment: Environment; configPath: string; message: string }
-interface DetectedSetup { commitSha: string; fingerprint: string; packageManager: string | null; environments: Record<Environment, { targets: DetectedTarget[]; warnings: SetupWarning[] }>; errors: string[]; notes: string[]; account?: { connected: true; accountId: string; accountName?: string; source: string; subdomain: string | null; notes: string[] } | { connected: false; reason: string } }
+interface DetectedSetup { commitSha: string; fingerprint: string; packageManager: string | null; environments: Record<Environment, { targets: DetectedTarget[]; warnings: SetupWarning[] }>; errors: string[]; problems?: DeployProblem[]; notes: string[]; account?: { connected: true; accountId: string; accountName?: string; source: string; subdomain: string | null; notes: string[] } | { connected: false; reason: string } }
 interface Detection { setup: DetectedSetup; saved: { fingerprint: string; commitSha: string; appliedAt: string } | null; changed: { path: string; change: "added" | "removed" | "modified" }[]; blocking?: string[]; canApply: boolean; canAcknowledge: boolean }
 
 const PRODUCTION = "production";
@@ -66,8 +67,11 @@ function targetSummary(target: TargetRun): string {
   if (target.durableObjectMigration) parts.push(`DO migration ${target.durableObjectMigration.new_tag}`);
   if (target.assets) parts.push(`${target.assets.uploaded}/${target.assets.total} assets uploaded`);
   if (target.error) parts.push(target.error);
+  if (target.errorFix) parts.push(`Fix: ${target.errorFix}`);
   return parts.join(" · ");
 }
+
+const withFix = (error: string | undefined, fix: string | undefined) => error ? `${error}${fix ? ` Fix: ${fix}` : ""}` : "";
 
 function draftFor(environment: Environment, state: State): Settings | null {
   const saved = state.environments[environment]?.settings;
@@ -246,6 +250,8 @@ export default function Deployments({ repository, canManage = false, onNotify }:
     const pending = pendingWarnings(detection);
     const current = saved?.fingerprint === setup.fingerprint;
     const blocked = setupBlocked(detection);
+    const problems = setup.problems ?? [];
+    const problemErrors = new Set(problems.map((item) => `${item.message} ${item.fix}`));
     return (
       <section className="cf-detected" aria-label="Detected setup">
         <h3>Detected setup</h3>
@@ -253,7 +259,8 @@ export default function Deployments({ repository, canManage = false, onNotify }:
         {saved && changed.length > 0 && <p role="status">Setup changed in {changed.map((item) => item.path).join(", ")} since it was saved. Review the new plan and use it again.</p>}
         {saved && current && <p className="cf-state">This repository uses this detected setup (saved {relativeTime(saved.appliedAt)}).</p>}
         {setup.account && !setup.account.connected && <p className="cf-muted">{setup.account.reason}</p>}
-        {setup.errors.map((item) => <ErrorNotice key={item} message={item} />)}
+        {problems.map((item) => <ErrorNotice key={`${item.code}:${item.environment}:${item.message}`} message={`${item.message} Fix: ${item.fix} (${item.code}, ${item.configPath})`} />)}
+        {setup.errors.filter((item) => !problemErrors.has(item)).map((item) => <ErrorNotice key={item} message={item} />)}
         {detection.blocking?.map((item) => <ErrorNotice key={item} message={item} />)}
         {!environments.length && !setup.errors.length && <p className="cf-muted">No Wrangler config was found at the default stream's latest revision.</p>}
         <div className="cf-environments">
@@ -265,7 +272,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
                 {setup.environments[environment].targets.map((target) => (
                   <li key={target.workerName}>
                     <strong>{target.workerName}</strong>{target.exists === false ? " · will be created" : target.exists ? " · exists" : ""} · <code>{target.configPath}</code>
-                    <div className="cf-state">{target.buildCommand ? <>Build <code>{target.buildCommand}</code> ({target.buildReasons.join("; ")})</> : "No build step"}{target.d1Migrations ? " · D1 migrations" : ""}{target.dependsOn.length ? ` · after ${target.dependsOn.join(", ")}` : ""}</div>
+                    <div className="cf-state">{target.buildCommand ? <>Build <code>{target.buildCommand}</code> ({target.buildReasons.join("; ")})</> : "No build step"}{target.assetsOnly ? " · static assets only" : ""}{target.wrangler === "gitflare" ? " · Gitflare’s Wrangler" : ""}{target.d1Migrations ? " · D1 migrations" : ""}{target.dependsOn.length ? ` · after ${target.dependsOn.join(", ")}` : ""}</div>
                     {target.watchPaths.length > 0 && <div className="cf-state">Watch {target.watchPaths.join(", ")}</div>}
                     {target.resources.length > 0 && <div className="cf-state">{target.resources.map((resource) => `${resourceLabels[resource.type]} ${resource.name}${resource.status ? ` (${resourceStatus[resource.status]}${resource.needsScope ? `, needs ${resource.needsScope}` : ""})` : ""}`).join(" · ")}</div>}
                     <div className="cf-state">{target.urls?.length ? <WorkerUrls urls={target.urls} onCopied={() => onNotify?.("URL copied.")} /> : target.workersDev ? "workers.dev URL after the account subdomain is read" : "No public URL (workers.dev off)"}</div>
@@ -331,7 +338,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
             <dl className="cf-environment-facts">
               <dt>Revision</dt><dd>{view.current?.commitSha ? <Sha sha={view.current.commitSha} /> : "—"}</dd>
               <dt>{view.current && view.current.workers.length > 1 ? "Workers" : "Worker"}</dt><dd>{view.current?.workers.length ? <ul className="cf-worker-list">{view.current.workers.map((worker) => <li key={worker.workerName}><span className="cf-worker-line"><strong>{worker.workerName}</strong><code title={worker.versionId}>{worker.versionId.slice(0, 8)}</code>{worker.percentage < 100 ? <span>{worker.percentage}%</span> : null}</span><WorkerUrls urls={worker.urls} onCopied={copied} /></li>)}</ul> : "—"}</dd>
-              <dt>Last change</dt><dd>{view.lastChange ? <>{labels[view.lastChange.status]} · {triggers[view.lastChange.trigger]} · {relativeTime(view.lastChange.updatedAt)}{view.lastChange.error ? ` · ${view.lastChange.error}` : ""}</> : "—"}</dd>
+              <dt>Last change</dt><dd>{view.lastChange ? <>{labels[view.lastChange.status]} · {triggers[view.lastChange.trigger]} · {relativeTime(view.lastChange.updatedAt)}{view.lastChange.error ? ` · ${withFix(view.lastChange.error, view.lastChange.errorFix)}` : ""}</> : "—"}</dd>
             </dl>
             {view.deployBlockedReason && <ErrorNotice message={view.deployBlockedReason} />}
             {targets.length > 1 && (
@@ -406,7 +413,7 @@ export default function Deployments({ repository, canManage = false, onNotify }:
             <tbody>{state.deployments.map((item) => (
               <tr key={item.id} title={item.error}>
                 <td>{environmentLabel(item.environment)}</td>
-                <td>{labels[item.status]} · {triggers[item.trigger]}{item.mode === "upload-only" ? " · upload only" : ""}{item.error ? ` · ${item.error}` : ""}</td>
+                <td>{labels[item.status]} · {triggers[item.trigger]}{item.mode === "upload-only" ? " · upload only" : ""}{item.error ? ` · ${withFix(item.error, item.errorFix)}` : ""}</td>
                 <td><Sha sha={item.commitSha} /></td>
                 <td>
                   {item.targets?.length ? <ul className="cf-target-runs">{item.targets.map((target) => <li key={target.workerName} title={target.notes?.join("\n")}><strong>{target.workerName}</strong> · {targetSummary(target)}<WorkerUrls urls={target.urls} onCopied={() => onNotify?.("URL copied.")} /></li>)}</ul> : !item.skippedTargets?.length ? <>{item.workerName} · <code>{item.versionId?.slice(0, 8) ?? "—"}</code></> : null}
