@@ -142,13 +142,15 @@ function sourceCodeData(preview: SocialPreview, origin: string): string {
   return `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`;
 }
 
-export async function socialMetaTags(request: Request, env: AppEnv): Promise<string> {
+export interface PageCopy { title?: string; description?: string }
+
+export async function socialMetaTags(request: Request, env: AppEnv, copy?: Promise<PageCopy | null> | null): Promise<string> {
   if (request.method !== 'GET' || !hosted(env)) return '';
   const url = new URL(request.url);
   const target = socialPageTarget(url.pathname);
   if (!target) return '';
   try {
-    const preview = await socialPreview(env, securityClient(env), target);
+    const [preview, rendered] = await Promise.all([socialPreview(env, securityClient(env), target), copy ? copy.catch(() => null) : null]);
     if (!preview) return '';
     const origin = siteOrigin(env, url.origin);
     const hash = await contentHash(preview.card, 'dark');
@@ -158,9 +160,9 @@ export async function socialMetaTags(request: Request, env: AppEnv): Promise<str
     const tags = [
       ['property', 'og:type', 'website'], ['property', 'og:site_name', 'Gitflare'], ['property', 'og:title', title], ['property', 'og:description', preview.description], ['property', 'og:url', page],
       ['property', 'og:image', image], ['property', 'og:image:width', String(SOCIAL_CARD_WIDTH)], ['property', 'og:image:height', String(SOCIAL_CARD_HEIGHT)], ['property', 'og:image:type', 'image/png'], ['property', 'og:image:alt', preview.title],
-      ['name', 'twitter:card', 'summary_large_image'], ['name', 'twitter:title', title], ['name', 'twitter:description', preview.description], ['name', 'twitter:image', image], ['name', 'description', preview.description],
+      ['name', 'twitter:card', 'summary_large_image'], ['name', 'twitter:title', title], ['name', 'twitter:description', preview.description], ['name', 'twitter:image', image], ['name', 'description', rendered?.description ?? preview.description],
     ];
-    return `<title>${escapeAttribute(title)}</title>${tags.map(([attribute, key, value]) => `<meta ${attribute}="${key}" content="${escapeAttribute(value)}">`).join('')}${sourceCodeData(preview, origin)}`;
+    return `<title>${escapeAttribute(rendered?.title ? `${rendered.title} · Gitflare` : title)}</title>${tags.map(([attribute, key, value]) => `<meta ${attribute}="${key}" content="${escapeAttribute(value)}">`).join('')}${rendered ? '' : sourceCodeData(preview, origin)}`;
   } catch { return ''; }
 }
 

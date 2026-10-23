@@ -1,4 +1,5 @@
 export const BOOT_OVERLAY_ID = "gitflare-boot";
+export const SERVER_RENDERED_ID = "gitflare-ssr";
 export const MAX_BOOT_MS = 6000;
 const FADE_MS = 220;
 
@@ -18,6 +19,7 @@ export function dismissBootLoader(): void {
   clearTimeout(fallback);
   cancelAnimationFrame(frame);
   document.documentElement.removeAttribute("data-booting");
+  document.getElementById(SERVER_RENDERED_ID)?.remove();
   const overlay = document.getElementById(BOOT_OVERLAY_ID);
   if (!overlay || overlay.dataset.leaving) return;
   overlay.dataset.leaving = "true";

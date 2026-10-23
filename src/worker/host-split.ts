@@ -3,6 +3,7 @@ import { followsSavedTheme, isAppPath, isKnownAppRoute, isPublicProductRoute, is
 import { CLOUDFLARE_CALLBACK_PATH, CLOUDFLARE_CONNECT_STATE_COOKIE, CLOUDFLARE_SIGNIN_STATE_COOKIE, requestCookie } from './cloudflare';
 import type { AppEnv } from './env';
 import { streamSocialMeta, withSocialMeta } from './social-cards';
+import type { ServerPage } from './public-ssr';
 
 const CALLBACK_PATHS = new Set([CLOUDFLARE_CALLBACK_PATH, '/api/auth/cloudflare/callback']);
 
@@ -52,17 +53,22 @@ export function withConnectSource(policy: string, origin: string): string {
   return policy.replace(/connect-src ([^;]*)/, (directive, sources: string) => sources.split(/\s+/).includes(origin) ? directive : `connect-src ${sources} ${origin}`);
 }
 
-export async function withHostOrigins(response: Response, env: AppEnv, pathname = '', head: string | Promise<string> = '', searchTags = ''): Promise<Response> {
+export function withServerPage(html: string, page: ServerPage | null): string {
+  return page?.status === 200 && page.body ? html.replace('<div id="root">', () => `${page.body}<div id="root">`) : html;
+}
+
+export async function withHostOrigins(response: Response, env: AppEnv, pathname = '', head: string | Promise<string> = '', searchTags = '', page: ServerPage | null = null): Promise<Response> {
   const origins = envHostOrigins(env);
   if ((!origins && !searchTags) || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
-  const html = await response.text();
+  const html = withServerPage(await response.text(), page);
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
   headers.delete('ETag');
   const policy = headers.get('Content-Security-Policy');
   if (origins && policy) headers.set('Content-Security-Policy', withConnectSource(policy, origins.app));
   const meta = `${searchTags}${origins ? `<meta name="gitflare-app-origin" content="${origins.app}"><meta name="gitflare-site-origin" content="${origins.site}">${pathname && followsSavedTheme(routeFromLocation(pathname, '')) ? '<meta name="gitflare-theme" content="system">' : ''}` : ''}`;
-  const init = { status: response.status, statusText: response.statusText, headers };
+  if (page?.status === 404) headers.set('Cache-Control', 'no-store');
+  const init = page?.status === 404 ? { status: 404, statusText: 'Not Found', headers } : { status: response.status, statusText: response.statusText, headers };
   const streamed = typeof head === 'string' ? null : streamSocialMeta(html, meta, head);
   if (streamed) return new Response(streamed, init);
   return new Response(withSocialMeta(html, typeof head === 'string' ? head : await head.catch(() => '')).replace('</head>', `${meta}</head>`), init);
