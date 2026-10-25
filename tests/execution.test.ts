@@ -507,8 +507,8 @@ describe('preview HTTP readiness', () => {
     try {
       const { runner, container } = await previewRunner(vi.fn().mockResolvedValue(new Response('ready')));
       await runner.startPreview(['/bin/bash', '-lc', 'exec npm run dev']);
-      const [argv, options] = container.exec.mock.calls.find(([argv]) => argv[0] === '/bin/bash')! as unknown as [string[], { env: Record<string, string> }];
-      expect(argv).toEqual(['/bin/bash', '-c', 'exec "$@" > /tmp/gitflare-preview.log 2>&1', 'preview', '/bin/bash', '-lc', 'exec npm run dev']);
+      const [argv, options] = container.exec.mock.calls.find(([argv]) => argv[0] === 'setsid')! as unknown as [string[], { env: Record<string, string> }];
+      expect(argv).toEqual(['setsid', '/bin/bash', '-c', 'echo $$ > /tmp/gitflare-preview.pid; exec "$@" > /tmp/gitflare-preview.log 2>&1', 'preview', '/bin/bash', '-lc', 'exec npm run dev']);
       expect(options.env).toMatchObject({ PORT: '8080', HOST: '0.0.0.0' });
     } finally { vi.useRealTimers(); }
   });
@@ -1268,7 +1268,7 @@ describe('team awareness and race execution', () => {
     expect(result.checks.map((check) => [check.runId, check.status])).toEqual(expect.arrayContaining([['run-1', 'passed'], ['run-2', 'failed'], ['run-3', 'passed']]));
     expect([...runners.keys()].some((name) => name.includes('integration'))).toBe(false);
     const [, request] = vi.mocked(env.AI!.run).mock.calls[0] as [string, { tools: { name: string }[] }];
-    expect(request.tools.map((tool) => tool.name)).toEqual(['shell', 'team_status', 'install_dependencies', 'run_tests']);
+    expect(request.tools.map((tool) => tool.name)).toEqual(['shell', 'team_status', 'install_dependencies', 'run_tests', 'view_ui']);
   });
 
   function reuseSetup(agents: number, reused: number[], options: { candidateBase?: string; forkHead?: (name: string) => string; skipped?: number[] } = {}) {

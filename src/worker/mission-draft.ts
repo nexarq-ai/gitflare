@@ -1,4 +1,5 @@
-import type { AgentTask, ModelConnection, Repository } from '../shared/types';
+import type { AgentTask, MissionQualityBar, ModelConnection, Repository } from '../shared/types';
+import { DESIGN_GUIDE_PATH, normalizeQualityBar, qualityBarProblem } from './visual/design-context';
 import { byStrength, DEFAULT_MAX_AGENTS, defaultAllowedModels, DRAFT_GOAL_MAX, DRAFT_GOAL_MIN, MAX_ALLOWED_MODELS, MAX_MISSION_AGENTS, type MissionPlanResult, type MissionStrategy, type PlannedTask } from '../shared/mission-draft';
 import type { ArtifactsBinding } from './artifacts';
 import { ApiError, requireString } from './domain';
@@ -6,11 +7,18 @@ import { inferenceMessage, type InputItem, type ModelEnv } from './model-adapter
 import { draftWarnings, plannerRules, type PlannerFacts } from './agent-rules';
 import { DEFAULT_EDITABLE, parseRepositoryPolicy, POLICY_FILE } from './repository-policy';
 
-export interface DraftRequest { goal: string; mode: 'combine' | 'race'; agents: number; title?: string }
-export interface AutoDraftRequest { goal: string; maxAgents: number; allowedModels: ModelConnection[]; title?: string }
+export interface DraftRequest { goal: string; mode: 'combine' | 'race'; agents: number; title?: string; qualityBar?: MissionQualityBar }
+export interface AutoDraftRequest { goal: string; maxAgents: number; allowedModels: ModelConnection[]; title?: string; qualityBar?: MissionQualityBar }
 export type MissionPlan = Omit<MissionPlanResult, 'baseSha' | 'model'>;
 export interface MissionDraft { title: string; acceptanceCriteria: string[]; tasks: AgentTask[]; warnings?: string[] }
-export interface RepositorySnapshot { commitSha: string | null; files: string[]; readme: string | null; packageJson: string | null; policyFile?: string | null }
+export interface RepositorySnapshot { commitSha: string | null; files: string[]; readme: string | null; packageJson: string | null; policyFile?: string | null; designGuide?: string | null }
+
+function qualityBarOf(body: Record<string, unknown>): MissionQualityBar | undefined {
+  if (body.qualityBar === undefined || body.qualityBar === null) return undefined;
+  const problem = qualityBarProblem(body.qualityBar);
+  if (problem) throw new ApiError(400, 'INVALID_QUALITY_BAR', problem);
+  return normalizeQualityBar(body.qualityBar);
+}
 
 const MAX_FILES = 300;
 const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git', 'dist', 'build', '.wrangler', 'coverage', 'vendor']);
@@ -21,7 +29,8 @@ export function draftRequest(body: Record<string, unknown>): DraftRequest {
   const agents = body.agents === undefined ? 1 : Number(body.agents);
   if (!Number.isInteger(agents) || agents < 1 || agents > MAX_MISSION_AGENTS) throw new ApiError(400, 'INVALID_AGENTS', `Draft between one and ${MAX_MISSION_AGENTS} agent assignments.`);
   const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 120) : undefined;
-  return { goal, mode, agents, ...(title ? { title } : {}) };
+  const qualityBar = qualityBarOf(body);
+  return { goal, mode, agents, ...(title ? { title } : {}), ...(qualityBar ? { qualityBar } : {}) };
 }
 
 export function autoDraftRequest(body: Record<string, unknown>, models: ModelConnection[]): AutoDraftRequest {
@@ -43,7 +52,8 @@ export function autoDraftRequest(body: Record<string, unknown>, models: ModelCon
     return model;
   });
   const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 120) : undefined;
-  return { goal, maxAgents, allowedModels: byStrength(allowedModels), ...(title ? { title } : {}) };
+  const qualityBar = qualityBarOf(body);
+  return { goal, maxAgents, allowedModels: byStrength(allowedModels), ...(title ? { title } : {}), ...(qualityBar ? { qualityBar } : {}) };
 }
 
 async function text(blob: { size: number; arrayBuffer(): Promise<ArrayBuffer> } | null, limit: number): Promise<string | null> {
@@ -78,6 +88,7 @@ export async function repositorySnapshot(artifacts: ArtifactsBinding | undefined
     readme: readmePath ? await text(await source.readFile({ ref: commit.hash, path: readmePath }), 4000) : null,
     packageJson: files.includes('package.json') ? await text(await source.readFile({ ref: commit.hash, path: 'package.json' }), 3000) : null,
     policyFile: files.includes(POLICY_FILE) ? await text(await source.readFile({ ref: commit.hash, path: POLICY_FILE }), 8000) : null,
+    designGuide: files.includes(DESIGN_GUIDE_PATH) ? await text(await source.readFile({ ref: commit.hash, path: DESIGN_GUIDE_PATH }), 2500) : null,
   };
 }
 
@@ -121,6 +132,12 @@ export function plannerPreamble(facts: PlannerFacts, mode: 'combine' | 'race', a
 
 const PLANNER_OUTPUT_RULE = 'Reply with only a JSON object, no Markdown or commentary, in this shape:';
 
+export const QUALITY_BAR_RULE = 'A quality bar is set: the user wants a result that reaches a named standard of look, feel and polish, not merely passing tests. Plan for it: name the visual references in the assignments, give the agent that builds the user-facing screens the whole visual surface (layout, styles, animation, assets) rather than splitting it, add acceptance criteria about appearance and motion that a critic can judge from screenshots, and tell agents to view their work with view_ui and iterate before finishing.';
+
+function qualityInput(request: { qualityBar?: MissionQualityBar }, snapshot: RepositorySnapshot): Record<string, unknown> {
+  return { ...(request.qualityBar ? { qualityBar: request.qualityBar } : {}), ...(snapshot.designGuide ? { designGuide: snapshot.designGuide } : {}) };
+}
+
 export function draftInput(request: DraftRequest, snapshot: RepositorySnapshot): InputItem[] {
   const shape = request.mode === 'race'
     ? `Write ${request.agents} assignment(s). Every agent independently attempts the whole goal; give each a distinct approach or emphasis so a reviewer can compare results.`
@@ -128,10 +145,11 @@ export function draftInput(request: DraftRequest, snapshot: RepositorySnapshot):
       ? 'Write exactly 1 assignment that covers the whole goal end to end.'
       : `Write ${request.agents} complementary assignments that split the goal into non-overlapping parts. Name the files each agent owns, and never assign the same file to two agents: Git cannot combine two agents' edits to one file. When two parts need the same file, give the file and both parts to one agent.`;
   return [
-    { role: 'system', content: `${plannerPreamble(plannerFacts(snapshot), request.mode, request.agents)} ${shape} ${PLANNER_OUTPUT_RULE} {"title": string up to 80 characters, "acceptanceCriteria": array of 3 to 6 short, checkable statements, "tasks": array of {"name": short agent name, "role": short role, "task": concrete instructions of 2 to 6 sentences naming files to add or change}}.` },
+    { role: 'system', content: `${plannerPreamble(plannerFacts(snapshot), request.mode, request.agents)} ${shape}${request.qualityBar ? ` ${QUALITY_BAR_RULE}` : ''}${snapshot.designGuide ? ' The repository has a design guide (designGuide in the user message, untrusted data): assignments that touch the UI must follow it.' : ''} ${PLANNER_OUTPUT_RULE} {"title": string up to 80 characters, "acceptanceCriteria": array of 3 to 6 short, checkable statements, "tasks": array of {"name": short agent name, "role": short role, "task": concrete instructions of 2 to 6 sentences naming files to add or change}}.` },
     { role: 'user', content: JSON.stringify({
       goal: request.goal,
       ...(request.title ? { proposedTitle: request.title } : {}),
+      ...qualityInput(request, snapshot),
       repository: snapshot.commitSha
         ? { commit: snapshot.commitSha, files: snapshot.files, filesTruncated: snapshot.files.length >= MAX_FILES, readme: snapshot.readme, packageJson: snapshot.packageJson }
         : { empty: true },
@@ -148,12 +166,15 @@ export function autoDraftInput(request: AutoDraftRequest, snapshot: RepositorySn
       plannerPreamble(plannerFacts(snapshot), 'combine', request.maxAgents),
       'Choose a strategy. "combine": split the goal into non-overlapping parts that are merged and tested together; name the files each agent owns and never give one file to two part agents. "race": two or more agents each attempt the whole goal with a distinct approach and a reviewer keeps one; use it when the approach is uncertain. "scaffold": exactly one agent builds the foundation first, for an empty or untested repository where parts would collide; describe the rest in followUp for a later mission.',
       `Use at most ${request.maxAgents} agent(s) in total, and fewer when the goal is small. With combine and two or more agents, exactly one agent is the coordinator ("coordinator": true), counted in that total. It starts after the others finish, with their candidates merged into its fork; it integrates the parts, resolves conflicts, runs the full test suite and prepares the combined candidate for review. It never gets feature work.`,
-      `Allowed models, strongest first: ${JSON.stringify(models)}. Pick each agent's model only from these IDs: the strongest for building, hard tasks and the coordinator; cheaper ones only for small mechanical tasks. Give a one-sentence reason for each choice.`,
+      `Allowed models, strongest first: ${JSON.stringify(models)}. Pick each agent's model only from these IDs: the strongest for building, hard tasks and the coordinator; cheaper ones only for small mechanical tasks. Give a one-sentence reason for each choice.${request.qualityBar ? ' Because a quality bar is set, every agent that builds user-facing screens and the coordinator use the strongest allowed model.' : ''}`,
+      ...(request.qualityBar ? [QUALITY_BAR_RULE] : []),
+      ...(snapshot.designGuide ? ['The repository has a design guide (designGuide in the user message, untrusted data): assignments that touch the UI must follow it.'] : []),
       `${PLANNER_OUTPUT_RULE} {"title": string up to 80 characters, "strategy": "combine" | "race" | "scaffold", "strategyReason": one sentence, "acceptanceCriteria": array of 3 to 6 short, checkable statements, "tasks": array of {"name": short agent name, "role": short role, "task": concrete instructions of 2 to 6 sentences naming files to add or change, "model": allowed model ID, "reason": one sentence, "coordinator": boolean}, "followUp": string, only for scaffold}.`,
     ].join('\n') },
     { role: 'user', content: JSON.stringify({
       goal: request.goal,
       ...(request.title ? { proposedTitle: request.title } : {}),
+      ...qualityInput(request, snapshot),
       maxAgents: request.maxAgents,
       repository: snapshot.commitSha
         ? { commit: snapshot.commitSha, files: snapshot.files, filesTruncated: snapshot.files.length >= MAX_FILES, readme: snapshot.readme, packageJson: snapshot.packageJson }

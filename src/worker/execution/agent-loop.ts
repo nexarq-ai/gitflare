@@ -6,6 +6,7 @@ import { DEFAULT_EDITABLE, type RepositoryPolicy } from '../repository-policy';
 import { agentRules, agentSystemPrompt } from '../agent-rules';
 import { outputLimit } from '../check-evidence';
 import type { SandboxRunner, ExecutionEnv } from './environment';
+import { VIEW_TOOL, type ToolImage, type ToolOutput } from '../visual/agent-view';
 
 export function selectedModel(env: ExecutionEnv, models = defaultModelConnections()): string {
   return resolveModelConnection(models, env.MODEL ?? DEFAULT_MODEL).id;
@@ -21,15 +22,37 @@ const installTool = { type: 'function', name: 'install_dependencies', descriptio
 
 const testsTool = { type: 'function', name: 'run_tests', description: 'Run the check Gitflare will run on your candidate, in your working tree, and return the exit code, a failure summary and the end of the output. Call install_dependencies first if you changed dependencies.', parameters: noArguments, strict: true };
 
+const viewTool = { type: 'function', name: VIEW_TOOL, description: 'Start the repository preview from your working tree (or restart it after a build) and capture screenshots of routes at desktop (1280px) and mobile (390px) widths in light and dark themes. Returns the images plus, for each one, the page outline, console errors and layout overflow. Call it after changing anything a user sees, and again before you finish. routes: absolute paths (default: the configured routes); restart: true after you change build output or the server.', parameters: { type: 'object', properties: { routes: { type: ['array', 'null'], items: { type: 'string' } }, viewports: { type: ['array', 'null'], items: { type: 'string', enum: ['desktop', 'mobile'] } }, themes: { type: ['array', 'null'], items: { type: 'string', enum: ['light', 'dark'] } }, restart: { type: ['boolean', 'null'] } }, required: ['routes', 'viewports', 'themes', 'restart'], additionalProperties: false }, strict: true };
+
 export interface TeamBoard { status(note?: string): Promise<string> }
 
-export interface AgentWorkspace { install(remainingMs: number): Promise<string>; test(remainingMs: number): Promise<string> }
+export interface AgentWorkspace { install(remainingMs: number): Promise<string>; test(remainingMs: number): Promise<string>; view?(raw: string, remainingMs: number): Promise<ToolOutput> }
 
 export interface AgentLoopOptions { independent?: boolean; starter?: boolean; untested?: boolean; editable?: string[]; policy?: RepositoryPolicy; workspace?: AgentWorkspace; team?: TeamBoard; afterCommand?: () => Promise<void>; maxTurns?: number; budgetMs?: number; modelAnswerMs?: number; modelRetries?: number; onModelCall?: (usage: ModelUsage | undefined) => void; onModelRetry?: (message: string) => Promise<void> }
 
 export function agentLoopPrompt(options: AgentLoopOptions = {}): string {
   const policy = options.policy ?? { editable: options.editable ?? DEFAULT_EDITABLE, starter: !!options.starter, untested: !!options.untested, install: null, testCommand: '' };
-  return agentSystemPrompt(agentRules(policy, { independent: options.independent, team: !!options.team, tools: !!options.workspace }));
+  return agentSystemPrompt(agentRules(policy, { independent: options.independent, team: !!options.team, tools: !!options.workspace, view: !!options.workspace?.view }));
+}
+
+export function modelAcceptsImages(model: Pick<ModelConnection, 'id' | 'protocol'>): boolean {
+  return model.protocol === 'anthropic' || model.protocol === 'responses';
+}
+
+export function imageItem(callId: string, images: ToolImage[]): InputItem {
+  const text = `Screenshots from ${VIEW_TOOL} call ${callId} (${images.length} image${images.length === 1 ? '' : 's'}). ${images.map((image, index) => `Image ${index + 1}: ${image.label}`).join('; ')}`;
+  return { role: 'user', content: [{ type: 'input_text', text }, ...images.map((image) => ({ type: 'input_image', image_url: `data:${image.mimeType};base64,${image.data}`, detail: 'auto' }))] };
+}
+
+const IMAGE_NOTE = /^Screenshots from view_ui call (\S+) /;
+
+export function pruneImages(messages: InputItem[]): void {
+  const bearing = messages.filter((item) => item.role === 'user' && Array.isArray(item.content) && item.content.some((part) => (part as { type?: string }).type === 'input_image'));
+  for (const item of bearing.slice(0, -1)) {
+    const first = (item.content as { text?: string }[])[0]?.text ?? '';
+    const callId = IMAGE_NOTE.exec(first)?.[1] ?? 'earlier';
+    item.content = `Screenshots from ${VIEW_TOOL} call ${callId} were removed to save context; call ${VIEW_TOOL} again to see the current state.`;
+  }
 }
 
 const DEFAULT_MAX_TURNS = 16;
@@ -46,12 +69,14 @@ export async function runAgentLoop(env: ExecutionEnv, sandbox: SandboxRunner, pr
     { role: 'system', content: agentLoopPrompt(options) },
     { role: 'user', content: prompt },
   ];
-  const tools = [shellTool, ...(options.team ? [teamTool] : []), ...(options.workspace ? [installTool, testsTool] : [])];
+  const tools = [shellTool, ...(options.team ? [teamTool] : []), ...(options.workspace ? [installTool, testsTool] : []), ...(options.workspace?.view ? [viewTool] : [])];
+  const vision = modelAcceptsImages(model);
   let lastToolSucceeded = false;
   let continuations = 0;
   let continuing = false;
   for (let turn = 0; turn < maxTurns; turn++) {
     if (!await isActive()) throw new Error('Mission cancelled');
+    pruneImages(messages);
     let message: ModelMessage;
     try { message = await modelMessageWithRetry(env, model, messages, deadline, isActive, tools, { step: turn + 1, onModelCall: options.onModelCall, onRetry: options.onModelRetry, startExtended: continuing, retries: options.modelRetries ?? DEFAULT_MODEL_RETRIES, answerMs: options.modelAnswerMs }); }
     catch (error) {
@@ -102,6 +127,16 @@ export async function runAgentLoop(env: ExecutionEnv, sandbox: SandboxRunner, pr
         lastToolSucceeded = true;
         messages.push({ type: 'function_call_output', call_id: call.call_id, output: output.slice(0, outputLimit) });
         await options.afterCommand?.();
+        continue;
+      }
+      if (call.name === VIEW_TOOL && options.workspace?.view) {
+        await onTool('view the UI');
+        if (!await isActive()) throw new Error('Mission cancelled');
+        const viewed = await options.workspace.view(call.arguments, deadline.at - Date.now());
+        remainingAgentBudget(deadline);
+        lastToolSucceeded = viewed.images.length > 0;
+        messages.push({ type: 'function_call_output', call_id: call.call_id, output: viewed.text.slice(0, outputLimit * 2) });
+        if (viewed.images.length && vision) messages.push(imageItem(call.call_id, viewed.images));
         continue;
       }
       if (call.name !== 'shell') throw new Error('Unsupported model tool');

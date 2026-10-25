@@ -1,3 +1,4 @@
+import { candidateVerified } from '../../shared/checks';
 import type { Mission, ModelConnection } from '../../shared/types';
 import { repositoryHead, validGitSha } from '../artifacts';
 import { assertDependencyApproval } from '../dependency-changes';
@@ -33,6 +34,14 @@ export async function missionReads(context: RouteContext, match: RegExpExecArray
     const { repository, mission } = await findMission(env, match[1], principal.workspaceId);
     await access.authorize(principal, 'read', 'repository', repository.id, mission.id);
     return Response.json({ attempts: await records(env, repository.id).listAttempts(mission.id) });
+  }
+  const image = request.method === 'GET' ? /^\/api\/missions\/([a-zA-Z0-9-]+)\/visual\/([A-Za-z0-9._-]{1,200})$/.exec(context.url.pathname) : null;
+  if (image) {
+    const { repository, mission } = await findMission(env, image[1]!, principal.workspaceId);
+    await access.authorize(principal, 'read', 'repository', repository.id, mission.id);
+    const stored = await records(env, repository.id).visualImage(mission.id, image[2]!);
+    if (!stored) throw new ApiError(404, 'NOT_FOUND', 'This capture could not be found.');
+    return new Response(Uint8Array.from(atob(stored.data), (char) => char.charCodeAt(0)), { headers: { 'content-type': stored.format === 'jpeg' ? 'image/jpeg' : 'image/png', 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff', 'content-security-policy': 'sandbox' } });
   }
   if (request.method === 'GET' && match?.[2] === 'preview') {
     const { repository, mission } = await findMission(env, match[1], principal.workspaceId);
@@ -202,7 +211,7 @@ export async function missionWrites(context: RouteContext, match: RegExpExecArra
       const slot = previewKey(mission.id, previewRun);
       const runField = previewRun ? { runId: previewRun } : {};
       const candidateSha = previewRun ? requireRaceCandidate(mission, previewRun).commitSha! : mission.candidateSha;
-      if (!candidateSha || (!previewRun && (!mission.checks.some((check) => check.candidateSha === mission.candidateSha && check.status === 'passed') || mission.checks.some((check) => check.status !== 'passed')))) throw new ApiError(409, 'CHECKS_REQUIRED', 'The current integration candidate must pass verification before preview.');
+      if (!candidateSha || (!previewRun && !candidateVerified(mission.checks, mission.candidateSha))) throw new ApiError(409, 'CHECKS_REQUIRED', 'The current integration candidate must pass verification before preview.');
       if (!env.MISSION_WORKFLOW) throw new ApiError(503, 'PREVIEW_NOT_CONFIGURED', 'Configure the Mission Workflow before creating a preview.');
       const reserved = await catalog.reservePreviewSlot(slot, Date.now() + PREVIEW_STEP_MS);
       let claim: Awaited<ReturnType<typeof coordinator.claimPreview>>;

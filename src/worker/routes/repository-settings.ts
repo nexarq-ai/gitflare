@@ -3,6 +3,7 @@ import { ApiError, assertMutationOrigin, readJson, requireIdempotencyKey, requir
 import { repositoryLabel } from '../../shared/repository-names';
 import { checkSettingsSnapshot, normalizeCheckSettings, samePolicyOverride } from '../check-settings';
 import { agentSettingsSnapshot, normalizeAgentSettings } from '../agent-settings';
+import { policyVisualSettings, visualSettingsInput, visualSettingsSnapshot } from '../visual/settings';
 import { handlePreviewSettings } from '../preview-settings-api';
 import { executionReadiness } from '../execution';
 import { notifyProposal, proposalOpened } from '../proposal-notifications';
@@ -63,6 +64,24 @@ export async function repositorySettingsRoutes(context: RouteContext): Promise<R
     await access.auditRepositoryChange(principal, overrideChanged ? 'repository.check-settings.policy-override' : 'repository.check-settings', repository.id);
     if (installChanged) await access.auditRepositoryChange(principal, 'repository.check-settings.install', repository.id);
     return Response.json(checkSettingsSnapshot(repository.id, saved, await coordinator.getCheckDurations()));
+  }
+  const visualSettingsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/visual-settings$/.exec(url.pathname);
+  if (visualSettingsRoute) {
+    const repository = await requireRepository(catalog, visualSettingsRoute[1]);
+    const coordinator = records(env, repository.id);
+    if (request.method === 'GET') {
+      await access.authorize(principal, 'read', 'repository', repository.id);
+      const policy = await policyVisualSettings(env.ARTIFACTS, repository);
+      return Response.json(visualSettingsSnapshot(repository.id, await coordinator.getVisualSettings(), policy.settings, policy.problem));
+    }
+    if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Use GET or POST for visual settings.');
+    assertMutationOrigin(request);
+    const key = requireIdempotencyKey(request), body = await readJson(request, 16_384);
+    await access.authorize(principal, 'land', 'repository', repository.id);
+    const saved = await coordinator.setVisualSettings(key, visualSettingsInput(body), principal.userId);
+    await access.auditRepositoryChange(principal, 'repository.visual-settings', repository.id);
+    const policy = await policyVisualSettings(env.ARTIFACTS, repository);
+    return Response.json(visualSettingsSnapshot(repository.id, saved, policy.settings, policy.problem));
   }
   const agentSettingsRoute = /^\/api\/repositories\/([a-zA-Z0-9-]+)\/agent-settings$/.exec(url.pathname);
   if (agentSettingsRoute) {

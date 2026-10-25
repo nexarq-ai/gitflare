@@ -114,6 +114,16 @@ export function anthropicInput(input: InputRecord[], tools: InputRecord[], maxTo
       system = system ? system + '\n' + text : text;
       continue;
     }
+    if (msg.role === 'user' && Array.isArray(msg.content) && msg.content.some((part) => (part as { type?: string }).type === 'input_image')) {
+      for (const part of msg.content as { type?: string; text?: string; image_url?: string }[]) {
+        if (part.type === 'input_text' && typeof part.text === 'string') pushBlock('user', { type: 'text', text: part.text });
+        else if (part.type === 'input_image' && typeof part.image_url === 'string') {
+          const data = /^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/.exec(part.image_url);
+          if (data) pushBlock('user', { type: 'image', source: { type: 'base64', media_type: data[1], data: data[2] } });
+        }
+      }
+      continue;
+    }
     if (msg.role === 'user' || msg.role === 'assistant') {
       pushBlock(msg.role, { type: 'text', text });
       continue;

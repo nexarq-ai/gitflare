@@ -1,3 +1,4 @@
+import { blockingChecks, candidateVerified } from '../shared/checks';
 import type { AgentAssistSettings, CommunityAiSettings, CommunityPool, CommunityPoolUsage, IssueDetail, IssueLabelDefinition, IssueList, Mission, ModelConnection, OperatorAiUse, Repository, TriageSuggestion } from '../shared/types';
 import { isUntrustedMission } from '../shared/pull-requests';
 import { deploymentOperatorAccess, modelRoute, ownModelRoute, type AiAccessOptions, type AiCredentials, type OperatorUsageKind } from './ai-keys';
@@ -178,7 +179,7 @@ export function reviewBody(text: string): string {
 }
 
 export function reviewable(mission: Mission): boolean {
-  return isUntrustedMission(mission) && mission.status === 'needs_review' && !!mission.candidateSha && mission.checks.length > 0 && mission.checks.every(check => check.status === 'passed' && check.candidateSha === mission.candidateSha);
+  return isUntrustedMission(mission) && mission.status === 'needs_review' && candidateVerified(mission.checks, mission.candidateSha) && blockingChecks(mission.checks).every(check => check.candidateSha === mission.candidateSha);
 }
 
 export async function runAgentReview(env: AppEnv, repository: Repository, missionId: string): Promise<Mission> {

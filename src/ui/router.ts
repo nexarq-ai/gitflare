@@ -181,7 +181,7 @@ export function isKnownAppRoute(route: string): boolean {
   return !!legacySourceRoute(route) || ["home", "signin", "signup", "deploy", "overview", "missions", "activity", "admin", "inbox", "account/profile", "account/security", "account/sessions", "account/clients", "account/notifications", "proposals/new", "import/github", ...POLICY_ROUTES].includes(route) || isPublicProductRoute(route)
     || /^settings(?:\/(?:people|cloudflare|models|audit))?$/.test(route)
     || /^docs(?:\/[^/]+)?$/.test(route)
-    || /^mission\/[^/]+(?:\/(?:overview|changes|checks|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
+    || /^mission\/[^/]+(?:\/(?:overview|changes|checks|visual|discussion|activity|attempts)|\/agents(?:\/[^/]+)?)?$/.test(route)
     || /^repository\/[^/]+(?:\/(?:code|overview|agents|checks|skills|import)|\/settings(?:\/(?:branches|deploys|previews|agents|issues|community|secrets|cloudflare|access))?|\/(?:pulls|proposals)(?:\/new)?|\/(?:issues|releases|security)(?:\/[^/]+)?)?$/.test(route)
     || /^(?:forgot-password|reset-password|verify-email)(?:\/[^/]+)?$/.test(route)
     || route === "invite" || route.startsWith("invite?");

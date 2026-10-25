@@ -242,6 +242,61 @@ export interface Check {
   durationMs?: number;
   timeout?: CheckTimeout;
   escalatedFrom?: CheckTimeout;
+  advisory?: boolean;
+  captureIds?: string[];
+}
+
+export type VisualViewport = 'desktop' | 'mobile';
+export type VisualTheme = 'light' | 'dark';
+export interface VisualStep { click?: string; press?: string; hold?: number; type?: string; wait?: number; scroll?: number; capture?: string }
+export interface VisualRoute { path: string; label?: string; steps?: VisualStep[] }
+export interface VisualLighthouseThresholds { performance?: number; accessibility?: number; bestPractices?: number; seo?: number }
+export interface VisualChecks { consoleErrors: boolean; overflow: boolean; regression: number | false; axe: boolean | 'serious'; lighthouse: VisualLighthouseThresholds | false }
+export interface VisualQuality { rounds: number; passScore: number }
+export interface VisualSettings {
+  routes?: VisualRoute[];
+  viewports?: VisualViewport[];
+  themes?: VisualTheme[];
+  checks?: Partial<VisualChecks>;
+  quality?: Partial<VisualQuality>;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+export type VisualSource = 'gitflare.json' | 'settings' | 'default';
+export interface VisualConfig { routes: VisualRoute[]; viewports: VisualViewport[]; themes: VisualTheme[]; checks: VisualChecks; quality: VisualQuality; source: VisualSource }
+export interface RepositoryVisualSettings extends VisualSettings { repositoryId: string; effective: VisualConfig; limits: { maxRoutes: number; maxSteps: number; maxRounds: number } }
+export interface VisualRegion { x: number; y: number; width: number; height: number }
+export interface VisualCapture {
+  id: string;
+  side: 'base' | 'candidate';
+  route: string;
+  label: string;
+  frame?: string;
+  viewport: VisualViewport;
+  theme: VisualTheme;
+  width: number;
+  height: number;
+  format: 'png' | 'jpeg';
+  bytes: number;
+  outline: string;
+  consoleErrors: string[];
+  overflow: number;
+  diff?: { against: string; changedRatio: number; regions: VisualRegion[]; imageId?: string };
+}
+export interface VisualScore { fidelity: number; motion: number; polish: number; ux: number; overall: number }
+export interface VisualRound { round: number; score: VisualScore; critique: string; fixes: string[]; captureIds: string[]; model: string; at: string }
+export interface VisualEvidence {
+  id: string;
+  runId?: string;
+  candidateSha: string;
+  baseSha: string;
+  epoch: number;
+  mode: 'browser' | 'outline';
+  browser: string | null;
+  captures: VisualCapture[];
+  warnings: string[];
+  capturedAt: string;
+  rounds?: VisualRound[];
 }
 
 export interface MissionEvent {
@@ -328,6 +383,8 @@ export interface Mission {
   dependencyApproval?: DependencyApproval;
   landingMessage?: LandingMessage;
   landedSha?: string;
+  visual?: VisualEvidence[];
+  qualityBar?: MissionQualityBar;
   error?: string;
 }
 
@@ -343,7 +400,7 @@ export interface LandingMessage {
 export type AgentRunSummary = Omit<AgentRun, 'task' | 'modelConfig' | 'skills' | 'skillWarnings' | 'usage'> & { assignment: string };
 export type CheckSummary = Omit<Check, 'output'>;
 
-export interface MissionSummary extends Omit<Mission, 'attachments' | 'authorization' | 'landingMessage' | 'skillChange' | 'raceChecks' | 'raceChanges' | 'runs' | 'checks' | 'changes' | 'events' | 'reviews'> {
+export interface MissionSummary extends Omit<Mission, 'attachments' | 'authorization' | 'landingMessage' | 'skillChange' | 'raceChecks' | 'raceChanges' | 'runs' | 'checks' | 'changes' | 'events' | 'reviews' | 'visual'> {
   runs: AgentRunSummary[];
   checks: CheckSummary[];
   events: MissionEvent[];
@@ -509,7 +566,7 @@ export interface BranchChangeResult { name: string; headSha: string; created?: t
 export interface BranchList { repositoryId: string; defaultBranch: string; gitUrl: string; branches: BranchInfo[] }
 export interface CreatePullRequestInput { title: string; description?: string; branch: string; target?: 'self' | 'upstream' }
 export interface RepositorySkillChange { action: 'create' | 'update'; path: string; content: string; baseSha: string }
-export interface CreateMissionInput { attachments?: MissionAttachment[]; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; fixRequest?: FixRequest; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
+export interface CreateMissionInput { attachments?: MissionAttachment[]; qualityBar?: MissionQualityBar; title: string; prompt: string; repositoryId: string; acceptanceCriteria?: string[]; tasks?: AgentTask[]; skillChange?: RepositorySkillChange; revertChange?: RevertChange; branchChange?: BranchChange; fixRequest?: FixRequest; issueNumber?: number; expectedBaseSha?: string; mode?: MissionMode; agentOverrides?: AgentOverrides & { editScope?: string[] } }
 export interface ApiError { error: { code: string; message: string } }
 
 export interface CandidateSource { missionId?: string; source?: 'mission-candidate' }
@@ -577,6 +634,9 @@ export interface IssueTemplates { directory: string | null; commitSha: string | 
 export interface IssueViewer { signedIn: boolean; userId: string | null; member: boolean; repositoryId: string | null; canParticipate: boolean; canTriage: boolean; limited: boolean; turnstileSiteKey: string | null }
 export interface RepositoryBlock { userId: string; person: IssuePerson | null; blockedBy: string; blockedAt: string; reason: string }
 export const AGENT_REVIEWER_ID = 'gitflare-agent';
+export const DESIGN_REVIEWER_ID = 'gitflare-design-reviewer';
+export interface QualityReference { kind: 'url' | 'text'; value: string; note?: string }
+export interface MissionQualityBar { target: string; references: QualityReference[] }
 export type FixFundingSource = 'pool' | 'requester';
 export interface FixRequest { requesterId: string; requester: IssuePerson; source: FixFundingSource; fundingWorkspaceId: string; model: string; issueNumber?: number; requestedAt: string; waiting?: boolean }
 export interface CommunityPool { models: string[]; missionsPerDay: number; draftsPerDay: number; perUserPerDay: number; grantedAt: string; grantedBy: string }

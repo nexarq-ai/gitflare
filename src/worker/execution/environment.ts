@@ -11,7 +11,8 @@ export interface SandboxRunner {
   install?(plan: InstallPlan, mode?: InstallMode): Promise<CommandResult>;
   installWrangler?(version: string): Promise<CommandResult>;
   check?(script: string, timeoutMs: number): Promise<CommandResult>;
-  startPreview?(command?: string | string[], readinessMs?: number): Promise<void>;
+  startPreview?(command?: string | string[], readinessMs?: number): Promise<number | void>;
+  stopPreview?(): Promise<void>;
   preview?(request: Request): Promise<Response>;
   collect?(script: string, timeoutMs: number, capBytes: number): Promise<CommandResult>;
 }
@@ -25,6 +26,7 @@ export interface ExecutionEnv {
   TEST_COMMAND?: string;
   assertModelAllowed?: (model: ModelConnection) => Promise<void>;
   modelAccess?: ModelEnv['modelAccess'];
+  evidence?: { putImage(missionId: string, image: { id: string; format: 'png' | 'jpeg'; data: string }): Promise<void> };
 }
 
 export type AuthorityGuard = () => Promise<void>;

@@ -59,3 +59,4 @@ export interface CoordinatorHost {
   recordLinkedIssues(mission: Mission, sha: string): void;
   ensureDispatchAlarm(when: number): Promise<void>;
 }
+export interface StoredVisualImage { id: string; format: 'png' | 'jpeg'; data: string }

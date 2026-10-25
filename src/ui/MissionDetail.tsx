@@ -23,7 +23,7 @@ import {
   WarningCircleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import { AGENT_REVIEWER_ID, type AgentRetryOverride, type Mission, type ModelConnection, type ModelConnectionsSnapshot, type Workspace } from "../shared/types";
+import { AGENT_REVIEWER_ID, DESIGN_REVIEWER_ID, type AgentRetryOverride, type Mission, type ModelConnection, type ModelConnectionsSnapshot, type Workspace } from "../shared/types";
 import { isUntrustedMission } from "../shared/pull-requests";
 import InfoTip from "./InfoTip";
 import { FixRequestNote } from "./FixRequests";
@@ -35,6 +35,8 @@ import FailedAgentsBanner, { failedAgents } from "./FailedAgentsBanner";
 import { retryAgentBody } from "./agent-limits";
 import AttemptHistory from "./AttemptHistory";
 import { CheckEscalationNote, CheckTimeoutPanel } from "./CheckSettings";
+import VisualEvidencePanel, { evidenceFor } from "./VisualEvidence";
+import { blockingChecks, candidateVerified } from "../shared/checks";
 import DiffView, {
   lineAnchor,
   type LineAnchor,
@@ -101,6 +103,7 @@ export default function MissionDetail({
     "overview",
     "changes",
     "checks",
+    "visual",
     "agents",
     "discussion",
     "activity",
@@ -666,17 +669,13 @@ export default function MissionDetail({
   const readyForReview =
     unresolvedRequests.length === 0 &&
     mission.status === "needs_review" &&
-    !!mission.candidateSha &&
     !!mission.baseSha &&
-    mission.checks.length > 0 &&
-    mission.checks.every((check) => check.status === "passed");
+    candidateVerified(mission.checks, mission.candidateSha);
   const canPreview =
     ["needs_review", "approved", "integrating", "integrated"].includes(
       mission.status,
     ) &&
-    !!mission.candidateSha &&
-    mission.checks.length > 0 &&
-    mission.checks.every((check) => check.status === "passed");
+    candidateVerified(mission.checks, mission.candidateSha);
   const previewViewer = { installationAdmin, owner: permissions.includes("manage") };
   const currentPreview =
     preview &&
@@ -684,9 +683,10 @@ export default function MissionDetail({
     Date.parse(preview.expiresAt) > Date.now()
       ? preview
       : null;
-  const passed = mission.checks.filter(
+  const passed = blockingChecks(mission.checks).filter(
     (check) => check.status === "passed",
   ).length;
+  const visualEvidence = evidenceFor(mission.visual, mission.selectedRunId, isRace);
   const reviewRequests = currentReviewRequests(mission);
   const currentApproval = approval && approval.candidateSha === mission.candidateSha ? approval : null;
   const ownerGroups = reviewRequests ? ownerGroupStatus(reviewRequests.groups, currentApproval?.missingOwners) : [];
@@ -995,8 +995,9 @@ export default function MissionDetail({
             },
             {
               value: "checks",
-              label: `Checks${mission.checks.length ? ` (${passed}/${mission.checks.length})` : ""}`,
+              label: `Checks${mission.checks.length ? ` (${passed}/${blockingChecks(mission.checks).length})` : ""}`,
             },
+            ...(visualEvidence.length ? [{ value: "visual", label: "Visual" }] : []),
             { value: "agents", label: `Agents (${mission.runs.length})` },
             {
               value: "discussion",
@@ -1021,6 +1022,13 @@ export default function MissionDetail({
                 </div>
                 <div className="panel-body">
                   <MarkdownContent content={mission.prompt} />
+                  {mission.qualityBar && (
+                    <div className="quality-bar" style={{ marginTop: 19 }}>
+                      <h3 style={{ fontSize: 13 }}>Quality bar<InfoTip label="quality bar">The standard the result is judged against. Agents get it in their brief; with quality rounds on, a critic scores screenshots against it before review.</InfoTip></h3>
+                      <p>{mission.qualityBar.target}</p>
+                      {mission.qualityBar.references.length > 0 && <ul className="acceptance-list">{mission.qualityBar.references.map((reference, index) => <li key={index}>{reference.kind === "url" ? <a className="text-link" href={reference.value} target="_blank" rel="noreferrer noopener">{reference.value}</a> : reference.value}{reference.note ? ` · ${reference.note}` : ""}</li>)}</ul>}
+                    </div>
+                  )}
                   {!!mission.acceptanceCriteria?.length && (
                     <div style={{ marginTop: 19 }}>
                       <h3 style={{ fontSize: 13 }}>Acceptance criteria</h3>
@@ -1327,8 +1335,9 @@ export default function MissionDetail({
                     <ClockIcon size={20} />
                   )}
                   <div>
-                    <h3>{check.name}</h3>
+                    <h3>{check.name}{check.advisory && <span className="check-advisory">Advisory<InfoTip label="advisory check">Shown with its evidence; blocks landing only when a stream rule names it.</InfoTip></span>}</h3>
                     <p>
+                      {check.captureIds?.length ? <button type="button" className="text-link" onClick={() => onTabChange("visual")}>View screenshots</button> : null}
                       {check.candidateSha === mission.candidateSha &&
                       mission.candidateSha
                         ? "Combined candidate"
@@ -1392,6 +1401,14 @@ export default function MissionDetail({
           )}
         </>
       )}
+      {tab === "visual" && (
+        <>
+          <p className="mission-prompt">
+            Before and after, per route, width and theme.<InfoTip label="visual evidence">Recorded by the trusted runner for the base and the candidate when a passing candidate changes UI files. Pink boxes outline changed regions.</InfoTip>
+          </p>
+          <VisualEvidencePanel missionId={mission.id} evidence={visualEvidence} runs={mission.runs} checks={mission.raceChecks ?? mission.checks} />
+        </>
+      )}
       {tab === "discussion" && (
         <section className="panel">
           <div className="panel-header">
@@ -1417,14 +1434,14 @@ export default function MissionDetail({
                   <div className="repository-work-title">
                     <strong>
                       {item.kind === "approve" && <ShieldCheckIcon size={14} weight="fill" aria-hidden="true" />}
-                      {item.authorId === AGENT_REVIEWER_ID ? "Agent review" : reviewKindLabel(item.kind)}
+                      {item.authorId === AGENT_REVIEWER_ID ? "Agent review" : item.authorId === DESIGN_REVIEWER_ID ? "Design review" : reviewKindLabel(item.kind)}
                       {item.summary && <span className="proposal-review-tag">Review</span>}
                       {item.resolvedAt ? " · Resolved" : ""}
                     </strong>
                     <small>{new Date(item.createdAt).toLocaleString()}</small>
                   </div>
                   <p className="proposal-review-revision">
-                    {item.authorId === AGENT_REVIEWER_ID ? "Review agent, not an approval" : `Reviewer ${item.authorId}`} · Attempt {item.epoch} · Candidate{" "}
+                    {item.authorId === AGENT_REVIEWER_ID ? "Review agent, not an approval" : item.authorId === DESIGN_REVIEWER_ID ? "Design reviewer, not an approval" : `Reviewer ${item.authorId}`} · Attempt {item.epoch} · Candidate{" "}
                     {item.candidateSha.slice(0, 12)} · Base{" "}
                     {item.baseSha.slice(0, 12)}
                     {!current && !item.path ? " · Previous revision" : ""}

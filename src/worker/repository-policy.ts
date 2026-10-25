@@ -1,6 +1,7 @@
-import type { AutoIncrease, CheckLimitSource, CheckPlan, CheckTimeout, RunnerSize, TestEvidence } from '../shared/types';
+import type { AutoIncrease, CheckLimitSource, CheckPlan, CheckTimeout, RunnerSize, TestEvidence, VisualSettings } from '../shared/types';
 import { MAX_TEST_TIMEOUT_MS } from './budgets';
 import { detectPackageManager, hasInstallableDependencies, runnerFor, testScript, type InstallPlan, type PackageManager } from './package-manager';
+import { parseVisualSettings } from './visual/config';
 
 export const POLICY_FILE = 'gitflare.json';
 export const DEFAULT_EDITABLE = ['src/', 'docs/', 'public/', 'static/', 'assets/', 'README.md'];
@@ -67,6 +68,7 @@ export interface RepositoryPolicy {
   untested: boolean;
   generated: GeneratedFiles | null;
   manifest?: boolean;
+  visual?: VisualSettings;
 }
 
 export interface GeneratedFiles { paths: string[]; command: string | null }
@@ -179,7 +181,7 @@ export function parseRepositoryPolicy(raw: string | null, defaultTestCommand: st
   try { parsed = JSON.parse(raw); } catch { throw new Error(`${POLICY_FILE} is not valid JSON`); }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${POLICY_FILE} must contain a JSON object`);
   const fields = parsed as Record<string, unknown>;
-  const unknown = Object.keys(fields).filter((key) => !['test', 'evidence', 'editable', 'install', 'preview', 'timeoutSeconds', 'runner', 'generated', 'deploy'].includes(key));
+  const unknown = Object.keys(fields).filter((key) => !['test', 'evidence', 'editable', 'install', 'preview', 'timeoutSeconds', 'runner', 'generated', 'deploy', 'visual'].includes(key));
   if (unknown.length) throw new Error(`${POLICY_FILE}: unsupported field "${unknown[0]}"`);
   const policy: RepositoryPolicy = { ...fallback, ...(baseFiles ? { manifest: baseFiles.includes('package.json'), dependencies } : {}) };
   if (fields.test !== undefined) policy.testCommand = command(fields.test, 'test');
@@ -208,6 +210,10 @@ export function parseRepositoryPolicy(raw: string | null, defaultTestCommand: st
     policy.editable = fields.editable.map(editablePath);
   }
   if (fields.generated !== undefined) policy.generated = generatedFiles(fields.generated);
+  if (fields.visual !== undefined) {
+    try { policy.visual = parseVisualSettings(fields.visual); }
+    catch (error) { throw new Error(`${POLICY_FILE}: ${error instanceof Error ? error.message : 'invalid visual settings'}`); }
+  }
   return withLimits(fields.install === undefined ? withOwnerInstall(policy, baseFiles, basePackageJson, baseLockHead, settings) : policy, explicit, settings);
 }
 

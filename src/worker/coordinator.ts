@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { AGENT_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChange, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput } from '../shared/types';
+import { AGENT_REVIEWER_ID, DESIGN_REVIEWER_ID, type AgentAssistSettings, type CommunityPool, type CommunityPoolUsage, type OperatorAiUse, type TriageSuggestion, type Advisory, type AgentRetryOverride, type AgentRun, type AgentSettings, type BranchChange, type BranchChangeResult, type CheckOverride, type CheckPlan, type CheckSettings, type CreateMissionInput, type IssueDetail, type IssueLabelDefinition, type IssueList, type Mission, type MissionAttempt, type MissionEvent, type MissionSummary, type ModelConnection, type OutsideChecksGate, type Release, type Repository, type RepositorySkillChange, type ReviewMissionInput, type VisualSettings } from '../shared/types';
 import { ApiError, assertActiveRun, assertApproval, assertReplayFingerprint, failureLine, REVIEW_GUIDANCE_MAX } from './domain';
 import { assertDependencyApprover } from './dependency-changes';
 import { activeLandingMessage } from '../shared/commit-message';
@@ -35,12 +35,14 @@ import { NotificationBook, SubscriptionBook, type DigestEntry, type Notification
 import { sendNotificationEmail } from './notification-email';
 import type { NotificationEvent, NotificationPreferences, NotificationReason, NotificationSubject, ReviewRequests, SubscriptionState } from '../shared/notifications';
 import { validGitSha } from './artifacts';
-import type { Receipt, ContributorStanding, OutgoingProposal, MissionSummaryCache, CoordinatorHost } from './coordinator-types';
+import type { Receipt, ContributorStanding, OutgoingProposal, MissionSummaryCache, CoordinatorHost, StoredVisualImage } from './coordinator-types';
 import { PreviewBook } from './coordinator-previews';
 import { eligibleRaceRuns } from './preview-subject';
 import { DispatchBook } from './coordinator-dispatch';
 import { IntegrationBook } from './coordinator-integration';
 import { CapacityBook } from './coordinator-capacity';
+import { parseVisualSettings } from './visual/config';
+import { candidateVerified } from '../shared/checks';
 
 export { PREVIEW_LEASE_MS, PREVIEW_HEARTBEAT_MS, PREVIEW_READY_MS, WORKER_PREVIEW_TTL_MS, DISPATCH_FAST_ATTEMPTS, MISSION_WATCHDOG_MS, WATCHDOG_MISSING_LIMIT, INTEGRATION_UNCONFIRMED_MESSAGE, PREVIEW_STARTING_MESSAGE } from './coordinator-types';
 export type { ContributorStanding, OutgoingProposal, MissionSummaryCache, IntegrationClaim, PreviewCapability, PreviewHost, WorkerPreviewInfo, PreviewLifetime, WorkerPreviewRecord, PreviewExtension, StoppedPreview, PreviewEndReason, LastPreview, PreviewStatus } from './coordinator-types';
@@ -274,6 +276,25 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   getCheckSettings(): CheckSettings | undefined { return this.store.get<CheckSettings>('check-settings'); }
 
   getAgentSettings(): AgentSettings | undefined { return this.store.get<AgentSettings>('agent-settings'); }
+
+  getVisualSettings(): VisualSettings | undefined { return this.store.get<VisualSettings>('visual-settings'); }
+
+  putVisualImage(missionId: string, image: StoredVisualImage): void {
+    this.store.put(`visual-image:${missionId}:${image.id}`, image);
+  }
+
+  visualImage(missionId: string, captureId: string): StoredVisualImage | undefined {
+    return this.store.get<StoredVisualImage>(`visual-image:${missionId}:${captureId}`);
+  }
+
+  setVisualSettings(key: string, input: VisualSettings, actorId: string): VisualSettings {
+    const normalized = parseVisualSettings(input, 'settings');
+    return this.mutate(key, JSON.stringify(['visual-settings', normalized]), () => {
+      const stored: VisualSettings = { ...normalized, updatedAt: new Date().toISOString(), updatedBy: actorId };
+      this.store.put('visual-settings', stored);
+      return stored;
+    });
+  }
 
   setAgentSettings(key: string, input: AgentSettings, actorId: string): AgentSettings {
     const normalized = normalizeAgentSettings({ ...input });
@@ -515,16 +536,16 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     });
   }
 
-  addAgentReview(id: string, epoch: number, candidateSha: string, baseSha: string, body: string): Mission {
+  addAgentReview(id: string, epoch: number, candidateSha: string, baseSha: string, body: string, authorId: string = AGENT_REVIEWER_ID): Mission {
     return this.ctx.storage.transactionSync(() => {
       const mission = this.requiredMission(id);
       if (mission.epoch !== epoch || mission.candidateSha !== candidateSha || mission.baseSha !== baseSha) throw new ApiError(409, 'STALE_REVIEW', 'The candidate changed while the agent reviewed it.');
       if (mission.status !== 'needs_review') throw new ApiError(409, 'REVIEW_LOCKED', 'Only a candidate awaiting review can receive an agent review.');
       mission.reviews ??= [];
-      if (mission.reviews.some(review => review.authorId === AGENT_REVIEWER_ID && review.candidateSha === candidateSha && review.epoch === epoch)) throw new ApiError(409, 'AGENT_REVIEW_EXISTS', 'The agent already reviewed this candidate.');
+      if (mission.reviews.some(review => review.authorId === authorId && review.candidateSha === candidateSha && review.epoch === epoch)) throw new ApiError(409, 'AGENT_REVIEW_EXISTS', 'The agent already reviewed this candidate.');
       if (mission.reviews.length >= 500) throw new ApiError(409, 'REVIEW_LIMIT', 'This proposal has reached its discussion limit.');
-      mission.reviews.push({ id: crypto.randomUUID(), kind: 'comment', body, authorId: AGENT_REVIEWER_ID, createdAt: new Date().toISOString(), epoch, candidateSha, baseSha });
-      return this.saveMission(mission, 'The review agent added a comment. Agent reviews never approve.');
+      mission.reviews.push({ id: crypto.randomUUID(), kind: 'comment', body, authorId, createdAt: new Date().toISOString(), epoch, candidateSha, baseSha });
+      return this.saveMission(mission, authorId === DESIGN_REVIEWER_ID ? 'The design reviewer added a comment. Design reviews never approve.' : 'The review agent added a comment. Agent reviews never approve.');
     });
   }
 
@@ -839,7 +860,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       ]);
       const mission: Mission = {
         id, repositoryId: repository.id, title: input.title, prompt: input.prompt,
-        acceptanceCriteria: criteria, authorization, ...(input.attachments?.length ? { attachments: input.attachments.map(({ name, content }) => ({ name, content })) } : {}), ...(skillChange ? { skillChange } : {}), ...(revertChange ? { revertChange: { ...revertChange } } : {}), ...(branchChange ? { branchChange } : {}), ...(input.fixRequest ? { fixRequest: { ...input.fixRequest } } : {}), ...(input.issueNumber !== undefined ? { issueNumber: input.issueNumber } : {}), ...(race ? { mode: 'race' as const } : {}),
+        acceptanceCriteria: criteria, authorization, ...(input.attachments?.length ? { attachments: input.attachments.map(({ name, content }) => ({ name, content })) } : {}), ...(input.qualityBar ? { qualityBar: { target: input.qualityBar.target, references: input.qualityBar.references.map((reference) => ({ ...reference })) } } : {}), ...(skillChange ? { skillChange } : {}), ...(revertChange ? { revertChange: { ...revertChange } } : {}), ...(branchChange ? { branchChange } : {}), ...(input.fixRequest ? { fixRequest: { ...input.fixRequest } } : {}), ...(input.issueNumber !== undefined ? { issueNumber: input.issueNumber } : {}), ...(race ? { mode: 'race' as const } : {}),
         status: 'draft', baseSha: repository.headSha, candidateSha: null, epoch: 0,
         runs: tasks.map((task) => ({ ...(skillChange || branchChange || revertChange ? {} : agentDefaults(input.agentOverrides)), ...task, assignment: task.task, id: crypto.randomUUID(), task: `${input.prompt}\nYou are ${task.name} (${task.role}). ${race ? 'Complete the whole mission on your own; other agents are attempting it independently and a reviewer will choose one result. Your approach' : 'Your assigned task'}: ${task.task}\nPreserve existing tests and run them.${criteria.length ? `\nAcceptance criteria:\n${criteria.map((criterion) => `- ${criterion}`).join('\n')}` : ''}`, status: 'draft', changedFiles: [] })),
         checks: [], changes: [], events: [], createdAt: now, updatedAt: now,
@@ -1086,6 +1107,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
     }
     for (const event of result.events ?? []) if (!mission.events.some((existing) => existing.id === event.id)) mission.events.push(event);
     if (result.checks) mission.checks = result.checks;
+    if (result.visual) mission.visual = result.visual;
     if (result.changes) mission.changes = result.changes;
     if (result.candidateSha !== undefined) mission.candidateSha = result.candidateSha;
     if (result.integrationForkName !== undefined) mission.integrationForkName = result.integrationForkName;
@@ -1098,7 +1120,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const race = mission.mode === 'race';
       const passed = race
         ? eligibleRaceRuns(mission).length > 0
-        : !!mission.candidateSha && mission.checks.some((check) => check.candidateSha === mission.candidateSha) && mission.checks.every((check) => check.status === 'passed') && mission.runs.every((run) => run.status === 'completed' || run.status === 'skipped') && mission.runs.some((run) => run.status === 'completed');
+        : candidateVerified(mission.checks, mission.candidateSha) && mission.runs.every((run) => run.status === 'completed' || run.status === 'skipped') && mission.runs.some((run) => run.status === 'completed');
       mission.status = passed && !result.error ? 'needs_review' : 'failed';
       mission.error = result.error;
       return this.ctx.storage.transactionSync(() => {
@@ -1169,7 +1191,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
       const mission = this.requiredMission(id);
       const repository = this.getRepository(mission.repositoryId);
       assertReviewClear(mission);
-      assertApproval({ status: mission.status, candidateSha: mission.candidateSha, baseSha: mission.baseSha, currentHead: repository?.headSha, requestedCandidate: candidateSha, requestedBase: baseSha, checksPassed: mission.checks.some((check) => check.candidateSha === mission.candidateSha) && mission.checks.every((check) => check.status === 'passed') });
+      assertApproval({ status: mission.status, candidateSha: mission.candidateSha, baseSha: mission.baseSha, currentHead: repository?.headSha, requestedCandidate: candidateSha, requestedBase: baseSha, checksPassed: candidateVerified(mission.checks, mission.candidateSha) });
       assertDependencyApprover(mission, dependencyApprover);
       mission.status = 'approved';
       mission.approvedAt = new Date().toISOString();

@@ -11,3 +11,6 @@
 .check-timeout-note { margin-top: 6px !important; color: var(--gf-color-text-secondary); }
 .check-settings-toggle { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .check-escalation { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 13px; color: var(--gf-color-text-secondary); }
+.visual-settings textarea { width: 100%; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 8px 10px; border: 1px solid var(--gf-color-border); border-radius: 6px; background: var(--gf-color-surface); color: var(--gf-color-text); resize: vertical; }
+.visual-scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.visual-scores label { display: grid; gap: 4px; font-size: 12px; color: var(--gf-color-text-secondary); }

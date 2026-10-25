@@ -1,8 +1,9 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import { securityClient, type GitflareSecurity } from './security';
-import type { AgentRun, CheckPlan, CheckSettings, CommunityPool, Mission, ModelConnection, Repository } from '../shared/types';
+import type { AgentRun, CheckPlan, CheckSettings, CommunityPool, Mission, ModelConnection, Repository, VisualSettings } from '../shared/types';
 import { fixModelAccess } from './community-pool';
 import { autoAgentReview } from './agent-assist';
+import { autoDesignReview } from './visual/design-review';
 import { isUntrustedMission } from '../shared/pull-requests';
 import type { LearnedLimits } from './check-settings';
 import { assertPinnedModel } from './model-config';
@@ -29,6 +30,8 @@ interface Coordinator {
   getRepository(repositoryId: string): Promise<Repository | undefined>;
   getMission(missionId: string): Promise<Mission | undefined>;
   getCheckPlan?(missionId?: string): Promise<CheckPlan>;
+  getVisualSettings?(): Promise<VisualSettings | undefined>;
+  putVisualImage?(missionId: string, image: { id: string; format: 'png' | 'jpeg'; data: string }): Promise<void>;
   applyLearnedCheckLimits?(missionId: string, epoch: number, learned: LearnedLimits): Promise<CheckSettings | null>;
   isMissionActive(missionId: string, epoch: number): Promise<boolean>;
   recordExecution(missionId: string, epoch: number, result: ExecutionResult, complete?: boolean): Promise<unknown>;
@@ -75,7 +78,7 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
     const timeout = missionStepTimeoutMs(planned ?? { runs: [] });
     try {
       await step.do('execute isolated agents and verify integration', { retries: { limit: 0, delay: '1 second' }, timeout }, async () => {
-        const [repository, mission, checkSettings] = await Promise.all([coordinator.getRepository(repositoryId), coordinator.getMission(missionId), coordinator.getCheckPlan?.(missionId)]);
+        const [repository, mission, checkSettings, visualSettings] = await Promise.all([coordinator.getRepository(repositoryId), coordinator.getMission(missionId), coordinator.getCheckPlan?.(missionId), coordinator.getVisualSettings?.()]);
         if (!repository || !mission) throw new Error('Mission repository was not found');
         if (!await coordinator.isMissionActive(missionId, epoch)) return;
         const authorization = mission.authorization;
@@ -86,8 +89,8 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
         const funded = mission.fixRequest ? fixModelAccess(this.env, mission.fixRequest, this.env.GITFLARE_COORDINATOR.getByName(catalogName(mission.fixRequest.fundingWorkspaceId)), async () => (await coordinator.communityPool?.()) ?? null) : null;
         const modelConnections = funded ? await funded.models() : await catalog.getModelConnections();
         const result = await executeMission(
-          { repository, mission, modelConnections, checkSettings, testCommand: this.env.TEST_COMMAND ?? 'node --test --test-reporter=tap tests/*.test.mjs' },
-          funded ? { ...this.env, assertModelAllowed: funded.assertModelAllowed, modelAccess: funded.modelAccess } : { ...this.env, assertModelAllowed: async model => assertPinnedModel(await catalog.getModelConnections(), model), modelAccess: createModelAccess(this.env, authorization.workspaceId, catalog) },
+          { repository, mission, modelConnections, checkSettings, visualSettings, testCommand: this.env.TEST_COMMAND ?? 'node --test --test-reporter=tap tests/*.test.mjs' },
+          { ...(funded ? { ...this.env, assertModelAllowed: funded.assertModelAllowed, modelAccess: funded.modelAccess } : { ...this.env, assertModelAllowed: async model => assertPinnedModel(await catalog.getModelConnections(), model), modelAccess: createModelAccess(this.env, authorization.workspaceId, catalog) }), evidence: { putImage: async (id, image) => { await coordinator.putVisualImage?.(id, image); } } },
           async (progress) => { await coordinator.recordExecution(missionId, epoch, progress, false); },
           () => coordinator.isMissionActive(missionId, epoch),
           assertAuthority,
@@ -100,6 +103,7 @@ export class MissionWorkflow extends WorkflowEntrypoint<WorkflowEnv, MissionWork
         }
       });
       if (planned && isUntrustedMission(planned)) await step.do('agent review of the checked candidate', { retries: { limit: 0, delay: '1 second' }, timeout: '3 minutes' }, async () => { await autoAgentReview(this.env as unknown as AppEnv, repositoryId, missionId); }).catch(() => {});
+      await step.do('design review of the checked candidate', { retries: { limit: 0, delay: '1 second' }, timeout: '5 minutes' }, async () => { await autoDesignReview(this.env as unknown as AppEnv, repositoryId, missionId); }).catch(() => {});
     } catch (error) {
       const mission = await coordinator.getMission(missionId);
       const platform = platformInterruption(error);

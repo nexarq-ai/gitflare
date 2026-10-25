@@ -6,6 +6,7 @@ import { previewProgressLine, resumePreview, type PreviewProgress, type PreviewS
 import { request, RequestError } from "./api";
 import { Status } from "./components";
 import InfoTip from "./InfoTip";
+import VisualEvidencePanel, { evidenceFor } from "./VisualEvidence";
 import { remaining } from "./PreviewPanel";
 import "./race-compare.css";
 
@@ -97,7 +98,7 @@ function host(url: string): string {
 }
 
 type ViewProps = {
-  mission: Pick<Mission, "status" | "selectedRunId">;
+  mission: Pick<Mission, "status" | "selectedRunId"> & Partial<Pick<Mission, "id" | "visual" | "runs" | "raceChecks" | "checks">>;
   candidates: RaceCandidate[];
   previews: Record<string, CandidatePreview>;
   errors: Record<string, string>;
@@ -205,6 +206,7 @@ export function RaceCompareView({ mission, candidates, previews, errors, pending
             : <p className="race-compare-summary">{summary.head}</p>)}
           {run.error && <p className="race-compare-error">{run.error}</p>}
           <PreviewArea candidate={candidate} preview={previews[run.id] ?? { status: "none" }} error={errors[run.id]} pending={pending[run.id]} path={path} canStop={canStop} now={now} onPreview={() => onPreview(run.id)} onStop={() => onStop(run.id)} />
+          {mission.id && evidenceFor(mission.visual, run.id, true).length > 0 && <VisualEvidencePanel missionId={mission.id} evidence={evidenceFor(mission.visual, run.id, true)} runs={mission.runs ?? []} checks={mission.raceChecks ?? mission.checks ?? []} compact />}
           {candidate.eligible && choosing && <Button
             variant={chosen ? "secondary" : "primary"}
             size="sm"
@@ -223,7 +225,7 @@ export function RaceCompareView({ mission, candidates, previews, errors, pending
 
 type Props = {
   missionId: string;
-  mission: Pick<Mission, "status" | "selectedRunId" | "epoch">;
+  mission: Pick<Mission, "status" | "selectedRunId" | "epoch"> & Partial<Pick<Mission, "id" | "visual" | "runs" | "raceChecks" | "checks">>;
   candidates: RaceCandidate[];
   canSelect: boolean;
   canStop: boolean;

@@ -6,6 +6,7 @@ import { normalizeAgentOverrides, normalizeEditScope } from './agent-settings';
 import { validateAttachments } from './mission-context';
 import { modelIdentifier } from './model-config';
 import { validGitSha } from './artifacts';
+import { normalizeQualityBar, qualityBarProblem } from './visual/design-context';
 
 export const MISSION_REQUEST_MAX_BYTES = 262_144;
 
@@ -110,6 +111,11 @@ export function missionInput(body: Record<string, unknown>): CreateMissionInput 
   if (body.issueNumber !== undefined) {
     if (!Number.isInteger(body.issueNumber) || (body.issueNumber as number) < 1 || (body.issueNumber as number) > 5_000) throw new ApiError(400, 'INVALID_ISSUE_NUMBER', 'Provide a valid issue number.');
     input.issueNumber = body.issueNumber as number;
+  }
+  if (body.qualityBar !== undefined && body.qualityBar !== null) {
+    const problem = qualityBarProblem(body.qualityBar);
+    if (problem) throw new ApiError(400, 'INVALID_QUALITY_BAR', problem);
+    input.qualityBar = normalizeQualityBar(body.qualityBar);
   }
   if (body.mode !== undefined) {
     if (body.mode !== 'combine' && body.mode !== 'race') throw new ApiError(400, 'INVALID_MODE', 'Choose combine or race.');

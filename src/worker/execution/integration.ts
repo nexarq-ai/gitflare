@@ -1,3 +1,4 @@
+import { candidateVerified } from '../../shared/checks';
 import type { Mission, Repository } from '../../shared/types';
 import { activeLandingMessage, withMissionTrailer } from '../../shared/commit-message';
 import { validGitSha } from '../artifacts';
@@ -31,7 +32,7 @@ export async function integrateCandidate(env: ExecutionEnv, { repository, missio
     if (!env.ARTIFACTS || !env.SANDBOX) throw new IntegrationFailure('not_pushed', 'Artifacts and sandbox are required for integration');
     const { baseSha, candidateSha, integrationForkName } = mission;
     if (!['approved', 'integrating'].includes(mission.status) || !baseSha || !candidateSha || !validGitSha(baseSha) || !validGitSha(candidateSha) || !integrationForkName) throw new IntegrationFailure('not_pushed', 'An approved exact candidate is required');
-    if (!mission.checks.some((check) => check.candidateSha === candidateSha && check.status === 'passed') || mission.checks.some((check) => check.status !== 'passed')) throw new IntegrationFailure('not_pushed', 'Candidate checks are not passing');
+    if (!candidateVerified(mission.checks, candidateSha)) throw new IntegrationFailure('not_pushed', 'Candidate checks are not passing');
     phase = 'authorization';
     await assertAuthority();
     phase = 'canonical state check';
