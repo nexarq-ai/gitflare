@@ -2020,8 +2020,8 @@
     },
     {
       "path": "src/worker/public-preload.ts",
-      "size": 4179,
-      "sha256": "30f64aee00227f5ed0f67ca0c2dff292f141141d3394eb1829e475a4876425d1"
+      "size": 5754,
+      "sha256": "f6cb2d9d362e6656fd6f664e625d1a31a33461025a1712342cebc411efa0f6c6"
     },
     {
       "path": "src/worker/public-repositories.ts",
