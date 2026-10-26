@@ -8,6 +8,9 @@ export const ROOT_PLACEHOLDER = '<div id="root"></div>';
 const HYDRATE_SCRIPT = '/hydrate.js';
 const ROUTE_MODULES = new RegExp(`<!--${ROUTE_MODULES_MARKER}([^]*?)-->\\n?`);
 const ENTRY_SCRIPT = /<script type="module"[^>]*?\ssrc="([^"]+)"[^>]*><\/script>/;
+const MODULE_PRELOAD = /<link rel="modulepreload"[^>]*>/g;
+const STYLESHEET = /<link rel="stylesheet"[^>]*?\shref="([^"]+)"[^>]*?\s*\/?>/g;
+const stylesheets = new Map<string, Promise<string | null>>();
 
 function escapeAttribute(value: string): string {
   return value.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
@@ -51,16 +54,39 @@ export function injectRouteModules(html: string, names: RouteModuleName[], apply
 }
 
 function hydrateAfterPaint(html: string): string {
-  return html.replace(ENTRY_SCRIPT, (_tag, entry: string) => `<script defer src="${HYDRATE_SCRIPT}" data-entry="${escapeAttribute(entry)}"></script>`);
+  return html.replace(MODULE_PRELOAD, '').replace(ENTRY_SCRIPT, (_tag, entry: string) => `<script defer src="${HYDRATE_SCRIPT}" data-entry="${escapeAttribute(entry)}"></script>`);
 }
 
-export async function withPublicPreloads(request: Request, env: Pick<AppEnv, 'EDITION' | 'DEMO_MODE' | 'SITE_ORIGIN' | 'APP_ORIGIN'>, response: Response, serverRendered = false): Promise<Response> {
+function stylesheet(assets: Fetcher, url: URL): Promise<string | null> {
+  let css = stylesheets.get(url.pathname);
+  if (!css) {
+    css = assets.fetch(url).then(response => response.ok && response.headers.get('Content-Type')?.includes('text/css') ? response.text() : response.body?.cancel().then(() => null) ?? null).catch(() => null);
+    stylesheets.set(url.pathname, css);
+    void css.then(value => { if (value === null) stylesheets.delete(url.pathname); });
+  }
+  return css;
+}
+
+async function inlineStylesheets(html: string, assets: Fetcher | undefined, origin: string): Promise<string> {
+  const end = html.indexOf('</head>');
+  if (!assets || end < 0) return html;
+  const head = html.slice(0, end);
+  const sheets = new Map(await Promise.all([...head.matchAll(STYLESHEET)].map(async ([tag, href]) => [tag, await stylesheet(assets, new URL(href!, origin))] as const)));
+  // The disabled links stay so Vite's preload helper treats these sheets as loaded instead of fetching them again
+  const inlined = head.replace(STYLESHEET, tag => {
+    const css = sheets.get(tag);
+    return css == null ? tag : `<style>${css.replaceAll('</style', '<\\/style')}</style>${tag.replace(/\s*\/?>$/, ' disabled>')}`;
+  });
+  return `${inlined}${html.slice(end)}`;
+}
+
+export async function withPublicPreloads(request: Request, env: Pick<AppEnv, 'EDITION' | 'DEMO_MODE' | 'SITE_ORIGIN' | 'APP_ORIGIN'> & Partial<Pick<AppEnv, 'ASSETS'>>, response: Response, serverRendered = false): Promise<Response> {
   if (env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true' || request.method !== 'GET' || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
   const url = new URL(request.url);
   const source = await response.text();
   const hydrates = serverRendered && source.includes(ROOT_PLACEHOLDER);
   const modules = injectRouteModules(source, routeModuleNames(url, publicShellVisit(request, env)), hydrates);
-  const html = hydrates ? hydrateAfterPaint(modules) : injectPreloads(modules, publicPreloadTags(url));
+  const html = hydrates ? await inlineStylesheets(hydrateAfterPaint(modules), env.ASSETS, url.origin) : injectPreloads(modules, publicPreloadTags(url));
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
   headers.delete('ETag');
