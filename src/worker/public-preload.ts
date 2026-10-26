@@ -5,7 +5,9 @@ import { hostOrigins } from '../shared/hosts';
 import type { AppEnv } from './env';
 
 export const ROOT_PLACEHOLDER = '<div id="root"></div>';
+const HYDRATE_SCRIPT = '/hydrate.js';
 const ROUTE_MODULES = new RegExp(`<!--${ROUTE_MODULES_MARKER}([^]*?)-->\\n?`);
+const ENTRY_SCRIPT = /<script type="module"[^>]*?\ssrc="([^"]+)"[^>]*><\/script>/;
 
 function escapeAttribute(value: string): string {
   return value.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
@@ -48,13 +50,17 @@ export function injectRouteModules(html: string, names: RouteModuleName[], apply
   return html.replace(ROUTE_MODULES, () => `${scripts}${[...css].map(href => `<link rel="preload" as="style" crossorigin href="${escapeAttribute(href)}">`).join('')}`);
 }
 
+function hydrateAfterPaint(html: string): string {
+  return html.replace(ENTRY_SCRIPT, (_tag, entry: string) => `<script defer src="${HYDRATE_SCRIPT}" data-entry="${escapeAttribute(entry)}"></script>`);
+}
+
 export async function withPublicPreloads(request: Request, env: Pick<AppEnv, 'EDITION' | 'DEMO_MODE' | 'SITE_ORIGIN' | 'APP_ORIGIN'>, response: Response, serverRendered = false): Promise<Response> {
   if (env.EDITION === 'self-hosted' || env.DEMO_MODE === 'true' || request.method !== 'GET' || response.status !== 200 || !response.headers.get('Content-Type')?.includes('text/html')) return response;
   const url = new URL(request.url);
   const source = await response.text();
   const hydrates = serverRendered && source.includes(ROOT_PLACEHOLDER);
   const modules = injectRouteModules(source, routeModuleNames(url, publicShellVisit(request, env)), hydrates);
-  const html = hydrates ? modules : injectPreloads(modules, publicPreloadTags(url));
+  const html = hydrates ? hydrateAfterPaint(modules) : injectPreloads(modules, publicPreloadTags(url));
   const headers = new Headers(response.headers);
   headers.delete('Content-Length');
   headers.delete('ETag');

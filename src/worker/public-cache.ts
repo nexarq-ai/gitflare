@@ -5,7 +5,9 @@ import { sessionCookieValue } from './session-policy';
 import { securityClient } from './security';
 
 export const CACHE_DEPENDENCIES = 'X-Gitflare-Cache-Repositories';
-export const PUBLIC_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=600';
+export const PUBLIC_CACHE_FRESH_MS = 60_000;
+export const PUBLIC_CACHE_CONTROL = 'public, s-maxage=660';
+const CACHED_AT = 'X-Gitflare-Cached-At';
 const CACHE_PREFIX = '/__gitflare-public-cache/v1';
 const CACHEABLE = /^\/api\/public\/(?:repos\/[^/]+\/[^/]+(?:\/(?!(?:issues|security|advisories)$)[a-z]+)?|explore|search|profiles\/[^/]+(?:\/activity)?)$/;
 const DEPENDENCY_MAX = 100;
@@ -38,12 +40,40 @@ function dependencies(response: Response): string[] {
 function forClient(response: Response, state: 'hit' | 'miss' | 'bypass'): Response {
   const headers = new Headers(response.headers);
   headers.delete(CACHE_DEPENDENCIES);
+  headers.delete(CACHED_AT);
   headers.set('X-Gitflare-Cache', state);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 function enabled(env: CacheEnv): boolean {
   return env.EDITION !== 'self-hosted' && env.DEMO_MODE !== 'true';
+}
+
+function storable(response: Response): boolean {
+  return response.status === 200 && !response.headers.has('Set-Cookie');
+}
+
+function cacheCopy(response: Response, body: ArrayBuffer): Response {
+  const headers = new Headers(response.headers);
+  headers.set('Cache-Control', PUBLIC_CACHE_CONTROL);
+  headers.set(CACHED_AT, String(Date.now()));
+  return new Response(body, { status: 200, headers });
+}
+
+function stale(cached: Response): boolean {
+  const at = Number(cached.headers.get(CACHED_AT));
+  return !at || Date.now() - at >= PUBLIC_CACHE_FRESH_MS;
+}
+
+const revalidating = new Set<string>();
+
+function revalidate(cache: Cache, key: Request, ctx: NonNullable<Waiter>, produce: () => Promise<Response>): void {
+  if (revalidating.has(key.url)) return;
+  revalidating.add(key.url);
+  ctx.waitUntil(produce().then(async response => {
+    if (storable(response)) await cache.put(key, cacheCopy(response, await response.arrayBuffer()));
+    else { await response.body?.cancel(); await cache.delete(key); }
+  }).catch(() => undefined).finally(() => revalidating.delete(key.url)));
 }
 
 export async function servePublicCached(request: Request, env: CacheEnv, ctx: Waiter, produce: () => Promise<Response>): Promise<Response> {
@@ -57,15 +87,17 @@ export async function servePublicCached(request: Request, env: CacheEnv, ctx: Wa
     if (limited) return rateLimitedResponse(limited, 'public repository requests');
     const ids = dependencies(cached);
     const listings = ids.length && env.GITFLARE_SECURITY ? await securityClient(env as AppEnv).publicListed(ids).catch(() => null) : [];
-    if (listings && listings.every(Boolean)) return forClient(cached, 'hit');
+    const expired = stale(cached);
+    if (listings && listings.every(Boolean) && (ctx || !expired)) {
+      if (ctx && expired) revalidate(cache, key, ctx, produce);
+      return forClient(cached, 'hit');
+    }
     await cache.delete(key).catch(() => false);
   }
   const response = await produce();
-  if (response.status !== 200 || response.headers.has('Set-Cookie')) return forClient(response, 'miss');
-  const stored = new Headers(response.headers);
-  stored.set('Cache-Control', PUBLIC_CACHE_CONTROL);
+  if (!storable(response)) return forClient(response, 'miss');
   const body = await response.arrayBuffer();
-  const put = cache.put(key, new Response(body, { status: 200, headers: stored })).catch(() => undefined);
+  const put = cache.put(key, cacheCopy(response, body)).catch(() => undefined);
   if (ctx) ctx.waitUntil(put); else await put;
   return forClient(new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers }), 'miss');
 }

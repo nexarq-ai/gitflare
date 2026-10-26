@@ -1985,8 +1985,8 @@
     },
     {
       "path": "src/worker/public-cache.ts",
-      "size": 6529,
-      "sha256": "29656c83426bf3be78cfed27044a6fc1f5a281d2f9a792ded69115c25f7a094b"
+      "size": 7666,
+      "sha256": "639f7b9ca86b761359f23235f6b50ddd4b83bf7f06ceef2ac20794955af09ee9"
     },
     {
       "path": "src/worker/public-discovery.ts",
@@ -2020,8 +2020,8 @@
     },
     {
       "path": "src/worker/public-preload.ts",
-      "size": 3833,
-      "sha256": "fcb70af0caeef847112a18fb166e78917d73aa1e671a2d0ebf822381a237b451"
+      "size": 4179,
+      "sha256": "30f64aee00227f5ed0f67ca0c2dff292f141141d3394eb1829e475a4876425d1"
     },
     {
       "path": "src/worker/public-repositories.ts",
