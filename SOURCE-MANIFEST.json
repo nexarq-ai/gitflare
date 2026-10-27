@@ -4,6 +4,11 @@
   "license": "Apache-2.0",
   "files": [
     {
+      "path": ".agents/skills/product-action/SKILL.md",
+      "size": 3807,
+      "sha256": "250ebdd0d2843f0a222f2d721d7f84186960753e954a506608ce2011f1a7e56a"
+    },
+    {
       "path": ".dev.vars.example",
       "size": 29,
       "sha256": "ffa76116c004f0357bb339be14d67a27c6e2aa9d61e814709ff9ad79d9d7ae59"
@@ -12,6 +17,21 @@
       "path": ".editorconfig",
       "size": 188,
       "sha256": "6d6796f174b736bcd7a68999e30d2f19a3719ad92355dcc0cfdfce8a66864553"
+    },
+    {
+      "path": ".gitflare/CODEOWNERS",
+      "size": 12,
+      "sha256": "ff695eab41dabd9f514bdade2f7afc20b813010b13061f044312a9ea1c516fc7"
+    },
+    {
+      "path": ".gitflare/ISSUE_TEMPLATE/bug_report.md",
+      "size": 476,
+      "sha256": "fda9e1fdadd0332453ee8e0f8f4a7d43028cc438fc47852fb27dc75cfc5dec09"
+    },
+    {
+      "path": ".gitflare/ISSUE_TEMPLATE/feature_request.md",
+      "size": 371,
+      "sha256": "b7c2837ce0be090c4b10e1d9d572fa4425cd9fd6d713a48eacf2db37dcff011c"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -27,6 +47,11 @@
       "path": ".oxlintrc.json",
       "size": 618,
       "sha256": "3eee1c16b6c1fdef0935e28312332b2f0ca068899a9de69f1e8928570148852f"
+    },
+    {
+      "path": "AGENTS.md",
+      "size": 3751,
+      "sha256": "4548c1a2aa3aa2b894cd6c64c194b32ee04d2249ccb5b01d2ebaa64c8fcafcea"
     },
     {
       "path": "CONTRIBUTING.md",
