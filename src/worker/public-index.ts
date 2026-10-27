@@ -7,7 +7,7 @@ import { publicRepositoryPath } from '../shared/handles';
 import { repositoryLabel } from '../shared/repository-names';
 import { ApiError } from './domain';
 import type { AppEnv } from './env';
-import { scanRepository } from './deploy-detect';
+import { DEPENDENCY_DIRECTORIES, scanRepository } from './deploy-detect';
 import { detectLicense, publicTargetById } from './public-repositories';
 import { securityClient, type PublicListing, type SecurityService } from './security';
 import { ACTIVITY_WEEKS, activityWeeks, agentReadiness, parseReadiness, READINESS_FILES, sumWeeks, weekStart } from './public-activity';
@@ -313,7 +313,7 @@ export async function indexPublicRepository(env: AppEnv, repositoryId: string, a
     language = null; truncated = 0;
     writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId), db.prepare('DELETE FROM readiness WHERE repository_id = ?1').bind(repositoryId), db.prepare('DELETE FROM heads WHERE repository_id = ?1').bind(repositoryId));
   } else if (head.hash !== existing?.head_sha) {
-    const scan = await scanRepository(source, head.hash, PUBLIC_INDEX_PATH_LIMIT);
+    const scan = await scanRepository(source, head.hash, PUBLIC_INDEX_PATH_LIMIT, DEPENDENCY_DIRECTORIES);
     const paths = [...scan.files.keys()].sort().slice(0, PUBLIC_INDEX_PATH_LIMIT);
     language = dominantLanguage(paths); truncated = scan.truncated ? 1 : 0;
     writes.push(db.prepare('DELETE FROM paths WHERE repository_id = ?1').bind(repositoryId));

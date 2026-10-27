@@ -13,7 +13,8 @@ import { GITFLARE_WRANGLER_VERSION, WORKER_CONFIG_FILES } from './worker-bundle'
 export const SCAN_ENTRY_LIMIT = 20_000;
 const SCAN_BATCH = 16;
 const DETECT_TARGETS_MAX = 5;
-const WALK_SKIP = new Set(['node_modules', '.git', '.gitflare', '.wrangler', '.pnpm-store', '.yarn']);
+export const DEPENDENCY_DIRECTORIES: ReadonlySet<string> = new Set(['node_modules', '.git', '.wrangler', '.pnpm-store', '.yarn']);
+const WALK_SKIP = new Set([...DEPENDENCY_DIRECTORIES, '.gitflare']);
 const CONFIG_SKIP = new Set(['fixtures', '__fixtures__', 'test-fixtures', '__tests__', 'test', 'tests', 'dist', 'build', '.output', 'examples']);
 const VITE_CONFIGS = ['vite.config.ts', 'vite.config.mts', 'vite.config.js', 'vite.config.mjs', 'vite.config.cts', 'vite.config.cjs'];
 const VITE_PLUGIN = '@cloudflare/vite-plugin';
@@ -91,7 +92,7 @@ function join(directory: string, relative: string): string | null {
   return parts.join('/');
 }
 
-export async function scanRepository(source: TreeSource, commitSha: string, limit = SCAN_ENTRY_LIMIT): Promise<RepositoryScan> {
+export async function scanRepository(source: TreeSource, commitSha: string, limit = SCAN_ENTRY_LIMIT, skip: ReadonlySet<string> = WALK_SKIP): Promise<RepositoryScan> {
   const [head] = await source.log({ ref: commitSha, limit: 1 });
   if (!head || head.hash !== commitSha) throw new ApiError(409, 'DEPLOY_SETUP_HEAD_MISSING', 'The default branch head could not be read.');
   const files = new Map<string, string>();
@@ -106,7 +107,7 @@ export async function scanRepository(source: TreeSource, commitSha: string, limi
         for (const entry of tree ?? []) {
           if (++entries > limit) return { commitSha, files, truncated: true };
           const path = `${batch[position][1]}${entry.name}`;
-          if (entry.type === 'tree') { if (!WALK_SKIP.has(entry.name)) next.push([entry.hash, `${path}/`]); }
+          if (entry.type === 'tree') { if (!skip.has(entry.name)) next.push([entry.hash, `${path}/`]); }
           else if (entry.type === 'blob' || entry.type === 'exec') files.set(path, entry.hash);
         }
       }
