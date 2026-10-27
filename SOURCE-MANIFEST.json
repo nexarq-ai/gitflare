@@ -1535,8 +1535,8 @@
     },
     {
       "path": "src/worker/deploy-detect.ts",
-      "size": 33241,
-      "sha256": "eb9ecb9fdb87880a4c85febdfdb04f50f3d9348dd3958443838600419972cc72"
+      "size": 33372,
+      "sha256": "1b747350197e610652d3f8bce35f270077f1306113e3b31595d72cc3a3cc06ca"
     },
     {
       "path": "src/worker/deploy-environments.ts",
@@ -2030,8 +2030,8 @@
     },
     {
       "path": "src/worker/public-index.ts",
-      "size": 30380,
-      "sha256": "0416f6c1ff541945418f859fd87a214c38fcd9f76c17affd96a3e0d70f9097cd"
+      "size": 30428,
+      "sha256": "190e2300cee3188ff663c186578d14ed2470f0c6f9cb21d4da1e1b96457ac20d"
     },
     {
       "path": "src/worker/public-issues.ts",
