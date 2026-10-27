@@ -25,6 +25,9 @@
   --gf-color-text-disabled: #707986;
   --gf-color-border: rgba(255, 255, 255, .09);
   --gf-color-border-strong: #505966;
+  --gf-color-control: #20252d;
+  --gf-color-control-hover: #2a303a;
+  --gf-color-control-border: #5d6775;
   --gf-color-accent: var(--gf-color-orange);
   --gf-color-accent-hover: var(--gf-color-orange-light);
   --gf-color-on-accent: #1c0c00;
@@ -151,6 +154,9 @@ html[data-gf-theme='light'] {
   --gf-color-info: #245c9f;
   --gf-color-info-bg: #e9f2ff;
   --gf-color-accent-bg: #fff0e2;
+  --gf-color-control: #ffffff;
+  --gf-color-control-hover: #e9edf2;
+  --gf-color-control-border: #dce1e8;
   --gf-color-overlay: rgba(17, 27, 42, .42);
   --gf-color-selection: rgba(184, 79, 0, .18);
   --gf-shadow-sm: 0 2px 8px #18212f0c;
@@ -336,6 +342,9 @@ a { color: var(--gf-color-info); }
 .form-field textarea { padding: 12px 14px; line-height: 1.7; }
 :where(button, a)[class*='bg-kumo-brand'] { background: var(--gf-color-primary); color: var(--gf-color-primary-text); border-radius: var(--gf-radius-pill); font-weight: 600; }
 :where(button, a)[class*='bg-kumo-base'] { border-radius: var(--gf-radius-pill); }
+:where(button, a)[class*='bg-kumo-base'][class*='ring-kumo-line'] { background: var(--gf-color-control); }
+:where(button, a)[class*='bg-kumo-base'][class*='ring-kumo-line']:not(:is(:hover, :focus-visible)[class*='hover:ring-kumo-danger']) { --tw-ring-color: var(--gf-color-control-border); }
+:where(button, a)[class*='bg-kumo-base'][class*='ring-kumo-line']:not(:disabled):hover { background: var(--gf-color-control-hover); }
 :where(button, a)[class*='bg-kumo-brand']:not(:disabled):hover { background: var(--gf-color-primary-hover); }
 :where(input)[class*='bg-kumo-base'], :where(input)[class*='bg-kumo-control'] { border-radius: 10px; }
 [role='dialog'] { background: var(--gf-color-surface-raised); color: var(--gf-color-text); border-color: var(--gf-color-border); border-radius: 20px; box-shadow: var(--gf-shadow-lg); }
