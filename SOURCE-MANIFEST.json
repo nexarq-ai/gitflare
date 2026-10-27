@@ -705,8 +705,8 @@
     },
     {
       "path": "src/ui/design-system.css",
-      "size": 58730,
-      "sha256": "376095c5e5d5bd39ee39a5814de2d50e286b5bf2ef0fe4d417d724f5bd640baf"
+      "size": 59368,
+      "sha256": "64531ad1c531724a05930c18afbed713f672f3db4cc2e2080b9af8454599e0f1"
     },
     {
       "path": "src/ui/diff-highlight.ts",
