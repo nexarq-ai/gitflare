@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AgentRun, Check, FileChange, Issue, IssueComment, Mission, MissionEvent, ProposalReview, Release, Repository } from '../shared/types';
+import { LANDING_TESTS } from '../shared/checks';
 import { buildDemoHistory, type BuiltDemoHistory, type DemoCommit, type DemoPerson } from './demo-git';
 import { defaultBranchRule } from './branch-protection';
 import type { DeployEnvironmentSettings, DeploymentRecord, DeploySettings } from './deployments';
@@ -148,7 +149,7 @@ function edgeStore(generation: number, workspaceId: string, c: Clock): DemoRepos
       { name: 'idempotency', role: 'implementer', task: 'Store one receipt promise per checkout key.', status: 'completed', commitSha: s.retries, startedAt: c.iso(13, 9, 5), completedAt: c.iso(13, 9, 41), changedFiles: ['src/checkout.ts'], summary: 'Checkout now reuses the receipt for a repeated key.' },
       { name: 'tests', role: 'tester', task: 'Cover repeated checkout keys.', status: 'completed', startedAt: c.iso(13, 9, 5), completedAt: c.iso(13, 9, 37), changedFiles: [], summary: 'Existing tests cover totals; no new files needed.' },
     ],
-    checks: [{ name: 'npm test', status: 'passed', candidateSha: s.retries, durationMs: 18_400, output: 'ok 1 - totals cart lines\n# pass 1\n# fail 0\n' }],
+    checks: [{ name: LANDING_TESTS, status: 'passed', candidateSha: s.retries, durationMs: 18_400, output: 'ok 1 - totals cart lines\n# pass 1\n# fail 0\n' }],
     changes: [patch('src/checkout.ts', ['export async function checkout(lines: CartLine[], charge: (cents: number) => Promise<string>): Promise<string> {', '  return charge(total(lines));'], ['export function checkout(key: string, lines: CartLine[], charge: (cents: number) => Promise<string>): Promise<string> {', '  const existing = receipts.get(key);', '  if (existing) return existing;', '  const receipt = charge(total(lines));', '  receipts.set(key, receipt);', '  return receipt;'])],
     reviews: [{ kind: 'comment', body: 'Should receipts expire? A Map grows forever in a long-lived isolate.', authorId: 'demo-omar', createdAt: c.iso(13, 11), epoch: 1, candidateSha: s.retries, baseSha: s.skill, path: 'src/checkout.ts', line: 3, side: 'new', resolvedAt: c.iso(12, 14), resolvedBy: 'demo-maya' }],
     events: [[c.iso(13, 9), 'info', 'Proposal started with 2 agents.'], [c.iso(13, 9, 41), 'success', 'Combined candidate passed npm test.'], [c.iso(12, 14, 30), 'success', 'Maya Chen approved the exact candidate.'], [c.iso(12, 15), 'success', `Landed ${s.retries.slice(0, 12)} on main.`]],
@@ -161,7 +162,7 @@ function edgeStore(generation: number, workspaceId: string, c: Clock): DemoRepos
       { name: 'redeem', role: 'implementer', task: 'Add a pure redeem() helper.', status: 'completed', commitSha: s.gift, startedAt: c.iso(1, 11, 2), completedAt: c.iso(1, 12, 55), changedFiles: ['src/gift-cards.ts'], summary: 'Added redeem(balance, total).' },
       { name: 'review-notes', role: 'reviewer', task: 'Check rounding and negative balances.', status: 'completed', startedAt: c.iso(1, 11, 2), completedAt: c.iso(1, 12, 40), changedFiles: [], summary: 'Math.min keeps the balance non-negative.' },
     ],
-    checks: [{ name: 'npm test', status: 'passed', candidateSha: s.gift, durationMs: 17_900, output: '# pass 1\n# fail 0\n' }],
+    checks: [{ name: LANDING_TESTS, status: 'passed', candidateSha: s.gift, durationMs: 17_900, output: '# pass 1\n# fail 0\n' }],
     changes: [patch('src/gift-cards.ts', [], ['export function redeem(balanceCents: number, totalCents: number): { charged: number; remaining: number } {', '  const used = Math.min(balanceCents, totalCents);', '  return { charged: totalCents - used, remaining: balanceCents - used };', '}'])],
     reviews: [{ kind: 'comment', body: 'Can we add a test for a balance larger than the total?', authorId: 'demo-omar', createdAt: c.iso(1, 13, 10), epoch: 1, candidateSha: s.gift, baseSha: s.limits, path: 'src/gift-cards.ts', line: 2, side: 'new' }],
     events: [[c.iso(1, 11), 'info', 'Proposal started with 2 agents.'], [c.iso(1, 12, 58), 'success', 'Combined candidate passed npm test.'], [c.iso(1, 13, 20), 'info', 'Waiting for an Owner or Maintainer to approve the exact candidate.']],
@@ -173,7 +174,7 @@ function edgeStore(generation: number, workspaceId: string, c: Clock): DemoRepos
       { name: 'cache', role: 'implementer', task: 'Cache /catalog responses with a 300 second TTL.', status: 'running', startedAt: c.iso(0, 0, 52), changedFiles: ['src/catalog.ts'], note: 'Editing src/catalog.ts' },
       { name: 'purge', role: 'implementer', task: 'Purge the cached catalog on product updates.', status: 'queued', changedFiles: [] },
     ],
-    checks: [{ name: 'npm test', status: 'pending' }],
+    checks: [{ name: LANDING_TESTS, status: 'pending' }],
     events: [[c.iso(0, 0, 50), 'info', 'Proposal started with 2 agents.'], [c.iso(0, 0, 52), 'info', 'Agent cache is working in its own fork.']],
   });
   const failed = mission(generation, workspaceId, id, {
@@ -184,7 +185,7 @@ function edgeStore(generation: number, workspaceId: string, c: Clock): DemoRepos
       { name: 'config', role: 'implementer', task: 'Add env.staging routes.', status: 'completed', startedAt: c.iso(3, 15, 2), completedAt: c.iso(3, 15, 20), changedFiles: ['wrangler.jsonc'], summary: 'Added a staging route.' },
       { name: 'docs', role: 'writer', task: 'Document the staging deploy.', status: 'failed', startedAt: c.iso(3, 15, 2), completedAt: c.iso(3, 15, 35), changedFiles: [], error: 'The agent stopped after editing a file outside its assignment.' },
     ],
-    checks: [{ name: 'npm test', status: 'failed', durationMs: 9_200, output: 'not ok 1 - totals cart lines\n  error: Cannot find module src/checkout.ts\n# fail 1\n' }],
+    checks: [{ name: LANDING_TESTS, status: 'failed', durationMs: 9_200, output: 'not ok 1 - totals cart lines\n  error: Cannot find module src/checkout.ts\n# fail 1\n' }],
     events: [[c.iso(3, 15), 'info', 'Proposal started with 2 agents.'], [c.iso(3, 15, 35), 'error', 'Agent docs failed.'], [c.iso(3, 15, 40), 'error', 'Combined candidate failed npm test. Retry available.']],
   });
   const missions = [landed, review, running, failed];
@@ -247,7 +248,7 @@ function billingApi(generation: number, workspaceId: string, c: Clock): DemoRepo
     key: 'billing-rounding', title: 'Round invoice totals per line', status: 'integrated', baseSha: s.init, candidateSha: s.rounding, created: c.iso(19, 9), updated: c.iso(18, 12), approvedBy: 'demo-omar', creatorId: 'demo-omar',
     prompt: 'Invoices differ from receipts by a cent. Round each line before summing.',
     runs: [{ name: 'rounding', role: 'implementer', task: 'Round per line.', status: 'completed', commitSha: s.rounding, startedAt: c.iso(19, 9, 3), completedAt: c.iso(19, 9, 30), changedFiles: ['src/invoice.ts'], summary: 'Rounds each line, then sums.' }],
-    checks: [{ name: 'npm test', status: 'passed', candidateSha: s.rounding, durationMs: 6_100, output: '# pass 3\n# fail 0\n' }],
+    checks: [{ name: LANDING_TESTS, status: 'passed', candidateSha: s.rounding, durationMs: 6_100, output: '# pass 3\n# fail 0\n' }],
     changes: [patch('src/invoice.ts', ['  return Math.round(lines.reduce((sum, line) => sum + line.cents * (1 + line.taxRate), 0));'], ['  return lines.reduce((sum, line) => sum + Math.round(line.cents * (1 + line.taxRate)), 0);'])],
     events: [[c.iso(19, 9), 'info', 'Proposal started with 1 agent.'], [c.iso(18, 12), 'success', `Landed ${s.rounding.slice(0, 12)} on main.`]],
   });
@@ -256,14 +257,14 @@ function billingApi(generation: number, workspaceId: string, c: Clock): DemoRepo
     prompt: 'Pull request from branch fix/currency-format.',
     branchChange: { branch: 'fix/currency-format', headSha: s.currency, targetBranch: 'main', description: 'Uses Intl.NumberFormat so invoices show the right currency symbol.' },
     runs: [],
-    checks: [{ name: 'npm test', status: 'failed', candidateSha: s.currency, durationMs: 5_400, output: 'not ok 4 - formats JPY without decimals\n  expected: ¥1,200\n  actual: ¥12\n# fail 1\n' }],
+    checks: [{ name: LANDING_TESTS, status: 'failed', candidateSha: s.currency, durationMs: 5_400, output: 'not ok 4 - formats JPY without decimals\n  expected: ¥1,200\n  actual: ¥12\n# fail 1\n' }],
     changes: [patch('src/currency.ts', [], ["export const format = (cents: number, currency: string) => new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);"])],
     reviews: [{ kind: 'request_changes', body: 'JPY has no minor unit, so dividing by 100 is wrong for it.', authorId: 'demo-omar', createdAt: c.iso(2, 12), epoch: 1, candidateSha: s.currency, baseSha: s.webhooks, path: 'src/currency.ts', line: 1, side: 'new' }],
     events: [[c.iso(2, 11, 5), 'info', 'Pull request opened from fix/currency-format.'], [c.iso(2, 11, 30), 'error', 'npm test failed on the exact head.']],
   });
   const records: DemoRecord[] = [
     [`mission:${landed.id}`, landed], [`mission:${pull.id}`, pull],
-    ['branch-protection', { rules: [{ ...defaultBranchRule('main'), requiredApprovals: 1, requiredCheckNames: ['npm test'], preventSelfApproval: true }], updatedAt: c.iso(30, 9), updatedBy: 'demo-omar' }],
+    ['branch-protection', { rules: [{ ...defaultBranchRule('main'), requiredApprovals: 1, requiredCheckNames: [LANDING_TESTS], preventSelfApproval: true }], updatedAt: c.iso(30, 9), updatedBy: 'demo-omar' }],
     ...issueRecords(generation, id, [{ number: 1, title: 'Support JPY invoices', body: 'Japanese customers see totals divided by 100.', state: 'open', labels: ['bug'], assignees: ['demo-sam'], missionIds: [], authorId: 'demo-omar', createdAt: c.iso(3, 9), updatedAt: c.iso(2, 12), comments: [{ authorId: 'demo-sam', body: 'Opened fix/currency-format.', createdAt: c.iso(2, 11, 6) }] }]),
     release(generation, id, 'v0.4.0', 'billing-api 0.4', '## Fixed\n\n- Invoice totals round per line\n', s.rounding, c.iso(17, 9), 'demo-omar'),
   ];

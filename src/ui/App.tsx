@@ -67,7 +67,7 @@ import { workspaceChord } from "./workspace-chord";
 import { useInboxCounts } from "./inbox-count";
 import { badgeLabel } from "./inbox-data";
 import { accountSection } from "./account-data";
-import { eligibleApprovers, knownCheckNames } from "./approvals";
+import { eligibleApprovers, offeredChecks } from "./approvals";
 import { anonymousSiteVisit, appOrigin, crossHostTarget, pageHostOrigins, siteHref, useSiteSignedInHint } from "./hosts";
 import { publicRepositoryPath } from "../shared/handles";
 import { requestedPersonalWorkspace } from "../shared/ai-setup";
@@ -1528,7 +1528,7 @@ function RepositoryDetail({
       </nav>
       <DeployStatusPill repositoryId={repository.id} location={`${tab}/${subroute}`} href={routeUrl(`repository/${repository.id}/settings/deploys`)} onOpen={() => onTabChange("settings/deploys")} />
       {tab === "issues" ? <Issues key={repository.id} repository={repository} issueNumber={issueNumber} missions={missions} /> : tab === "releases" ? <Releases key={repository.id} repository={repository} releaseId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "security" ? <Advisories key={repository.id} repository={repository} advisoryId={releaseId} canLand={canLand} demo={demo} onNotify={onNotify} /> : tab === "pulls" || tab === "proposals" ? subroute === "new" ? <PullRequestCreate key={repository.id} repository={repository} canContribute={canContribute} canExecute={canExecute} onCreated={onRefresh} onAskAgents={() => onMission(repository.id)} /> : <PullRequests key={repository.id} repositoryId={repository.id} missions={missions} canContribute={canContribute} fork={!!repository.fork} /> : tab === "settings" ? <RepositorySettingsLayout repositoryId={repository.id} page={subroute} extra={publicRepositories ? [{ path: "community", label: "Community AI" }] : []}>
-        {subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} approvers={access ? eligibleApprovers(access.members, repository.id) : undefined} knownChecks={knownCheckNames(missions)} onNotify={onNotify} />
+        {subroute === "branches" ? <BranchProtection key={repository.id} repository={repository} canManage={canManage} demo={demo} approvers={access ? eligibleApprovers(access.members, repository.id) : undefined} offered={offeredChecks(missions, repository.id)} onNotify={onNotify} />
           : subroute === "secrets" ? <SecretSettings key={repository.id} repositoryId={repository.id} onNotify={onNotify} />
           : subroute === "deploys" ? <Deployments key={repository.id} repository={repository} canManage={canManage} onNotify={onNotify} />
           : subroute === "previews" ? <PreviewSettings key={repository.id} repositoryId={repository.id} canManage={canManage} onNotify={onNotify} />

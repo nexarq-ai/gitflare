@@ -8,6 +8,7 @@ import { useConfirm } from "./ConfirmDialog";
 import InfoTip from "./InfoTip";
 import { reviewKindLabel } from "./review-summary";
 import "./pull-requests.css";
+import { checkLabel } from "../shared/checks";
 
 const LABELS: Record<PullRequestState, [string, string]> = { open: ["Open", "running"], needs_review: ["Needs review", "review"], approved: ["Approved", "approved"], landed: ["Landed", "integrated"], closed: ["Closed", "cancelled"] };
 
@@ -64,7 +65,7 @@ export default function UpstreamProposals({ repositoryId, canContribute }: { rep
           {expanded && <div className="upstream-proposal-detail">
             {proposal.description && <p>{proposal.description}</p>}
             {proposal.reviews.length ? <ul className="upstream-proposal-reviews">{proposal.reviews.map((review, index) => <li key={index} className={review.resolved ? "is-resolved" : undefined}><span>{reviewKindLabel(review.kind)}{review.path ? ` · ${review.path}${review.line ? `:${review.line}` : ""}` : ""}</span><p>{review.body}</p></li>)}</ul> : <p className="upstream-proposal-muted">No review comments yet.</p>}
-            {proposal.checks.filter(check => check.status === "failed" && check.output).map(check => <details key={check.name}><summary>{check.name}</summary><pre className="code-output">{check.output}</pre></details>)}
+            {proposal.checks.filter(check => check.status === "failed" && check.output).map(check => <details key={check.name}><summary>{checkLabel(check)}</summary><pre className="code-output">{check.output}</pre></details>)}
           </div>}
         </li>;
       })}

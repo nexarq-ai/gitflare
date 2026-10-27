@@ -1,15 +1,25 @@
 import { CheckIcon } from "@phosphor-icons/react";
+import { checkIdentity, requirableCheck, type RequirableCheck } from "../shared/checks";
 import "./info-tip.css";
 
-export default function CheckChips({ known, selected, disabled, label, onChange }: { known: string[]; selected: string[]; disabled?: boolean; label: string; onChange: (names: string[]) => void }) {
-  const names = [...new Set([...known, ...selected])];
-  if (!names.length) return <p className="check-chips-empty">No checks have run yet. Their names appear here after the first proposal runs them.</p>;
+export const CHECKS_TIP = "A change lands only after these pass on the exact revision that lands. Tests run the repository's tests on it. Visual checks are offered once they run in this repository.";
+
+export const requiredCheckLabel = (name: string): string => requirableCheck(name)?.label ?? name;
+
+export default function CheckChips({ offered, selected, disabled, label, onChange }: { offered: readonly RequirableCheck[]; selected: string[]; disabled?: boolean; label: string; onChange: (names: string[]) => void }) {
+  const chosen = new Set(selected.map(checkIdentity));
+  const offeredNames = new Set(offered.map(check => check.name));
+  const retired = [...chosen].filter(name => !offeredNames.has(name));
+  const toggle = (name: string) => onChange(chosen.has(name) ? selected.filter(item => checkIdentity(item) !== name) : [...selected, name]);
   return <div className="check-chips" role="group" aria-label={label}>
-    {names.map(name => {
-      const on = selected.includes(name);
-      return <button key={name} type="button" className="check-chip" aria-pressed={on} disabled={disabled} onClick={() => onChange(on ? selected.filter(item => item !== name) : [...selected, name])}>
-        {on && <CheckIcon size={12} weight="bold" aria-hidden="true" />}{name}{!known.includes(name) && <span className="check-chip-note"> (not seen recently)</span>}
+    {offered.map(check => {
+      const on = chosen.has(check.name);
+      return <button key={check.name} type="button" className="check-chip" aria-pressed={on} title={check.name} disabled={disabled} onClick={() => toggle(check.name)}>
+        {on && <CheckIcon size={12} weight="bold" aria-hidden="true" />}{check.label}
       </button>;
     })}
+    {retired.map(name => <button key={name} type="button" className="check-chip check-chip-retired" aria-pressed="true" title={name} disabled={disabled} onClick={() => toggle(name)}>
+      <CheckIcon size={12} weight="bold" aria-hidden="true" />{requiredCheckLabel(name)}<span className="check-chip-note"> {requirableCheck(name) ? "(not seen recently)" : "(no longer runs)"}</span>
+    </button>)}
   </div>;
 }

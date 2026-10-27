@@ -1,5 +1,6 @@
 import type { BranchProtection, BranchRule, LanderRole } from '../shared/types';
 import { ApiError } from './domain';
+import { normalizeRequiredChecks, REQUIRABLE_CHECKS, unknownCheckMessage } from '../shared/checks';
 import { ZERO_SHA } from './git-protocol';
 import type { Role } from './security';
 
@@ -49,13 +50,16 @@ export function normalizeBranchRule(value: unknown): BranchRule {
   const landers = input.restrictLanders ?? [];
   if (!Array.isArray(landers) || landers.some(role => !LANDER_ROLES.includes(role as LanderRole))) throw new ApiError(400, 'INVALID_BRANCH_RULE', 'Landers can be restricted to Maintainer and Owner roles.');
   for (const key of ['requirePullRequest', 'preventSelfApproval', 'codeowners'] as const) if (input[key] !== undefined && typeof input[key] !== 'boolean') throw new ApiError(400, 'INVALID_BRANCH_RULE', `${key} must be true or false.`);
-  return { pattern: branchPattern(input.pattern), requirePullRequest: input.requirePullRequest !== false, requiredApprovals: approvals as number, requirePassingChecks: true, requiredCheckNames: [...new Set((checks as string[]).map(name => name.trim()))], preventSelfApproval: input.preventSelfApproval === true, dismissApprovalsOnNewCommits: true, restrictLanders: LANDER_ROLES.filter(role => (landers as string[]).includes(role)), allowForcePush: false, ...(input.codeowners === true ? { codeowners: true } : {}) };
+  return { pattern: branchPattern(input.pattern), requirePullRequest: input.requirePullRequest !== false, requiredApprovals: approvals as number, requirePassingChecks: true, requiredCheckNames: normalizeRequiredChecks(checks as string[], []).names, preventSelfApproval: input.preventSelfApproval === true, dismissApprovalsOnNewCommits: true, restrictLanders: LANDER_ROLES.filter(role => (landers as string[]).includes(role)), allowForcePush: false, ...(input.codeowners === true ? { codeowners: true } : {}) };
 }
 
-export function normalizeBranchRules(value: unknown): BranchRule[] {
+export function normalizeBranchRules(value: unknown, saved: readonly BranchRule[] = []): BranchRule[] {
   if (!Array.isArray(value) || value.length > MAX_BRANCH_RULES) throw new ApiError(400, 'INVALID_BRANCH_RULES', `Provide up to ${MAX_BRANCH_RULES} branch rules.`);
   const rules = value.map(normalizeBranchRule);
   if (new Set(rules.map(rule => rule.pattern)).size !== rules.length) throw new ApiError(400, 'INVALID_BRANCH_RULES', 'Each branch pattern can have only one rule.');
+  const savedChecks = saved.flatMap(rule => rule.requiredCheckNames);
+  const unknown = normalizeRequiredChecks(rules.flatMap(rule => rule.requiredCheckNames), savedChecks).unknown;
+  if (unknown.length) throw new ApiError(400, 'UNKNOWN_CHECK', unknownCheckMessage(unknown[0]!));
   return rules;
 }
 
@@ -68,7 +72,7 @@ export function ruleFor(rules: BranchRule[], branch: string, defaultBranch: stri
 }
 
 export function protectionSnapshot(repositoryId: string, defaultBranch: string, stored?: StoredBranchProtection): BranchProtection {
-  return { repositoryId, defaultBranch, rules: effectiveRules(stored, defaultBranch), configured: !!stored, ...(stored ? { updatedAt: stored.updatedAt, updatedBy: stored.updatedBy } : {}) };
+  return { repositoryId, defaultBranch, rules: effectiveRules(stored, defaultBranch), configured: !!stored, ...(stored ? { updatedAt: stored.updatedAt, updatedBy: stored.updatedBy } : {}), availableChecks: [...REQUIRABLE_CHECKS] };
 }
 
 export function landingRule(stored: StoredBranchProtection | undefined, defaultBranch: string): BranchRule | undefined {

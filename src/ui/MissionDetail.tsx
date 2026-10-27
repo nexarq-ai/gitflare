@@ -1335,7 +1335,7 @@ export default function MissionDetail({
                     <ClockIcon size={20} />
                   )}
                   <div>
-                    <h3>{check.name}{check.advisory && <span className="check-advisory">Advisory<InfoTip label="advisory check">Shown with its evidence; blocks landing only when a stream rule names it.</InfoTip></span>}</h3>
+                    <h3>{check.name}{check.detail && <span className="check-detail">{check.detail}</span>}{check.advisory && <span className="check-advisory">Advisory<InfoTip label="advisory check">Shown with its evidence; blocks landing only when a stream rule names it.</InfoTip></span>}</h3>
                     <p>
                       {check.captureIds?.length ? <button type="button" className="text-link" onClick={() => onTabChange("visual")}>View screenshots</button> : null}
                       {check.candidateSha === mission.candidateSha &&

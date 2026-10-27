@@ -11,8 +11,9 @@ import { ErrorNotice, relativeTime } from "./components";
 import { navigate } from "./router";
 import { PageLoading } from "./WorkspaceLoader";
 import InfoTip from "./InfoTip";
-import CheckChips from "./CheckChips";
-import { approvalWarning, selfApprovalNote } from "./approvals";
+import CheckChips, { CHECKS_TIP } from "./CheckChips";
+import { approvalWarning, offeredChecks, selfApprovalNote } from "./approvals";
+import type { RequirableCheck } from "../shared/checks";
 import "./people-settings.css";
 import "./pull-requests.css";
 import "./branches.css";
@@ -39,7 +40,7 @@ export function BranchCreated({ repositoryId, name, onDismiss, onNotify }: { rep
   );
 }
 
-export default function BranchProtection({ repository, canManage: mayManage, demo = false, approvers, knownChecks = [], onNotify }: { repository: Repository; canManage: boolean; demo?: boolean; approvers?: number; knownChecks?: string[]; onNotify: (message: string) => void }) {
+export default function BranchProtection({ repository, canManage: mayManage, demo = false, approvers, offered = offeredChecks([]), onNotify }: { repository: Repository; canManage: boolean; demo?: boolean; approvers?: number; offered?: RequirableCheck[]; onNotify: (message: string) => void }) {
   const [confirmedRules, setConfirmedRules] = useState<string[]>([]);
   const canManage = mayManage && !demo;
   const [branches, setBranches] = useState<BranchList | null>(null);
@@ -189,7 +190,7 @@ export default function BranchProtection({ repository, canManage: mayManage, dem
                 {!rule.restrictLanders.length && <small>Anyone with land permission</small>}
               </div>
               {warnings.get(rule.id) && <div><p className={`approval-warning${warnings.get(rule.id)!.blocking ? " approval-warning-blocking" : ""}`} role="status">{warnings.get(rule.id)!.text}</p>{warnings.get(rule.id)!.blocking && <label className="people-check"><input type="checkbox" checked={confirmedRules.includes(rule.id)} onChange={event => setConfirmedRules(current => event.target.checked ? [...current, rule.id] : current.filter(id => id !== rule.id))} />Save anyway, I will invite reviewers</label>}</div>}
-              <div className="form-field"><span className="field-label">Checks that must pass<InfoTip label="Checks that must pass">A change can land only after these checks pass on the exact revision. Pick none to rely on the repository check settings alone.</InfoTip></span><CheckChips label="Checks that must pass" known={knownChecks} selected={rule.checks.split(/[\n,]/).map(name => name.trim()).filter(Boolean)} onChange={names => update(rule.id, { checks: names.join("\n") })} /></div>
+              <div className="form-field"><span className="field-label">Checks that must pass<InfoTip label="Checks that must pass">{CHECKS_TIP}</InfoTip></span><CheckChips label="Checks that must pass" offered={offered} selected={rule.checks.split(/[\n,]/).map(name => name.trim()).filter(Boolean)} onChange={names => update(rule.id, { checks: names.join("\n") })} /></div>
               <p className="branch-rule-fixed"><ShieldCheckIcon size={14} />All checks must pass. New revisions dismiss approvals because approval is pinned to the exact revision. Force pushes are blocked.</p>
             </fieldset>
           ))}

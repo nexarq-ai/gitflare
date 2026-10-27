@@ -362,7 +362,7 @@ export class GitflareCoordinator extends DurableObject<AppEnv> {
   getBranchProtection(): StoredBranchProtection | undefined { return this.store.get<StoredBranchProtection>('branch-protection'); }
 
   setBranchProtection(key: string, rules: unknown, actorId: string): StoredBranchProtection {
-    const normalized = normalizeBranchRules(rules);
+    const normalized = normalizeBranchRules(rules, this.getBranchProtection()?.rules);
     return this.mutate(key, JSON.stringify(['branch-protection', normalized]), () => {
       const stored = { rules: normalized, updatedAt: new Date().toISOString(), updatedBy: actorId } satisfies StoredBranchProtection;
       this.store.put('branch-protection', stored);
