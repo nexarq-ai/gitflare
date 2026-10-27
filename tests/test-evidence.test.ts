@@ -52,7 +52,7 @@ describe('checks with implicit and explicit TAP evidence', () => {
   it('passes the spec reporter on exit code 0 when evidence is implicit, and says so', () => {
     const check = checkFromCommand('run', 'Repository test suite', sha, run(spec(5)), 1, run(spec(4)), 'tap', { ...limits, testCommand: 'node --test tests/*.test.mjs' });
     expect(check.status).toBe('passed');
-    expect(check.name).toBe('Repository test suite (exit code and node:test spec summary)');
+    expect(check).toMatchObject({ name: 'Repository test suite', detail: 'exit code and node:test spec summary' });
     expect(check.output).toContain('No "evidence" setting is configured');
     expect(check.output).toContain('set "evidence": "exit-code" in gitflare.json');
   });

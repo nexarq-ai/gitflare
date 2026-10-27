@@ -1,4 +1,5 @@
 import type { Check, VisualCapture, VisualConfig, VisualEvidence, VisualLighthouseThresholds } from '../../shared/types';
+import { VISUAL_CHECK_NAMES } from '../../shared/checks';
 import type { ArtifactInfo } from '../artifacts';
 import { outputLimit } from '../check-evidence';
 import type { AuthorityGuard, ExecutionEnv, SandboxRunner } from '../execution/environment';
@@ -12,7 +13,6 @@ import { boundedCaptures, touchesUi } from './config';
 export const VISUAL_PREVIEW_MS = 180_000;
 export const VISUAL_CAPTURE_MS = 240_000;
 export const LIGHTHOUSE_MS = 180_000;
-export const VISUAL_CHECK_NAMES = { consoleErrors: 'Visual: console errors', overflow: 'Visual: no overflow at 390px', regression: 'Visual: regression', axe: 'Accessibility (axe)', lighthouse: 'Lighthouse' } as const;
 
 export interface EvidenceInput { key: string; fork: ArtifactInfo; baseSha: string; candidateSha: string; policy: RepositoryPolicy; config: VisualConfig; changedFiles: string[]; epoch: number; runId?: string; assertAuthority: AuthorityGuard; isActive: () => Promise<boolean>; store: (image: CaptureImage) => Promise<void>; onStep?: (message: string) => Promise<void> }
 export interface LighthouseScores { performance?: number; accessibility?: number; bestPractices?: number; seo?: number }

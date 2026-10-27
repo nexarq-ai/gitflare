@@ -1151,7 +1151,7 @@ describe('repository policy', () => {
 
   it('trusts only the exit code when a repository opts out of TAP evidence', () => {
     const passed = checkFromCommand('test', 'tests', sha, { exitCode: 0, stdout: 'Tests 4 passed', stderr: '' }, 10, undefined, 'exit-code');
-    expect(passed).toMatchObject({ status: 'passed', name: 'tests (exit code only)' });
+    expect(passed).toMatchObject({ status: 'passed', name: 'tests', detail: 'exit code only' });
     expect(checkFromCommand('test', 'tests', sha, { exitCode: 1, stdout: 'Tests 1 failed', stderr: '' }, 10, undefined, 'exit-code').status).toBe('failed');
   });
 

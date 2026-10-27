@@ -8,10 +8,11 @@ import { ROLE_HELP } from "./people-data";
 import { needsRecentSignIn, signInAgain } from "./reauth";
 import { demoOf } from "./DemoFeaturePanel";
 import InfoTip from "./InfoTip";
-import CheckChips from "./CheckChips";
+import CheckChips, { CHECKS_TIP, requiredCheckLabel } from "./CheckChips";
+import type { RequirableCheck } from "../shared/checks";
 import { WorkspaceHandleCard } from "./HandleSettings";
 import ProfileSettingsCard from "./ProfileSettings";
-import { approvalWarning, eligibleApprovers, knownCheckNames, selfApprovalNote } from "./approvals";
+import { approvalWarning, eligibleApprovers, offeredChecks, selfApprovalNote } from "./approvals";
 import "./people-settings.css";
 
 type Props = { workspace: Workspace; data: AccessSnapshot; selfHosted: boolean; onChanged: () => Promise<void>; onLeft: (remaining: { id: string }[]) => Promise<void>; onOpenInstallation: () => void };
@@ -27,7 +28,7 @@ export default function GeneralSettings({ workspace, data, selfHosted, onChanged
     <NameCard name={workspace.name} role={data.role} owner={owner} onChanged={onChanged} />
     {!selfHosted && !demoOf(data) && <><WorkspaceHandleCard key={data.workspace?.id} onChanged={onChanged} /><ProfileSettingsCard key={`profile-${data.workspace?.id}`} scope="workspace" /></>}
     <AiSettingsPanel settings={workspace.ai} canManage={owner} onChanged={onChanged} />
-    <ProtectionCard key={JSON.stringify(data.protection)} protection={data.protection} owner={owner} approvers={eligibleApprovers(data.members)} knownChecks={knownCheckNames(workspace.missions)} onChanged={onChanged} />
+    <ProtectionCard key={JSON.stringify(data.protection)} protection={data.protection} owner={owner} approvers={eligibleApprovers(data.members)} offered={offeredChecks(workspace.missions)} onChanged={onChanged} />
     {owner && <OwnershipCard data={data} onChanged={onChanged} />}
     {canLeave && <LeaveCard name={workspace.name} onLeft={onLeft} />}
   </>;
@@ -58,7 +59,7 @@ function NameCard({ name, role, owner, onChanged }: { name: string; role: string
   </section>;
 }
 
-function ProtectionCard({ protection, owner, approvers, knownChecks, onChanged }: { protection: AccessSnapshot["protection"]; owner: boolean; approvers: number; knownChecks: string[]; onChanged: () => Promise<void> }) {
+function ProtectionCard({ protection, owner, approvers, offered, onChanged }: { protection: AccessSnapshot["protection"]; owner: boolean; approvers: number; offered: RequirableCheck[]; onChanged: () => Promise<void> }) {
   const [required, setRequired] = useState(protection.requiredApprovals);
   const [checks, setChecks] = useState(protection.requiredChecks);
   const [preventSelf, setPreventSelf] = useState(protection.preventSelfApproval);
@@ -86,15 +87,15 @@ function ProtectionCard({ protection, owner, approvers, knownChecks, onChanged }
           {warning && <p className={`approval-warning${warning.blocking ? " approval-warning-blocking" : ""}`} role="status">{warning.text}</p>}
           {warning?.blocking && <label className="people-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />Save anyway, I will invite reviewers</label>}
         </div>
-        <div className="people-field"><span className="field-label">Checks that must pass<InfoTip label="Checks that must pass">Changes land only after these checks pass on the exact revision. Leave empty to skip.</InfoTip></span>
-          <CheckChips label="Checks that must pass" known={knownChecks} selected={checks} onChange={setChecks} />
+        <div className="people-field"><span className="field-label">Checks that must pass<InfoTip label="Checks that must pass">{CHECKS_TIP}</InfoTip></span>
+          <CheckChips label="Checks that must pass" offered={offered} selected={checks} onChange={setChecks} />
         </div>
         <div><label className="people-check"><input type="checkbox" checked={preventSelf} onChange={event => setPreventSelf(event.target.checked)} />Authors cannot approve their own changes<InfoTip label="Authors cannot approve their own changes">{selfApprovalNote(approvers)}</InfoTip></label></div>
         <div className="gf-form-footer">{saved && <span className="people-muted" role="status">Saved.</span>}<Button type="submit" variant="primary" size="base" loading={busy} disabled={blocked}>Save rules</Button></div>
         {error && <div className="form-error" role="alert">{error}</div>}
       </form> : <dl className="general-facts">
         <dt>Approvals needed</dt><dd>{protection.requiredApprovals}</dd>
-        <dt>Checks that must pass</dt><dd>{protection.requiredChecks.length ? protection.requiredChecks.join(", ") : "None"}</dd>
+        <dt>Checks that must pass</dt><dd>{protection.requiredChecks.length ? protection.requiredChecks.map(requiredCheckLabel).join(", ") : "None"}</dd>
         <dt>Self-approval</dt><dd>{protection.preventSelfApproval ? "Authors cannot approve their own changes" : "Allowed"}</dd>
       </dl>}
     </div>

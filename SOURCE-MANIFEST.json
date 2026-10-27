@@ -235,8 +235,8 @@
     },
     {
       "path": "src/shared/checks.ts",
-      "size": 673,
-      "sha256": "c5e57d99ca583755ae94876e20fc2bd145906c5b4b08fa01925c4614abf6bbd4"
+      "size": 3503,
+      "sha256": "ddae2f3bf16712a4396c952e6f44536d742b7415826d0a3355289ef7afd9f820"
     },
     {
       "path": "src/shared/cloudflare-permissions.ts",
@@ -360,8 +360,8 @@
     },
     {
       "path": "src/shared/types.ts",
-      "size": 35081,
-      "sha256": "456df7833b241c252c8ea4e91e6ce597887f1e4d4b441e1b44429bc7fc502b2f"
+      "size": 35203,
+      "sha256": "50c56ea6540ff18d74486e0bb68e0ca1038dd394b43851a061218dd0f8b9a672"
     },
     {
       "path": "src/ui/account-data.ts",
@@ -450,13 +450,13 @@
     },
     {
       "path": "src/ui/App.tsx",
-      "size": 87868,
-      "sha256": "645b9bfab615c6bc3a7d19fbffecc93cded37435a593faae08c879e11ce4867c"
+      "size": 87875,
+      "sha256": "5e3963df77ff2deb1cc121592ea672b1d757d1895a3822adefc08402fb5ea7df"
     },
     {
       "path": "src/ui/approvals.ts",
-      "size": 2099,
-      "sha256": "6eadaae3a2aec79cdf84d9efd54ade0fa4a4d54dfcf9988f1ef4ea3596861959"
+      "size": 2237,
+      "sha256": "cf91a93bab40633f4b6f5c1f4cae068d97bd906531db15d01b8c87d97786e6bf"
     },
     {
       "path": "src/ui/assets/cloudflare-icon.svg",
@@ -515,8 +515,8 @@
     },
     {
       "path": "src/ui/AttemptHistory.tsx",
-      "size": 9286,
-      "sha256": "9f24f3969e4a72adaa812961fb78d4b818382e4ef1c91e4c7ced11fec69e3917"
+      "size": 9340,
+      "sha256": "20f4e9a1c3c975ddaab567328277b8569cadfb5ca658943ec894f5b2253fcc0e"
     },
     {
       "path": "src/ui/AuditLog.tsx",
@@ -550,8 +550,8 @@
     },
     {
       "path": "src/ui/BranchProtection.tsx",
-      "size": 20339,
-      "sha256": "6a58c2c8aa2348119a51fd91fa9bb6093a488470c0478d19c2847bbeb601b0be"
+      "size": 20326,
+      "sha256": "829b7a3ab63f7431fc867a2c601a88f291ea2d0bcffd9ca44e14b1fb8749ce5d"
     },
     {
       "path": "src/ui/BrandMark.tsx",
@@ -565,8 +565,8 @@
     },
     {
       "path": "src/ui/CheckChips.tsx",
-      "size": 1022,
-      "sha256": "5425e87e55aacff5dc184c9e9c2b9d930829e2e306b58e30c291aa27e800208f"
+      "size": 1848,
+      "sha256": "46155e353c59963b606392d56d1c05ef96d7f9713963130ebb87c7c593f92402"
     },
     {
       "path": "src/ui/CheckSettings.tsx",
@@ -785,8 +785,8 @@
     },
     {
       "path": "src/ui/GeneralSettings.tsx",
-      "size": 12032,
-      "sha256": "e50ce9b860ec29a05e6502ff8f663c6ff610ba5ae1259bb31af1e61129883aca"
+      "size": 12067,
+      "sha256": "c358225b7361f3a69bc97724704d8dbd383ec551b913c5994397d930dd77e50c"
     },
     {
       "path": "src/ui/GitAccess.tsx",
@@ -850,8 +850,8 @@
     },
     {
       "path": "src/ui/info-tip.css",
-      "size": 2217,
-      "sha256": "bd03fefcb5f71483b93b70f6642e513ee3f648cd489a3e126b7cded81d4e8a67"
+      "size": 2326,
+      "sha256": "85bd9f9a40deec6c18bc53d8ce1041ca290a70bb4cf803163cfdeeda49f2e387"
     },
     {
       "path": "src/ui/InfoTip.tsx",
@@ -930,8 +930,8 @@
     },
     {
       "path": "src/ui/MissionDetail.tsx",
-      "size": 74277,
-      "sha256": "2ecf90afa61f138fb3d1192aac8315f99787fe06f6b58ce5fb891d32d42c7c70"
+      "size": 74347,
+      "sha256": "8d7a3f6ac98ff567f307dbbabed4ff605db1afa3be4a08bbc47c7f7e6ee52a57"
     },
     {
       "path": "src/ui/MissionDocuments.tsx",
@@ -1190,8 +1190,8 @@
     },
     {
       "path": "src/ui/RepositoryWork.tsx",
-      "size": 9353,
-      "sha256": "aafd93fb0563142617062e64083d7958a52fb2ca8331b87c2cd6ad5575b8da57"
+      "size": 9414,
+      "sha256": "f3ff5401222857fd47baf7afec782f496d9bab92244eeef53931d93524bb8b98"
     },
     {
       "path": "src/ui/review-summary.ts",
@@ -1230,8 +1230,8 @@
     },
     {
       "path": "src/ui/styles.css",
-      "size": 63479,
-      "sha256": "d6bad46d3b7808744f22deafe2e61c9c01c8cb40adc39a5ee98d4cab3957f29b"
+      "size": 63588,
+      "sha256": "1483ac690e5b2bbad5bfd330507db515cb7855f13f87fdd7ff06ceabfe81dc7a"
     },
     {
       "path": "src/ui/SubscribeButton.tsx",
@@ -1260,8 +1260,8 @@
     },
     {
       "path": "src/ui/UpstreamProposals.tsx",
-      "size": 6195,
-      "sha256": "730f2a334e227a8155b455f946deaedc2736a440e9a112b8c86002631f8c30ff"
+      "size": 6249,
+      "sha256": "0ae5a051810cdb48e75cd70ddd371308fde07cc8871e760f6c8e4ab0181ba431"
     },
     {
       "path": "src/ui/use-seed.ts",
@@ -1275,8 +1275,8 @@
     },
     {
       "path": "src/ui/VisualEvidence.tsx",
-      "size": 9176,
-      "sha256": "948930123e488120fc65011c32d5267bb9841a7f43a144ca638042fcefc3e473"
+      "size": 9230,
+      "sha256": "153a2d624cff7c99d38db12b965e09c7efbcac4f4a42666250c0115b47dfc2d0"
     },
     {
       "path": "src/ui/VisualSettings.tsx",
@@ -1350,8 +1350,8 @@
     },
     {
       "path": "src/worker/branch-protection.ts",
-      "size": 7903,
-      "sha256": "153731e549cd2b44db45382cb6292345e99894300e734a211cb1c7cdbd73b38b"
+      "size": 8353,
+      "sha256": "de5cea1dac89fe1a7b96d1d366f1526ea1d6a21f11511b9053b8be7fa3e45112"
     },
     {
       "path": "src/worker/branches.ts",
@@ -1370,8 +1370,8 @@
     },
     {
       "path": "src/worker/check-evidence.ts",
-      "size": 10861,
-      "sha256": "0870d1878a74d0249d9605ac68f6d82117a1b66c0258a6b68a73488a80c190f4"
+      "size": 10857,
+      "sha256": "7ab04c7a44f59575da6bb8bd4a7791e63d33a5785c7edabd732aa001fd299855"
     },
     {
       "path": "src/worker/check-settings.ts",
@@ -1440,8 +1440,8 @@
     },
     {
       "path": "src/worker/coordinator.ts",
-      "size": 99272,
-      "sha256": "1252cfd7fe12ee17b2ae6f0b8fed2cd15509945f1397a13bf9d5657b405ca2ea"
+      "size": 99307,
+      "sha256": "e6935b6128991132f3751189ee122eb9fd91ded74c2826d3c3a60634f3bfab5c"
     },
     {
       "path": "src/worker/d1-migrations.ts",
@@ -1480,8 +1480,8 @@
     },
     {
       "path": "src/worker/demo-seed.ts",
-      "size": 36213,
-      "sha256": "9e56636581f6a94ec3965b4c687c40851deb28024f8a95d839ae7e028d105a15"
+      "size": 36284,
+      "sha256": "18291018210bb5ab3c725dc90bf7b9219bce73af33e84ac411147aaf3b2873b4"
     },
     {
       "path": "src/worker/demo.ts",
@@ -1565,8 +1565,8 @@
     },
     {
       "path": "src/worker/execution.ts",
-      "size": 55568,
-      "sha256": "a5e8d46167a7477c58b1781a35aabd695c17a9dcbcc463f928afc270b7639c6b"
+      "size": 55617,
+      "sha256": "9bec1d87c10848fc36a951613cdf75ecb8c1b4ac44d6331493f760177dad2bb6"
     },
     {
       "path": "src/worker/execution/agent-loop.ts",
@@ -1600,8 +1600,8 @@
     },
     {
       "path": "src/worker/execution/verify.ts",
-      "size": 16303,
-      "sha256": "48fdf3413dd6d83b65c33ebb1fbc3fad0e488d43dbc761f78da7f13cc6436f6d"
+      "size": 16333,
+      "sha256": "4cbe1e25efc8805c9b83bc81302b4e4c77e33e90b64cae7938f2300ba8a0d265"
     },
     {
       "path": "src/worker/feeds.ts",
@@ -1750,8 +1750,8 @@
     },
     {
       "path": "src/worker/mcp-tools/access.ts",
-      "size": 10202,
-      "sha256": "eac2d8900c47d3a0aa184b2e70775ef39da2a05563315a523356653d7a6f1cd2"
+      "size": 10367,
+      "sha256": "be667e837d1384d2b79cbc8c96aaaf966a148cde8f71ce15f8c78f4b99947f96"
     },
     {
       "path": "src/worker/mcp-tools/advisories.ts",
@@ -1770,8 +1770,8 @@
     },
     {
       "path": "src/worker/mcp-tools/branches.ts",
-      "size": 6724,
-      "sha256": "385fbf607c5b3fdc5f33da4d3e9690065c1fe4b79e2a12e6a07fc3476198e2ce"
+      "size": 6941,
+      "sha256": "c23f24cf146d547a3352b2aa339f2abfc1815ef5c83325d1739b91d9ed244a92"
     },
     {
       "path": "src/worker/mcp-tools/cloudflare.ts",
@@ -1920,8 +1920,8 @@
     },
     {
       "path": "src/worker/outside-proposals.ts",
-      "size": 13338,
-      "sha256": "091f1c085bd43364a531456dad6099e8bdae06992039c57f3da8c39bb097da1f"
+      "size": 13389,
+      "sha256": "a469bd6cc5e355f3b0953c1894e33defdcca76d38a5ac915a8b26a0e1b085653"
     },
     {
       "path": "src/worker/package-manager.ts",
@@ -2150,8 +2150,8 @@
     },
     {
       "path": "src/worker/security.ts",
-      "size": 219928,
-      "sha256": "e7561cff67069be96ab09881fe4f07fcd87e5c02f6a5b8691f5140956e251b72"
+      "size": 220191,
+      "sha256": "93681684a5f3aede3d6e90434ffd65a28e88bcc4b8130912d0df8036e4e02583"
     },
     {
       "path": "src/worker/session-meta.ts",
@@ -2245,8 +2245,8 @@
     },
     {
       "path": "src/worker/visual/evidence.ts",
-      "size": 16913,
-      "sha256": "563282c412dfed75e7c56119920e11e135ab09618845f9eb8322e8460db1323b"
+      "size": 16753,
+      "sha256": "aa5fa67d830befc19f4c494ed439d15dbdedbf71ddab234d530443315256798a"
     },
     {
       "path": "src/worker/visual/settings.ts",
@@ -2325,8 +2325,8 @@
     },
     {
       "path": "tests/approvals.test.ts",
-      "size": 1958,
-      "sha256": "fa10ef33302ff77d5e33ad7cb8ad3ee5b1243c2e1264b030087b494a09e13bbe"
+      "size": 2417,
+      "sha256": "f456aaa37377722147bd6fc72057eed3398343bdb713d8b61f764d6ffc7d600b"
     },
     {
       "path": "tests/boot-fonts.test.ts",
@@ -2415,8 +2415,8 @@
     },
     {
       "path": "tests/execution.test.ts",
-      "size": 93408,
-      "sha256": "229106bf5678f7dc531559f4469ae70ae6610caae7e7a34b02a231ad08954cc3"
+      "size": 93417,
+      "sha256": "b4cbdddd9c6b0b5e7180903b309649b008758ceed32f16426761cdc844c4ed26"
     },
     {
       "path": "tests/failed-agents-banner.test.ts",
@@ -2644,6 +2644,11 @@
       "sha256": "f9d892be96f00dc7c12c1c62ffc5cba0bd1267fbf689876c60456322fe647ea6"
     },
     {
+      "path": "tests/required-checks.test.ts",
+      "size": 3642,
+      "sha256": "c62350ba6b5d7dc1c2d6ef99fec45755b412b087d5a6cb9ad7227514641028aa"
+    },
+    {
       "path": "tests/retry-agents.test.ts",
       "size": 23473,
       "sha256": "4955166d467955410763383ad8a66589cc8fb5e918f586c29d33686cc16753ac"
@@ -2680,8 +2685,8 @@
     },
     {
       "path": "tests/test-evidence.test.ts",
-      "size": 7540,
-      "sha256": "78619b7b151e179754fe904736c7ae7ad509c793e0a5ee3071d31f462bd97ea8"
+      "size": 7563,
+      "sha256": "606373c261a707a5fcfe4a70be2f9416d59c86accbc0ab96f25bec74a8393f91"
     },
     {
       "path": "tests/ui-api.test.ts",

@@ -73,7 +73,7 @@ export function upstreamProposalView(mission: Mission, origin: string, upstream:
     branch: change.branch, headSha: change.headSha, targetBranch: change.targetBranch,
     upstream: { label: upstream ? `${upstream.handle}/${repositoryLabel(upstream.repository)}` : change.source!.label, url: upstream ? publicUrls(origin, upstream.handle, upstream.repository).url : null },
     waitingForMaintainer: waitingForMaintainer(mission), candidateSha: mission.candidateSha, ...(mission.landedSha ? { landedSha: mission.landedSha } : {}),
-    checks: mission.checks.map(check => ({ name: check.name, status: check.status, ...(check.output ? { output: check.output.slice(0, OUTPUT_EXCERPT) } : {}) })),
+    checks: mission.checks.map(check => ({ name: check.name, ...(check.detail ? { detail: check.detail } : {}), status: check.status, ...(check.output ? { output: check.output.slice(0, OUTPUT_EXCERPT) } : {}) })),
     reviews: (mission.reviews ?? []).map(review => ({ kind: review.kind, body: review.body, ...(review.path ? { path: review.path, line: review.line } : {}), resolved: !!review.resolvedAt, createdAt: review.createdAt })),
     createdAt: mission.createdAt, updatedAt: mission.updatedAt,
   };

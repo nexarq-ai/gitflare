@@ -1,4 +1,5 @@
 import type { AccessSnapshot } from "../shared/types";
+import { checkIdentity, REQUIRABLE_CHECKS, type RequirableCheck } from "../shared/checks";
 
 const APPROVER_ROLES = new Set(["Reviewer", "Maintainer", "Owner"]);
 
@@ -21,8 +22,8 @@ export function selfApprovalNote(approvers: number): string {
     : "Whoever writes a change cannot approve it, so another person has to.";
 }
 
-export function knownCheckNames(missions: { repositoryId: string; checks: { name?: string }[] }[], repositoryId?: string): string[] {
-  const names = new Set<string>();
-  for (const mission of missions) if (!repositoryId || mission.repositoryId === repositoryId) for (const check of mission.checks) if (check.name) names.add(check.name);
-  return [...names].sort((a, b) => a.localeCompare(b));
+export function offeredChecks(missions: { repositoryId: string; checks: { name?: string }[] }[], repositoryId?: string): RequirableCheck[] {
+  const seen = new Set<string>();
+  for (const mission of missions) if (!repositoryId || mission.repositoryId === repositoryId) for (const check of mission.checks) if (check.name) seen.add(checkIdentity(check.name));
+  return REQUIRABLE_CHECKS.filter(check => !check.visual || seen.has(check.name));
 }

@@ -1,3 +1,5 @@
+import type { RequirableCheck } from './checks';
+
 export type MissionStatus = 'draft' | 'queued' | 'running' | 'checking' | 'needs_review' | 'approved' | 'integrating' | 'integrated' | 'failed' | 'cancelled';
 export type RunStatus = 'draft' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
 export type MissionMode = 'combine' | 'race';
@@ -235,6 +237,7 @@ export interface RepositoryCheckSettings extends CheckSettings {
 export interface Check {
   id: string;
   name: string;
+  detail?: string;
   runId?: string;
   status: CheckStatus;
   candidateSha?: string;
@@ -551,7 +554,7 @@ export interface UpstreamProposal {
   waitingForMaintainer: boolean;
   candidateSha: string | null;
   landedSha?: string;
-  checks: { name: string; status: CheckStatus; output?: string }[];
+  checks: { name: string; detail?: string; status: CheckStatus; output?: string }[];
   reviews: { kind: string; body: string; path?: string; line?: number; resolved: boolean; createdAt: string }[];
   createdAt: string;
   updatedAt: string;
@@ -560,7 +563,7 @@ export type PullRequestState = 'open' | 'needs_review' | 'approved' | 'landed' |
 export type LanderRole = 'Maintainer' | 'Owner';
 export interface BranchRule { pattern: string; requirePullRequest: boolean; requiredApprovals: number; requirePassingChecks: true; requiredCheckNames: string[]; preventSelfApproval: boolean; dismissApprovalsOnNewCommits: true; restrictLanders: LanderRole[]; allowForcePush: false; codeowners?: boolean }
 export type BranchRuleInput = Pick<BranchRule, 'pattern' | 'requirePullRequest' | 'requiredApprovals' | 'requiredCheckNames' | 'preventSelfApproval' | 'restrictLanders' | 'codeowners'>;
-export interface BranchProtection { repositoryId: string; defaultBranch: string; rules: BranchRule[]; configured: boolean; updatedAt?: string; updatedBy?: string }
+export interface BranchProtection { repositoryId: string; defaultBranch: string; rules: BranchRule[]; configured: boolean; updatedAt?: string; updatedBy?: string; availableChecks: RequirableCheck[] }
 export interface BranchInfo { name: string; headSha: string; protected: boolean; default: boolean; ahead?: number; behind?: number }
 export interface BranchChangeResult { name: string; headSha: string; created?: true; deleted?: true }
 export interface BranchList { repositoryId: string; defaultBranch: string; gitUrl: string; branches: BranchInfo[] }

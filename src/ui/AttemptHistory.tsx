@@ -6,6 +6,7 @@ import { request } from "./api";
 import { EmptyState, ErrorNotice, Status } from "./components";
 import AgentAssignment from "./AgentAssignment";
 import { PageLoading } from "./WorkspaceLoader";
+import { checkLabel } from "../shared/checks";
 
 const reasonLabels: Record<MissionAttempt["reason"], string> = {
   completed: "Execution finished",
@@ -211,7 +212,7 @@ function Snapshot({ checkpoint }: { checkpoint: MissionAttempt }) {
           {snapshot.checks.map((check) => (
             <article className="snapshot-agent" key={check.id}>
               <div className="snapshot-item-heading">
-                <h3>{check.name}</h3>
+                <h3>{checkLabel(check)}</h3>
                 <Status status={check.status} />
               </div>
               {check.candidateSha && (

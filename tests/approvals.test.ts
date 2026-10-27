@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccessSnapshot } from '../src/shared/types';
-import { approvalWarning, eligibleApprovers, knownCheckNames, selfApprovalNote } from '../src/ui/approvals';
+import { approvalWarning, eligibleApprovers, offeredChecks, selfApprovalNote } from '../src/ui/approvals';
 
 const members = [
   { userId: 'o', role: 'Owner' },
@@ -26,9 +26,13 @@ describe('approval guard', () => {
     expect(selfApprovalNote(1)).toContain('only person who can approve');
   });
 
-  it('offers the check names that have actually run', () => {
-    const missions = [{ repositoryId: 'r1', checks: [{ name: 'test' }, { name: 'lint' }] }, { repositoryId: 'r2', checks: [{ name: 'build' }, { name: 'test' }] }];
-    expect(knownCheckNames(missions)).toEqual(['build', 'lint', 'test']);
-    expect(knownCheckNames(missions, 'r1')).toEqual(['lint', 'test']);
+  it('offers only checks that run on every landing revision, with visual checks once seen', () => {
+    const missions = [
+      { repositoryId: 'r1', checks: [{ name: 'bot: repository tests (exit code only) (tests added by the agent; the repository had none)' }, { name: 'Combined candidate tests (single agent: reused the exact verified candidate checks)' }, { name: 'licence: repository tests' }] },
+      { repositoryId: 'r2', checks: [{ name: 'Visual: console errors' }, { name: 'Lighthouse' }] },
+    ];
+    expect(offeredChecks(missions, 'r1').map(check => check.label)).toEqual(['Tests']);
+    expect(offeredChecks(missions).map(check => check.name)).toEqual(['Combined candidate tests', 'Visual: console errors', 'Lighthouse']);
+    expect(offeredChecks([]).map(check => check.name)).toEqual(['Combined candidate tests']);
   });
 });

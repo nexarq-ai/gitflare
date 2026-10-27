@@ -4,6 +4,7 @@ import type { AgentRun, Check, VisualCapture, VisualEvidence as Evidence } from 
 import InfoTip from "./InfoTip";
 import { EmptyState } from "./components";
 import "./visual-evidence.css";
+import { checkLabel } from "../shared/checks";
 
 export type CompareMode = "slider" | "side" | "diff";
 
@@ -77,7 +78,7 @@ export default function VisualEvidencePanel({ missionId, evidence, runs, checks,
           <section key={item.id} className="visual-candidate" aria-label={run ? `${run.name} screenshots` : "Candidate screenshots"}>
             <header>
               <h3>{run ? run.name : "Combined candidate"} <code>{item.candidateSha.slice(0, 7)}</code> <span>vs base <code>{item.baseSha.slice(0, 7)}</code></span></h3>
-              {related.length > 0 && <ul className="visual-checks">{related.map((check) => <li key={check.id} className={check.status}>{check.name}: {check.status}</li>)}</ul>}
+              {related.length > 0 && <ul className="visual-checks">{related.map((check) => <li key={check.id} className={check.status}>{checkLabel(check)}: {check.status}</li>)}</ul>}
             </header>
             {item.rounds?.length ? <ol className="visual-rounds">{item.rounds.map((round) => (
               <li key={round.round}>

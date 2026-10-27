@@ -93,7 +93,7 @@ export function checkFromCommand(id: string, name: string, candidateSha: string,
   const timedOut = timeoutNotice(result, limits) + (baseline ? timeoutNotice(baseline, limits, 'Base commit test run: ') : '');
   const body = (prefix: string) => `${prefix}${commandOutput(result, outputLimit - prefix.length)}`;
   const timeout = (result.timedOut || baseline?.timedOut) && limits ? { timeout: { seconds: Math.round(limits.testTimeoutMs / 1000), runner: limits.runner, timeoutSource: limits.testTimeoutSource, runnerSource: limits.runnerSource } } : {};
-  if (evidence === 'exit-code') return { id, name: `${name} (exit code only)`, candidateSha, durationMs, status: result.exitCode === 0 && !result.timedOut && !truncated ? 'passed' : 'failed', output: body(timedOut), ...timeout };
+  if (evidence === 'exit-code') return { id, name, detail: 'exit code only', candidateSha, durationMs, status: result.exitCode === 0 && !result.timedOut && !truncated ? 'passed' : 'failed', output: body(timedOut), ...timeout };
   const implicit = !limits?.evidenceSource || limits.evidenceSource === 'default';
   const command = limits?.testCommand ? `\`${limits.testCommand}\`` : 'The test command';
   if (!tests) {
@@ -106,7 +106,7 @@ export function checkFromCommand(id: string, name: string, candidateSha: string,
     const fewer = !!base && base.format === report.format && report.tests < base.tests;
     const ok = result.exitCode === 0 && !result.timedOut && !truncated && !baseline?.timedOut && report.tests > 0 && report.failed === 0 && report.passed > 0 && !fewer;
     const notice = `${evidenceSetting(limits)}; ${command} printed the ${REPORTER_NAMES[report.format]} reporter instead (${report.tests} tests, ${report.passed} passed, ${report.failed} failed), so this check used the exit code and that summary.${baseline && !base ? ' The base commit printed no recognised report, so tests were not compared with it.' : ''}${fewer ? ` The candidate reported fewer tests than the base commit (${report.tests} < ${base!.tests}).` : ''} ${EVIDENCE_ADVICE}\n`;
-    return { id, name: `${name} (exit code and ${REPORTER_NAMES[report.format]} summary)`, candidateSha, durationMs, status: ok ? 'passed' : 'failed', output: body(`${timedOut}${notice}`), ...timeout };
+    return { id, name, detail: `exit code and ${REPORTER_NAMES[report.format]} summary`, candidateSha, durationMs, status: ok ? 'passed' : 'failed', output: body(`${timedOut}${notice}`), ...timeout };
   }
   const baselineCount = baseline?.stdout.match(/^# tests (\d+)$/m);
   const baselineComplete = !baseline || (!!baselineCount && Number(baselineCount[1]) > 0 && /^# duration_ms [\d.]+$/m.test(baseline.stdout) && !`${baseline.stdout}\n${baseline.stderr}`.includes('[output truncated]'));

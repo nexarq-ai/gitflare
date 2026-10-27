@@ -7,6 +7,7 @@ import { EmptyState, Status } from "./components";
 import { OperationTrack } from "./OperationMotion";
 import AgentAssignment from "./AgentAssignment";
 import "./repository-work.css";
+import { checkLabel } from "../shared/checks";
 
 export default function RepositoryWork({
   tab,
@@ -45,7 +46,7 @@ export default function RepositoryWork({
   );
   const filteredChecks = checks.filter(({ mission, check }) =>
     match(
-      `${mission.title} ${check.name} ${check.candidateSha ?? ""}`,
+      `${mission.title} ${checkLabel(check)} ${check.candidateSha ?? ""}`,
       check.status,
     ),
   );
@@ -187,7 +188,7 @@ export default function RepositoryWork({
                     className="text-link"
                     onClick={() => onOpen(mission.id, "checks")}
                   >
-                    {check.name}
+                    {checkLabel(check)}
                   </button>
                   {["pending", "running"].includes(check.status) && <OperationTrack compact kind="agents" />}<Status status={check.status} />
                 </div>

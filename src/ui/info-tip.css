@@ -13,3 +13,4 @@
 .field-label { display: inline-flex; align-items: center; }
 .approval-warning { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; background: var(--gf-color-warning-bg); color: var(--gf-color-warning); }
 .approval-warning-blocking { background: var(--gf-color-danger-bg); color: var(--gf-color-danger); }
+.check-chip-retired[aria-pressed="true"] { border-color: var(--gf-color-warning); background: transparent; }

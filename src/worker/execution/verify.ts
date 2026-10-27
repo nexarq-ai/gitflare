@@ -1,4 +1,5 @@
 import type { Check, CheckPlan, FileChange, ManifestDependencyChanges, RepositorySkillChange, RevertChange } from '../../shared/types';
+import { withDetail } from '../../shared/checks';
 import type { ArtifactInfo } from '../artifacts';
 import type { CommandResult } from '../../../runner/sandbox';
 import { DEPENDENCY_FILES, type InstallPlan } from '../package-manager';
@@ -146,7 +147,7 @@ async function verifyOnce(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>, key: str
     const start = Date.now();
     const result = await runCheck(sandbox, checkPolicy);
     const check = checkFromCommand(key, 'Repository test suite', sha, result, Date.now() - start, baseline, checkPolicy.evidence, checkPolicy);
-    if (policy.untested) check.name = `${check.name} (tests added by the agent; the repository had none)`;
+    if (policy.untested) withDetail(check, 'tests added by the agent; the repository had none');
     return { check, changes, dependencyChanges };
   } finally { await sandbox.destroy(); }
 }
@@ -188,7 +189,7 @@ export async function verifyRevert(env: Required<Pick<ExecutionEnv, 'SANDBOX'>>,
     const start = Date.now();
     const result = await runCheck(sandbox, policy);
     const check = checkFromCommand(key, 'Repository test suite', sha, result, Date.now() - start, baseline, policy.evidence, policy);
-    check.name = `${check.name} (tests of the restored revision ${change.previousSha.slice(0, 12)})`;
+    withDetail(check, `tests of the restored revision ${change.previousSha.slice(0, 12)}`);
     return { check, changes };
   } finally { await sandbox.destroy(); }
 }

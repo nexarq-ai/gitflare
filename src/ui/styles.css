@@ -2885,4 +2885,5 @@
   color: var(--gf-color-text-secondary);
   white-space: nowrap;
 }
+.check-detail { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--gf-color-text-tertiary); }
 .check-advisory { margin-left: 8px; font-size: 11px; font-weight: 500; color: var(--gf-color-text-tertiary); border: 1px solid var(--gf-color-border); border-radius: 999px; padding: 1px 7px; vertical-align: middle; }

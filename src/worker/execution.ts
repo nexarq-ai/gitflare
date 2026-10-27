@@ -1,4 +1,5 @@
 import type { AgentRun, Check, CheckPlan, FileChange, ManifestDependencyChanges, Mission, MissionEvent, Repository, RepositorySkillChange, ModelConnection, VisualEvidence, VisualSettings } from '../shared/types';
+import { LANDING_TESTS, withDetail } from '../shared/checks';
 import { AgentViewer } from './visual/agent-view';
 import { effectiveVisualConfig } from './visual/config';
 import { captureCandidateEvidence } from './visual/evidence';
@@ -614,7 +615,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     if (only.commitSha && fork && single?.status === 'passed' && validGitSha(only.commitSha) && (only.candidateBaseSha ?? baseSha) === baseSha) {
       result.integrationForkName = fork.name;
       result.candidateSha = only.commitSha;
-      result.checks.push({ ...single, id: 'integration', name: 'Combined candidate tests (single agent: reused the exact verified candidate checks)' });
+      result.checks.push(withDetail({ ...single, id: 'integration', name: LANDING_TESTS }, 'single agent: reused the exact verified candidate checks'));
       result.dependencyChanges = only.dependencyChanges ?? [];
       return result;
     }
@@ -695,7 +696,7 @@ export async function executeMission(input: ExecutionInput, env: ExecutionEnv, r
     result.dependencyChanges = dependencyChanges;
     if (learned && (learned.testTimeoutSeconds || learned.runner)) result.learnedLimits = mergeLearnedLimits(result.learnedLimits, learned);
     check.id = 'integration';
-    check.name = check.name.replace('Repository test suite', 'Combined candidate tests');
+    check.name = check.name.replace('Repository test suite', LANDING_TESTS);
     result.checks.push(check);
     if (check.status !== 'passed') result.error = 'Combined candidate failed its test suite';
     else await visualEvidence(key, fork, sha, policy, result.changes.map((change) => change.path));
